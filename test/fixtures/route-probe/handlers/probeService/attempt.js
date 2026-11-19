@@ -31,7 +31,10 @@ module.exports = async (input) => {
     case 'protoRequire':
       return {output: result(() => module.constructor.prototype.require.call(module.parent, target))};
     case 'vmImport': {
-      const key = libKey();
+      // (a vm Script's filename is the module's to choose: since #194's PR 2
+      // require.cache names no runtime file, so the test hands one over,
+      // as module code could guess one)
+      const key = libKey() || input.libFile;
       if (key == null) return {output: {outcome: 'no-key', code: null}};
       const vm = require('vm');
       try {

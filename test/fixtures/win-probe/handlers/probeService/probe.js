@@ -1,5 +1,9 @@
 // Every check of what a module sees of its own files and paths (#195), each
 // reported, none stopping the others: one run says all that is wrong.
+// (the runtime's modules as require.cache held them before the lockdown,
+// from the test's probe: since #194's PR 2 module code's own require.cache
+// holds its own files only, lib/lean-worker.js)
+const runtimeCache = (globalThis[Symbol.for('countinghouse.test.runtime')] || {}).modules || require.cache;
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -50,7 +54,7 @@ module.exports = async () => {
   // instances, one of them never installed (stdio 26)
   await check('runtime files loaded twice', () => {
     const seen = new Map();
-    for (const k of Object.keys(require.cache)) {
+    for (const k of Object.keys(runtimeCache)) {
       // the module's own files (/app, or C:\app on Windows) and dependencies
       if (/^([A-Za-z]:)?[\\/]app[\\/]/.test(k) || /[\\/]node_modules[\\/]/.test(k)) continue;
       const m = /^.*[\\/]lib[\\/](.+\.js)$/.exec(k);

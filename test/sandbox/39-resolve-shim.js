@@ -120,20 +120,16 @@ describe('sandbox 39: the routes to the module resolver', function() {
       }
     });
 
-    // Under audit nothing locks Module._resolveFilename yet (#194's S will,
-    // in both modes), so the assignment works; but since F4-1 the file
-    // broker's resolve hook calls Node's own resolver, taken before anything
-    // could replace it, so a replacement never decides how a module's own
-    // request resolves. A loader-patching dependency needs --moduleSandbox
-    // off (#194's compatibility table).
-    it('a module may replace Module._resolveFilename, but its replacement decides none of its own resolutions (F4-1)', async () => {
+    // Under audit Module._resolveFilename is held since #194's PR 2 (the
+    // Fable pass, F7): an assignment is reported and never takes effect, so
+    // a replacement decides none of a module's own resolutions on any Node
+    // line, require.resolve included (below 24.15 it calls the static
+    // itself). A loader-patching dependency needs --moduleSandbox off
+    // (#194's compatibility table).
+    it('a module may assign Module._resolveFilename, but its replacement decides none of its own resolutions (F4-1, F7)', async () => {
       const a = await attempt(server, testPort(9725), 'replaceResolveFilename');
       assert.strictEqual(a.out.outcome, 'allowed', a.raw);
-      // below 24.15 require.resolve calls the static itself (the shim's, which
-      // the module replaced): there the replacement answers require.resolve,
-      // and still decides no load (require runs the hook)
-      if (require('../../lib/node-version').NEEDS_RESOLVE_SHIM) assert.strictEqual(a.out.result, '/replaced', a.raw);
-      else assert.match(String(a.out.result), /[\\/]app[\\/]handlers[\\/]probeService[\\/]attempt\.js$/, a.raw);
+      assert.match(String(a.out.result), /[\\/]app[\\/]handlers[\\/]probeService[\\/]attempt\.js$/, a.raw);
     });
   });
 });

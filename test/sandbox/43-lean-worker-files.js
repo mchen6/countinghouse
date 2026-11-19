@@ -124,7 +124,10 @@ after(() => fs.rmSync(LOCAL_STORE, {recursive: true, force: true}));
     let server = null;
     before(async () => {
       base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-lean-43-'));
-      server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', 'audit'].concat(flags, [
+      // (the test's probe on, --testLateLoads: since #194's PR 2 the runtime's
+      // files are listed to the fixture by its hand-over, require.cache
+      // showing module files only)
+      server = await startServer(PORT, ['--testLateLoads', '--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', 'audit'].concat(flags, [
         '--moduleDataPath', path.join(base, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'lean-probe'),
         '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'lean-probe-caller')]));
     });

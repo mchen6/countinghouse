@@ -7,7 +7,7 @@
       "input": {
         "type": "object",
         "properties": {
-          "what": {"type": "string", "enum": ["loaded", "request"]},
+          "what": {"type": "string", "enum": ["loaded", "request", "outside", "patchWrap", "requireOutside"]},
           "url": {"type": "string"}
         },
         "required": ["what"]
@@ -20,7 +20,10 @@
           "code": {"type": ["string", "null"]},
           "message": {"type": ["string", "null"]},
           "status": {"type": ["integer", "null"]},
-          "body": {"type": ["string", "null"]}
+          "body": {"type": ["string", "null"]},
+          "outside": {"type": "array"},
+          "count": {"type": "integer"},
+          "patched": {"type": "boolean"}
         }
       }
     }

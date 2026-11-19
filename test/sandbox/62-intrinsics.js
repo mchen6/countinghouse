@@ -73,6 +73,9 @@ const CROSSED = 'REMOTE_UNDECLARED';
 // lib/port-scope.js rehome, server free: assigned into an object with no
 // prototype (no inherited setter there), a "__proto__" key stays an own key
 // and never becomes the copy's prototype
+// (each start with the test's late-load probe, --testLateLoads: since
+// #194's PR 2 its fixtures reach a runtime object only through the
+// probe's hand-over, module code's own require.cache holding its own files)
 describe('sandbox 62: re-homing a message', () => {
   const {rehome, rehomeMessage} = require('../../lib/port-scope');
   it('copies own data fields into an object with no prototype; "__proto__" round-trips as an own key; a getter is not run', () => {
@@ -115,7 +118,7 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
       for (let i = 0; i < CHANGES.length; i++) fs.writeFileSync(HOST_FILE(i), 'a host file\n');
       fs.mkdirSync(HOST_DIR());
       fs.writeFileSync(path.join(HOST_DIR(), 'package.json'), JSON.stringify({name: HOST_PKG_NAME}));
-      server = await startServer(port, ['--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode,
+      server = await startServer(port, ['--testLateLoads', '--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode,
         '--moduleDataPath', path.join(base, 'store')]);
       const loaded = await post(port, KEY, '/load-module', {path: FIXTURE, name: PROBE});
       assert.strictEqual(loaded.status, 200, JSON.stringify(loaded.body));

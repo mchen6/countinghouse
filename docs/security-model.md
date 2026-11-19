@@ -113,9 +113,11 @@ A worker loads everything its calls go through at boot, before module
 code: call limits, a hop's input, peer channels, the service client, the
 device query and `countinghouse-util` (attached to the worker then). A
 `require` on a call path after that would return whatever module code had
-put in `require.cache`, so there is none. The exports of those files and
-their classes' prototypes are fixed at boot too, so module code that
-reaches them through `require.cache` can replace nothing the runtime calls.
+put in `require.cache`, so there is none. Since #194's PR 2 module code
+doesn't reach those files through `require.cache` at all (the runtime's
+modules are sealed away at the lockdown, below); their exports and their
+classes' prototypes are fixed at boot as well, so module code that is handed
+one can replace nothing the runtime calls.
 A call's token, the queues of calls waiting for a peer channel and the
 callbacks waiting for replies are kept in containers written as own
 properties and walked by index, with intrinsics taken at boot, so a method
@@ -127,9 +129,11 @@ Redis bridge, which is handed only its own send.
 Known limits of this rule:
 - **A module in the same realm can still post a message through
   worker-message's module-level post, and the main thread must refuse what
-  it did not ask for.** Module code reaches `lib/worker-message.js` in
-  `require.cache`; it cannot change the runtime's instance or its
-  prototype, but a `WorkerMessage` of its own posts on the worker's port.
+  it did not ask for.** Module code no longer reaches
+  `lib/worker-message.js` through `require.cache` (#194's PR 2), and it
+  cannot change the runtime's instance or its prototype; the main thread
+  still refuses what it did not ask for, should a module find another way
+  to post on the worker's port (a `WorkerMessage` of its own would).
   So a module can send a request the main thread does not serve for it (a
   validation's worker is refused every one, by name: test/sandbox/21) and a
   reply to an id it guesses, as bytes it made by hand (refused, or checked
@@ -235,17 +239,38 @@ any module code). Stops:
   Under `enforce` it takes only a string request and never makes a main
   module; it, `Module._resolveFilename`, `Module.prototype.load` and the
   extension handlers are locked, and the extensions table takes no new
-  extension. Under `audit` each replacement is reported. **Until #194's
-  next step (no lazy runtime load after the lockdown), other routes into
-  what the runtime loads later are one assignment away for module code:**
-  a planted `require.cache` entry or `Module._cache` replaced; Node's
-  relative-resolve cache poisoned through a parent module code forges (its
-  path a countinghouse directory, its filename the module's own);
-  `Module.prototype.require`, `_compile` or `Module.wrapper` replaced; an
-  accessor on `Module.prototype` for Node's internal URL symbol; and, under
-  `audit` even with the file broker, `_findPath` and `_stat`. #194's later
-  steps close them (the runtime loads nothing after the lockdown; the cache
-  moved out of reach; every loader static locked);
+  extension. Under `audit` none of them, and none of the statics locked at
+  the seal, can be replaced either, as Node hands the loader's the
+  runtime's own modules: an assignment is reported and the runtime's value
+  kept, and a redefinition (`Object.defineProperty`,
+  `Object.defineProperties`, `Reflect.defineProperty`) is reported and
+  fails as Node's own would. The extensions table takes no new extension in
+  either mode; a key added, redefined or removed is reported and refused.
+  The other routes
+  into what the runtime loads are closed by #194: the runtime loads nothing
+  after the lockdown (its PR 1), and at the lockdown its modules are sealed
+  away (its PR 2): every `require.cache` entry of a file outside the
+  module's root is moved out of the cache, in place, and `Module._cache`
+  locked, so `require.cache` (module code's, and `module.constructor._cache`,
+  which is the same object) holds the module's own files only, and
+  `util.inspect`, which reads past any view, names no runtime file; each
+  runtime `Module`'s parent and children are emptied and there is no main
+  module; the loader's other statics are locked in both modes
+  (`_pathCache` a view that lists nothing and keeps only the module's
+  own files, the
+  resolver's helpers, `Module.prototype.require` and `_compile`,
+  `Module.prototype`, and the extensions table, which takes no new key);
+  a load with one of the runtime's own Modules as its parent is refused
+  under `enforce` and said in both modes (the net); and after the lockdown
+  every resolution is module code's, and none is granted countinghouse's
+  code roots. Under `enforce` what exists in the runtime's tree is then no
+  answer module code gets through `require`, `require.resolve` or the
+  loader's helpers (a parent outside the module's root is refused before
+  Node reads anything for it); `import()` through Node's ES module
+  resolver can still tell whether such a path exists, which is closed in a
+  later change. Under `audit` a require of one is reported, and the
+  loader's helpers called directly answer truthfully, unreported, as every
+  lookup does under `audit` (test/sandbox/68);
 - other routes to files: `module.enableCompileCache`, `process.report`'s
   file output and `process.setSourceMapsEnabled` are locked;
   `process.loadEnvFile` goes through the file broker. Of `process.report`'s
@@ -1390,11 +1415,11 @@ and the short list of what the in-process sandbox cannot give.
   The residual: a module holding two calls at once can bill one call's hop
   to the other call's caller (both are its callers); it cannot name a third
   party.
-- **Module code can reach countinghouse's objects.** Part 2 closes the file
-  routes through countinghouse's loader (layer 3), not the objects
-  themselves: through `require.cache`, `CHUtil` and the like, module code can
-  still use modules countinghouse loaded before the lockdown, and read
-  countinghouse's own code files. `CHUtil` and everything else loaded before
+- **Module code can reach countinghouse's objects it is handed.** Part 2
+  closes the file routes through countinghouse's loader (layer 3), and
+  #194's PR 2 the module objects (`require.cache` holds the module's own
+  files only): through `CHUtil` and what the runtime hands it, module code
+  can still use objects countinghouse made before the lockdown. `CHUtil` and everything else loaded before
   lockdown stay part of the review checklist for every change to
   `lib/countinghouse-util.js`. Nothing of the runtime's own loads or
   resolves after the lockdown (#194's PR 1): what it used to load on first
@@ -1410,8 +1435,9 @@ and the short list of what the in-process sandbox cannot give.
   before the lockdown, when the module declares `net`, in both modes. A
   module with no `net` under `enforce` has every request refused before
   the library is reached. Under `audit` such a request is allowed and
-  reported, and postman-request then loads after the lockdown, so a module
-  can plant `require.cache` entries for it first: audit isn't a boundary,
+  reported, and postman-request then loads after the lockdown (the net
+  says so), so a module can plant `require.cache` entries for it first:
+  audit isn't a boundary,
   and the request carries only the options the module itself passes, so
   the late load exposes nothing it didn't already hold (preloading it on
   every audit worker would cost about 240 files at each boot).
@@ -1439,13 +1465,15 @@ and the short list of what the in-process sandbox cannot give.
   or replayed invoke is refused unserved (test/sandbox/63). An index
   accessor on `Array.prototype` would close it at the cost of every array's
   holes and V8's fast path in the module's worker, which is worse.
-- **`BroadcastChannel` reaches past the envelope.** The global lets module
-  code in two workers send each other messages directly, unmetered and
-  outside the main thread's bounds. Refusing it to module code under
-  `enforce` is planned with the require-cache isolation work (#194).
+- **`BroadcastChannel` reaches past the envelope under `audit`.** The
+  global lets module code in two workers send each other messages directly,
+  unmetered and outside the main thread's bounds. Under `enforce` it is gone
+  from module code's realm (and `worker_threads`, its other route, is a
+  refused built-in); under `audit` it stays, and its first construction is
+  reported (#194's PR 2, test/sandbox/68).
 - **Module code can talk to the main thread as if it were countinghouse.**
   The worker's own channel to the main thread is reachable from module code
-  (through `require.cache`, `CHUtil.redis.clientInstance`; the global
+  (through `CHUtil.redis.clientInstance`; the global
   `CHUtil` no longer carries `ci` or `dm`, which is tidying, not a
   boundary), so a module can send any worker message itself. (A
   worker holds no metering provider, so these objects give no handle on the

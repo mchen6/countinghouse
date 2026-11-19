@@ -32,14 +32,18 @@ const REVIEWED = [
   ['lean-worker', 'for...of', /^for \(const lib of \[callLimits/, 'boot: a literal list'],
   ['lean-worker', 'for...of', /^for \(const Ctor of \[WorkerMessage/, 'boot: a literal list'],
   ['lean-worker', 'require in a function body', /^require\('\.\/fs-broker\/patch'\)\.setConsoleSilenced/, 'set-options: before module code'],
-  ['lean-worker', 'require in a function body', /^lockdown = require\('\.\/module-lockdown'\)\.install\(/, 'set-options: before module code'],
+  ['lean-worker', 'require in a function body', /^const lockdownLib = require\('\.\/module-lockdown'\);$/, 'set-options: before module code (loaded before the test probe\'s hand-over, #194\'s PR 2)'],
   ['lean-worker', 'require in a function body', /^redisAPI = require\('\.\/redis-api'\);$/, 'boot: in a try, so a load that throws is said on ctx.redis\'s first read (#194\'s PR 1)'],
-  // the test-only late-load probe (sandbox 66): at boot, only with CH_TEST_LATE_LOADS
+  // the test-only late-load probe (sandbox 66): at boot, only with --testLateLoads
   ['lean-worker', 'require in a function body', /^const (Module|path) = require\('(module|path)'\);$/, 'the test\'s probe: at boot, only when the main thread asks'],
   ['lean-worker', 'for...of', /^for \(const \[key, what\] of \[\['_load', 'load'\]/, 'the test\'s probe: at boot, a literal list'],
   ['lean-worker', 'for...of', /^for \(const line of String\(new Error\(\)\.stack\)/, 'the test\'s probe: only when the main thread asks'],
   ['lean-worker', 'spread', /^return probeApply\(original, this, \[request, parent, \.\.\.rest\]\);$/, 'the test\'s probe: only when the main thread asks'],
-  ['lean-worker', 'require in a function body', /^require\(require\.resolve\('bcrypt-pbkdf', \{paths: \[sshpk\]\}\)\);$/, 'warmSshpkBcrypt: set-options, before module code (#425\'s review)'],
+  ['lean-worker', 'require in a function body', /^require\(bcryptFile\);$/, 'warmSshpkBcrypt: set-options, before module code (#425\'s review)'],
+  // the test's probe hands its fixtures the runtime's modules, before the
+  // lockdown, only with --testLateLoads (#194's PR 2, Revision 2's handle)
+  ['lean-worker', 'require.cache', /^const (runtimeModule|lazy) = Module\._cache\[path\.join\(lib, '(logger|lazy-require)\.js'\)\];$/, 'the test\'s probe: before the lockdown, only with --testLateLoads'],
+  ['lean-worker', 'require.cache', /^(files|modules): Object\.freeze\(Object\.(keys\(Module\._cache\)|assign\(Object\.create\(null\), Module\._cache\))\),$/, 'the test\'s probe: before the lockdown, only with --testLateLoads'],
   ['peer-worker', 'require in a function body', /require\('\.\/countinghouse-util'\)\.ci;$/, 'the main thread\'s and a test\'s: a lean worker\'s peer state always serves'],
   ['call-limits', 'require in a function body', /^c = require\('\.\/settings-tool'\)\.cachedCeiling/, 'main thread: a worker has outputCeiling, and returns before'],
   ['call-limits', 'require in a function body', /^const settings = require\('\.\/session-settings'\);$/, 'main thread: of() returns before in a worker'],

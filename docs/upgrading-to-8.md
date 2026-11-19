@@ -184,10 +184,32 @@ you have to do. What the sandbox does and does not protect is in
     the extension handlers are locked;
   - the `Module._extensions` table takes no new extension.
 
-  Under `audit` each of those is reported instead: the request is made a
-  string, `isMain` is passed on as given, and a replacement takes effect.
-  A dependency that replaces any of them (proxyquire, mock-require, some
-  APM agents) needs `--moduleSandbox off` under `enforce`.
+  Under `audit` the request is made a string and `isMain` is passed on as
+  given, each reported; a replacement of `Module._load`,
+  `Module._resolveFilename`, `Module.prototype.load` or an extension handler
+  never takes effect (Node hands each of them the runtime's own modules):
+  an assignment is reported, and so is a redefinition, which then fails
+  with Node's own `TypeError`. A dependency that replaces any of them
+  (proxyquire, mock-require, some APM agents) needs `--moduleSandbox off`.
+- **Breaking, under the sandbox (`audit` and `enforce`): the runtime's own
+  modules are out of a module's reach.**
+  - `require.cache` (and `module.constructor._cache`, the same object)
+    holds the module's own files only.
+  - There is no main module: `require.main` and `process.mainModule` are
+    `undefined`.
+  - The loader's other statics are locked in both modes: `_pathCache`
+    lists nothing and keeps only the module's own files,
+    `Module.prototype.require` and `_compile`,
+    `Module.prototype` and the resolver's helpers can't be replaced (under
+    `audit` an attempt is reported), and the extensions table takes no new
+    extension under `audit` too: a key added (`require.extensions['.ts'] =
+    …`, as pirates, ts-node or @babel/register do) is reported and refused.
+  - Under `enforce`, a file of countinghouse's, or a package only it has,
+    resolves as a missing one would; under `audit` a require of one is
+    reported.
+  - Under `enforce`, the global `BroadcastChannel` and `navigator.locks`
+    (Node 24.5+), channels between workers, are gone; under `audit` the
+    first use of each is reported.
 - **Breaking: `ctx.job` is never `null`.** Outside a task it is now
   `{id: null, progress(n), info(cb)}`: `progress(n)`, a number from 0 to 100,
   is the call's own progress, sent to an MCP client that asked for it

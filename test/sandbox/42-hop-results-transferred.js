@@ -37,11 +37,14 @@ const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
 // what ctx.call resolves with: the callee's whole reply, {output: ...}
 const expected = (n) => { const text = JSON.stringify({output: {s: 'x'.repeat(n)}}); return {length: text.length, sha256: sha256(text)}; };
 
+// (each start with the test's late-load probe, --testLateLoads: since
+// #194's PR 2 its fixtures reach a runtime object only through the
+// probe's hand-over, module code's own require.cache holding its own files)
 describe('sandbox 42: a hop\'s result crosses as a transferred buffer', function() {
   this.timeout(180000);
   let server = null;
   before(async () => {
-    server = await startServer(PORT, ['--authConfigPath', AUTH, '--loadModule', CALLEE, '--loadModule', CALLER, '--workerThread',
+    server = await startServer(PORT, ['--testLateLoads', '--authConfigPath', AUTH, '--loadModule', CALLEE, '--loadModule', CALLER, '--workerThread',
       '--no-directPeerChannels', '--moduleSandbox', 'audit', '--maxOutputBytes', String(CAP), '--validationTimeoutMs', '5000', '--requestTimeout', '60']);
   });
   after(() => stopServer(server));
@@ -169,7 +172,7 @@ describe('sandbox 42: a hop\'s result that arrives after the caller\'s timeout',
   this.timeout(120000);
   let server = null;
   before(async () => {
-    server = await startServer(PORT, ['--authConfigPath', AUTH, '--loadModule', CALLEE, '--loadModule', CALLER, '--workerThread',
+    server = await startServer(PORT, ['--testLateLoads', '--authConfigPath', AUTH, '--loadModule', CALLEE, '--loadModule', CALLER, '--workerThread',
       '--no-directPeerChannels', '--maxOutputBytes', String(CAP), '--requestTimeout', '2']);   // seconds
   });
   after(() => stopServer(server));
@@ -193,7 +196,7 @@ describe('sandbox 42: client calls and errors over the cap', function() {
   this.timeout(120000);
   let server = null;
   before(async () => {
-    server = await startServer(PORT, ['--authConfigPath', AUTH, '--loadModule', CALLEE, '--loadModule', CALLER, '--workerThread',
+    server = await startServer(PORT, ['--testLateLoads', '--authConfigPath', AUTH, '--loadModule', CALLEE, '--loadModule', CALLER, '--workerThread',
       '--no-directPeerChannels', '--moduleSandbox', 'audit', '--maxOutputBytes', String(SMALL)]);
   });
   after(() => stopServer(server));

@@ -1,0 +1,1 @@
+{"name": "isolation-peer", "version": "1.0.0", "description": "listens on a BroadcastChannel in a module worker of its own"}

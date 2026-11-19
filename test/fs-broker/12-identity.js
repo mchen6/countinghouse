@@ -143,9 +143,11 @@ describe('fs-broker 12: virtual identity', function() {
       fs.writeFileSync(t.file, '{"secret": true}');
       try {
         server = await start('enforce', 'route-probe');
-        const res = await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what: what, target: t.file});
+        const res = await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what: what, target: t.file, libFile: path.join(ROOT, 'lib', 'logger.js')});
         const r = toolOutput(res);
-        assert.strictEqual(r.outcome, 'refused', JSON.stringify(res));
+        // (cacheRequire's route is gone since #194's PR 2: require.cache holds
+        // no Module of the runtime's to require through)
+        assert.strictEqual(r.outcome, what === 'cacheRequire' ? 'no-key' : 'refused', JSON.stringify(res));
       } finally {
         fs.rmSync(t.cleanup, {recursive: true, force: true});
       }

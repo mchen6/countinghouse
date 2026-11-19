@@ -18,6 +18,10 @@
 // answering, so it posts its bytes as the reply to each id from 0 to 63
 // (the main thread's ids are small and sequential): the pending one takes
 // the first, and the rest, and its real reply after, are ignored.
+// (the runtime's modules as require.cache held them before the lockdown,
+// from the test's probe: since #194's PR 2 module code's own require.cache
+// holds its own files only, lib/lean-worker.js)
+const runtimeCache = (globalThis[Symbol.for('countinghouse.test.runtime')] || {}).modules || require.cache;
 const varint = (n) => { const o = []; while (n >= 0x80) { o.push((n & 0x7f) | 0x80); n = Math.floor(n / 128); } o.push(n); return o; };
 const str = (s) => [0x22, ...varint(s.length), ...Buffer.from(s, 'latin1')];
 const HEAD = Buffer.from([0xff, 0x0f, 0x6f, ...str('output')]);
@@ -34,8 +38,8 @@ const IDS = 64;
 // how many times this module posted forged replies (odd.js reports it)
 const hook = globalThis.__mainCheckedForge || (globalThis.__mainCheckedForge = {replaced: 0});
 const workerMessageClass = () => {
-  const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]worker-message\.js$/.test(k) && !k.startsWith('/app/'));
-  return (key != null) ? require.cache[key].exports : null;
+  const key = Object.keys(runtimeCache).find((k) => /[\\/]lib[\\/]worker-message\.js$/.test(k) && !k.startsWith('/app/'));
+  return (key != null) ? runtimeCache[key].exports : null;
 };
 
 module.exports = async (input) => {

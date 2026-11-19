@@ -29,12 +29,15 @@ const DIRECT = {
   audit: {child_process: {outcome: 'loaded', code: null}, worker_threads: {outcome: 'loaded', code: null}, vm: {outcome: 'loaded', code: null}}
 };
 
+// (each start with the test's late-load probe, --testLateLoads: since
+// #194's PR 2 its fixtures reach a runtime object only through the
+// probe's hand-over, module code's own require.cache holding its own files)
 ['enforce', 'audit'].forEach((mode) => {
   describe(`auth 44: refused builtins through require.cache, ${mode}`, function() {
     this.timeout(60000);
     let server = null;
     before(async () => {
-      server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode, '--loadModule', PROBE]);
+      server = await startServer(PORT, ['--testLateLoads', '--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode, '--loadModule', PROBE]);
     });
     after(() => stopServer(server));
 

@@ -6,9 +6,13 @@
 // or dm, so a module that goes around it does so this way; in a lean worker
 // the runtime's ci reads as undefined (lean worker step 3), and a throw is
 // the refusal.
+// (the runtime's modules as require.cache held them before the lockdown,
+// from the test's probe: since #194's PR 2 module code's own require.cache
+// holds its own files only, lib/lean-worker.js)
+const runtimeCache = (globalThis[Symbol.for('countinghouse.test.runtime')] || {}).modules || require.cache;
 function runtime() {
-  const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]countinghouse-util\.js$/.test(k) && !k.startsWith('/app/'));
-  return (key != null) ? require.cache[key].exports : null;
+  const key = Object.keys(runtimeCache).find((k) => /[\\/]lib[\\/]countinghouse-util\.js$/.test(k) && !k.startsWith('/app/'));
+  return (key != null) ? runtimeCache[key].exports : null;
 }
 const outcome = (e) => (e != null ? `error: ${e.code || e.message}` : 'ok');
 

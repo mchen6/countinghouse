@@ -54,6 +54,9 @@ const EXPECT = {
   'require.resolve.paths are its own': (c) => c.ok && c.value.length > 0 && c.value.every((p) => (WIN ? /^[A-Z]:\\(app\\|node_modules$)/ : /^\/(app\/|node_modules$)/).test(p))
 };
 
+// (each start with the test's late-load probe, --testLateLoads: since
+// #194's PR 2 its fixtures reach a runtime object only through the
+// probe's hand-over, module code's own require.cache holding its own files)
 describe('stdio 16: a module\'s own files under enforce, as it sees them (#195)', function() {
   this.timeout(120000);
   let home = null;
@@ -67,7 +70,7 @@ describe('stdio 16: a module\'s own files under enforce, as it sees them (#195)'
   it('every check: its files and directory, the cwd, requires and imports, reads, writes where it may, refusals where it may not', async () => {
     const auth = path.join(home, 'auth.json');
     fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'probe', devices: ['*']}}));
-    io = startStdio(['--workerThread', '--moduleSandbox', 'enforce', '--debug', '--loadModule', MODULE, '--authConfigPath', auth,
+    io = startStdio(['--testLateLoads', '--workerThread', '--moduleSandbox', 'enforce', '--debug', '--loadModule', MODULE, '--authConfigPath', auth,
       '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749'],
     {env: {COUNTINGHOUSE_API_KEY: KEY}});
     await io.request({...INITIALIZE, id: 1});

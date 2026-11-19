@@ -172,17 +172,30 @@ describe('sandbox 05: worker lockdown', function() {
         await waitFor(() => server.output.slice(from).includes(`(${why})`), 20000, `${arg}'s violation line`);
       }
     });
+    // (the review of e0f39de9: audit reports what it stops; under enforce
+    // the same is refused)
+    it(`what the lockdown holds: an assignment, a defineProperty, a new extension take nothing${mode === 'audit' ? ', and each is reported' : ''}`, async () => {
+      // [attempt, its line, said under enforce too]
+      for (const [what, line, both] of [['holdAssign', 'Module._pathCache replaced (the runtime\'s kept)', false],
+        ['holdDefine', '_load redefined (the runtime\'s kept)', false],
+        // (a key that is an object, turned into 'load' once, as the engine does)
+        ['holdDefineKey', 'Module.prototype.load redefined (the runtime\'s kept)', false],
+        ['holdDefineSetter', '_resolveFilename redefined (the runtime\'s kept)', false],
+        ['holdHandler', mode === 'audit' ? 'Module._extensions[\'.js\'] replaced (the runtime\'s kept)' : 'Module._extensions[.js] replaced (refused)', true],
+        ['holdExtension', 'Module._extensions[.chprobe] added (refused)', true]]) {
+        const from = server.output.length;
+        assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what})), {outcome: 'allowed', code: null}, what);
+        if (mode === 'audit' || both) await waitFor(() => server.output.slice(from).includes(`violation require ${line}`), 20000, `${what}'s line`);
+      }
+    });
     it('createRequire\'s own Module still loads', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'createRequireOwn'})), {outcome: 'allowed', code: null});
     });
-    it(`a new extension ${mode === 'enforce' ? 'can\'t be added to the table' : 'is reported at the next load'}`, async () => {
-      const from = server.output.length;
+    // (in both modes since #194's PR 2: the loader's statics locked, the
+    // extensions table taking no new key, audit's reported accessors aside)
+    it('a new extension can\'t be added to the table', async () => {
       const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'newExtension'}));
-      if (mode === 'enforce') assert.deepStrictEqual(r, {outcome: 'allowed', code: null});
-      else {
-        assert.deepStrictEqual(r, {outcome: 'allowed', code: 'ADDED'});
-        await waitFor(() => server.output.slice(from).includes('violation require Module._extensions[.min.js] added'), 20000, 'the added extension\'s line');
-      }
+      assert.deepStrictEqual(r, {outcome: 'allowed', code: null});
     });
     it(`each property #406 holds ${mode === 'enforce' ? 'can\'t be replaced' : 'is replaced and reported'}`, async () => {
       const names = {protoLoad: 'Module.prototype.load', jsHandler: 'Module._extensions[\'.js\']', jsonHandler: 'Module._extensions[\'.json\']',
@@ -190,10 +203,10 @@ describe('sandbox 05: worker lockdown', function() {
       for (const arg of Object.keys(names)) {
         const from = server.output.length;
         const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'replaceHeld', arg}));
-        if (mode === 'enforce') {
-          assert.deepStrictEqual(r, {outcome: 'allowed', code: null}, `${arg} was replaced under enforce`);
-        } else {
-          assert.deepStrictEqual(r, {outcome: 'allowed', code: 'REPLACED'}, arg);
+        // (never replaced, in either mode: Node hands each the runtime's own
+        // Modules; under audit the attempt is reported, #434's Fable pass F7)
+        assert.deepStrictEqual(r, {outcome: 'allowed', code: null}, `${arg} was replaced under ${mode}`);
+        if (mode === 'audit') {
           await waitFor(() => server.output.slice(from).includes(`violation require ${names[arg]} replaced`), 20000, `${arg}'s violation line`);
         }
       }
@@ -202,9 +215,9 @@ describe('sandbox 05: worker lockdown', function() {
       it('an assignment of load on one Module is that Module\'s own, never the worker\'s', async () => {
         assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'instanceLoad'})), {outcome: 'allowed', code: 'OWN'});
       });
-      it('a module that replaces Module._load is reported', async () => {
+      it('a module that replaces Module._load is reported, and the runtime\'s kept', async () => {
         const from = server.output.length;
-        assert.strictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'replaceLoad'})).outcome, 'allowed');
+        assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'replaceLoad'})), {outcome: 'allowed', code: null});
         await waitFor(() => server.output.slice(from).includes('violation require _load replaced'), 20000, 'the replacement\'s violation line');
       });
     }

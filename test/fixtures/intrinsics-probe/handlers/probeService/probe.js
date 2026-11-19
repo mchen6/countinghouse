@@ -293,7 +293,10 @@ function watchMethods(obj, keys) {
 const CACHE_FILES = ['call-limits', 'hop-input', 'port-scope', 'peer-channel', 'peer-worker', 'chutil-facade'];
 let cacheReachable = false;
 function forRuntimeFiles(names, each) {
-  const cache = (require.cache != null) ? require.cache : (module.constructor != null ? module.constructor._cache : null);
+  // (the runtime's modules from the test's probe: since #194's PR 2 module
+  // code's own require.cache holds its own files only)
+  const handed = globalThis[Symbol.for('countinghouse.test.runtime')];
+  const cache = (handed != null && handed.modules != null) ? handed.modules : ((require.cache != null) ? require.cache : (module.constructor != null ? module.constructor._cache : null));
   if (cache == null) return;
   for (const file of Object.keys(cache)) {
     if (StringCtor(file).startsWith(ROOT)) continue;

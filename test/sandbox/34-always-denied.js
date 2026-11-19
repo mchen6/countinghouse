@@ -64,11 +64,14 @@ function world(tag) {
 }
 
 function start(port, w, mode, provider, authPath) {
-  return startServer(port, ['--workerThread', '--authProvider', provider || 'file', '--authConfigPath', authPath || w.authPath,
+  return startServer(port, ['--testLateLoads', '--workerThread', '--authProvider', provider || 'file', '--authConfigPath', authPath || w.authPath,
     '--moduleDataPath', w.store, '--moduleSandbox', mode, '--modulePolicy', w.policy, '--loadModule', w.fixture],
   {env: {COUNTINGHOUSE_API_KEY: SECRET_ENV}});
 }
 
+// (each start with the test's late-load probe, --testLateLoads: since
+// #194's PR 2 its fixtures reach a runtime object only through the
+// probe's hand-over, module code's own require.cache holding its own files)
 describe('sandbox 34: the always-denied set', function() {
   this.timeout(180000);
 

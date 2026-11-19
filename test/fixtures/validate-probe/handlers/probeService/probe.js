@@ -3,6 +3,10 @@
 // could reach by throwing it (the validator returns the message as a
 // problem). It also sends main-thread messages a validation does not need,
 // as hostile module code could; the main thread must refuse them (review R1-4).
+// (the runtime's modules as require.cache held them before the lockdown,
+// from the test's probe: since #194's PR 2 module code's own require.cache
+// holds its own files only, lib/lean-worker.js)
+const runtimeCache = (globalThis[Symbol.for('countinghouse.test.runtime')] || {}).modules || require.cache;
 const seen = {};
 seen.secret = process.env.COUNTINGHOUSE_TEST_SECRET != null ? 'visible' : 'hidden';
 seen.outside = (() => { try { require('fs').readFileSync('/etc/hostname'); return 'read'; } catch (e) { return e.code; } })();
@@ -12,8 +16,8 @@ if (typeof(CHUtil) !== 'undefined' && CHUtil.redis != null && CHUtil.redis.clien
   // sharing the worker's realm still reaches is lib/worker-message.js in
   // require.cache: a WorkerMessage of its own posts on the worker's port,
   // so an invoke can be forged, and the main thread must refuse it.
-  const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]worker-message\.js$/.test(k) && !k.startsWith('/app/'));
-  const WorkerMessage = (key != null) ? require.cache[key].exports : null;
+  const key = Object.keys(runtimeCache).find((k) => /[\\/]lib[\\/]worker-message\.js$/.test(k) && !k.startsWith('/app/'));
+  const WorkerMessage = (key != null) ? runtimeCache[key].exports : null;
   if (WorkerMessage != null) {
     new WorkerMessage(null).sendActiveMessageToParent({command: 'invokeforeignaction', data: {deviceID: 'x', serviceID: 'y', actionName: 'z', appKey: 'stolen'}}, () => {});
     seen.forged = 'sent';

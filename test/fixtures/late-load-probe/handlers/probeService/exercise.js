@@ -12,14 +12,14 @@ const URL_DECLARED = 'http://late-load.example.invalid/';
 const ended = (err) => (err == null ? 'ok' : (/module sandbox/.test(String(err.message))
   ? `refused: ${(/network access to (\S+) is not allowed/.exec(String(err.message)) || [])[1]}`
   : `error: ${String(err.code || err.message).slice(0, 120)}`));
-// a runtime Module, reached as module code can (require.cache)
-const runtimeModule = () => Object.values(require.cache).find((m) => m != null && typeof(m.filename) === 'string' && /[\\/]lib[\\/]logger\.js$/.test(m.filename));
-// a runtime function that calls what it is handed (lib/lazy-require.js
-// orCallback): the caller of a hook the probe tells apart by its stack
-const runtimeCaller = () => {
-  const m = Object.values(require.cache).find((x) => x != null && typeof(x.filename) === 'string' && /[\\/]lib[\\/]lazy-require\.js$/.test(x.filename));
-  return m != null ? m.exports.orCallback : null;
-};
+// a runtime Module, and a runtime function that calls what it is handed
+// (lib/lazy-require.js orCallback: the caller of a hook the probe tells
+// apart by its stack): module code reaches neither since #194's PR 2, so
+// the test's probe hands them over (lib/lean-worker.js, a test-only global
+// it defines only when the probe is on)
+const handle = () => globalThis[Symbol.for('countinghouse.test.runtime')] || null;
+const runtimeModule = () => (handle() != null ? handle().module : null);
+const runtimeCaller = () => (handle() != null ? handle().caller : null);
 
 const STEPS = {
   // CHUtil.request to a declared host: postman-request (preloaded with net)
@@ -134,7 +134,7 @@ const STEPS = {
   // parent or caller after the lockdown, which the probe must record
   control: async () => {
     const parent = runtimeModule();
-    if (parent == null) throw new Error('late-load-probe: no runtime Module in require.cache');
+    if (parent == null) return 'no runtime Module';
     const M = module.constructor;
     try { M._load('path', parent); } catch (e) { /* recorded first */ }
     try { M._resolveFilename('path', parent); } catch (e) { /* recorded first */ }
@@ -143,6 +143,20 @@ const STEPS = {
     try { call(M.createRequire); } catch (e) { /* recorded first */ }
     if (typeof(process.getBuiltinModule) === 'function') { try { call(process.getBuiltinModule); } catch (e) { /* recorded first */ } }
     return 'ran';
+  },
+  // sshpk's lazy require of bcrypt-pbkdf (warmed with postman-request, #425):
+  // after the seal (#194's PR 2) the net answers that one require, by
+  // sshpk's own Module, from what it was at the lockdown (another load from
+  // a runtime Module, refused: test/sandbox/68)
+  lazyHit: async () => {
+    const h = handle();
+    if (h == null || h.modules == null) return 'no handle';
+    const key = Object.keys(h.modules).find((k) => /[\\/]node_modules[\\/]sshpk[\\/]lib[\\/]formats[\\/]ssh-private\.js$/.test(k));
+    if (key == null) return 'no sshpk';
+    const M = module.constructor;
+    let served;
+    try { served = typeof(M._load('bcrypt-pbkdf', h.modules[key]).pbkdf) === 'function' ? 'served' : 'other'; } catch (e) { served = String(e.code); }
+    return served;
   },
   // an error the runtime logs and answers
   error: async () => { throw new Error('late-load-probe: an error to answer'); }

@@ -18,6 +18,41 @@ function reportChecked(r) {
 }
 
 const ATTEMPTS = {
+  // what the lockdown holds, as a dependency would try to change it (the
+  // review of e0f39de9: under audit each is reported, and none takes)
+  holdAssign:       () => {
+    const M = module.constructor;
+    const was = M._pathCache;
+    try { M._pathCache = {}; } catch (e) { /* refused */ }
+    if (M._pathCache !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  holdDefine:       () => {
+    const M = module.constructor;
+    const was = M._load;
+    try { Object.defineProperty(M, '_load', {value: function() {}}); } catch (e) { /* refused */ }
+    if (M._load !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  holdDefineKey:    () => {
+    const P = module.constructor.prototype;
+    const was = P.load;
+    try { Object.defineProperty(P, {toString: () => 'load'}, {value: function() {}}); } catch (e) { /* refused */ }
+    if (P.load !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  holdDefineSetter: () => {
+    const M = module.constructor;
+    const was = M._resolveFilename;
+    try { M.__defineSetter__('_resolveFilename', () => {}); } catch (e) { /* refused */ }
+    if (M._resolveFilename !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  holdHandler:      () => {
+    const was = require.extensions['.js'];
+    try { require.extensions['.js'] = function() {}; } catch (e) { /* refused */ }
+    if (require.extensions['.js'] !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  holdExtension:    () => {
+    try { require.extensions['.chprobe'] = () => {}; } catch (e) { /* refused */ }
+    if (require.extensions['.chprobe'] !== undefined) throw Object.assign(new Error('added'), {code: 'ADDED'});
+  },
   dlopen:           () => process.dlopen({exports: {}}, '/nonexistent/probe.node'),
   binding:          () => process.binding('fs'),
   kill:             () => process.kill(process.pid, 0),
@@ -92,7 +127,9 @@ const ATTEMPTS = {
   // under audit, a module that replaces the loader is reported
   replaceLoad:      () => {
     const prev = module.constructor._load;
-    module.constructor._load = function(...args) { return prev.apply(this, args); };
+    try { module.constructor._load = function(...args) { return prev.apply(this, args); }; } catch (e) { /* refused */ }
+    // (whether it took: it never does, in either mode, #434's Fable pass F7)
+    if (module.constructor._load !== prev) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
   },
   // whether the cache holds source compiled under that filename (what
   // loadSource's internal argument did before B1's fix)
