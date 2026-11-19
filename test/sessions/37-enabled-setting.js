@@ -328,9 +328,10 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
   it('two requests turning one module off at once: one writes; the other changes nothing', async () => {
     const t = tool();
     const both = await Promise.all([t.set(`enabled.${TOOL}`, 'off'), t.set(`enabled.${TOOL}`, 'off')]);
-    // one writes; the other changes nothing (and, the module still loaded,
-    // may say it is already set off: round 5, 5)
+    // one writes; the other changes nothing and, the module still loaded,
+    // says it is already set off (round 5, 5; in the race too: round 6, 3)
     assert.strictEqual(both.filter((r) => typeof(r.said) === 'string' && r.said.includes('off is written')).length, 1);
+    assert.strictEqual(both.filter((r) => r.said === `${TOOL} is already set off, but ch-local hasn't applied it yet; it's still serving.`).length, 1);
     assert.ok(both.every((r) => r.new === 'off'));
     assert.strictEqual(history().filter((l) => l.setting === `enabled.${TOOL}`).length, 1);
   });
