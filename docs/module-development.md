@@ -808,7 +808,7 @@ before.
 
 Under `enforce` no `package.json` in your module -- its own, a nested
 one, one in its `node_modules` -- may have a `"main"` that leads outside
-your module's directory: the load is
+your module's directory or names the directory itself: the load is
 refused ("... 's "main" leads outside the module"), and under `audit` it
 is reported. Node picks a `"main"` past every check the sandbox makes, so
 where it led would otherwise tell your code whether a host file exists.

@@ -147,10 +147,11 @@ describe('sandbox 03: tree checks', () => {
     const refusalOf = (d) => sandboxConfig.build(d, 'm', {mode: 'enforce', modulePolicy: null, serverEnv: {}}).refusal;
     const refused = (d, rel) => assert.match(String(refusalOf(d)), new RegExp(`m: ${rel.replace(/[/]/g, '[\\\\/]').replace(/[.]/g, '\\.')}'s "main" leads outside the module; not allowed under --moduleSandbox enforce`));
     it('the root\'s own', () => refused(mk({'package.json': {name: 'm', main: '../outside.js'}}), 'package.json'));
-    it('passes one that names the root by "." or ".." (Node tries ./<main>.js inside it); refuses one that names it by its name (<name>.js beside it)', () => {
-      assert.strictEqual(refusalOf(mk({'package.json': {name: 'm', main: '.'}, 'index.js': ''})), null);
-      assert.strictEqual(refusalOf(mk({'package.json': {name: 'm'}, 'lib/x/package.json': {main: '../..'}})), null);
-      assert.strictEqual(refusalOf(mk({'package.json': {name: 'm'}, 'lib/x/package.json': {main: '../../'}})), null);
+    it('one that names the root itself, in any spelling (Node tries <root>.js beside it)', () => {
+      refused(mk({'package.json': {name: 'm', main: '.'}, 'index.js': ''}), 'package.json');
+      refused(mk({'package.json': {name: 'm', main: './'}, 'index.js': ''}), 'package.json');
+      refused(mk({'package.json': {name: 'm'}, 'lib/x/package.json': {main: '../..'}}), 'lib/x/package.json');
+      refused(mk({'package.json': {name: 'm'}, 'lib/x/package.json': {main: '../../'}}), 'lib/x/package.json');
       const d = mk({'package.json': {name: 'm'}});
       fs.mkdirSync(path.join(d, 'lib', 'x'), {recursive: true});
       fs.writeFileSync(path.join(d, 'lib', 'x', 'package.json'), JSON.stringify({main: `../../../${path.basename(fs.realpathSync(d))}`}));
