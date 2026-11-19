@@ -54,6 +54,11 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
     u.recordOut(long, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: `m\u001b[2J${'x'.repeat(300)}`, action: 'a', question: 'q'}});
     assert.strictEqual(by(long).askedBy.module.length, 128);
     assert.doesNotMatch(by(long).askedBy.module, /[\u0000-\u001f]/);
+    // the one module-text rule: an override, the bidi marks, a zero-width
+    // character
+    const bidi = u.beginCall({pack: 'p', module: 'pack', tool: 't', caller: 'c1'});
+    u.recordOut(bidi, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: 'a\u202eb\u200fc\u061cd\u200be', action: 'a', question: 'q'}});
+    assert.strictEqual(by(bidi).askedBy.module, 'a b c d e');
   });
 
   it('the report counts it among the outcomes and never among the errors', async () => {

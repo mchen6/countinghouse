@@ -564,6 +564,14 @@ says how to write a module for this.
   its `\n` and `\t`, and emoji sequences stay whole. Nothing is refused or
   changed at load. A completion candidate carrying one is left out
   ([security-model.md](security-model.md#declared-text-as-it-reaches-the-client)).
+- **A question's text with a bidi mark is refused at load.** A question's
+  message and its form's text (`title`, `description`, `enum`, `enumNames`,
+  `default`, a property's name) were already refused for a control character,
+  a line or paragraph separator, or a bidi override or isolate. The bidi marks
+  U+200E, U+200F and U+061C are now refused with them, since they reorder
+  what the user reads. Every other invisible character in a question is
+  still cleaned on the way out, as above. `countinghouse-validate` names the
+  text that carries one.
 - **Checked against the official schemas.** The results above are tested
   against the official 2026-07-28 schema and the tasks extension's
   (`test/mcp-contract/35`), and the legacy era's through the official SDK

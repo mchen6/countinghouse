@@ -546,8 +546,16 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
         one(prop({type: 'string', minLength: -1}), /property "field".*minLength/, 'a negative length');
         one(prop({type: 'number', minimum: 'low'}), /property "field".*minimum/, 'a bound that is no number');
         // clean: no control or bidi character in anything a user is shown
-        for (const dirty of [{title: 'Approve\u202e'}, {description: 'line one\nline two'}, {enum: ['a\u0007']}, {enumNames: ['A\u2066'], enum: ['a']}, {default: 'x\u001b[31m'}]) {
+        for (const dirty of [{title: 'Approve\u202e'}, {description: 'line one\nline two'}, {enum: ['a\u0007']}, {enumNames: ['A\u2066'], enum: ['a']}, {default: 'x\u001b[31m'},
+          // the bidi marks too
+          {description: 'Approve\u200f'}, {title: 'ok\u061c'}, {title: 'ok\u200e'}]) {
           one(prop(Object.assign({type: 'string'}, dirty)), /property "field".*control or bidi character/, JSON.stringify(dirty));
+        }
+        // the rest of the class is cleaned on the way out, never refused at
+        // load (#378): a zero-width character, an emoji sequence, a word's
+        // joiner
+        for (const fine of [{title: 'Approve\u200b'}, {title: 'Approve \u{1f468}\u200d\u{1f469}\u200d\u{1f467}'}, {description: '\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645'}]) {
+          clean(prop(Object.assign({type: 'string'}, fine)), JSON.stringify(fine));
         }
         // the property's own name too, and the form's own title and description
         one(asking(obj({'na\u202eme': {type: 'string'}})), /property .*control or bidi character/, 'a name');
