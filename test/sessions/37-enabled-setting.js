@@ -169,7 +169,13 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     fs.writeFileSync(path.join(dir, 'modules.json'), '{"modules": ');
     assert.strictEqual((await tool().set(`enabled.${TOOL}`, 'off')).new, 'off');
     assert.strictEqual(stored()[`enabled.${TOOL}`], false);
-    await refused(tool().set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+    // (#449's high review, 5: said as it is, never a ceiling's doing)
+    const e = await refused(tool().set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT), 'SETTING_RECORD_UNREADABLE');
+    assert.match(e.message, /ch-local's record of the installed modules can't be read right now/);
+    assert.match(e.message, /ch-local settings set enabled\.weather-tool on/);
+    assert.ok(!/ceiling/.test(e.message), e.message);
+    const line = history().filter((l) => l.setting === `enabled.${TOOL}` && l.asked === true).pop();
+    assert.strictEqual(line.change, 'not confirmed (ch-local\'s record cannot be read)');
     assert.deepStrictEqual((await tool().get()).settings.filter((r) => r.name.startsWith('enabled.')), [], 'no rows to show');
   });
 
@@ -181,7 +187,7 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
       fs.writeFileSync(file, JSON.stringify({version: 1, values: {}}));
       assert.strictEqual((await tool().set(`enabled.${TOOL}`, 'off')).new, 'off', text);
       assert.strictEqual(stored()[`enabled.${TOOL}`], false, text);
-      await refused(tool().set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+      await refused(tool().set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT), 'SETTING_RECORD_UNREADABLE');
     }
     // neither record there: nothing installed, so no module to name
     fs.rmSync(path.join(dir, 'packs.json'));
@@ -197,6 +203,15 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.deepStrictEqual(marked, [[TOOL, CALLER]], 'already off: nothing told, nothing marked');
     await tool({tellEverySession: () => { throw new Error('no queue'); }}).set(`enabled.${CALLER}`, 'off');
     assert.deepStrictEqual(marked, [[TOOL, CALLER]], 'not told: not marked');
+  });
+
+  it('a form answered yes while ch-local\'s record has become unreadable writes nothing, and says why', async () => {
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {[`enabled.${TOOL}`]: false}}));
+    const t = tool();
+    const asked = await t.set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT);
+    fs.writeFileSync(path.join(dir, 'modules.json'), '{"modules": ');
+    await refused(t.confirm(`enabled.${TOOL}`, 'on', {requestState: asked.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), 'SETTING_RECORD_UNREADABLE');
+    assert.strictEqual(stored()[`enabled.${TOOL}`], false);
   });
 
   it('two requests turning one module off at once: one writes and tells; the other changes nothing and tells no one', async () => {
