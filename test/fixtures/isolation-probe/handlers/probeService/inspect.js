@@ -142,6 +142,12 @@ const STEPS = {
     same('importSibling', await tryImport('sibpkg/../../isolation-probe/lib/bare-target.mjs'), await tryImport('nosuchsib/../../isolation-probe/lib/bare-target.mjs'));
     same('importMapped', await tryImport('#sibclimb'), await tryImport('#nosibclimb'));
     same('requireMapped', tryRequire('#sibclimb'), tryRequire('#nosibclimb'));
+    // (a package scope inside the root named as the sibling, its "exports"
+    // null: no self-reference, so the one answer again)
+    const selfTry = require('../../lib/selfscope/try.js');
+    same('nullExports', await selfTry('sibpkg/../../isolation-probe/lib/bare-target.mjs'), await selfTry('nosuchsib/../../isolation-probe/lib/bare-target.mjs'));
+    // (a '#' mapping to a built-in, and an array's first valid target)
+    out.push((await tryImport('#builtin')) === 'found' && (await tryImport('#fallback')) === 'found' && tryRequire('#builtin') === 'found' ? 'same' : 'mapped');
     // (a subpath climbing out of the module's own dependency: no getter of
     // module code's runs inside Node's step)
     let ran = 'not run';
@@ -149,6 +155,7 @@ const STEPS = {
     try {
       await tryImport('dep/../../../../no-such-climb.mjs');
       tryRequire('dep/../../../../no-such-climb.js');
+      tryRequire('dep/x?/../../../../../no-such-climb.js');
     } finally { delete Object.prototype.WATCH_REPORT_DEPENDENCIES; }
     out.push(ran === 'not run' ? 'same' : 'ranInStep');
     // (and the module's own dependency still loads, by name and by subpath)
