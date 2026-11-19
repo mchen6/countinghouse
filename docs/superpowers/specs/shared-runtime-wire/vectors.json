@@ -928,11 +928,11 @@
     ]
   },
   "packMessages": {
-    "rule": "load and reload carry pack: <n> (the pack's own name, as settings spell pack.<n>; name stays the scenario's package name) and global: a boolean (true: the settings have the pack on, for everyone; false: only a session's load-pack asked). unload carries pack. A notice about a pack carries pack and goes to the sessions that list the pack when it is delivered; one with no pack goes to everyone. set pack.<n> is only ever true (the terminal turning on, for everyone, a pack already loaded for a session); a terminal off is always an unload. In shared mode a load or reload without a boolean global is refused; under --stdio pack and global are not read",
+    "rule": "load, reload and unload in the pack form carry pack: <n> (the pack's own name, as settings spell pack.<n>; name stays the scenario's package name); global is no longer read (M5a, #413 rev 3 section 5.4: no session has a view of its own, so whatever is loaded is listed to every session) and may be absent. A notice goes once to every open session, with a pack or without. set names no pack: set pack.<n> is refused, any value (a terminal on or off is a load or an unload). In shared mode a pack-form message whose pack is not a string fitting packPattern is refused; under --stdio pack is not read. The pack form goes in M6",
     "packPattern": "^[a-z0-9][a-z0-9-]{0,63}$",
     "accepted": [
       {
-        "why": "a load from the settings, for everyone",
+        "why": "a load from the settings",
         "message": {
           "id": 1,
           "type": "load",
@@ -945,7 +945,7 @@
         }
       },
       {
-        "why": "a load a session asked for",
+        "why": "a load with global false: global is not read",
         "message": {
           "id": 2,
           "type": "load",
@@ -980,17 +980,17 @@
         }
       },
       {
-        "why": "a notice about a pack",
+        "why": "a notice about a pack: to every session",
         "message": {
           "id": 5,
           "type": "notice",
           "module": null,
-          "text": "example turned on for this session 1.0.0 (confirmed in your client)",
+          "text": "example turned on 1.0.0",
           "pack": "example"
         }
       },
       {
-        "why": "a notice about no pack: to everyone",
+        "why": "a notice about no pack: to every session",
         "message": {
           "id": 6,
           "type": "notice",
@@ -999,19 +999,7 @@
         }
       },
       {
-        "why": "the terminal turning on a pack a session had",
-        "message": {
-          "id": 7,
-          "type": "set",
-          "name": "pack.example",
-          "value": true
-        }
-      }
-    ],
-    "refused": [
-      {
-        "why": "a load with no global",
-        "reason": "global",
+        "why": "a load with no global: global is not read",
         "message": {
           "id": 11,
           "type": "load",
@@ -1022,8 +1010,7 @@
         }
       },
       {
-        "why": "a load whose global is not a boolean",
-        "reason": "global",
+        "why": "a load whose global is not a boolean: global is not read",
         "message": {
           "id": 12,
           "type": "load",
@@ -1035,8 +1022,7 @@
         }
       },
       {
-        "why": "a reload with no global",
-        "reason": "global",
+        "why": "a reload with no global: global is not read",
         "message": {
           "id": 13,
           "type": "reload",
@@ -1045,7 +1031,9 @@
           "remoteCredentials": "/home/example/.countinghouse/run/start-1/remote-credentials-example.json",
           "pack": "example"
         }
-      },
+      }
+    ],
+    "refused": [
       {
         "why": "a load with no pack",
         "reason": "pack",
@@ -1116,8 +1104,18 @@
         }
       },
       {
+        "why": "set pack.<n> true: no pack is set",
+        "reason": "set",
+        "message": {
+          "id": 7,
+          "type": "set",
+          "name": "pack.example",
+          "value": true
+        }
+      },
+      {
         "why": "set pack.<n> false",
-        "reason": "set-false",
+        "reason": "set",
         "message": {
           "id": 20,
           "type": "set",
@@ -1361,7 +1359,7 @@
     ]
   },
   "restoreRows": {
-    "rule": "a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 64, one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool's bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; pack.<n> (^pack\\.[a-z0-9][a-z0-9-]{0,63}$) has a boolean value, over null and a semver version (required, never null); locks distinct kinds of maxOutputBytes, requestTimeout, pack, module (every module.<package>.<setting> is the one kind module); formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: \"restore\", sessions, declines, reset}: reset lists the sessions (each a row's) that lost loosenings in a handoff, to be told so",
+    "rule": "a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 2 (one per cap), one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool's bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; nothing else is overridden (a pack's or a module's on/off is never a session's own: a well-formed pack.<n> override from before M5a, with a boolean value, over null and a semver version, is dropped from its row, the rest of the row taken and its session told once; any other pack.<n> override refuses the restore); locks distinct kinds of maxOutputBytes, requestTimeout, pack, module (every module.<package>.<setting> is the one kind module); formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: \"restore\", sessions, declines, reset}: reset lists the sessions (each a row's) that lost loosenings in a handoff, to be told so",
     "accepted": [
       {
         "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -1415,13 +1413,6 @@
               "loosening": false,
               "over": null,
               "version": null
-            },
-            {
-              "name": "pack.ci-failure-triage",
-              "value": true,
-              "loosening": true,
-              "over": null,
-              "version": "1.2.3"
             }
           ],
           "locks": [
@@ -1453,6 +1444,55 @@
             "module"
           ]
         }
+      }
+    ],
+    "dropped": [
+      {
+        "why": "a well-formed pack override from before M5a: dropped; the session's cap override, locks and forms kept",
+        "row": {
+          "session": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "resume": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "state": {
+            "overrides": [
+              {
+                "name": "maxOutputBytes",
+                "value": 2097152,
+                "loosening": false,
+                "over": null,
+                "version": null
+              },
+              {
+                "name": "pack.weather",
+                "value": false,
+                "loosening": false,
+                "over": null,
+                "version": "1.0.0"
+              }
+            ],
+            "locks": [
+              "requestTimeout"
+            ],
+            "formsLeft": 2
+          }
+        },
+        "taken": {
+          "overrides": [
+            {
+              "name": "maxOutputBytes",
+              "value": 2097152,
+              "loosening": false,
+              "over": null,
+              "version": null
+            }
+          ],
+          "locks": [
+            "requestTimeout"
+          ],
+          "formsLeft": 2
+        },
+        "packs": [
+          "weather"
+        ]
       }
     ],
     "refused": [
@@ -1648,17 +1688,17 @@
         }
       },
       {
-        "why": "a pack override with no version",
-        "reason": "version is not a semver",
+        "why": "a pack override not of the old shape (no version)",
+        "reason": "names no cap",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
           "state": {
             "overrides": [
               {
-                "name": "pack.one",
-                "value": true,
-                "loosening": true,
+                "name": "pack.weather",
+                "value": false,
+                "loosening": false,
                 "over": null,
                 "version": null
               }
@@ -1691,7 +1731,7 @@
       },
       {
         "why": "an unknown override name",
-        "reason": "neither a cap nor pack",
+        "reason": "names no cap",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -1745,27 +1785,6 @@
                 "loosening": true,
                 "over": 30000,
                 "version": null
-              }
-            ],
-            "locks": [],
-            "formsLeft": 3
-          }
-        }
-      },
-      {
-        "why": "a pack version that is not a semver",
-        "reason": "version is not a semver",
-        "row": {
-          "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-          "state": {
-            "overrides": [
-              {
-                "name": "pack.one",
-                "value": true,
-                "loosening": true,
-                "over": null,
-                "version": "latest"
               }
             ],
             "locks": [],

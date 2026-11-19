@@ -28,11 +28,10 @@ describe('sessions 31: a per-session module\'s worker is its call\'s session\'s 
   let record;
   before(() => {
     require('../../lib/logger').createLogger();
-    // not shared mode, and no pack view: whatever a file before this one in
-    // the same process configured (sessions 30 leaves its packs and shared
-    // mode), every device is listed here, so what's tested is the record's
-    // own path (run in one process, as CI runs a folder)
-    require('../../lib/session-packs').resetForTests();
+    // nothing hidden: whatever a file before this one in the same process
+    // configured, every device is listed here, so what's tested is the
+    // record's own path (run in one process, as CI runs a folder)
+    require('../../lib/module-visibility').resetForTests();
     realGet = sessions.get;
     realLive = sessions.live;
     sessions.get = (id) => (live.has(id) ? {id} : null);

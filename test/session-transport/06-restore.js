@@ -22,7 +22,7 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     const got = [];
     const r = createRestore({importTable: (t) => got.push(t)});
     assert.deepStrictEqual(r.handle(plan()), {sessions: 1});
-    assert.deepStrictEqual(got, [{sessions: plan().sessions, declines: plan().declines, reset: []}], 'resume included: the runtime splits it from B\'s state');
+    assert.deepStrictEqual(got, [{sessions: plan().sessions, declines: plan().declines, reset: [], packsDropped: []}], 'resume included: the runtime splits it from B\'s state');
     assert.strictEqual(r.done(), true);
   });
 
@@ -70,9 +70,10 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
       st({overrides: [], locks: ['pack', 'pack'], formsLeft: 3}),
       st({overrides: [], locks: ['other'], formsLeft: 3}),
       st({overrides: [ov({name: 'secret'})], locks: [], formsLeft: 3}),
+      // M5a: a pack's on or off is never a session's own. A pack.<n> override
+      // not of the old shape refuses (a well-formed one is dropped: below)
       st({overrides: [ov({name: 'pack.Bad_Name'})], locks: [], formsLeft: 3}),
       st({overrides: [ov(), ov()], locks: [], formsLeft: 3}),
-      st({overrides: Array.from({length: 65}, (_, i) => ov({name: `pack.p${i}`, value: true, version: '1.0.0'})), locks: [], formsLeft: 3}),
       st({overrides: [ov({value: 0})], locks: [], formsLeft: 3}),
       st({overrides: [ov({value: true})], locks: [], formsLeft: 3}),
       st({overrides: [ov({name: 'pack.one', value: 1, version: '1.0.0'})], locks: [], formsLeft: 3}),
@@ -101,9 +102,9 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     }
   });
 
-  it('takes B2\'s exact shapes: a confirmed cap loosening, a pack turned on, locks and forms left', () => {
+  it('takes B2\'s exact shapes: a confirmed cap loosening, a tightening, locks and forms left', () => {
     const r = createRestore({});
-    const state = {overrides: [ov({name: 'requestTimeout', value: 120000, loosening: true, over: 30000}), ov({name: 'pack.ci-failure-triage', value: true, version: '1.2.3'})],
+    const state = {overrides: [ov({name: 'requestTimeout', value: 120000, loosening: true, over: 30000}), ov()],
       locks: ['maxOutputBytes', 'pack'], formsLeft: 0};
     assert.deepStrictEqual(r.handle(st(state)), {sessions: 1});
   });
@@ -112,6 +113,36 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     const r = createRestore({});
     assert.deepStrictEqual(r.handle(plan()), {sessions: 1});
     assert.strictEqual(r.done(), true);
+  });
+
+  // #438's high review, 2: one session's stale pack override is that row's
+  // alone: dropped, the row's rest and every other row taken, and the
+  // session named for importTable to tell once
+  it('a well-formed pack override from before M5a is dropped from its row; the rest of the table is taken', () => {
+    const got = [];
+    const r = createRestore({importTable: (t) => got.push(t)});
+    const other = {session: 'b'.repeat(32), resume: 'b'.repeat(64), state: {overrides: [ov({name: 'requestTimeout', value: 120000, loosening: true, over: 30000})], locks: [], formsLeft: 3}};
+    const stale = {session: ID, resume: HASH, state: {overrides: [ov(), ov({name: 'pack.weather', value: false, version: '1.0.0'}), ov({name: 'pack.ci-failure-triage', value: true, loosening: true, version: '1.2.3'})], locks: ['pack'], formsLeft: 2}};
+    assert.deepStrictEqual(r.handle(plan({sessions: [stale, other], reset: []})), {sessions: 2});
+    assert.strictEqual(got.length, 1);
+    assert.deepStrictEqual(got[0].sessions[0].state, {overrides: [ov()], locks: ['pack'], formsLeft: 2});
+    assert.deepStrictEqual(got[0].sessions[1], other, 'another session\'s loosening is kept');
+    assert.deepStrictEqual(got[0].packsDropped, [{session: ID, names: ['weather', 'ci-failure-triage']}]);
+    // what the daemon sent is bounded before anything is dropped: a name
+    // twice, and a state over its size, refuse as before
+    const twice = {session: ID, resume: HASH, state: {overrides: [ov({name: 'pack.weather', value: false, version: '1.0.0'}), ov({name: 'pack.weather', value: true, version: '1.0.1'})], locks: [], formsLeft: 3}};
+    assert.strictEqual(code(() => createRestore({}).handle(plan({sessions: [twice], reset: []}))), 'CONTROL_BAD_RESTORE');
+    const big = {session: ID, resume: HASH, state: {overrides: Array.from({length: 600}, (_, i) => ov({name: `pack.p${i}`, value: false, version: `1.0.0-${'x'.repeat(60)}`})), locks: [], formsLeft: 3}};
+    assert.ok(Buffer.byteLength(JSON.stringify(big.state)) > 64 * 1024);
+    assert.strictEqual(code(() => createRestore({}).handle(plan({sessions: [big], reset: []}))), 'CONTROL_BAD_RESTORE');
+    // the vectors' dropped rows
+    const V = require('../../docs/superpowers/specs/shared-runtime-wire/vectors.json').restoreRows;
+    for (const c of V.dropped) {
+      const seen = [];
+      createRestore({importTable: (t) => seen.push(t)}).handle(plan({sessions: [c.row], reset: []}));
+      assert.deepStrictEqual(seen[0].sessions[0].state, c.taken, c.why);
+      assert.deepStrictEqual(seen[0].packsDropped, [{session: c.row.session, names: c.packs}], c.why);
+    }
   });
 
   it('the shared vectors\' restoreRows: each accepted row is taken, each refused one refuses the restore (one shape for restore.js, the daemon and B2)', () => {

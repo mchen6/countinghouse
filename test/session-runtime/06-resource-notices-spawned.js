@@ -5,9 +5,8 @@
 //     its resource; A's call to the action its changesWith names notifies A
 //     only (A's worker's state changed, not B's, and B must not learn that A
 //     acted), and B's notifies B only.
-//   - A pack one session has on (B3): its resource's URI is left out of the
-//     other session's acknowledgement, and that session is never told of a
-//     change to it.
+// (The B3 case, a pack one session has on, went with the per-session pack
+// layer in M5a: no session has a view of its own.)
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -20,10 +19,8 @@ const ROOT = path.join(__dirname, '..', '..');
 const FRAMEWORK = path.join(ROOT, 'framework.js');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'per-session-module');
 const META = {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {}};
-const FORMS = {_meta: Object.assign({}, META, {'io.modelcontextprotocol/clientCapabilities': {elicitation: {}}, 'io.modelcontextprotocol/clientInfo': {name: 'claude-code', version: '2.1.323'}})};
 const SUB = 'io.modelcontextprotocol/subscriptionId';
 const COUNT_URI = 'countinghouse://m/per_session_module/count';
-const STATUS_URI = 'countinghouse://m/ch_pack_notes/status';
 const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
 const until = async(test, ms = 30000) => {
   const end = Date.now() + ms;
@@ -47,29 +44,8 @@ function perSession(home) {
   return dir;
 }
 
-// pack `notes`: a scenario with a save tool and a status resource it changes
-function notesPack(home) {
-  const root = path.join(home, 'packs');
-  const dir = path.join(root, 'notes', 'node_modules', '@countinghouse', 'ch-pack-notes');
-  const svc = 'notesService';
-  fs.mkdirSync(path.join(dir, 'handlers', svc), {recursive: true});
-  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name: '@countinghouse/ch-pack-notes', version: '1.0.0', license: 'Apache-2.0', countinghouse: {role: 'scenario'}}));
-  fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: 'ch-pack-notes', manufacturer: 'countinghouse-test', modelDescription: 'notes',
-    serviceList: {[`urn:countinghouse-test:serviceID:${svc}`]: {actionList: [
-      {name: 'save', description: 'saves', input: {schema: `/${svc}/save/input`}, output: {schema: `/${svc}/save/output`}},
-      {name: 'status', description: 'the status', output: {schema: `/${svc}/status/output`}, resource: {uriTemplate: 'status', name: 'status', changesWith: [`${svc}.save`]}}
-    ]}}}}));
-  fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
-    [svc]: {save: {input: {type: 'object'}, output: {type: 'object'}}, status: {output: {type: 'object'}}}}));
-  fs.writeFileSync(path.join(dir, 'handlers', svc, 'save.js'), 'module.exports = async () => ({output: {saved: true}});\n');
-  fs.writeFileSync(path.join(dir, 'handlers', svc, 'status.js'), 'module.exports = async () => ({output: {ok: true}});\n');
-  fs.writeFileSync(path.join(home, 'packs.json'), JSON.stringify({packs: {notes: {packages: {'@countinghouse/ch-pack-notes': '1.0.0'}}}}));
-  return {root, notes: dir};
-}
-
-// the runtime, spawned as ch-local's daemon spawns it; the test answers its
-// load-pack and unload-pack as the daemon does (a session's own: global false)
-function runtime(home, args, scenarios = null) {
+// the runtime, spawned as ch-local's daemon spawns it
+function runtime(home, args) {
   const run = path.join(home, 'run', 'daemon');
   fs.mkdirSync(run, {recursive: true});
   fs.chmodSync(path.join(home, 'run'), 0o700);
@@ -80,7 +56,7 @@ function runtime(home, args, scenarios = null) {
     '--sessionSocket', socket, '--settingsFile', path.join(home, 'settings.json'), ...args],
   {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: '',
     NODE_OPTIONS: `--require ${path.join(__dirname, '..', 'fixtures', 'session-elicitation-preload.js')}`})});
-  const r = {child, socket, run, err: '', asked: []};
+  const r = {child, socket, run, err: ''};
   const replies = new Map();
   let nextControl = 1;
   r.control = (msg) => new Promise((resolve) => { const id = nextControl++; replies.set(id, resolve); child.send(Object.assign({}, msg, {id})); });
@@ -89,12 +65,6 @@ function runtime(home, args, scenarios = null) {
     if (m.type === 'ready') child.send({id: 'restore-1', type: 'restore', sessions: [], declines: [], reset: []});
     const f = replies.get(m.id);
     if (f != null) { replies.delete(m.id); return f(m); }
-    if ((m.type === 'load-pack' || m.type === 'unload-pack') && typeof(m.id) === 'string' && scenarios != null) {
-      r.asked.push({type: m.type, name: m.name});
-      const name = `@countinghouse/ch-pack-${m.name}`;
-      const msg = m.type === 'load-pack' ? {type: 'load', name, scenario: scenarios[m.name], pack: m.name, global: false} : {type: 'unload', name, pack: m.name};
-      r.control(msg).then((reply) => child.send({id: m.id, ok: reply.ok === true, code: reply.code}));
-    }
     return undefined;
   });
   child.stderr.on('data', (d) => { r.err += d; });
@@ -179,42 +149,6 @@ describe('session-runtime 06: resources/updated reaches only the sessions whose 
     assert.ok(await until(() => updatesOf(b, lb.id).length === 1), JSON.stringify(b.notes));
     await quiet();
     assert.deepStrictEqual([updatesOf(a, la.id).length, updatesOf(b, lb.id).length], [1, 1], 'B\'s touch was told to A');
-    a.c.end();
-    b.c.end();
-  });
-
-  it('a pack only A has on: its URI is left out of B\'s acknowledgement, and B is never told of A\'s save', async() => {
-    const fixtures = notesPack(home);
-    r = runtime(home, ['--packsRoot', fixtures.root], {notes: fixtures.notes});
-    const a = await open();
-    const b = await open();
-    // A turns the pack on in its own form, accepted: the runtime asks the
-    // daemon's load-pack (each settings call answers the client's
-    // conditions question first, as session-runtime 05's does)
-    const settings = async(s, extra = {}) => {
-      const answer = request(s, 'tools/call', Object.assign({name: 'countinghouse_settings', arguments: {action: 'set', name: 'pack.notes', value: 'on'}}, extra), FORMS);
-      const q = await s.c.json('C', 20000);
-      if (q != null) s.c.send('C', {op: 'client', seq: q.seq, status: 'ok', conditions: 'yes', repo: null, token: null});
-      return answer;
-    };
-    const first = await settings(a);
-    assert.strictEqual(first.result.resultType, 'input_required', JSON.stringify(first).slice(0, 600));
-    const done = await settings(a, {requestState: first.result.requestState, inputResponses: {approve: {action: 'accept', content: {approve: true}}}});
-    assert.strictEqual(done.result.structuredContent != null && done.result.structuredContent.applies, 'this session', `${JSON.stringify(done).slice(0, 600)}\n${r.err.slice(-1500)}`);
-    assert.ok(await until(async() => (await tools(a)).includes('save')), JSON.stringify(await tools(a)));
-    assert.strictEqual((await tools(b)).includes('save'), false, 'B lists the pack');
-
-    const la = await listen(a, {resourceSubscriptions: [STATUS_URI]});
-    // (B also follows the tools list, so its listen stays open with the URI left out)
-    const lb = await listen(b, {toolsListChanged: true, resourceSubscriptions: [STATUS_URI]});
-    assert.deepStrictEqual(la.agreed, {resourceSubscriptions: [STATUS_URI]});
-    assert.deepStrictEqual(lb.agreed, {toolsListChanged: true}, 'the URI of a pack B cannot reach is left out of B\'s acknowledgement');
-
-    const saved = await request(a, 'tools/call', {name: 'save', arguments: {}});
-    assert.ok(saved.result != null && saved.result.isError !== true, JSON.stringify(saved).slice(0, 600));
-    assert.ok(await until(() => updatesOf(a, la.id).length === 1), JSON.stringify(a.notes));
-    await quiet();
-    assert.deepStrictEqual([updatesOf(a, la.id), updatesOf(b, lb.id)], [[STATUS_URI], []]);
     a.c.end();
     b.c.end();
   });

@@ -4,7 +4,8 @@
 // loads only what it kept.
 //  1. an expansion that throws loads only the directories checkStartPlan kept;
 //  2. the unit's own allowance (a pack's file) goes with it;
-//  3. the session view is cleared by the record's own key (a pack's name);
+//  (3., the session view cleared by the record's own key, went with the
+//  session view in M5a)
 //  4. the settings tool's this-start pack is cleared;
 //  7. a refused start-plan module is told by its package name only;
 //  8. a self-unload that leaves a module in the map restores the records
@@ -33,7 +34,6 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
   const cli = require('../../lib/cli-options');
   const ModuleManager = require('../../lib/module-manager');
   const mmod = require('../../lib/module-manager');
-  const sessionPacks = require('../../lib/session-packs');
   const settingsTool = require('../../lib/settings-tool');
   let mip = null;
   let root = null;
@@ -49,7 +49,6 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
   });
   after(() => {
     cli.setOptions({workerThread: false});
-    sessionPacks.resetForTests();
     require('../../lib/module-visibility').resetForTests();
     fs.rmSync(root, {recursive: true, force: true});
   });
@@ -72,11 +71,10 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
   const scenario = () => path.join(packs, 'pf', '1.0.0', 'node_modules', 'ch-pack-pf');
   const loadPf = (mm) => mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario: scenario(), pack: 'pf'}, {});
 
-  it('2, 3, 4: the unit\'s own allowance goes, the view by its pack name, the settings tool\'s this-start pack', async () => {
+  it('2, 4: the unit\'s own allowance goes, and the settings tool\'s this-start pack', async () => {
     const mm = runtime();
     await loadPf(mm);
     mmod.packRemotes.set('ch-step-x', new Map([['ch-pack-pf', new Map([['https://x.example', new Set(['X'])]])]]));
-    sessionPacks.setGlobal('pf', true);
     const unloaded = [];
     const real = settingsTool.packUnloaded;
     settingsTool.packUnloaded = (n) => unloaded.push(n);
@@ -86,7 +84,6 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
       settingsTool.packUnloaded = real;
     }
     assert.strictEqual(mmod.packRemotes.has('ch-step-x'), false, 'the pack\'s allowance went with it');
-    assert.strictEqual(sessionPacks.isGlobal('pf'), false, 'the view cleared by the pack\'s own name');
     assert.deepStrictEqual(unloaded, ['ch-pack-pf']);
     assert.strictEqual(mm.packsInPlace.has('ch-pack-pf'), false);
   });
@@ -141,7 +138,8 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
     assert.ok(mm.modules['ch-step-x'] != null);
   });
 
-  it('high 1: a unit with no ch-local pack name drops no pack setting, and one unit\'s failure never stops the next being told', async () => {
+  // (M5a: no session has a pack of its own, so a self-unload drops no session's pack setting)
+  it('high 1: one unit\'s failure never stops the next being told', async () => {
     const mm = runtime();
     await loadPf(mm);
     // a second unit holding the same part, recorded as a start under
@@ -151,21 +149,15 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
     const channel = require('../../lib/control-channel');
     const realTell = channel.tell;
     const realUnloaded = settingsTool.packUnloaded;
-    const settings = require('../../lib/session-settings');
-    const realDrop = settings.dropPack;
-    const dropped = [];
     channel.tell = (m) => { told.push(m.name); return true; };
     settingsTool.packUnloaded = (n) => { if (n === 'ch-pack-pf') throw new Error('settings tool failed'); };
-    settings.dropPack = (k) => { dropped.push(k); return []; };
     try {
       await mip.selfUnload(mm, 'ch-step-x', 'MODULE_SUSPENDED');
     } finally {
       channel.tell = realTell;
       settingsTool.packUnloaded = realUnloaded;
-      settings.dropPack = realDrop;
     }
     assert.deepStrictEqual(told.sort(), ['@t/ch-pack-seeded', 'ch-pack-pf']);
-    assert.deepStrictEqual(dropped, ['pack.pf'], 'only the pack-form unit\'s pack name');
   });
 
   it('high 4: a top-level directory is kept, and loaded, by its checked real path', () => {
@@ -201,7 +193,7 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
       return {type: 'load', name, dirs: {[name]: dir}};
     };
 
-    it('medium 1: a module-form unit is under its view key while it loads, never its package name', async () => {
+    it('medium 1: a module-form unit is under its module key among the pack records while it loads, never its package name', async () => {
       const mm = runtime();
       const seen = [];
       const load = mm.loadModuleFromPath;
@@ -219,24 +211,20 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
       assert.strictEqual(mm.modules['@t/ch-pack-r'].packageInfo.version, '1.0.0');
     });
 
-    it('medium 2 and 7: a view rebuild that throws never stops a unit being told; a pack-form unit with no pack name is keyed by its own', async () => {
+    // (medium 2, a view rebuild that throws, went with the session view in M5a)
+    it('medium 7: a pack-form unit with no pack name is told by its own', async () => {
       const mm = runtime();
       await loadPf(mm);
       mm.packsInPlace.get('ch-pack-pf').pack = null;
       const told = [];
-      const gone = [];
       const channel = require('../../lib/control-channel');
       const realTell = channel.tell;
-      const realGone = sessionPacks.packsGone;
       channel.tell = (m) => { told.push(m.name); return true; };
-      sessionPacks.packsGone = (keys) => { gone.push(...keys); throw new Error('a listener failed'); };
       try {
         await mip.selfUnload(mm, 'ch-step-x', 'MODULE_SUSPENDED');
       } finally {
         channel.tell = realTell;
-        sessionPacks.packsGone = realGone;
       }
-      assert.deepStrictEqual(gone, ['ch-pack-pf']);
       assert.deepStrictEqual(told, ['ch-pack-pf']);
     });
 

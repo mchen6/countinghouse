@@ -18,7 +18,6 @@ require('../../lib/logger').createLogger();
 const callTokens = require('../../lib/call-tokens');
 const sessions = require('../../lib/sessions');
 const settings = require('../../lib/session-settings');
-const sessionPacks = require('../../lib/session-packs');
 const PeerChannelBroker = require('../../lib/peer-channel-broker');
 
 describe('sessions 24: a hop\'s held input is shared out per session (shared runtime B3, Task 7)', () => {
@@ -64,7 +63,6 @@ describe('sessions 24: a hop\'s held input is shared out per session (shared run
     nextId = 0;
     sessions.resetForTests();
     settings.resetForTests();
-    sessionPacks.resetForTests();
     settings.configure({ceiling: () => ({state: 'none'}), defaultOf: () => options.maxOutputBytes, boundsOf: () => ({min: 1, max: 2 ** 31 - 1})});
     callee = {workerId: 90};
     workers = {1: worker(1), 2: worker(2)};
@@ -77,7 +75,6 @@ describe('sessions 24: a hop\'s held input is shared out per session (shared run
     for (const t of issued.splice(0)) callTokens.drop(t);
     sessions.resetForTests();
     settings.resetForTests();
-    sessionPacks.resetForTests();
   });
 
   it('A fills its byte share from worker 1: A\'s next is RATE_LIMITED, and B\'s from the same worker is held', () => {
