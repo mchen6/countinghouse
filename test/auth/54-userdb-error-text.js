@@ -121,6 +121,28 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
       assert.match(warned[warned.length - 1], /answers again \(listDevices\): 12 lookups failed meanwhile; 2 with reasons past the first 8, not said/);
       // a reason as text, whatever it is (the high review of #445, 6 and 8)
       assert.deepStrictEqual([auth.reasonOf('down'), auth.reasonOf({at: 1}), auth.reasonOf(undefined), auth.reasonOf(new Error(''))], ['down', '{"at":1}', '(none)', '(none)']);
+      // another realm's Error keeps its message
+      assert.strictEqual(auth.reasonOf(require('vm').runInNewContext('new Error("from a vm")')), 'from a vm');
+      // an outage answered within the quiet period, then quiet, is over at
+      // its next failure: said, and that failure starts a new one (the
+      // medium on the fold, 1)
+      raw.entries = (cb) => cb(new Error('entries down'));
+      await ask((cb) => p.entries(cb));
+      raw.entries = (cb) => cb(null, []);
+      await ask((cb) => p.entries(cb));            // within the quiet period
+      const quiet = warned.length;
+      t += 60 * 60 * 1000;                          // an hour later
+      raw.entries = (cb) => cb(new Error('entries down'));
+      const loggedBefore = logged.length;
+      await ask((cb) => p.entries(cb));
+      assert.match(warned[quiet], /answers again \(entries\): 1 lookup failed meanwhile/, JSON.stringify(warned));
+      assert.strictEqual(logged.length, loggedBefore + 1, 'the new outage says its reason');
+      // a lookup the instance doesn't own is the class's, as patched now
+      class Backend { authenticate(k, d, s, a, cb) { cb(null, {ok: 'old'}); } }
+      const backend = auth.guarded(new Backend());
+      Backend.prototype.authenticate = function(k, d, s, a, cb) { cb(null, {ok: 'new'}); };
+      assert.strictEqual((await ask((cb) => backend.authenticate('k', 'd', 's', 'a', cb))).v.ok, 'new');
+      assert.ok(backend instanceof Backend);
       // a provider that throws is answered the catalogue's words, its text in
       // the log only; a call with no callback is refused, never handed to the
       // provider; a throw from the caller's own callback is its own (the
