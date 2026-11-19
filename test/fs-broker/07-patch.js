@@ -15,6 +15,26 @@ describe('fs-broker 07: the worker patch', function() {
     assert.deepStrictEqual(m.r, {fs: [], promises: [], fileHandle: [], locked: true});
   });
 
+  it('locks what it handles nowhere -- each shape a later Node might add it in -- to one that throws, and says which (F4-6)', async () => {
+    const m = await runBrokered(S('swept.js'), {extra: {fakeAdded: true}});
+    assert.strictEqual(m.ok, true, JSON.stringify(m));
+    const U = 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM';
+    const r = m.r;
+    assert.match(r.refusal, /cannot guard this Node's fs\.fakeFixedSync, fs\.fakeNcLater, fs\.fakeNcUndef, fs\.fakeFixedGetSync, fs\.fakeNcSync .*not starting under enforce -- if it is a constant, add it to PASSTHROUGH in lib\/fs-broker\/patch\.js/);
+    for (const [k, v] of Object.entries(r.calls)) assert.strictEqual(v, U, `calling ${k}`);
+    for (const [k, v] of Object.entries(r.members)) assert.ok(v !== 'ran' && v !== 'a promise', `${k} reached the host: ${v}`);
+    assert.deepStrictEqual(r.lockedShape, [true, true, 'function', 'string']);
+    assert.strictEqual(r.copy, 'ran');
+    assert.deepStrictEqual(r.primitives, [7, 3]);
+    assert.strictEqual(r.ncLater, 'ran');
+    assert.deepStrictEqual(r.underBoot, [U, U]);
+    assert.deepStrictEqual(r.swept.unsweepable, ['fs.fakeFixedSync', 'fs.fakeNcLater', 'fs.fakeNcUndef', 'fs.fakeFixedGetSync', 'fs.fakeNcSync']);
+    for (const k of ['fs.fakeAddedSync', 'fs.fakeSpace', 'fs.fakeData', 'fs.fakeGen', 'fs.fakeIter', 'fs.fakeMapIter', 'fs.fakeBareMap', 'fs.fakeNs', 'fs.promises.fakeAdded']) {
+      assert.ok(r.swept.swept.includes(k), `${k} swept`);
+    }
+    assert.ok(!r.swept.swept.includes('fs.fakeConstant') && !r.swept.swept.includes('fs.fakeNcConst'));
+  });
+
   it('behaves as modules and libraries expect', async () => {
     const m = await runBrokered(S('behaviour.js'));
     assert.strictEqual(m.ok, true, JSON.stringify(m));
