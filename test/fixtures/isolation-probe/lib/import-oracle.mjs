@@ -45,7 +45,11 @@ const own = async () => {
   // (its message naming virtual paths only)
   const invalid = async (spec) => {
     try { await import(spec); return 'found'; } catch (e) {
-      const host = (String(e.message).match(/(?<=^|[\s"'(])(?:file:\/\/)?\/[^\s'"]+/g) || []).filter((p) => !/^(file:\/\/)?\/app(\/|$)/.test(p));
+      // (a POSIX path, or a Windows one by its drive, never the virtual
+      // drive's \app)
+      const m = String(e.message);
+      const host = (m.match(/(?<=^|[\s"'(])(?:file:\/\/)?\/[^\s'"]+/g) || []).filter((p) => !/^(file:\/\/)?\/app(\/|$)/.test(p))
+        .concat((m.match(/(?<=^|[\s"'(/])[A-Za-z]:[\\/][^\s'"]*/g) || []).filter((p) => !/^[A-Za-z]:[\\/]app([\\/]|$)/i.test(p)));
       return host.length === 0 ? e.code : `host(${host.join(',')})`;
     }
   };
@@ -58,7 +62,9 @@ const own = async () => {
     await invalid('file://host.invalid/x.mjs'), await invalid('FILE://host.invalid/x.mjs')
   ];
   const want = ['ERR_INVALID_MODULE_SPECIFIER', 'ERR_INVALID_MODULE_SPECIFIER', 'ERR_INVALID_MODULE_SPECIFIER', 'ERR_INVALID_MODULE_SPECIFIER',
-    'ERR_INVALID_MODULE_SPECIFIER', 'ERR_INVALID_MODULE_SPECIFIER', 'ERR_INVALID_FILE_URL_HOST', 'ERR_INVALID_FILE_URL_HOST'];
+    'ERR_INVALID_MODULE_SPECIFIER', 'ERR_INVALID_MODULE_SPECIFIER'].concat(
+    // (on Windows a host is a UNC path, outside the root: refused as any is)
+    process.platform === 'win32' ? ['ERR_MODULE_NOT_FOUND', 'ERR_MODULE_NOT_FOUND'] : ['ERR_INVALID_FILE_URL_HOST', 'ERR_INVALID_FILE_URL_HOST']);
   const encoded = codes.every((c, i) => c === want[i]) ? 'same' : `encoded(${codes.join(',')})`;
   return `${escaped} ${queried} ${absolute} ${encoded}`;
 };

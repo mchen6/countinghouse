@@ -159,8 +159,10 @@ const STEPS = {
     const colonSame = (await noName(`./x:y/${climb('node-version.js')}`, 'node-version.js')) === (await noName(`./x:y/${climb('no-such-isolation.js')}`, 'no-such-isolation.js')) ? 'same' : 'differs';
     // (... and a missing one's error names no host path: every path in it
     // is a virtual one)
-    const missing = await noName('./no-such-isolation.mjs', 'no-such-isolation.mjs');
-    const hostNamed = (missing.match(/(?:file:\/\/)?\/[^\s'"]+/g) || []).filter((p) => !/^(file:\/\/)?\/app(\/|$)/.test(p));
+    // (and an encoded separator's refusal there, whose base Node would
+    // take as the host's working directory)
+    const missing = `${await noName('./no-such-isolation.mjs', 'no-such-isolation.mjs')} ${await noName('./a%2Fb.mjs', 'a%2Fb.mjs')}`;
+    const hostNamed = (missing.match(/(?<=^|[\s"'(|])(?:file:\/\/)?\/[^\s'"]+/g) || []).filter((p) => !/^(file:\/\/)?\/app(\/|$)/.test(p));
     const virtualOnly = hostNamed.length === 0 ? 'same' : `host(${hostNamed.join(',')})`;
     return `${await (await import('../../lib/import-oracle.mjs')).default(root)} ${await require('../../lib/import-url-oracle.cjs')(root)} ${vmSame} ${noNameSame} ${colonSame} ${virtualOnly}`;
   },
