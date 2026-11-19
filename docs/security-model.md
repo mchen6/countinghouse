@@ -245,7 +245,13 @@ any module code). Stops:
   kept, and a redefinition (`Object.defineProperty`,
   `Object.defineProperties`, `Reflect.defineProperty`) is reported and
   fails as Node's own would. The extensions table takes no new extension in
-  either mode; a key added, redefined or removed is reported and refused.
+  either mode; a key added, redefined or removed is reported and refused
+  (the locked `.node` handler included). `Reflect.deleteProperty` of
+  anything held is reported under `audit`. What `audit` can't see, though
+  it is refused all the same: an assignment to `Module.prototype` (a
+  function's own `prototype`, which can't be made an accessor), the
+  `delete` operator on a held property, and a redefinition through another
+  realm's `Object.defineProperty` (one a `vm` context gives).
   The other routes
   into what the runtime loads are closed by #194: the runtime loads nothing
   after the lockdown (its PR 1), and at the lockdown its modules are sealed

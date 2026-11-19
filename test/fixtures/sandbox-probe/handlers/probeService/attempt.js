@@ -82,6 +82,31 @@ const ATTEMPTS = {
     try { require.extensions['.js'] = function() {}; } catch (e) { /* refused */ }
     if (require.extensions['.js'] !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
   },
+  holdNode:         () => {
+    const was = require.extensions['.node'];
+    try { require.extensions['.node'] = function() {}; } catch (e) { /* refused */ }
+    if (require.extensions['.node'] !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  // (a Proxy whose keys differ on a second read: what is defined is only
+  // what was read once, never a key read again; PR 3)
+  holdDefineProps:  () => {
+    const M = module.constructor;
+    const was = M._load;
+    let reads = 0;
+    const props = new Proxy({}, {
+      ownKeys: () => (reads++ === 0 ? ['chProbeProp'] : ['_load']),
+      getOwnPropertyDescriptor: () => ({value: {value: function() {}, configurable: true, writable: true}, enumerable: true, configurable: true}),
+      get: () => ({value: function() {}, configurable: true, writable: true})
+    });
+    try { Object.defineProperties(M, props); } catch (e) { throw Object.assign(new Error('threw'), {code: 'THREW'}); }
+    if (M._load !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  holdDeleteReflect: () => {
+    const M = module.constructor;
+    const was = M._resolveFilename;
+    Reflect.deleteProperty(M, '_resolveFilename');
+    if (M._resolveFilename !== was) throw Object.assign(new Error('removed'), {code: 'REMOVED'});
+  },
   holdExtension:    () => {
     try { require.extensions['.chprobe'] = () => {}; } catch (e) { /* refused */ }
     if (require.extensions['.chprobe'] !== undefined) throw Object.assign(new Error('added'), {code: 'ADDED'});

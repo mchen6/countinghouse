@@ -182,7 +182,11 @@ describe('sandbox 05: worker lockdown', function() {
         ['holdDefineKey', 'Module.prototype.load redefined (the runtime\'s kept)', false],
         ['holdDefineSetter', '_resolveFilename redefined (the runtime\'s kept)', false],
         ['holdHandler', mode === 'audit' ? 'Module._extensions[\'.js\'] replaced (the runtime\'s kept)' : 'Module._extensions[.js] replaced (refused)', true],
-        ['holdExtension', 'Module._extensions[.chprobe] added (refused)', true]]) {
+        ['holdExtension', 'Module._extensions[.chprobe] added (refused)', true],
+        // (PR 3: the locked .node handler, said in both modes; a
+        // Reflect.deleteProperty, said under audit)
+        ['holdNode', 'Module._extensions[.node] replaced (refused)', true],
+        ['holdDeleteReflect', '_resolveFilename removed (the runtime\'s kept)', false]]) {
         const from = server.output.length;
         assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what})), {outcome: 'allowed', code: null}, what);
         if (mode === 'audit' || both) await waitFor(() => server.output.slice(from).includes(`violation require ${line}`), 20000, `${what}'s line`);
@@ -201,6 +205,11 @@ describe('sandbox 05: worker lockdown', function() {
       // (one on Object.prototype is no option of the module's: never taken)
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'vmCache', arg: 'inherited'})), {outcome: 'allowed', code: 'SOURCE'}, 'inherited');
       await waitFor(() => server.output.slice(from).includes(`violation vm cachedData (${mode === 'enforce' ? 'blocked' : 'allowed, audit'})`), 20000, 'the cachedData line');
+    });
+    // (PR 3: defineProperties reads its props once; a key a Proxy shows only
+    // on a second read is never defined, nor the call made to fail on it)
+    it('Object.defineProperties defines what it read once, never a key shown on a second read', async () => {
+      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'holdDefineProps'})), {outcome: 'allowed', code: null});
     });
     it('createRequire\'s own Module still loads', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'createRequireOwn'})), {outcome: 'allowed', code: null});
