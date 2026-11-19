@@ -789,8 +789,10 @@ before.
 A directory of your own whose `package.json` `"main"` leads outside your
 module's root reads as not found under `enforce`, by any name that reaches
 it, even where a file of the same name sits beside it: where it led
-would otherwise tell your code whether a host file exists. Keep `"main"`
-inside your module.
+would otherwise tell your code whether a host file exists. So does one
+whose `"main"` is the module's root itself (`"."` in the root's own
+`package.json`): Node would try the root with each extension, a file
+beside it. Keep `"main"` inside your module, naming a file.
 
 ## Files and paths
 
