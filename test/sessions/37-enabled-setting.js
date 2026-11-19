@@ -323,6 +323,12 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     const e = await refused(t.set('enabled.made-up', 'off'), 'SETTING_RECORD_UNREADABLE');
     assert.match(e.message, /can't be read right now/);
     assert.strictEqual(fs.readFileSync(file, 'utf8'), before, 'nothing written');
+    // (round 5's answer) one still loading counts as loaded: it runs in a
+    // moment, and an off is a safety act
+    assert.strictEqual((await tool({loadingTops: () => ['coming-up']}).set('enabled.coming-up', 'off')).new, 'off');
+    const {loadingTops} = require('../../lib/modules-in-place');
+    assert.deepStrictEqual(loadingTops({packsLoading: new Map([['in-place', {}]]), startupPending: new Set(['at-start', 'in-place'])}).sort(), ['at-start', 'in-place']);
+    assert.deepStrictEqual(loadingTops({}), []);
     // (the medium review of round 4, 3 and 5) a part inside a loaded module
     // has no switch: not taken; one already off is no change, as when the
     // record is read
