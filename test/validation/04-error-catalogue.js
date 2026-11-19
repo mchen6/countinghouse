@@ -27,6 +27,18 @@ describe('validation 04: the error catalogue (logger-design §5.3)', () => {
   const {CODES} = require('../../lib/error-catalogue');
   const text = sources().map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 
+  // M6 (#413 rev 3 section 11): a module, never a pack, in the texts
+  it('names a module, never a pack: the section 11 texts', () => {
+    assert.strictEqual(CODES.PART_MISSING.en, 'A module this one calls is not installed or not available, so it was not loaded');
+    assert.strictEqual(CODES.PART_MISSING.zh, '此模块调用的某个模块未安装或不可用，因此未加载');
+    assert.strictEqual(CODES.TOOL_NAME_TAKEN.en, 'A module\'s tool name is already taken by another tool, so the module was not loaded');
+    assert.strictEqual(CODES.TOOL_NAME_TAKEN.zh, '该模块的工具名已被其他工具占用，因此未加载该模块');
+    assert.strictEqual(CODES.PROMPT_NAME_TAKEN.en, 'A module\'s prompt name is already taken by another prompt, so the module was not loaded');
+    assert.strictEqual(CODES.PROMPT_NAME_TAKEN.zh, '该模块的提示名已被其他提示占用，因此未加载该模块');
+    const saysPack = Object.entries(CODES).filter(([, e]) => /\bpacks?\b/i.test(e.en) || /工具包/.test(e.zh)).map(([c]) => c);
+    assert.deepStrictEqual(saysPack, []);
+  });
+
   it('has every code lib/ constructs an error with', () => {
     const raised = new Set();
     const re = /new CountinghouseError\(\s*['"]([A-Z][A-Z0-9_]+)['"]|CountinghouseError\.create\(\s*['"]([A-Z][A-Z0-9_]+)['"]/g;
