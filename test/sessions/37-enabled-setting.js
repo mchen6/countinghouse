@@ -325,6 +325,12 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.strictEqual((await tool().set(`enabled.${SCENARIO}`, 'off')).said, undefined);
   });
 
+  // (round 6, 4) a module loading is never "not loaded now"
+  it('off for an installed module still loading: it turns off as soon as ch-local applies it', async () => {
+    assert.strictEqual((await tool({loadingTops: () => [SCENARIO]}).set(`enabled.${SCENARIO}`, 'off')).said,
+      `${SCENARIO} off is written; it turns off for every session as soon as ch-local applies it.`);
+  });
+
   it('two requests turning one module off at once: one writes; the other changes nothing', async () => {
     const t = tool();
     const both = await Promise.all([t.set(`enabled.${TOOL}`, 'off'), t.set(`enabled.${TOOL}`, 'off')]);
