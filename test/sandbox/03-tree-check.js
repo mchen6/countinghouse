@@ -126,6 +126,17 @@ describe('sandbox 03: tree checks', () => {
       fs.symlinkSync('../../cfg/foo.json', path.join(d, 'node_modules', 'foo', 'package.json'));
       assert.match(String(refusalOf(d, 'enforce')), /m holds a linked package\.json at node_modules[\\/]foo[\\/]package\.json; not allowed under --moduleSandbox enforce/);
     });
+    it('a package.json linked outside: that problem alone, said once', function() {
+      if (process.platform === 'win32') return this.skip();
+      const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-tree-out-'));
+      made.push(outsideDir);
+      fs.writeFileSync(path.join(outsideDir, 'p.json'), JSON.stringify({main: './index.js'}));
+      const d = mk({'package.json': {name: 'm'}, 'node_modules/foo/index.js': ''});
+      fs.symlinkSync(path.join(outsideDir, 'p.json'), path.join(d, 'node_modules', 'foo', 'package.json'));
+      const r = checkTree(d);
+      assert.strictEqual(r.problems.filter((p) => /node_modules[\\/]foo[\\/]package\.json is a symlink to .*, outside the module/.test(p)).length, 1);
+      assert.deepStrictEqual(r.manifestLinks, []);
+    });
     it('a file link (node_modules/.bin): unaffected', function() {
       if (process.platform === 'win32') return this.skip();
       const d = mk({'package.json': {name: 'm'}, 'node_modules/tool/cli.js': ''});
@@ -178,6 +189,10 @@ describe('sandbox 03: tree checks', () => {
       refused(mk({'package.json': {name: 'm'}, 'node_modules/p/PACKAGE.JSON': {name: 'p', main: '../../../outside.js'}}), 'node_modules/p/PACKAGE.JSON');
       refused(mk({'package.json': {name: 'm'}, 'node_modules/q/package.j\u017Fon': {name: 'q', main: '../../../outside.js'}}), 'node_modules/q/package.j\u017Fon');
       refused(mk({'package.json': {name: 'm'}, 'node_modules/r/pack\u200Dage.json': {name: 'r', main: '../../../outside.js'}}), 'node_modules/r/pack\u200Dage.json');
+    });
+    it('judges the very file matched, a case variant\'s, and reports it by its own name', () => {
+      const d = mk({'package.json': {name: 'm'}, 'node_modules/p/PACKAGE.JSON': '{not json'});
+      assert.match(checkTree(d).problems.join('\n'), /node_modules[\\/]p[\\/]PACKAGE\.JSON cannot be parsed/);
     });
     it('passes a "main" inside, and a nested key that is no package\'s "main"', () => {
       const d = mk({'package.json': {name: 'm', main: './lib/index.js'}, 'lib/index.js': '', 'lib/y/package.json': {main: './index.js', config: {main: '../../../outside.js'}}});
