@@ -12,6 +12,11 @@ const settingsTool = require('../../lib/settings-tool');
 const MiB = 1024 * 1024;
 
 
+// a top-level module's on/off (M5b)
+const SC = '@countinghouse/ch-pack-ci-failure-triage';
+const EN = `enabled.${SC}`;
+const core = (a) => ({name: a.name, old: a.old, new: a.new, applies: a.applies});
+
 describe('stdio 14: countinghouse_settings', () => {
   let home;
   let file;
@@ -32,6 +37,9 @@ describe('stdio 14: countinghouse_settings', () => {
   beforeEach(() => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-settings-'));
     file = path.join(home, 'settings.json');
+    // ch-local's record beside it: the installed top-level modules a
+    // module's on/off names (M5b: enabled.<module>; no setting is a pack's)
+    fs.writeFileSync(path.join(home, 'modules.json'), JSON.stringify({modules: Object.fromEntries([SC, 'a', 'b', 'made-up', 'other'].map((m) => [m, {version: '1.0.0', role: 'scenario'}]))}));
     tool = settingsTool.create({file, lockWaitMs: 200});
     // the runtime on its defaults at each case's start, whatever the case
     // before (or a file run before this one, #285) left: a cap's value is
@@ -61,8 +69,8 @@ describe('stdio 14: countinghouse_settings', () => {
     await tool.set('moduleSandbox', 'enforce');
     await tool.set('autoUpgrade', 'off');
     await tool.set('upgradeCheck', 'weekly');
-    assert.deepStrictEqual(await tool.set('pack.ci-failure-triage', 'off'), {name: 'pack.ci-failure-triage', old: 'on', new: 'off', applies: 'now'});
-    assert.deepStrictEqual(stored(), {maxOutputBytes: 4 * MiB, requestTimeout: 20000, locale: 'en', upgradeCheck: 'weekly', 'pack.ci-failure-triage': false});
+    assert.deepStrictEqual(core(await tool.set(EN, 'off')), {name: EN, old: 'on', new: 'off', applies: 'now'});
+    assert.deepStrictEqual(stored(), {maxOutputBytes: 4 * MiB, requestTimeout: 20000, locale: 'en', upgradeCheck: 'weekly', [EN]: false});
     const h = history();
     assert.strictEqual(h.length, 6);
     assert.deepStrictEqual((({by, setting, old, new: n}) => ({by, setting, old, new: n}))(h[0]), {by: 'settings tool', setting: 'maxOutputBytes', old: 16 * MiB, new: 4 * MiB});
@@ -87,20 +95,20 @@ describe('stdio 14: countinghouse_settings', () => {
   });
 
   // Part 3, section 1: what conversation may ask for, and what it may not
-  it('a raised cap or timeout, or a pack turned on: SETTING_NEEDS_CONFIRMATION, naming the command; the file is unchanged', async () => {
+  it('a raised cap or timeout, or a module turned on: SETTING_NEEDS_CONFIRMATION, naming the command; the file is unchanged', async () => {
     await tool.set('maxOutputBytes', '2MiB');
     await tool.set('requestTimeout', '10s');
-    await tool.set('pack.ci-failure-triage', 'off');
+    await tool.set(EN, 'off');
     const before = fs.readFileSync(file, 'utf8');
-    for (const [name, value, command] of [['maxOutputBytes', '4MiB', 'maxOutputBytes 4MiB'], ['requestTimeout', '15000', 'requestTimeout 15s'], ['pack.ci-failure-triage', 'on', 'pack.ci-failure-triage on']]) {
+    for (const [name, value, command] of [['maxOutputBytes', '4MiB', 'maxOutputBytes 4MiB'], ['requestTimeout', '15000', 'requestTimeout 15s'], [EN, 'on', `${EN} on`]]) {
       const err = await refused(tool.set(name, value), 'SETTING_NEEDS_CONFIRMATION');
-      assert.match(err.message, new RegExp(`needs your own confirmation; nothing was changed\\. To allow this, run \`ch-local settings set ${command.replace(/\./g, '\\.')}\` in a terminal yourself`));
+      assert.match(err.message, new RegExp(`needs your own confirmation; nothing was changed\\. To allow this, run \`ch-local settings set ${command.replace(/[./@]/g, '\\$&')}\` in a terminal yourself`));
     }
     assert.strictEqual(fs.readFileSync(file, 'utf8'), before);
     // each asked for and not confirmed: in the history (asked, never old/new), unchanged
     // (a client not on the tested-client list gets no form: part 3 P2, the reason recorded)
     const asked = history().filter((h) => h.change === 'not confirmed (not on the tested-client list)').map((h) => h.setting);
-    assert.deepStrictEqual(asked, ['maxOutputBytes', 'requestTimeout', 'pack.ci-failure-triage']);
+    assert.deepStrictEqual(asked, ['maxOutputBytes', 'requestTimeout', EN]);
   });
 
   it('the sandbox and automatic upgrades are loosened from a terminal only: SETTING_LOOSENS_A_GUARD, naming the command', async () => {
@@ -128,19 +136,19 @@ describe('stdio 14: countinghouse_settings', () => {
     assert.strictEqual(history().length, before);
   });
 
-  it('requests not confirmed: one entry per kind this start (any value, any pack), a fresh tool per call as the gateway makes, the count written before the next change', async () => {
+  it('requests not confirmed: one entry per kind this start (any value, any module turned on), a fresh tool per call as the gateway makes, the count written before the next change', async () => {
     const fresh = () => require('../../lib/settings-tool').create({file});
-    for (const p of ['a', 'b', 'made-up']) await fresh().set(`pack.${p}`, 'off');
+    for (const p of ['a', 'b', 'made-up']) await fresh().set(`enabled.${p}`, 'off');
     const before = history().length;
     const asked = () => history().slice(before);
     for (const v of ['64MiB', '65MiB', '66MiB', '64MiB']) await refused(fresh().set('maxOutputBytes', v), 'SETTING_NEEDS_CONFIRMATION');
-    for (const p of ['a', 'b', 'made-up']) await refused(fresh().set(`pack.${p}`, 'on'), 'SETTING_NEEDS_CONFIRMATION');
-    assert.deepStrictEqual(asked().map((h) => [h.setting, h.change, h.asked]), [['maxOutputBytes', 'not confirmed (not on the tested-client list)', 64 * MiB], ['pack.a', 'not confirmed (not on the tested-client list)', true]]);
+    for (const p of ['a', 'b', 'made-up']) await refused(fresh().set(`enabled.${p}`, 'on'), 'SETTING_NEEDS_CONFIRMATION');
+    assert.deepStrictEqual(asked().map((h) => [h.setting, h.change, h.asked]), [['maxOutputBytes', 'not confirmed (not on the tested-client list)', 64 * MiB], ['enabled.a', 'not confirmed (not on the tested-client list)', true]]);
     assert.ok(asked().every((h) => h.old === undefined && h.new === undefined), 'a request is never written as a change made');
     await fresh().set('locale', 'zh');
     assert.deepStrictEqual(asked().map((h) => [h.setting, h.change, h.count]), [
-      ['maxOutputBytes', 'not confirmed (not on the tested-client list)', undefined], ['pack.a', 'not confirmed (not on the tested-client list)', undefined],
-      ['maxOutputBytes', 'not confirmed (not on the tested-client list), asked again', 3], ['pack', 'not confirmed (not on the tested-client list), asked again', 2], ['locale', undefined, undefined]]);
+      ['maxOutputBytes', 'not confirmed (not on the tested-client list)', undefined], ['enabled.a', 'not confirmed (not on the tested-client list)', undefined],
+      ['maxOutputBytes', 'not confirmed (not on the tested-client list), asked again', 3], ['enabled', 'not confirmed (not on the tested-client list), asked again', 2], ['locale', undefined, undefined]]);
   });
 
   // the runtime as it started: its options, recorded when it starts serving
@@ -347,10 +355,10 @@ describe('stdio 14: countinghouse_settings', () => {
       assert.strictEqual(stored().maxOutputBytes, 14 * MiB);
     });
 
-    it('a pack\'s value in get is the stored one, as before: only the two caps are reported by what runs', async () => {
-      fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci': false}}));
-      const pack = (await tool.get()).settings.find((s) => s.name === 'pack.ci');
-      assert.deepStrictEqual([pack.value, pack.stored], ['off', undefined]);
+    it('a module\'s on/off in get is the stored one: only the two caps are reported by what runs', async () => {
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {[EN]: false}}));
+      const row = (await tool.get()).settings.find((s) => s.name === EN);
+      assert.deepStrictEqual([row.value, row.stored], ['off', undefined]);
     });
   });
 
@@ -440,17 +448,17 @@ describe('stdio 14: countinghouse_settings', () => {
     });
 
     it('a loosening it forbids, or a value above it: SETTING_ABOVE_CEILING; get shows the lowered bound', async () => {
-      // packs: the operator's allowlist; ci-failure-triage is not on it
-      const t = withCeiling(trusted({maxOutputBytes: 16 * MiB, forbid: ['autoUpgrade'], packs: ['other']}));
+      // modules: the operator's allowlist; ci-failure-triage is not on it
+      const t = withCeiling(trusted({maxOutputBytes: 16 * MiB, forbid: ['autoUpgrade'], modules: ['other']}));
       await t.set('maxOutputBytes', '4MiB');
       assert.match((await refused(t.set('maxOutputBytes', '32MiB'), 'SETTING_ABOVE_CEILING')).message, /maxOutputBytes 32MiB is above the ceiling this machine's operator set \(at most 16MiB\)/);
       await refused(t.set('maxOutputBytes', '8MiB'), 'SETTING_NEEDS_CONFIRMATION');
-      await t.set('pack.ci-failure-triage', 'off');
-      assert.match((await refused(t.set('pack.ci-failure-triage', 'on'), 'SETTING_FORBIDDEN_BY_CEILING')).message, /pack\.ci-failure-triage cannot be changed to on on this machine: its operator's ceiling forbids it/);
+      await t.set(EN, 'off');
+      assert.match((await refused(t.set(EN, 'on'), 'SETTING_FORBIDDEN_BY_CEILING')).message, /enabled\.@countinghouse\/ch-pack-ci-failure-triage cannot be changed to on on this machine: its operator's ceiling forbids it/);
       await refused(t.set('autoUpgrade', 'on'), 'SETTING_FORBIDDEN_BY_CEILING');
-      // a pack on the allowlist may be turned on as before (asked for: not confirmed in conversation)
-      await t.set('pack.other', 'off');
-      await refused(t.set('pack.other', 'on'), 'SETTING_NEEDS_CONFIRMATION');
+      // a module on the allowlist may be turned on (asked for: not confirmed in conversation)
+      await t.set('enabled.other', 'off');
+      await refused(t.set('enabled.other', 'on'), 'SETTING_NEEDS_CONFIRMATION');
       const got = await t.get();
       assert.strictEqual(got.settings.find((x) => x.name === 'maxOutputBytes').bounds.max, 16 * MiB);
       // grouped per kind and outcome: the 8MiB request is not filed under the ceiling's refusal
@@ -518,7 +526,8 @@ describe('stdio 14: countinghouse_settings', () => {
     assert.strictEqual(options.locale, 'zh-CN');
     assert.deepStrictEqual(settingsTool.applyControlSet({name: 'locale', value: 'zh'}), {ok: false, code: 'SETTING_OUT_OF_BOUNDS'}, 'the runtime\'s unit: en-US or zh-CN');
     assert.deepStrictEqual(settingsTool.applyControlSet({name: 'moduleSandbox', value: 'audit'}), {ok: false, code: 'CONTROL_NOT_LIVE'});
-    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'pack.ci-failure-triage', value: false}), {ok: false, code: 'CONTROL_NOT_LIVE'}, 'a pack is turned off by unload');
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: EN, value: false}), {ok: false, code: 'CONTROL_NOT_LIVE'}, 'a module is turned off by its enabled.<module> in the file');
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'pack.ci-failure-triage', value: false}), {ok: false, code: 'CONTROL_UNKNOWN_SETTING'}, 'no setting is a pack\'s (M5b)');
     assert.deepStrictEqual(settingsTool.applyControlSet({name: 'nope', value: 1}), {ok: false, code: 'CONTROL_UNKNOWN_SETTING'});
     assert.deepStrictEqual(settingsTool.applyControlSet({name: 'requestTimeout', value: 9999}), {ok: false, code: 'SETTING_OUT_OF_BOUNDS'});
   });

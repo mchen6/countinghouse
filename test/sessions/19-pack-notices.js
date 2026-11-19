@@ -170,15 +170,13 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
   });
 
   describe('under --stdio, as on master', () => {
-    it('a load\'s notice goes to the one queue; pack and global are not read; an unload says its notice and calls packUnloaded', async() => {
+    it('a load\'s notice goes to the one queue; pack and global are not read; an unload says its notice', async() => {
       sessions.resetForTests();   // not shared
-      const said = [];
-      const plain = createPackControl({mm: {}, dm: {}, packs, toolsOf: async() => ['t'], shared: () => false,
-        packUnloaded: (name) => said.push(['packUnloaded', name])});
+      const plain = createPackControl({mm: {}, dm: {}, packs, toolsOf: async() => ['t'], shared: () => false});
       assert.deepStrictEqual(await plain.load({type: 'load', name: SCENARIO('ci'), scenario: '/x/ci', notice: 'ci added', pack: 'CI!'}), {tools: ['t']});
       assert.deepStrictEqual(notices.take(SCENARIO('ci')), ['ci added']);
       await plain.unload({type: 'unload', name: SCENARIO('ci'), notice: 'ci turned off'});
-      assert.deepStrictEqual([notices.take(SCENARIO('ci')), said], [['ci turned off'], [['packUnloaded', SCENARIO('ci')]]]);
+      assert.deepStrictEqual(notices.take(SCENARIO('ci')), ['ci turned off']);
     });
   });
 

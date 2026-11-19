@@ -450,7 +450,8 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
     it('any other setting stays the terminal\'s for all sessions too: refused, and the file\'s bytes are unchanged', async () => {
       fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 16 * MiB}}));
       const before = fs.readFileSync(file);
-      for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['locale', 'zh'], ['pack.ci', 'on'], ['pack.ci', 'off'], ['autoUpgrade', 'off'], ['upgradeCheck', 'never']]) {
+      // (a module's on/off is every session's, whatever the scope: sessions 37)
+      for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['locale', 'zh'], ['autoUpgrade', 'off'], ['upgradeCheck', 'never']]) {
         const e = await refused(tool().set(name, value, 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
         assert.match(e.message, /ch-local settings set/);
       }

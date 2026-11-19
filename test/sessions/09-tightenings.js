@@ -158,8 +158,8 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
   it('every other setting stays the terminal\'s for a session: nothing is written (finding 2)', async () => {
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci': true}}));
     const before = fs.readFileSync(file);
-    // (a pack's on or off too: never a session's own since M5a)
-    for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['autoUpgrade', 'on'], ['upgradeCheck', 'weekly'], ['locale', 'zh'], ['pack.ci', 'off'], ['pack.ci', 'on']]) {
+    // (a stored pack.* is no setting since M5b; a module's on/off is every session's: sessions 37)
+    for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['autoUpgrade', 'on'], ['upgradeCheck', 'weekly'], ['locale', 'zh']]) {
       const e = await refused(tool.set(name, value, 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
       assert.match(e.message, /ch-local settings set/, `${name} ${value}`);
     }
