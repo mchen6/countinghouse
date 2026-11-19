@@ -313,7 +313,7 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     fs.writeFileSync(path.join(dev, 'package.json'), '{"name": "bar"}');
     const said = [];
     const fsb = await createForWorker({name: 'bar', mode: 'off', modulePath: dev, declared: [],
-      options: {moduleDataPath: modules, modulePath: modules}, report: (rule, target) => said.push([rule, target])});
+      options: {moduleDataPath: modules, modulePath: modules}, tmpWithin: [modules], report: (rule, target) => said.push([rule, target])});
     await fsb.bridge.close();
     assert.ok(fs.existsSync(path.join(modules, 'bar', 'tmp', 'fixtures.js')), 'the installed copy\'s file was emptied');
     assert.ok(said.some(([rule]) => rule === 'kept'));
@@ -327,6 +327,17 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
       options: {moduleDataPath: path.join(base, 'store'), modulePath: modules}, report: () => {}});
     await again.bridge.close();
     assert.ok(fs.existsSync(path.join(tmp, 'w', 'Node_Modules', 'x', 'i.js')));
+    // (a /tmp that is itself a package root: all of it kept, not only its
+    // package.json)
+    const own = path.join(base, 'store2', 'm', 'tmp');
+    fs.mkdirSync(path.join(own, 'lib'), {recursive: true});
+    fs.writeFileSync(path.join(own, 'package.json'), '{"name": "p"}');
+    fs.writeFileSync(path.join(own, 'index.js'), '');
+    fs.writeFileSync(path.join(own, 'lib', 'x.js'), '');
+    const third = await createForWorker({name: 'm', mode: 'off', modulePath: mod, declared: [],
+      options: {moduleDataPath: path.join(base, 'store2'), modulePath: modules}, tmpWithin: [path.join(base, 'store2')], report: () => {}});
+    await third.bridge.close();
+    assert.ok(fs.existsSync(path.join(own, 'index.js')) && fs.existsSync(path.join(own, 'lib', 'x.js')), 'a package root as /tmp emptied');
   });
 
   // (a --moduleDataPath not made yet, reached through a link above it into
