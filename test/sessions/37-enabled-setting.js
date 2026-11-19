@@ -3,8 +3,8 @@
 // tool, a top-level module's on/off for every session of the user. get lists
 // one row per installed top-level module (modules.json; never a part); off
 // is made on request, written under the lock (history first, naming the
-// session), counted against the 32-change budget (a runtime with one session
-// too), and every session is told what went with it and how to undo it; on
+// session), never counted against the budget, and answered to the asker
+// only (every session is told by ch-local's unload of it); on
 // needs the user's confirmation (a form of kind `enabled` for a tested
 // client, else the terminal), written with the version confirmed, refused if
 // the version changed meanwhile. A part's name is SETTING_UNKNOWN. The
@@ -28,9 +28,6 @@ const DECLINE = {approve: {action: 'decline'}};
 describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
   let dir;
   let file;
-  let told;
-  let marked;
-  let markedWhen;
   let savedLocale;
   const history = () => { try { return fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (e) { return []; } };
   const stored = () => JSON.parse(fs.readFileSync(file, 'utf8')).values;
@@ -43,10 +40,7 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     ceiling: () => ({state: 'none'}),
     mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
     // weather-tool loaded, and trip-planner, whose closure holds it
-    loadedTops: () => [{name: TOOL, modules: [TOOL], tools: ['weather_tool_forecast_get']}, {name: CALLER, modules: [CALLER, TOOL], tools: ['plan_trip']}],
-    tellEverySession: (module, text) => told.push([module, text]),
-    markToldOff: (modules) => { for (const m of modules) marked.add(m); markedWhen.push(stored()[`enabled.${modules[0]}`]); },
-    clearToldOff: (modules) => { for (const m of modules) marked.delete(m); }
+    loadedTops: () => [{name: TOOL, modules: [TOOL], tools: ['weather_tool_forecast_get']}, {name: CALLER, modules: [CALLER, TOOL], tools: ['plan_trip']}]
   }, o));
   const refused = async (p, code) => {
     try { await p; } catch (e) { assert.strictEqual(e.code, code, `${e.code}: ${e.message}`); return e; }
@@ -58,9 +52,6 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     file = path.join(dir, 'settings.json');
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci-failure-triage': false}}));
     record({[SCENARIO]: {version: '0.5.0', role: 'scenario'}, [PART]: {version: '0.2.0', role: 'part'}, [TOOL]: {version: '1.2.0', role: null}, [CALLER]: {version: '2.0.0', role: 'scenario'}});
-    told = [];
-    marked = new Set();
-    markedWhen = [];
     savedLocale = options.locale;
     options.locale = 'en-US';
     confirm.resetForTests();
@@ -141,7 +132,10 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     }
   });
 
-  it('off: made on request, written under the lock with the history line first, every session told what went with it and how to undo it; a stored pack.* kept', async () => {
+  // #449's high review, round 3, R: every session is told by ch-local's
+  // unload (lib/module-control.js), the one source; the settings tool
+  // answers the asking session only
+  it('off: made on request, written under the lock with the history line first, the asker answered, no session told here; a stored pack.* kept', async () => {
     const got = await tool().set(`enabled.${TOOL}`, 'off');
     assert.strictEqual(got.new, 'off');
     assert.deepStrictEqual(got.alsoOff, [CALLER]);
@@ -149,14 +143,12 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.strictEqual(stored()['pack.ci-failure-triage'], false, 'an unknown name is kept');
     const line = history().find((l) => l.setting === `enabled.${TOOL}`);
     assert.deepStrictEqual({old: line.old, new: line.new}, {old: true, new: false});
-    // (#449's high review, 7: the two ways it is really undone)
-    const text = `${TOOL} is turned off for all your sessions. ${CALLER} calls it, so ${CALLER} is off too. They stay off until ${TOOL} is turned on again: here (you'll be asked to confirm) or at a terminal: \`ch-local settings set enabled.${TOOL} on\`.`;
-    assert.deepStrictEqual(told, [[TOOL, text]]);
-    assert.strictEqual(got.said, text);
-    // a module no loaded module calls
-    assert.strictEqual((await tool().set(`enabled.${CALLER}`, 'off')).said,
+    assert.strictEqual(got.said, `${TOOL} off is written; it turns off for every session as soon as ch-local applies it.`);
+    // the text the unload tells (#449's high review, 7: the two ways back)
+    assert.strictEqual(settingsTool.offNotice(TOOL, [CALLER]),
+      `${TOOL} is turned off for all your sessions. ${CALLER} calls it, so ${CALLER} is off too. They stay off until ${TOOL} is turned on again: here (you'll be asked to confirm) or at a terminal: \`ch-local settings set enabled.${TOOL} on\`.`);
+    assert.strictEqual(settingsTool.offNotice(CALLER, []),
       `${CALLER} is turned off for all your sessions. It stays off until it is turned on again: here (you'll be asked to confirm) or at a terminal: \`ch-local settings set enabled.${CALLER} on\`.`);
-    told.length = 0;
     // the same again changes nothing and records nothing
     const n = history().length;
     assert.strictEqual((await tool().set(`enabled.${TOOL}`, 'off')).new, 'off');
@@ -240,23 +232,6 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     await refused(tool().set(`enabled.${TOOL}`, 'off'), 'SETTING_UNKNOWN');
   });
 
-  // #449's high review, 4: the settings tool's notice is the one; ch-local's
-  // unload of the module and its callers tells nothing again
-  it('off marks the module and its callers as told, before the write (ch-local\'s unload may come first); nothing kept when nothing was written or told', async () => {
-    await tool().set(`enabled.${TOOL}`, 'off');
-    assert.deepStrictEqual([...marked].sort(), [CALLER, TOOL].sort());
-    assert.deepStrictEqual(markedWhen, [undefined], 'marked before the file held the off');
-    marked.clear();
-    await tool().set(`enabled.${TOOL}`, 'off');
-    assert.deepStrictEqual([...marked], [], 'already off: nothing told, nothing kept');
-    await tool({tellEverySession: () => { throw new Error('no queue'); }}).set(`enabled.${CALLER}`, 'off');
-    assert.deepStrictEqual([...marked], [], 'not told: nothing kept');
-    // (the medium review of the #449 fixes, 4) a module not loaded has no
-    // unload to come: not marked
-    await tool().set(`enabled.${SCENARIO}`, 'off');
-    assert.deepStrictEqual([...marked], []);
-  });
-
   it('a form answered yes while ch-local\'s record has become unreadable writes nothing, and says why', async () => {
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {[`enabled.${TOOL}`]: false}}));
     const t = tool();
@@ -266,10 +241,9 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.strictEqual(stored()[`enabled.${TOOL}`], false);
   });
 
-  it('two requests turning one module off at once: one writes and tells; the other changes nothing and tells no one', async () => {
+  it('two requests turning one module off at once: one writes; the other changes nothing', async () => {
     const t = tool();
     const both = await Promise.all([t.set(`enabled.${TOOL}`, 'off'), t.set(`enabled.${TOOL}`, 'off')]);
-    assert.strictEqual(told.length, 1, JSON.stringify(told));
     assert.strictEqual(both.filter((r) => r.said != null).length, 1);
     assert.strictEqual(history().filter((l) => l.setting === `enabled.${TOOL}`).length, 1);
   });

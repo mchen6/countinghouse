@@ -142,40 +142,48 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
     });
   });
 
-  // #449's high review, 4: one notice per change. A module the settings
-  // tool turned off told every session there (with what went with it and the
-  // undo); ch-local's unload of it that follows tells nothing again
-  describe('an unload after the settings tool told the off', () => {
+  // #449's high review, round 3, R: one source for the all-sessions notice
+  // of a module turned off: ch-local's unload of it. The text is built here,
+  // with the callers that went with it (as loaded before the unload) and
+  // both ways back; the settings tool tells no one but the asker
+  describe('an unload of a module turned off tells every session the full text, once', () => {
     const MOD = '@countinghouse/ch-pack-mod';
-    const mip = require('../../lib/modules-in-place');
+    const CALLER = 'trip-planner';
+    const {offNotice} = require('../../lib/settings-tool');
     const units = new Map([[MOD, {form: 'module', pack: moduleKey(MOD)}]]);
-    const unloadOnly = Object.assign({}, packs, {unloadPack: async(mm, msg) => { calls.push(['unload', msg.name]); return {modules: [`m-${msg.name}`]}; }});
-    const c = () => createPackControl({mm: {packsInPlace: units}, dm: {}, packs: unloadOnly, toolsOf: async() => [], shared: () => sessions.shared()});
-    afterEach(() => mip.resetToldOffForTests());
+    let loaded;
+    const unloadOnly = Object.assign({}, packs, {unloadPack: async(mm, msg) => {
+      calls.push(['unload', msg.name]);
+      loaded = loaded.filter((t) => !t.modules.includes(msg.name));
+      return {modules: [`m-${msg.name}`]};
+    }});
+    const c = (o = {}) => createPackControl(Object.assign({mm: {packsInPlace: units}, dm: {}, packs: unloadOnly, toolsOf: async() => [], shared: () => sessions.shared(),
+      turnedOff: (name) => name === MOD, loadedTops: () => loaded}, o));
+    beforeEach(() => { loaded = [{name: MOD, modules: [MOD], tools: []}, {name: CALLER, modules: [CALLER, MOD], tools: []}]; });
 
-    it('tells nobody again, in its words or the plain ones; the next unload tells as before', async() => {
-      mip.markToldOff([MOD]);
+    it('turned off in the settings: the full text, naming the callers loaded before the unload, in place of the message\'s', async() => {
       await c().unload({type: 'unload', name: MOD, notice: 'mod turned off'});
-      assert.deepStrictEqual([A, B, C].map((id) => notices.take(MOD, id)), [[], [], []]);
-      await c().unload({type: 'unload', name: MOD, notice: 'mod turned off'});
-      assert.deepStrictEqual([A, B, C].map((id) => notices.take(MOD, id)), [['mod turned off'], ['mod turned off'], ['mod turned off']]);
-      mip.markToldOff([MOD]);
-      await c().unload({type: 'unload', name: MOD});
-      assert.deepStrictEqual([A, B, C].map((id) => notices.take(MOD, id)), [[], [], []]);
+      const text = offNotice(MOD, [CALLER]);
+      assert.match(text, /trip-planner calls it/);
+      assert.deepStrictEqual([A, B, C].map((id) => notices.take(MOD, id)), [[text], [text], [text]]);
     });
 
-    it('a load takes the mark: the next unload tells (the medium review of the #449 fixes, 4)', async() => {
-      const loadToo = Object.assign({}, unloadOnly, {loadPack: async(mm, msg) => { calls.push(['load', msg.name]); return {modules: [`m-${msg.name}`]}; }});
-      const lc = createPackControl({mm: {packsInPlace: units}, dm: {}, packs: loadToo, toolsOf: async() => [], shared: () => sessions.shared()});
-      mip.markToldOff([MOD]);
-      await lc.load({type: 'load', name: MOD, dirs: {[MOD]: `/store/${MOD}/1.0.0`}});
-      await lc.unload({type: 'unload', name: MOD, notice: 'mod removed'});
+    it('many callers: eight named and how many more, the ways back kept whole', async() => {
+      loaded = [{name: MOD, modules: [MOD], tools: []}].concat(Array.from({length: 11}, (_, i) => ({name: `caller-${String(i).padStart(2, '0')}-${'x'.repeat(12)}`, modules: [MOD], tools: []})));
+      await c().unload({type: 'unload', name: MOD});
+      const [t] = notices.take(MOD, A);
+      assert.match(t, /caller-07-x+ and 3 more call it/);
+      assert.ok(!/caller-08/.test(t));
+      assert.ok(t.endsWith(`\`ch-local settings set enabled.${MOD} on\`.`), t);
+    });
+
+    it('not turned off (removed, withdrawn, a ceiling): the message\'s words, as before', async() => {
+      await c({turnedOff: () => false}).unload({type: 'unload', name: MOD, notice: 'mod removed'});
       assert.deepStrictEqual([A, B, C].map((id) => notices.take(MOD, id)), [['mod removed'], ['mod removed'], ['mod removed']]);
     });
 
-    it('a mark a minute old is gone: the unload tells', async() => {
-      mip.markToldOff([MOD], Date.now() - 61000);
-      await c().unload({type: 'unload', name: MOD, notice: 'mod turned off'});
+    it('the settings file unreadable: the message\'s words', async() => {
+      await c({turnedOff: () => { throw new Error('unreadable'); }}).unload({type: 'unload', name: MOD, notice: 'mod turned off'});
       assert.deepStrictEqual([A, B, C].map((id) => notices.take(MOD, id)), [['mod turned off'], ['mod turned off'], ['mod turned off']]);
     });
   });
