@@ -285,10 +285,26 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.strictEqual(stored()[`enabled.${TOOL}`], false);
   });
 
+  // (round 5, 5) stored off already, but still serving: said, never a
+  // silent "no change"
+  it('an off already stored while the module is still loaded or loading: it says ch-local has not applied it yet', async () => {
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {[`enabled.${TOOL}`]: false, [`enabled.${SCENARIO}`]: false}}));
+    const still = await tool().set(`enabled.${TOOL}`, 'off');
+    assert.deepStrictEqual({old: still.old, new: still.new}, {old: 'off', new: 'off'});
+    assert.strictEqual(still.said, `${TOOL} is already set off, but ch-local hasn't applied it yet; it's still serving.`);
+    assert.strictEqual((await tool({loadingTops: () => [SCENARIO]}).set(`enabled.${SCENARIO}`, 'off')).said,
+      `${SCENARIO} is already set off, but ch-local hasn't applied it yet; it's still serving.`);
+    // not serving: no change, nothing said
+    assert.strictEqual((await tool().set(`enabled.${SCENARIO}`, 'off')).said, undefined);
+  });
+
   it('two requests turning one module off at once: one writes; the other changes nothing', async () => {
     const t = tool();
     const both = await Promise.all([t.set(`enabled.${TOOL}`, 'off'), t.set(`enabled.${TOOL}`, 'off')]);
-    assert.strictEqual(both.filter((r) => r.said != null).length, 1);
+    // one writes; the other changes nothing (and, the module still loaded,
+    // may say it is already set off: round 5, 5)
+    assert.strictEqual(both.filter((r) => typeof(r.said) === 'string' && r.said.includes('off is written')).length, 1);
+    assert.ok(both.every((r) => r.new === 'off'));
     assert.strictEqual(history().filter((l) => l.setting === `enabled.${TOOL}`).length, 1);
   });
 
