@@ -116,12 +116,46 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
   // too (step 1 (e)).
   describe('fromModule: a plain Error with a code', () => {
     const plain = (code, extra) => Object.assign(new Error('why'), {code: code}, extra || {});
-    it('is the module\'s error when its code looks like one', () => {
-      for (const code of ['REPO_TOO_LARGE', 'ABC', 'X2_Y', 'DEVICE_OFFLINE']) {
+    it('is the module\'s error when its code looks like one, and not a catalogue code', () => {
+      for (const code of ['REPO_TOO_LARGE', 'ABC', 'X2_Y', 'SHAPE_OFFLINE']) {
         const e = CountinghouseError.fromModule(plain(code));
         assert.ok(e instanceof CountinghouseError, code);
         assert.deepStrictEqual([e.code, e.message, e.origin, e.kind], [code, `${code}: why`, 'module', 'module'], code);
       }
+    });
+    // a module defines only its own codes (the back-sweep, 11-18): one of the
+    // runtime's catalogue is the runtime's MODULE_CODE_RESERVED, naming it
+    // the high review of #445, 4, 5 and 9: ctx.error hands module code its own
+    // error (never a runtime-branded one); the warning names the module, once
+    // per module and code, its message as text with no control characters
+    it('ctx.error with a catalogue code: a module error back, one warning per module and code naming it', () => {
+      const LOG = require('../../lib/logger');
+      const saved = LOG.W;
+      const warned = [];
+      LOG.W = (w) => { warned.push(String(w)); };
+      try {
+        const hostile = {toString() { throw new Error('ran'); }};
+        const e = CountinghouseError.moduleOwn('USER_HAS_NO_DEVICE', 'line one\nline two\u0007', {n: 1}, 'weather-probe');
+        CountinghouseError.moduleOwn('USER_HAS_NO_DEVICE', 'again', null, 'weather-probe');
+        CountinghouseError.moduleOwn('USER_HAS_NO_DEVICE', hostile, null, 'other-probe');
+        assert.strictEqual(e.origin, 'module', 'the module\'s own, never branded');
+        const mine = warned.filter((w) => /weather-probe/.test(w));
+        assert.strictEqual(mine.length, 1, JSON.stringify(warned));
+        assert.ok(/weather-probe called ctx\.error with USER_HAS_NO_DEVICE/.test(mine[0]), mine[0]);
+        assert.ok(!/[\u0000-\u001f]/.test(mine[0]), JSON.stringify(mine[0]));
+        assert.ok(warned.some((w) => /other-probe/.test(w)), 'another module: its own line');
+        // at the boundary: once, as MODULE_CODE_RESERVED with its details
+        const answered = CountinghouseError.answerable(e);
+        assert.deepStrictEqual([answered.code, answered.origin, answered.details], ['MODULE_CODE_RESERVED', 'runtime', {n: 1}]);
+        assert.strictEqual(warned.filter((w) => /weather-probe/.test(w)).length, 1, 'not warned again at the boundary');
+      } finally {
+        LOG.W = saved;
+      }
+    });
+    it('a plain Error with a catalogue code is the runtime\'s MODULE_CODE_RESERVED, naming that code', () => {
+      const e = CountinghouseError.fromModule(plain('DEVICE_OFFLINE'));
+      assert.deepStrictEqual([e.code, e.origin, e.kind], ['MODULE_CODE_RESERVED', 'runtime', 'module']);
+      assert.match(e.message, /runtime's own code DEVICE_OFFLINE/);
     });
     it('is not, for a system error, a Node error, or a code that does not look like one', () => {
       const cases = [plain('EACCES', {errno: -13}), plain('ENOENT', {syscall: 'open'}), plain('ERR_INVALID_ARG_TYPE'),
@@ -180,13 +214,16 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
   // Review of #37.
   describe('the review of #37', () => {
     const {hopError} = require('../../lib/countinghouse-error');
-    it('hopError passes a module\'s error through whole, its own code included', () => {
+    it('hopError passes a module\'s error through whole, its own code included; a catalogue code is MODULE_CODE_RESERVED', () => {
       // whole, as a copy (review of c8)
       const same = (a, b) => assert.deepStrictEqual([a.code, a.message, a.origin, a.details], [b.code, b.message, b.origin, b.details]);
       const own = CountinghouseError.module('SHAPE_GONE', 'the shape is gone', {n: 1});
       same(hopError(own), own);
-      const named = CountinghouseError.module('DEVICE_NOT_FOUND', 'no row 7', {row: 7});
-      same(hopError(named), named);
+      // a catalogue code the module named: the runtime's MODULE_CODE_RESERVED
+      // naming it, with the module's details (the back-sweep, 11-18)
+      const named = hopError(CountinghouseError.module('DEVICE_NOT_FOUND', 'no row 7', {row: 7}));
+      assert.deepStrictEqual([named.code, named.origin, named.details], ['MODULE_CODE_RESERVED', 'runtime', {row: 7}]);
+      assert.match(named.message, /runtime's own code DEVICE_NOT_FOUND/);
       // a callee's plain error with a made-up code is still not passed off as typed
       const plain = Object.assign(new Error('made up'), {code: 'MADE_UP'});
       assert.ok(!(hopError(plain) instanceof CountinghouseError) && hopError(plain).code === undefined);

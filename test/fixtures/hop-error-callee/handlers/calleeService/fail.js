@@ -1,5 +1,5 @@
 // The module's own error, returned: a code that is also a catalogue name
-// (refused by ctx.error itself: the handler's crash), or one of its own. The other kinds try to pass a
+// (the runtime's MODULE_CODE_RESERVED, naming it), or one of its own. The other kinds try to pass a
 // catalogue code off as the runtime's (d2b): by setting `origin`, by
 // building the error through its constructor, or by first replacing the
 // class's statics (which the sandbox freezes); and one passes on a runtime

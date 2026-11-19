@@ -165,9 +165,9 @@ describe('composition 17: every mode answers alike', () => {
       // A runtime refusal's message keeps its detail in single-thread mode
       // only (the documented mode difference, ledgered E3); its code, origin
       // and kind are alike.
-      // (the catalogue probe is the callee's crash: its message, like a
-      // runtime refusal's, is the mode's own)
-      const pick = (o) => (((kind === 'passThrough' || kind === 'catalogue') && o != null) ? {code: o.code, origin: o.origin, kind: o.kind} : o);
+      // (the catalogue probe's MODULE_CODE_RESERVED is the same in every
+      // mode, its message included: the high review of #445, 8)
+      const pick = (o) => ((kind === 'passThrough' && o != null) ? {code: o.code, origin: o.origin, kind: o.kind} : o);
       const seen = MODES.map((m) => pick(observed[kind][m.label]));
       assert.ok(seen.every((o) => o !== undefined), `every mode ran the ${kind} probe`);
       seen.forEach((o) => assert.deepStrictEqual(o, seen[0], `${kind}: ${JSON.stringify(seen)}`));
