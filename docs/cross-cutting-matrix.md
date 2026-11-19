@@ -119,9 +119,10 @@ before schema resolution ever runs. Since 8.0 that is one predicate
 (`lib/listing-scope.js`). The `tools/call` lookup asks only its
 visibility half (`callerSees` with no grants): on that path the key's
 grants are `userAuth`'s, on the device the tool names, so a tool outside
-them is refused there, before anything runs, with the userAuth refusal
-rather than as an unknown tool (one answer for every tool a caller can't
-see is a separate change). The static
+them never runs. Its answer is not yet one: an unlisted or unusable
+target answers MODULE_NOT_LISTED before `userAuth` is asked, any other the
+`userAuth` refusal, and neither is "unknown tool" (one answer for every
+tool a caller can't see is a separate change). The static
 platform tool (`countinghouse_check_balance`) isn't device-derived and is
 always listed, same as before. Under `--debug` mode this filtering is
 skipped entirely, matching every other entry path's "no per-device
