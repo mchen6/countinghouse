@@ -412,6 +412,30 @@ const out = {
       {why: 'a setting overridden twice', reason: 'a setting twice', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'maxOutputBytes', value: 1048576, loosening: false, over: null, version: null}, {name: 'maxOutputBytes', value: 2097152, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}}
     ]
   },
+  // A module setting's value in the history (#413 rev 3 section 4.2): one
+  // shape for the runtime's lines and ch-local's (lib/history-cut.js, and
+  // ch-local's settings history and outside-edits check)
+  historyCut: (() => {
+    const sha = (v) => crypto.createHash('sha256').update(JSON.stringify(v), 'utf8').digest('hex');
+    const of = (why, value) => {
+      const points = Array.from(value);
+      const cut = typeof(value) === 'string' && points.length > 64;
+      return {why, value, written: cut ? points.slice(0, 64).join('') : value, sha256: cut ? sha(value) : null};
+    };
+    const sixtyFour = 'a'.repeat(64);
+    return {
+      rule: 'fields old, new, asked and kept of a module.* history line: a string of more than 64 code points is written as its first 64 code points, with <field>Sha256 beside it, the lowercase hex SHA-256 of the UTF-8 of JSON.stringify(the WHOLE value); any other value, and a string of 64 code points or fewer, is written whole with no Sha256 field. A reader compares a recorded <field>Sha256 with the SHA-256 of JSON.stringify(the value it holds)',
+      cases: [
+        of('65 code points, the last one not ASCII: cut to 64, hashed whole', `${'a'.repeat(63)}é✓`),
+        of('exactly 64 code points: whole, no hash', sixtyFour),
+        of('64 code points of which one is outside the BMP (JS length 65): whole, a surrogate pair never split', `${'b'.repeat(63)}😀`),
+        of('65 code points ending outside the BMP: cut before the pair', `${'c'.repeat(64)}😀`),
+        of('a quote and a backslash: hashed as JSON, escapes and all', `${'"\\'.repeat(40)}`),
+        {why: 'a number: never cut', value: 1234567, written: 1234567, sha256: null},
+        {why: 'a boolean: never cut', value: true, written: true, sha256: null}
+      ]
+    };
+  })(),
   seqRule: 'the shim counts seq from 1 for its whole life; it never restarts on a reconnect or a resume',
   crashAnswer: {
     rule: 'exact apart from the id, which is the request\'s own',
