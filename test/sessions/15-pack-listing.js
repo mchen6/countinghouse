@@ -308,7 +308,7 @@ describe('sessions 15: a module going on or off is in no session\'s lists (B3 Ta
   it('a tool the caller can\'t see: one grant read, then the unknown tool\'s answer, whatever the reason', async () => {
     const real = toolRegistry.grantsForCall;
     let reads = 0;
-    const granted = new Set(['d3', 'd4']);
+    let granted = new Set(['d3', 'd4']);
     toolRegistry.grantsForCall = (key, identify, cb) => { reads++; cb(null, granted); };
     try {
       const table = toolRegistry.buildToolTargets(ci, {includeUnlisted: true});
@@ -326,6 +326,12 @@ describe('sessions 15: a module going on or off is in no session\'s lists (B3 Ta
       const want = seen['never registered'];
       assert.ok(want.startsWith('1 ') && want.includes('unknown tool: <name>'), want);
       assert.deepStrictEqual(seen, Object.fromEntries(Object.keys(cases).map((k) => [k, want])));
+      // a name an object inherits is no tool, even to a key granted every device
+      granted = null;
+      for (const name of ['constructor', 'toString', '__proto__']) {
+        const r = await request(ci, A, 'tools/call', {name, arguments: {}});
+        assert.strictEqual(JSON.stringify(r).split(name).join('<name>'), want.slice(2), name);
+      }
     } finally {
       toolRegistry.grantsForCall = real;
       visibility.show(['ch-pack-docs']);
