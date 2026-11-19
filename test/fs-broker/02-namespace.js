@@ -101,6 +101,12 @@ describe('fs-broker 02: namespace', () => {
     const a = await prepared(Object.assign({}, CFG, {mode: 'audit', declared, protectedPaths: []}));
     assert.deepStrictEqual(a.refused.filter((r) => /module's own code/.test(r.reason)), []);
     assert.deepStrictEqual(a.ownCodeWritable, ['/srv/modules/weather/lib', '/srv/modules']);
+    // (and a caller that gives no mode fails closed: refused; the high
+    // review of #452)
+    const none = Object.assign({}, CFG, {declared, protectedPaths: []});
+    delete none.mode;
+    const u = await prepared(none);
+    assert.deepStrictEqual(u.refused.filter((r) => /module's own code/.test(r.reason)).map((r) => r.path), ['/srv/modules/weather/lib', '/srv/modules']);
   });
 
   it('refuses a declared path that overlaps a protected path, either way round', async () => {

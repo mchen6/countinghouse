@@ -102,6 +102,26 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     assert.ok(fs.existsSync(path.join(tmpInside, 'keep.js')), 'the module\'s own file was emptied before the refusal');
   });
 
+  // (under audit the same overlap is said, and the /tmp never emptied: it
+  // holds the module's own files; the high review of #452)
+  it('under audit, a /tmp inside the module\'s own code is said and never emptied', async () => {
+    const {createForWorker} = require('../../lib/fs-broker');
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-own-a-')));
+    const mod = path.join(base, 'mod');
+    const tmpInside = path.join(mod, 'store', 'm', 'tmp');
+    fs.mkdirSync(tmpInside, {recursive: true});
+    fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "m"}');
+    fs.writeFileSync(path.join(tmpInside, 'keep.js'), 'module.exports = 1;');
+    const said = [];
+    const fsb = await createForWorker({name: 'm', mode: 'audit', modulePath: mod, declared: [],
+      options: {moduleDataPath: path.join(mod, 'store'), modulePath: base}, report: (rule, target) => said.push([rule, target])});
+    await fsb.bridge.close();
+    assert.ok(fs.existsSync(path.join(tmpInside, 'keep.js')), 'the module\'s own file was emptied');
+    assert.deepStrictEqual(said.filter(([rule]) => rule === 'overlap').map(([, t]) => t.replace(/ \(.*?\)/, '')).sort(),
+      ['the module\'s /data and its own code overlap -- set --moduleDataPath apart from the module',
+        'the module\'s /tmp and its own code overlap -- set --moduleDataPath apart from the module']);
+  });
+
   // (and a data directory it can't resolve -- a read denied on the way --
   // refuses, never is compared unresolved)
   it('under enforce, a data directory that can\'t be resolved refuses the spawn', async function() {
