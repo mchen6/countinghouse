@@ -50,7 +50,14 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
     fs.rmSync(outside, {recursive: true, force: true});
   });
   const msg = (extra) => Object.assign({type: 'load', name: '@t/ch-pack-a', dirs: {'@t/ch-pack-a': dirs.scenario, '@t/ch-step-s': dirs.part}}, extra);
-  const refusedWith = (m, re) => assert.throws(() => mip.readModuleRequest(m, {needsDirs: true}), (e) => e.code === 'CONTROL_FAILED' && re.test(e.message), JSON.stringify(m).slice(0, 200));
+  // its shape as the load handler checks it (lib/module-control.js, once),
+  // then what the request reads from disk
+  const readAsLoaded = (m) => {
+    const problem = mip.moduleMessageProblem('load', m);
+    if (problem != null) throw Object.assign(new Error(problem.message), {code: 'CONTROL_FAILED'});
+    return mip.readModuleRequest(m, {needsDirs: true});
+  };
+  const refusedWith = (m, re) => assert.throws(() => readAsLoaded(m), (e) => e.code === 'CONTROL_FAILED' && re.test(e.message), JSON.stringify(m).slice(0, 200));
 
   it('a well-formed message is read: its name, and each directory by its real path', () => {
     const r = mip.readModuleRequest(msg(), {needsDirs: true});

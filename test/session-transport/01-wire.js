@@ -177,11 +177,11 @@ describe('sessions 01: the wire (contract 2)', () => {
       assert.strictEqual(M.slotPattern, SLOT.source);
       const pkg = new RegExp(M.packagePattern);
       for (const {why, message} of M.accepted) {
-        assert.strictEqual(moduleMessageProblem(message), null, why);
+        assert.strictEqual(moduleMessageProblem(message.type, message), null, why);
         for (const n of [].concat(message.name || [], message.names || [], Object.keys(message.dirs || {}))) assert.ok(pkg.test(n) && isPackage(n), `${why}: ${n}`);
       }
       for (const {why, reason, message} of M.refused) {
-        const p = moduleMessageProblem(message);
+        const p = moduleMessageProblem(message.type, message);
         assert.ok(p != null, why);
         assert.strictEqual(p.reason, reason, `${why}: ${p.message}`);
       }
