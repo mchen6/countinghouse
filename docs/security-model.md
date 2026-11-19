@@ -271,6 +271,37 @@ any module code). Stops:
   later change. Under `audit` a require of one is reported, and the
   loader's helpers called directly answer truthfully, unreported, as every
   lookup does under `audit` (test/sandbox/68);
+- what that costs loader-related libraries a module depends on, measured
+  by test/sandbox/69 (each used as its dependents use it, pinned in the
+  repo's devDependencies), in single-thread mode and in a worker under each
+  `--moduleSandbox`:
+
+  | Library, as used | single-thread | `off` | `audit` | `enforce` |
+  | --- | --- | --- | --- | --- |
+  | `source-map-support`, `install()` | works | works | works | works |
+  | `source-map-support`, `install({hookRequire: true})` | works | works | no hook (reported) | throws |
+  | `require-in-the-middle`, a `Hook` | works | works | throws | no hook |
+  | `resolve-from`, from `__dirname` | fails | fails | fails | throws |
+  | `import-fresh`, a relative name | fails | fails | fails | throws |
+  | `module-alias`, `addAlias` | no alias | no alias | no alias | throws |
+
+  Why:
+  - a module's own directory is virtual (`/app/...`) in every mode,
+    single-thread included, and these three hand a path made from it to
+    Node's resolver, which reads it as the host's own `/app`;
+  - in a worker a module's requires are resolved by the file broker with
+    Node's own resolver, so `module-alias`'s replaced `_resolveFilename` is
+    never asked;
+  - under `audit` the loader's statics and `process.getBuiltinModule` are
+    held, so a replacement is reported and never takes;
+  - under `enforce` the reduced `module` has no prototype, statics or
+    `_nodeModulePaths` to reach.
+
+  So a dependency that hooks the loader (`hookRequire`,
+  `require-in-the-middle`) needs `--moduleSandbox off` or single-thread
+  mode, and one that resolves from the module's own directory
+  (`resolve-from`, `import-fresh`, `module-alias`) fails in every mode
+  until a module's own paths reach Node's resolver in their host form;
 - other routes to files: `module.enableCompileCache`, `process.report`'s
   file output and `process.setSourceMapsEnabled` are locked;
   `process.loadEnvFile` goes through the file broker. Of `process.report`'s
