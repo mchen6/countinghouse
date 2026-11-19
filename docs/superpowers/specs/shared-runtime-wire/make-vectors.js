@@ -284,10 +284,10 @@ const out = {
       {why: 'a stored token whose file fails its checks counts as none', input: {env: [], stored: 'refused', ghLogin: true, daemonHolds: 'gh'}, start: 'gh', daemon: 'gh', conditions: null, outcome: 'shares'}
     ]
   },
-  // ch-local's pack messages on the control channel (B3, "For C" in
-  // docs/superpowers/plans/2026-11-16-shared-runtime-b3-session-packs.md):
-  // which pack a load, reload, unload or notice is about, and whether a load
-  // is for everyone. Additive: the other fields are as before. Read by
+  // ch-local's pack messages on the control channel (B3; M5a: no session
+  // view, so global is not read and every session is told): which pack a
+  // load, reload, unload or notice is about. Additive: the other fields are
+  // as before; the pack form goes in M6. Read by
   // ch-local's applier tests and B3 Task 6's; a refused case names its
   // reason by a short token both sides compare.
   packMessages: (() => {
@@ -295,28 +295,28 @@ const out = {
     const at = {name: scenario, scenario: '/home/example/.countinghouse/packs/example/node_modules/@countinghouse/ch-pack-example',
       remoteCredentials: '/home/example/.countinghouse/run/start-1/remote-credentials-example.json'};
     return {
-      rule: 'load and reload carry pack: <n> (the pack\'s own name, as settings spell pack.<n>; name stays the scenario\'s package name) and global: a boolean (true: the settings have the pack on, for everyone; false: only a session\'s load-pack asked). unload carries pack. A notice about a pack carries pack and goes to the sessions that list the pack when it is delivered; one with no pack goes to everyone. set pack.<n> is only ever true (the terminal turning on, for everyone, a pack already loaded for a session); a terminal off is always an unload. In shared mode a load or reload without a boolean global is refused; under --stdio pack and global are not read',
+      rule: 'load, reload and unload in the pack form carry pack: <n> (the pack\'s own name, as settings spell pack.<n>; name stays the scenario\'s package name); global is no longer read (M5a, #413 rev 3 section 5.4: no session has a view of its own, so whatever is loaded is listed to every session) and may be absent. A notice goes once to every open session, with a pack or without. set names no pack: set pack.<n> is refused, any value (a terminal on or off is a load or an unload). In shared mode a pack-form message whose pack is not a string fitting packPattern is refused; under --stdio pack is not read. The pack form goes in M6',
       packPattern: '^[a-z0-9][a-z0-9-]{0,63}$',
       accepted: [
-        {why: 'a load from the settings, for everyone', message: {id: 1, type: 'load', ...at, notice: 'example added 1.0.0', pack: 'example', global: true}},
-        {why: 'a load a session asked for', message: {id: 2, type: 'load', ...at, pack: 'example', global: false}},
+        {why: 'a load from the settings', message: {id: 1, type: 'load', ...at, notice: 'example added 1.0.0', pack: 'example', global: true}},
+        {why: 'a load with global false: global is not read', message: {id: 2, type: 'load', ...at, pack: 'example', global: false}},
         {why: 'a reload', message: {id: 3, type: 'reload', ...at, notice: 'example upgraded 1.0.0 → 1.1.0', pack: 'example', global: true}},
         {why: 'an unload', message: {id: 4, type: 'unload', name: scenario, notice: 'example turned off', pack: 'example'}},
-        {why: 'a notice about a pack', message: {id: 5, type: 'notice', module: null, text: 'example turned on for this session 1.0.0 (confirmed in your client)', pack: 'example'}},
-        {why: 'a notice about no pack: to everyone', message: {id: 6, type: 'notice', module: null, text: 'requestTimeout set to 60 s'}},
-        {why: 'the terminal turning on a pack a session had', message: {id: 7, type: 'set', name: 'pack.example', value: true}}
+        {why: 'a notice about a pack: to every session', message: {id: 5, type: 'notice', module: null, text: 'example turned on 1.0.0', pack: 'example'}},
+        {why: 'a notice about no pack: to every session', message: {id: 6, type: 'notice', module: null, text: 'requestTimeout set to 60 s'}},
+        {why: 'a load with no global: global is not read', message: {id: 11, type: 'load', ...at, pack: 'example'}},
+        {why: 'a load whose global is not a boolean: global is not read', message: {id: 12, type: 'load', ...at, pack: 'example', global: 'true'}},
+        {why: 'a reload with no global: global is not read', message: {id: 13, type: 'reload', ...at, pack: 'example'}}
       ],
       refused: [
-        {why: 'a load with no global', reason: 'global', message: {id: 11, type: 'load', ...at, pack: 'example'}},
-        {why: 'a load whose global is not a boolean', reason: 'global', message: {id: 12, type: 'load', ...at, pack: 'example', global: 'true'}},
-        {why: 'a reload with no global', reason: 'global', message: {id: 13, type: 'reload', ...at, pack: 'example'}},
         {why: 'a load with no pack', reason: 'pack', message: {id: 14, type: 'load', ...at, global: true}},
         {why: 'a pack with an uppercase letter', reason: 'pack', message: {id: 15, type: 'load', ...at, pack: 'Example', global: true}},
         {why: 'a pack with a leading dash', reason: 'pack', message: {id: 16, type: 'reload', ...at, pack: '-example', global: true}},
         {why: 'an unload whose pack is not a string', reason: 'pack', message: {id: 17, type: 'unload', name: scenario, pack: 7}},
         {why: 'a notice whose pack is not a string', reason: 'pack', message: {id: 18, type: 'notice', module: null, text: 'x', pack: null}},
         {why: 'a pack over 64 characters', reason: 'pack', message: {id: 19, type: 'unload', name: scenario, pack: `p${'a'.repeat(64)}`}},
-        {why: 'set pack.<n> false', reason: 'set-false', message: {id: 20, type: 'set', name: 'pack.example', value: false}}
+        {why: 'set pack.<n> true: no pack is set', reason: 'set', message: {id: 7, type: 'set', name: 'pack.example', value: true}},
+        {why: 'set pack.<n> false', reason: 'set', message: {id: 20, type: 'set', name: 'pack.example', value: false}}
       ]
     };
   })(),

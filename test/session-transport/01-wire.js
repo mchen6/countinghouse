@@ -128,27 +128,40 @@ describe('sessions 01: the wire (contract 2)', () => {
       }
     });
 
-    it('the pack messages\' vectors are consistent: every accepted pack fits the pattern and a load or reload carries a boolean global; every refused case names one of the three reasons', () => {
+    // M5a (#413 rev 3 section 5.4): global is not read, and no pack is set
+    it('the pack messages\' vectors are consistent: every accepted pack fits the pattern, global is never required; every refused case names one of the two reasons', () => {
       const P = V.packMessages;
       const pattern = new RegExp(P.packPattern);
       for (const {why, message: m} of P.accepted) {
-        if (m.type === 'set') { assert.strictEqual(m.value, true, why); continue; }
+        assert.notStrictEqual(m.type, 'set', why);
         if (m.pack !== undefined) assert.ok(typeof(m.pack) === 'string' && pattern.test(m.pack), why);
-        if (m.type === 'load' || m.type === 'reload') assert.strictEqual(typeof(m.global), 'boolean', why);
         if (m.type !== 'notice') assert.ok(m.pack !== undefined, why);
       }
       // each refused case breaks the rule for its own reason, and only it
       const problem = (m) => {
         const packOk = (p) => typeof(p) === 'string' && pattern.test(p);
-        if (m.type === 'set') return (typeof(m.name) === 'string' && m.name.startsWith('pack.') && m.value !== true) ? 'set-false' : null;
-        if (m.type === 'load' || m.type === 'reload') return typeof(m.global) !== 'boolean' ? 'global' : (packOk(m.pack) ? null : 'pack');
-        if (m.type === 'unload') return packOk(m.pack) ? null : 'pack';
+        if (m.type === 'set') return (typeof(m.name) === 'string' && m.name.startsWith('pack.')) ? 'set' : null;
+        if (m.type === 'load' || m.type === 'reload' || m.type === 'unload') return packOk(m.pack) ? null : 'pack';
         if (m.type === 'notice') return (m.pack === undefined || packOk(m.pack)) ? null : 'pack';
         return null;
       };
       for (const {why, message} of P.accepted) assert.strictEqual(problem(message), null, why);
       for (const {why, reason, message} of P.refused) assert.strictEqual(problem(message), reason, why);
-      assert.deepStrictEqual([...new Set(P.refused.map((r) => r.reason))].sort(), ['global', 'pack', 'set-false']);
+      assert.deepStrictEqual([...new Set(P.refused.map((r) => r.reason))].sort(), ['pack', 'set']);
+    });
+
+    it('the pack messages\' vectors, by the runtime: a shared runtime takes each accepted message and refuses each refused one', async () => {
+      const P = V.packMessages;
+      const control = require('../../lib/module-control').createModuleControl({
+        shared: () => true, mm: {}, dm: {}, toolsOf: async () => [], packUnloaded: () => {},
+        packs: {loadPack: async () => ({modules: []}), reloadPack: async () => ({modules: []}), unloadPack: async () => ({modules: []})},
+        notices: {add: () => {}},
+        applyControlSet: async (msg) => { throw Object.assign(new Error(`${msg.name} was not applied`), {code: 'CONTROL_FAILED'}); }});
+      const run = (m) => control[m.type](m);
+      for (const {why, message} of P.accepted) await run(message).catch((e) => assert.fail(`${why}: ${e.message}`));
+      for (const {why, message} of P.refused) {
+        await assert.rejects(run(message), (e) => e.code === 'CONTROL_FAILED', why);
+      }
     });
 
     // M4 (#413 section 7.5): the module form, read by the runtime's own

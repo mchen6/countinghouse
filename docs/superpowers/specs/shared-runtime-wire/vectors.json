@@ -928,11 +928,11 @@
     ]
   },
   "packMessages": {
-    "rule": "load and reload carry pack: <n> (the pack's own name, as settings spell pack.<n>; name stays the scenario's package name) and global: a boolean (true: the settings have the pack on, for everyone; false: only a session's load-pack asked). unload carries pack. A notice about a pack carries pack and goes to the sessions that list the pack when it is delivered; one with no pack goes to everyone. set pack.<n> is only ever true (the terminal turning on, for everyone, a pack already loaded for a session); a terminal off is always an unload. In shared mode a load or reload without a boolean global is refused; under --stdio pack and global are not read",
+    "rule": "load, reload and unload in the pack form carry pack: <n> (the pack's own name, as settings spell pack.<n>; name stays the scenario's package name); global is no longer read (M5a, #413 rev 3 section 5.4: no session has a view of its own, so whatever is loaded is listed to every session) and may be absent. A notice goes once to every open session, with a pack or without. set names no pack: set pack.<n> is refused, any value (a terminal on or off is a load or an unload). In shared mode a pack-form message whose pack is not a string fitting packPattern is refused; under --stdio pack is not read. The pack form goes in M6",
     "packPattern": "^[a-z0-9][a-z0-9-]{0,63}$",
     "accepted": [
       {
-        "why": "a load from the settings, for everyone",
+        "why": "a load from the settings",
         "message": {
           "id": 1,
           "type": "load",
@@ -945,7 +945,7 @@
         }
       },
       {
-        "why": "a load a session asked for",
+        "why": "a load with global false: global is not read",
         "message": {
           "id": 2,
           "type": "load",
@@ -980,17 +980,17 @@
         }
       },
       {
-        "why": "a notice about a pack",
+        "why": "a notice about a pack: to every session",
         "message": {
           "id": 5,
           "type": "notice",
           "module": null,
-          "text": "example turned on for this session 1.0.0 (confirmed in your client)",
+          "text": "example turned on 1.0.0",
           "pack": "example"
         }
       },
       {
-        "why": "a notice about no pack: to everyone",
+        "why": "a notice about no pack: to every session",
         "message": {
           "id": 6,
           "type": "notice",
@@ -999,19 +999,7 @@
         }
       },
       {
-        "why": "the terminal turning on a pack a session had",
-        "message": {
-          "id": 7,
-          "type": "set",
-          "name": "pack.example",
-          "value": true
-        }
-      }
-    ],
-    "refused": [
-      {
-        "why": "a load with no global",
-        "reason": "global",
+        "why": "a load with no global: global is not read",
         "message": {
           "id": 11,
           "type": "load",
@@ -1022,8 +1010,7 @@
         }
       },
       {
-        "why": "a load whose global is not a boolean",
-        "reason": "global",
+        "why": "a load whose global is not a boolean: global is not read",
         "message": {
           "id": 12,
           "type": "load",
@@ -1035,8 +1022,7 @@
         }
       },
       {
-        "why": "a reload with no global",
-        "reason": "global",
+        "why": "a reload with no global: global is not read",
         "message": {
           "id": 13,
           "type": "reload",
@@ -1045,7 +1031,9 @@
           "remoteCredentials": "/home/example/.countinghouse/run/start-1/remote-credentials-example.json",
           "pack": "example"
         }
-      },
+      }
+    ],
+    "refused": [
       {
         "why": "a load with no pack",
         "reason": "pack",
@@ -1116,8 +1104,18 @@
         }
       },
       {
+        "why": "set pack.<n> true: no pack is set",
+        "reason": "set",
+        "message": {
+          "id": 7,
+          "type": "set",
+          "name": "pack.example",
+          "value": true
+        }
+      },
+      {
         "why": "set pack.<n> false",
-        "reason": "set-false",
+        "reason": "set",
         "message": {
           "id": 20,
           "type": "set",

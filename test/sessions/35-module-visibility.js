@@ -37,6 +37,17 @@ describe('sessions 35: a module going on or off is hidden', () => {
     assert.deepStrictEqual(visibility.hiddenOf(['mod-a', 'mod-b', 'mod-c']), ['mod-b']);
   });
 
+  // M5a's medium review, 3: a module manager's listener is keyed, so a test
+  // process that builds many hears only the last one's
+  it('a keyed listener: a later one with the same key replaces it; an unkeyed one stays', () => {
+    const heard = [];
+    visibility.onChange(() => heard.push('first'), 'session-workers');
+    visibility.onChange(() => heard.push('second'), 'session-workers');
+    visibility.onChange(() => heard.push('plain'));
+    visibility.hide(['mod-a']);
+    assert.deepStrictEqual(heard.sort(), ['plain', 'second']);
+  });
+
   it('every change is told once; a repeat is not a change', () => {
     let told = 0;
     visibility.onChange(() => { told++; });
