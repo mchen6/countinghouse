@@ -250,6 +250,14 @@ const STEPS = {
       if (runtimeParent(get.call(m))) found.push('getter');
       try { delete m.parent; } catch (e) { /* held */ }
       if (runtimeParent(m.parent)) found.push('delete');
+      // (a module file's own Module keeps a parent it can set: only the
+      // runtime's are locked)
+      if (m !== (h != null ? h.module : null)) {
+        const mark = {};
+        try { m.parent = mark; } catch (e) { /* refused */ }
+        if (m.parent !== mark) found.push(`locked ${String(m.filename).split(/[\\/]/).pop()}`);
+        try { m.parent = undefined; } catch (e) { /* refused */ }
+      }
     }
     return `${h == null ? 'no handle' : 'handle'}, ${found.length === 0 ? 'no runtime parent' : found.join(' ')}`;
   },
