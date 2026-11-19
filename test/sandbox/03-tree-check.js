@@ -195,6 +195,10 @@ describe('sandbox 03: tree checks', () => {
       const said = checkTree(d).problems.join('\n');
       if (process.platform === 'darwin' || process.platform === 'win32') assert.match(said, /node_modules[\\/]p[\\/]PACKAGE\.JSON cannot be parsed/);
       else assert.doesNotMatch(said, /PACKAGE\.JSON/);
+      // (and its "main" judged whether JSON.parse takes it or not: a BOM, a
+      // Linux mount that folds case)
+      const b = mk({'package.json': {name: 'm'}, 'node_modules/q/PACKAGE.JSON': '\uFEFF{"name": "q", "main": "../../../outside.js"}'});
+      refused(b, 'node_modules/q/PACKAGE.JSON');
       const e = mk({'package.json': {name: 'm'}, 'node_modules/p/package.json': '{not json'});
       assert.match(checkTree(e).problems.join('\n'), /node_modules[\\/]p[\\/]package\.json cannot be parsed/);
     });
