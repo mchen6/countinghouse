@@ -170,7 +170,10 @@ const handedOut = (port) => [...assigned.values()].includes(Number(port));
 // (A Redis needing auth or TLS answers as none: these tests use neither.)
 const NO_REDIS_RUN = process.env.CH_TEST_NO_REDIS === '1' || process.env.GITHUB_WORKFLOW === 'Windows subset';
 const redisAnswers = (timeoutMs = 1500) => new Promise((resolve, reject) => {
-  const none = (why) => (NO_REDIS_RUN ? resolve(false) : reject(new Error(`no Redis answers PING (${why}); a run without one says so: CH_TEST_NO_REDIS=1`)));
+  // (a Redis the run configured, CH_TEST_REDIS_URL, must answer, a no-Redis
+  // run included)
+  const none = (why) => (NO_REDIS_RUN && redisUrl() == null ? resolve(false)
+    : reject(new Error(`no Redis answers PING (${why}); a run without one says so: CH_TEST_NO_REDIS=1, with no CH_TEST_REDIS_URL`)));
   let c;
   try {
     const at = redisConnectionFor(0);
