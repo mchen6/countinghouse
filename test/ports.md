@@ -154,7 +154,7 @@ one) as well as the ports it binds.
 | `test/sandbox/01-modes.js` | 9605 |
 | `test/sandbox/02-permissions.js` | 9606 |
 | `test/sandbox/04-load-time.js` | 9607 |
-| `test/sandbox/05-lockdown.js` | 9608–9610, 9771–9772 |
+| `test/sandbox/05-lockdown.js` | 9608–9610, 9771–9773 |
 | `test/sandbox/07-restart.js` | 9611–9614 |
 | `test/sandbox/08-limits.js` | 9613 |
 | `test/sandbox/09-hardened.js` | 9614 |
@@ -195,6 +195,7 @@ one) as well as the ports it binds.
 | `test/sandbox/48-lean-lockdown.js` | 9751 |
 | `test/sandbox/66-no-late-runtime-loads.js` | 9775–9776 |
 | `test/sandbox/68-runtime-isolation.js` | 9759 |
+| `test/sandbox/69-compatibility-table.js` | 9777 |
 | `test/single-thread/01-facade.js` | 9636 |
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |

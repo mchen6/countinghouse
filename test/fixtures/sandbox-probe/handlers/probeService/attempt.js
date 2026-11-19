@@ -17,7 +17,123 @@ function reportChecked(r) {
   if (typeof(header.nodejsVersion) !== 'string' || typeof(header.platform) !== 'string') throw Object.assign(new Error('not a report'), {code: 'NOT_A_REPORT'});
 }
 
+// F4-7: a V8 code cache is not checked against its source (only its
+// length), so a cache made for one source runs in place of another of the
+// same length. Each vm route is given one: CACHE when the cached code ran,
+// SOURCE when the source given did, NO_CACHE when none could be produced.
+const VM_CACHED = 'globalThis.__chVm = 1;;';
+const VM_SOURCE = 'globalThis.__chVm = 2;;';
+function vmRan(run) {
+  globalThis.__chVm = 0;
+  run();
+  const v = globalThis.__chVm;
+  throw Object.assign(new Error('ran'), {code: v === 1 ? 'CACHE' : (v === 2 ? 'SOURCE' : `OTHER_${v}`)});
+}
+const scriptCache = (vm) => new vm.Script(VM_CACHED, {filename: 'ch-probe-vm.js'}).createCachedData();
+const VM_ROUTES = {
+  script: (vm) => vmRan(() => new vm.Script(VM_SOURCE, {filename: 'ch-probe-vm.js', cachedData: scriptCache(vm)}).runInThisContext()),
+  // (vm.createScript, which makes Node's own Script; the second round on #440)
+  createScript: (vm) => vmRan(() => vm.createScript(VM_SOURCE, {filename: 'ch-probe-vm.js', cachedData: scriptCache(vm)}).runInThisContext()),
+  // (options given as a function, which runInNewContext reads too)
+  functionOptions: (vm) => {
+    const ctx = {};
+    const cached = 'this.__chVm = 1;;';
+    const source = 'this.__chVm = 2;;';
+    const opts = function() {};
+    opts.filename = 'ch-probe-vm-ctx.js';
+    opts.cachedData = new vm.Script(cached, {filename: 'ch-probe-vm-ctx.js'}).createCachedData();
+    vm.runInNewContext(source, ctx, opts);
+    throw Object.assign(new Error('ran'), {code: ctx.__chVm === 1 ? 'CACHE' : (ctx.__chVm === 2 ? 'SOURCE' : `OTHER_${ctx.__chVm}`)});
+  },
+  runInThisContext: (vm) => vmRan(() => vm.runInThisContext(VM_SOURCE, {filename: 'ch-probe-vm.js', cachedData: scriptCache(vm)})),
+  subclass: (vm) => vmRan(() => new (class extends vm.Script {})(VM_SOURCE, {filename: 'ch-probe-vm.js', cachedData: scriptCache(vm)}).runInThisContext()),
+  protoConstructor: (vm) => vmRan(() => new vm.Script.prototype.constructor(VM_SOURCE, {filename: 'ch-probe-vm.js', cachedData: scriptCache(vm)}).runInThisContext()),
+  // (a source of the same length no other route compiled: V8's in-memory
+  // compilation cache, keyed by the source, would otherwise answer with what
+  // an earlier route's cache made of VM_SOURCE under audit)
+  inherited: (vm) => {
+    const data = scriptCache(vm);
+    Object.defineProperty(Object.prototype, 'cachedData', {configurable: true, get: () => data});
+    try { vmRan(() => new vm.Script('globalThis.__chVm =2;;;', {filename: 'ch-probe-vm.js'}).runInThisContext()); } finally { delete Object.prototype.cachedData; }
+  },
+  compileFunction: (vm) => {
+    const produced = vm.compileFunction(VM_CACHED, [], {produceCachedData: true}).cachedData;
+    if (produced == null) throw Object.assign(new Error('none produced'), {code: 'NO_CACHE'});
+    vmRan(() => vm.compileFunction(VM_SOURCE, [], {cachedData: produced})());
+  }
+};
+
 const ATTEMPTS = {
+  // (the medium review of PR 3) no prototype of vm.Script leads to Node's
+  // native class, which takes a cache in its own arguments
+  vmNative:         () => {
+    const vm = require('vm');
+    if (Object.getPrototypeOf(vm.Script) !== Function.prototype) throw Object.assign(new Error('reached'), {code: 'REACHED'});
+    if (Object.getPrototypeOf(vm.Script.prototype).constructor !== vm.Script) throw Object.assign(new Error('reached'), {code: 'REACHED'});
+  },
+  // ... the view freezes like any function, never touching Node's class,
+  // and still constructs; its length is Script's
+  vmFreeze:         () => {
+    const vm = require('vm');
+    Object.freeze(vm.Script);
+    const s = new vm.Script('1;', {filename: 'ch-probe-freeze.js'});
+    if (s.runInThisContext() !== 1 || vm.Script.length < 1 || vm.Script.name !== 'Script') throw Object.assign(new Error('changed'), {code: 'CHANGED'});
+  },
+  // ... vm's module classes (with --experimental-vm-modules): gone from
+  // module code's vm under enforce, its key too; under audit there, and
+  // their use said
+  vmModules:        () => {
+    const vm = require('vm');
+    if (!('SourceTextModule' in vm)) throw Object.assign(new Error('gone'), {code: 'GONE'});
+    if (typeof(vm.SourceTextModule) !== 'function') throw Object.assign(new Error('key left'), {code: 'KEY_LEFT'});
+    void new vm.SourceTextModule('export default 1;');
+    throw Object.assign(new Error('present'), {code: 'PRESENT'});
+  },
+  // ... an invalid cache value is Node's to refuse, as it would (the high
+  // review of #440: present means not undefined, and only a valid one is
+  // dropped)
+  vmInvalidCache:   () => {
+    const vm = require('vm');
+    for (const opts of [{cachedData: null}, {cachedData: 0}, {produceCachedData: 0}]) {
+      let code = null;
+      try { new vm.Script('1;', Object.assign({filename: 'ch-probe-invalid.js'}, opts)); } catch (e) { code = e.code; }
+      if (code !== 'ERR_INVALID_ARG_TYPE') throw Object.assign(new Error('taken'), {code: `TAKEN_${String(code)}`});
+    }
+  },
+  // ... the vm module code is handed answers as Node's does: createScript
+  // named and callable with new; options given as a function or an array
+  // refused by Script as Node refuses them (the review of #440's second round)
+  vmShape:          () => {
+    const vm = require('vm');
+    if (vm.createScript.name !== 'createScript') throw Object.assign(new Error('name'), {code: 'NAME'});
+    if (!(new vm.createScript('1;') instanceof vm.Script)) throw Object.assign(new Error('new'), {code: 'NEW'});
+    for (const opts of [function() {}, []]) {
+      let code = null;
+      try { new vm.Script('1;', opts); } catch (e) { code = e.code; }
+      if (code !== 'ERR_INVALID_ARG_TYPE') throw Object.assign(new Error('taken'), {code: `TAKEN_${String(code)}`});
+    }
+  },
+  // ... a vm function module code assigns never takes; under audit it is said
+  vmAssign:         () => {
+    const vm = require('vm');
+    const was = vm.runInThisContext;
+    try { vm.runInThisContext = function() {}; } catch (e) { /* refused */ }
+    // (a redefinition and a delete too: said under vm as the assignment is)
+    try { Object.defineProperty(vm, 'compileFunction', {value: function() {}}); } catch (e) { /* refused */ }
+    try { Reflect.deleteProperty(vm, 'runInNewContext'); } catch (e) { /* refused */ }
+    if (vm.runInThisContext !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+    if (typeof(vm.runInNewContext) !== 'function') throw Object.assign(new Error('removed'), {code: 'REMOVED'});
+  },
+  // ... a script asked only to produce a cache is never marked rejected
+  vmProduce:        () => {
+    const s = new (require('vm').Script)('1;', {filename: 'ch-probe-produce.js', produceCachedData: true});
+    if (s.cachedDataRejected === true) throw Object.assign(new Error('marked'), {code: 'MARKED'});
+  },
+  // ... and options from a defaults object keep their filename
+  vmInherited:      () => {
+    const s = new (require('vm').Script)('new Error("x").stack', Object.create({filename: 'ch-probe-defaults.js'}));
+    if (!String(s.runInThisContext()).includes('ch-probe-defaults.js')) throw Object.assign(new Error('lost'), {code: 'LOST'});
+  },
   // what the lockdown holds, as a dependency would try to change it (the
   // review of e0f39de9: under audit each is reported, and none takes)
   holdAssign:       () => {
@@ -49,9 +165,41 @@ const ATTEMPTS = {
     try { require.extensions['.js'] = function() {}; } catch (e) { /* refused */ }
     if (require.extensions['.js'] !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
   },
+  holdNode:         () => {
+    const was = require.extensions['.node'];
+    try { require.extensions['.node'] = function() {}; } catch (e) { /* refused */ }
+    if (require.extensions['.node'] !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  // (a Proxy whose keys differ on a second read: what is defined is only
+  // what was read once, never a key read again; PR 3)
+  holdDefineProps:  () => {
+    const M = module.constructor;
+    const was = M._load;
+    let reads = 0;
+    const props = new Proxy({}, {
+      ownKeys: () => (reads++ === 0 ? ['chProbeProp'] : ['_load']),
+      getOwnPropertyDescriptor: () => ({value: {value: function() {}, configurable: true, writable: true}, enumerable: true, configurable: true}),
+      get: () => ({value: function() {}, configurable: true, writable: true})
+    });
+    try { Object.defineProperties(M, props); } catch (e) { throw Object.assign(new Error('threw'), {code: 'THREW'}); }
+    if (M._load !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  holdDeleteReflect: () => {
+    const M = module.constructor;
+    const was = M._resolveFilename;
+    Reflect.deleteProperty(M, '_resolveFilename');
+    if (M._resolveFilename !== was) throw Object.assign(new Error('removed'), {code: 'REMOVED'});
+  },
   holdExtension:    () => {
     try { require.extensions['.chprobe'] = () => {}; } catch (e) { /* refused */ }
     if (require.extensions['.chprobe'] !== undefined) throw Object.assign(new Error('added'), {code: 'ADDED'});
+  },
+  // F4-7 (arg: a VM_ROUTES name; 'esm:<name>' takes vm by an import's named
+  // exports)
+  vmCache: async (arg) => {
+    const esm = arg.startsWith('esm:');
+    const vm = esm ? await import('node:vm') : require('vm');
+    VM_ROUTES[esm ? arg.slice(4) : arg](esm ? {Script: vm.Script, createScript: vm.createScript, runInThisContext: vm.runInThisContext, compileFunction: vm.compileFunction} : vm);
   },
   dlopen:           () => process.dlopen({exports: {}}, '/nonexistent/probe.node'),
   binding:          () => process.binding('fs'),

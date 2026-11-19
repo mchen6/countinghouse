@@ -79,10 +79,14 @@ function request(io, message, timeoutMs = 30000) {
   ['single-thread mode', ['--no-workerThread'], 'off', WITH_NET, false],
   ['the worker under enforce, no net declared', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'enforce'], 'enforce', NO_NET, false],
   ['the worker under audit, no net declared', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', NO_NET, false],
-  // (the module sets Node's wrapper of a file's source first: the late load
-  // then runs no window, so the library's requires are each said)
-  ['the worker under audit, no net declared, Module.wrap set first', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', NO_NET, false, true]
-].forEach(([where, flags, mode, MODULE, atBoot, wrapFirst = false]) => {
+  // (the module sets Node's wrapper of a file's source first, or puts a
+  // Proxy in its place, or sets it from inside the late load through a
+  // module.require tracing subscriber: no window opens, or it closes, said,
+  // so the library's requires are each said; PR 3)
+  ['the worker under audit, no net declared, Module.wrap set first', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', NO_NET, false, 'patchWrap'],
+  ['the worker under audit, no net declared, a Proxy for Module.wrapper first', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', NO_NET, false, 'wrapperProxy'],
+  ['the worker under audit, no net declared, Module.wrap set inside the load', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', NO_NET, false, 'traceWrap']
+].forEach(([where, flags, mode, MODULE, atBoot, wrapFirst = null]) => {
   const refuses = (mode === 'enforce');
   const declares = (MODULE === WITH_NET);
   const name = path.basename(MODULE);
@@ -137,7 +141,7 @@ function request(io, message, timeoutMs = 30000) {
     if (mode === 'audit') {
       // localhost is not the declared 127.0.0.1, and needs no lookup beyond the hosts file.
       it(`a CHUtil.request to an undeclared host is reported under audit, and allowed${atBoot ? '' : ' (the library loads then, after the lockdown)'}`, async () => {
-        if (wrapFirst) assert.deepStrictEqual(await probe({what: 'patchWrap'}), {patched: true});
+        if (wrapFirst != null) assert.deepStrictEqual(await probe({what: wrapFirst}), {patched: true});
         // (one file outside its root the module requires itself, first:
         // the late load's sweep leaves it, the review of e0f39de9)
         const own = (!atBoot && !wrapFirst) ? await probe({what: 'requireOutside'}) : null;
@@ -159,12 +163,14 @@ function request(io, message, timeoutMs = 30000) {
         if (!atBoot) {
           const said = io.err.split('\n').filter((l) => l.includes(`${name} violation require`));
           assert.ok(said.some((l) => /postman-request \(a load by the runtime after the lockdown\)/.test(l)), said.join('\n'));
-          if (wrapFirst) assert.ok(said.length > 2, `a window opened with Module.wrap set:\n${said.join('\n')}`);
-          // (the window's roots are postman-request's own closure: a hoisted
-          // supports-color, which debug requires undeclared, is outside it
-          // and said, in this dev tree or a project that has one; a
-          // standalone production install has none)
-          else {
+          if (wrapFirst != null) {
+            assert.ok(said.length > 2, `a window stayed open with Node's wrapper changed (${wrapFirst}):\n${said.join('\n')}`);
+            if (wrapFirst === 'traceWrap') assert.ok(said.some((l) => l.includes('Module.wrap set during the runtime\'s late load (its window closed)')), said.join('\n'));
+          } else {
+            // (the window's roots are postman-request's own closure: a
+            // hoisted supports-color, which debug requires undeclared, is
+            // outside it and said, in this dev tree or a project that has
+            // one; a standalone production install has none)
             const library = said.filter((l) => !/violation require (supports-color|has-flag) /.test(l));
             assert.ok(library.length <= 2, `the library's own requires said against the module:\n${library.join('\n')}`);
           }
