@@ -129,6 +129,24 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
     }
   });
 
+  // the back-sweep (the Reviewer, 11-19): confinement decides on the
+  // kernel's real path (#10). Node's JS realpath resolves this chain to the
+  // module's own directory at every step; the kernel walks one level up per
+  // link, so the fifth is --modulesRoot's parent.
+  it('a link chain the kernel resolves out of --modulesRoot (x -> ".", a -> "x/..", b -> "a/..", ...) is refused, though JS realpath puts it inside', () => {
+    const chain = [['x', '.'], ['a', 'x/..'], ['b', 'a/..'], ['c', 'b/..'], ['d', 'c/..']];
+    for (const [n, target] of chain) fs.symlinkSync(target, path.join(dirs.part, n));
+    try {
+      const d = path.join(dirs.part, 'd');
+      assert.strictEqual(fs.realpathSync(d), fs.realpathSync(dirs.part), 'JS realpath: inside the module');
+      assert.strictEqual(fs.realpathSync.native(d), path.dirname(fs.realpathSync(path.join(root, 'module-store'))), 'the kernel: --modulesRoot\'s parent');
+      const r = mip.readModuleRequest(msg(), {needsDirs: true});
+      assert.throws(() => mip.closureOf(r), (e) => e.code === 'CONTROL_FAILED' && /link outside --modulesRoot \(d\)/.test(e.message));
+    } finally {
+      for (const [n] of chain) fs.unlinkSync(path.join(dirs.part, n));
+    }
+  });
+
   describe('credentials in a load message (section 7.3)', () => {
     const credentials = require('../../lib/remote/credentials');
     const ORIGIN = 'https://api.example.com';

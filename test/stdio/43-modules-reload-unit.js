@@ -376,4 +376,20 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     const pass = log.findIndex((l) => l.startsWith('unit pass'));
     assert.ok(stale >= 0 && fresh > stale && pass > fresh, log.join('\n'));
   });
+
+  // the back-sweep's group 3 (11-19): the reload's generation is taken before
+  // the drain, so an unload arriving meanwhile by any route (unreachable
+  // today: the control channel serialises) is never undone by the switch
+  it('an unload that arrives during the drain stands the switch down: MODULE_LOAD_SUPERSEDED, no new worker', async () => {
+    const mm = Object.assign(Object.create(ModuleManager.prototype), {modules: {}, unlisted: new Set(), generations: {}, supervisor: null});
+    const old = Object.assign(Object.create(WorkerMessage.prototype), {hostModuleName: 'ch-step-x', packageInfo: {name: 'ch-step-x', version: '1.0.0'}, deviceList: {d: {}}, msgQueue: {}});
+    mm.modules['ch-step-x'] = old;
+    let spawned = 0;
+    mm.loadModuleByWorker = (p, name, version, cb) => { spawned++; setImmediate(() => cb(null)); };
+    // the drain asks what the old version owes; an operator's unload comes in then
+    const dm = {peerChannelBroker: {openInvokesTo: () => { mm.nextGeneration('ch-step-x'); return 0; }}};
+    await assert.rejects(mip.replaceDrainThenSwitch(mm, dm, {name: 'ch-step-x', path: '/x', version: '2.0.0'}), (e) => e.code === 'MODULE_LOAD_SUPERSEDED');
+    assert.strictEqual(spawned, 0, 'no new worker');
+    assert.strictEqual(old.replacing, false, 'the old one is no longer marked replacing');
+  });
 });

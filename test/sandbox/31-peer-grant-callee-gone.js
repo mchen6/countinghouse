@@ -45,6 +45,7 @@ function run(scenario) {
     if (scenario === 'unloading') callee.unloading = true;
     if (scenario === 'replaced') during = () => { dm.deviceMap.D = replacement; };
     if (scenario === 'caller-ended') during = () => { caller.ended = {code: 'MODULE_UNLOADED'}; };
+    if (scenario === 'replacing') during = () => { callee.replacing = true; callee.hostModuleName = 'ch-step-d'; };
     // the open takes the call's token (the review of #138, 5a)
     const token = require(${JSON.stringify(path.join(LIB, 'call-tokens'))}).issue({billingKey: 'k', workerId: caller.workerId, deviceID: 'C'});
     broker.handleRequest({targetDeviceID: 'D', appKey: 'k', token: token}, caller);
@@ -72,6 +73,11 @@ describe('sandbox 31: a peer channel is granted only to a callee that is still t
 
   it('the callee is replaced during the check: the new worker gets the channel', () => {
     assert.deepStrictEqual(run('replaced'), [{to: 3, open: 1}, {to: 1, grant: 3}]);
+  });
+
+  // the back-sweep (11-19): replacing was asked only before the check
+  it('the callee begins being replaced in place during the check: refused MODULE_RELOADING, no port to the old worker', () => {
+    assert.deepStrictEqual(run('replacing'), [{to: 1, deny: 'MODULE_RELOADING'}]);
   });
 
   it('the caller ends during the check: nothing is sent', () => {
