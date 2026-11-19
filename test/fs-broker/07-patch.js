@@ -15,6 +15,16 @@ describe('fs-broker 07: the worker patch', function() {
     assert.deepStrictEqual(m.r, {fs: [], promises: [], fileHandle: [], locked: true});
   });
 
+  it('locks what it handles nowhere -- each shape a later Node might add it in -- to one that throws, and says which (F4-6)', async () => {
+    const m = await runBrokered(S('swept.js'), {extra: {fakeAdded: true}});
+    assert.strictEqual(m.ok, true, JSON.stringify(m));
+    const U = 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM';
+    assert.deepStrictEqual(m.r, {method: U, lazy: U, hidden: U, space: U, promise: U, klass: U, nc: U, late: U, sym: U, replaced: U,
+      nullFilled: U, staticAfter: U, staticGetter: U, nodeLazy: U, staticName: U, selfNamed: U, selfNamedName: U, bootLazy: true, bootInstance: 'ran', copy: 'ran', bootConstructed: true,
+      swept: {swept: ['fs.fakeAddedSync', 'fs.fakeLazySync', 'fs.fakeHiddenSync', 'fs.fakeSpace', 'fs.FakeNamed', 'fs.FakeSelfNamed', 'fs.fakeNodeLazySync', 'fs.FakeReader', 'fs.fakeNullSync', 'fs.fakeNcSync',
+        'fs.fakeLateSync', 'fs.Symbol(ch.fakeSym)', 'fs.promises.fakeAdded'], unsweepable: ['fs.fakeFixedSync', 'fs.fakeFixedGetSync']}});
+  });
+
   it('behaves as modules and libraries expect', async () => {
     const m = await runBrokered(S('behaviour.js'));
     assert.strictEqual(m.ok, true, JSON.stringify(m));
