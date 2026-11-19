@@ -128,6 +128,33 @@ const STEPS = {
     return out.join(' ');
   },
   // F4 (#194's PR 3): an import() from an ES module is no existence oracle
+  // (C-bare, Fable's pass on #452: a bare name's subpath, or a '#' mapping
+  // to one, never walks or stats above the root; a package found above it
+  // and one missing give one answer, and nothing of module code's runs
+  // inside Node's step while it looks)
+  bareSubpath: async () => {
+    const out = [];
+    const tryImport = async (spec) => { try { await import(spec); return 'found'; } catch (e) { return String(e.code); } };
+    const tryRequire = (spec) => { try { require(spec); return 'found'; } catch (e) { return String(e.code); } };
+    const same = (tag, a, b) => out.push(a === b ? 'same' : `${tag}(${a}/${b})`);
+    // (a sibling above the root against a missing one, climbing back to the
+    // module's own file)
+    same('importSibling', await tryImport('sibpkg/../../isolation-probe/lib/bare-target.mjs'), await tryImport('nosuchsib/../../isolation-probe/lib/bare-target.mjs'));
+    same('importMapped', await tryImport('#sibclimb'), await tryImport('#nosibclimb'));
+    same('requireMapped', tryRequire('#sibclimb'), tryRequire('#nosibclimb'));
+    // (a subpath climbing out of the module's own dependency: no getter of
+    // module code's runs inside Node's step)
+    let ran = 'not run';
+    Object.defineProperty(Object.prototype, 'WATCH_REPORT_DEPENDENCIES', {configurable: true, get() { ran = 'ran'; return undefined; }});
+    try {
+      await tryImport('dep/../../../../no-such-climb.mjs');
+      tryRequire('dep/../../../../no-such-climb.js');
+    } finally { delete Object.prototype.WATCH_REPORT_DEPENDENCIES; }
+    out.push(ran === 'not run' ? 'same' : 'ranInStep');
+    // (and the module's own dependency still loads, by name and by subpath)
+    out.push((await tryImport('dep')) === 'found' && (await tryImport('dep/index.js')) === 'found' && tryRequire('dep') === 'found' ? 'same' : 'ownDep');
+    return out.join(' ');
+  },
   importOracle: async () => {
     const h = handle();
     if (h == null) return 'no handle';

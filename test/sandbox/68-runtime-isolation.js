@@ -61,6 +61,20 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     // refused at load under enforce, sandbox 03; here, what Node's own walk
     // does now that it is judged.)
     fs.writeFileSync(path.join(probe, 'lib', 'stat-count.js'), 'module.exports = "counted";\n');
+    // (C-bare: a package above the root, one of the module's own, a file of
+    // its own a bare subpath could climb back to, and '#' mappings to bare
+    // targets that climb)
+    fs.mkdirSync(path.join(spaced, 'node_modules', 'sibpkg'), {recursive: true});
+    fs.writeFileSync(path.join(spaced, 'node_modules', 'sibpkg', 'package.json'), JSON.stringify({name: 'sibpkg'}));
+    fs.writeFileSync(path.join(spaced, 'node_modules', 'sibpkg', 'index.js'), 'module.exports = 1;\n');
+    fs.mkdirSync(path.join(probe, 'node_modules', 'dep'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep', 'package.json'), JSON.stringify({name: 'dep'}));
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep', 'index.js'), 'module.exports = "dep";\n');
+    fs.writeFileSync(path.join(probe, 'lib', 'bare-target.mjs'), 'export default "own";\n');
+    const probePkg = JSON.parse(fs.readFileSync(path.join(probe, 'package.json'), 'utf8'));
+    probePkg.imports = Object.assign({}, probePkg.imports, {'#sibclimb': 'sibpkg/../../isolation-probe/lib/bare-target.mjs',
+      '#nosibclimb': 'nosuchsib/../../isolation-probe/lib/bare-target.mjs'});
+    fs.writeFileSync(path.join(probe, 'package.json'), JSON.stringify(probePkg));
     // (a directory required once, for the warning Node gives for a "main"
     // that names nothing)
     fs.mkdirSync(path.join(probe, 'lib', 'main-warn'));
@@ -140,6 +154,11 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       it('import() from an ES module: a runtime file or a runtime-only package against a missing one, the same whole error', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'importOracle'});
         assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
+      });
+      // (C-bare, Fable's pass on #452, F1 and F2)
+      it('a bare name\'s subpath, or a \'#\' mapping to one, never walks above the root: a sibling there and a missing one, one answer; nothing of module code\'s runs in Node\'s step; its own dependency loads', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'bareSubpath'});
+        assert.strictEqual(detail(r), 'same same same same same', JSON.stringify(r).slice(0, 1500));
       });
       it('whether a runtime package is installed is no answer, by the whole error: a forged parent inside it, findPackageJSON\'s base and climbing specifier, _findPath\'s array-like paths, a primitive parent', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'parentPackage'});
