@@ -199,11 +199,9 @@ Notes:
   holding) its own directory, a `--loadModule` directory, any module the
   runtime has loaded, or a `--modulePath` folder refuses the spawn under
   `--moduleSandbox enforce`, is reported under `audit`, and its `tmp` is
-  never emptied. Whatever the layout, emptying a `tmp` never deletes package
-  code: an entry holding a `package.json` or a `node_modules` directory, or
-  a `tmp` inside a package, is kept and logged ("kept <path>: it holds
-  package code"). `--moduleDataPath` may sit in `--modulePath` beside the
-  modules. Don't install modules inside another module's data directory.
+  never emptied; so does a module whose own code is inside a known module's
+  data. `--moduleDataPath` may sit in `--modulePath` beside the modules.
+  Don't install modules inside another module's data directory.
 - `--modulePath` and `--moduleDataPath` are distinct names: under
   `--hardened`, a granted directory whose name another grant extends is
   refused (`X` beside `X_data`; see

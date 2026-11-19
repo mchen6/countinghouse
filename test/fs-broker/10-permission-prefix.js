@@ -271,73 +271,33 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     await again.bridge.close();
   });
 
-  // (whatever the judgement doesn't know -- a module at a depth and in a
-  // layout nothing lists -- the emptying never deletes package code: kept,
-  // and said; the reviewer's ruling on #452)
-  it('in every mode, the emptying of a /tmp keeps an entry holding package code, at any depth, and says so', async () => {
+  // (the other way round, at every spawn: a module loaded from inside a
+  // known module's data is refused under enforce, said under audit; the
+  // high review of #452, 1)
+  it('a module whose own code is inside a known module\'s data: refused under enforce, said under audit', async () => {
     const {createForWorker} = require('../../lib/fs-broker');
-    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-guard-')));
-    const mod = path.join(base, 'mod');
-    fs.mkdirSync(mod, {recursive: true});
-    fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "m"}');
-    for (const mode of ['off', 'audit', 'enforce']) {
-      const tmp = path.join(base, `store-${mode}`, 'm', 'tmp');
-      fs.mkdirSync(path.join(tmp, 'deep', 'node_modules', 'foo'), {recursive: true});
-      fs.writeFileSync(path.join(tmp, 'deep', 'node_modules', 'foo', 'index.js'), 'module.exports = 1;');
-      fs.mkdirSync(path.join(tmp, 'pkg', 'lib'), {recursive: true});
-      fs.writeFileSync(path.join(tmp, 'pkg', 'package.json'), '{"name": "pkg"}');
-      fs.writeFileSync(path.join(tmp, 'scratch.txt'), 'x');
-      const said = [];
-      const fsb = await createForWorker({name: 'm', mode, modulePath: mod, declared: [],
-        options: {moduleDataPath: path.join(base, `store-${mode}`), modulePath: base}, report: (rule, target) => said.push([rule, target])});
-      await fsb.bridge.close();
-      assert.ok(fs.existsSync(path.join(tmp, 'deep', 'node_modules', 'foo', 'index.js')), `${mode}: package code under node_modules emptied`);
-      assert.ok(fs.existsSync(path.join(tmp, 'pkg', 'package.json')), `${mode}: a package emptied`);
-      assert.ok(!fs.existsSync(path.join(tmp, 'scratch.txt')), `${mode}: the rest kept`);
-      assert.deepStrictEqual(said.filter(([rule]) => rule === 'kept').map(([, t]) => path.basename(t.split(':')[0])).sort(), ['deep', 'pkg'], mode);
-    }
-  });
-
-  // (and a /tmp that sits inside a package -- an unloaded module in
-  // --modulePath, its tmp/ the module's /tmp -- is not emptied at all; a
-  // node_modules in another letter case is package code too)
-  it('the emptying keeps a /tmp that sits inside a package, and a Node_Modules entry', async () => {
-    const {createForWorker} = require('../../lib/fs-broker');
-    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-inpkg-')));
-    const modules = path.join(base, 'modules');
-    const dev = path.join(base, 'dev', 'bar');
-    fs.mkdirSync(path.join(modules, 'bar', 'tmp'), {recursive: true});
-    fs.mkdirSync(dev, {recursive: true});
-    fs.writeFileSync(path.join(modules, 'bar', 'package.json'), '{"name": "bar"}');
-    fs.writeFileSync(path.join(modules, 'bar', 'tmp', 'fixtures.js'), 'module.exports = 1;');
-    fs.writeFileSync(path.join(dev, 'package.json'), '{"name": "bar"}');
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-hosted-')));
+    const store = path.join(base, 'store');
+    const a = path.join(base, 'a');
+    fs.mkdirSync(a, {recursive: true});
+    fs.writeFileSync(path.join(a, 'package.json'), '{"name": "a"}');
+    const fsa = await createForWorker({name: 'a', mode: 'enforce', modulePath: a, declared: [], options: {moduleDataPath: store, modulePath: base}, report: () => {}});
+    await fsa.bridge.close();
+    const b = path.join(store, 'a', 'data', 'b');
+    fs.mkdirSync(b, {recursive: true});
+    fs.writeFileSync(path.join(b, 'package.json'), '{"name": "b"}');
+    const tryWith = async (mode, said) => {
+      try {
+        const fsb = await createForWorker({name: 'b', mode, modulePath: b, declared: [], options: {moduleDataPath: store, modulePath: base},
+          knownModules: [{name: 'a', root: a}, {name: 'b', root: b}], report: (rule, target) => said.push([rule, target])});
+        await fsb.bridge.close();
+        return null;
+      } catch (e) { return e.code; }
+    };
+    assert.strictEqual(await tryWith('enforce', []), 'MODULE_SANDBOX_REFUSED');
     const said = [];
-    const fsb = await createForWorker({name: 'bar', mode: 'off', modulePath: dev, declared: [],
-      options: {moduleDataPath: modules, modulePath: modules}, report: (rule, target) => said.push([rule, target])});
-    await fsb.bridge.close();
-    assert.ok(fs.existsSync(path.join(modules, 'bar', 'tmp', 'fixtures.js')), 'the installed copy\'s file was emptied');
-    assert.ok(said.some(([rule]) => rule === 'kept'));
-    const tmp = path.join(base, 'store', 'm', 'tmp');
-    fs.mkdirSync(path.join(tmp, 'w', 'Node_Modules', 'x'), {recursive: true});
-    fs.writeFileSync(path.join(tmp, 'w', 'Node_Modules', 'x', 'i.js'), '');
-    const mod = path.join(base, 'm');
-    fs.mkdirSync(mod);
-    fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "m"}');
-    const again = await createForWorker({name: 'm', mode: 'off', modulePath: mod, declared: [],
-      options: {moduleDataPath: path.join(base, 'store'), modulePath: modules}, report: () => {}});
-    await again.bridge.close();
-    assert.ok(fs.existsSync(path.join(tmp, 'w', 'Node_Modules', 'x', 'i.js')));
-    // (a /tmp that is itself a package root: all of it kept, not only its
-    // package.json)
-    const own = path.join(base, 'store2', 'm', 'tmp');
-    fs.mkdirSync(path.join(own, 'lib'), {recursive: true});
-    fs.writeFileSync(path.join(own, 'package.json'), '{"name": "p"}');
-    fs.writeFileSync(path.join(own, 'index.js'), '');
-    fs.writeFileSync(path.join(own, 'lib', 'x.js'), '');
-    const third = await createForWorker({name: 'm', mode: 'off', modulePath: mod, declared: [],
-      options: {moduleDataPath: path.join(base, 'store2'), modulePath: modules}, report: () => {}});
-    await third.bridge.close();
-    assert.ok(fs.existsSync(path.join(own, 'index.js')) && fs.existsSync(path.join(own, 'lib', 'x.js')), 'a package root as /tmp emptied');
+    assert.strictEqual(await tryWith('audit', said), null);
+    assert.ok(said.some(([rule, t]) => rule === 'overlap' && /a's data overlap/.test(t)), JSON.stringify(said));
   });
 
   // (a --moduleDataPath not made yet, reached through a link above it into
