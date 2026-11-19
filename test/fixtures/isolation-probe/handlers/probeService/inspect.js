@@ -158,6 +158,27 @@ const STEPS = {
       tryRequire('dep/x?/../../../../../no-such-climb.js');
     } finally { delete Object.prototype.WATCH_REPORT_DEPENDENCIES; }
     out.push(ran === 'not run' ? 'same' : 'ranInStep');
+    // (a getter on Object.prototype named as the lookup's own fields never
+    // runs inside the hook, and changes nothing)
+    let protoRan = 'not run';
+    const fields = ['specifier', 'from', 'file', 'refuse', 'asIs'];
+    for (const f of fields) Object.defineProperty(Object.prototype, f, {configurable: true, get() { protoRan = `ran ${f}`; return undefined; }});
+    let protoOutcome;
+    try { protoOutcome = await tryImport('#fallback'); } finally { for (const f of fields) delete Object.prototype[f]; }
+    out.push(protoRan === 'not run' && protoOutcome === 'found' ? 'same' : `proto(${protoRan} ${protoOutcome})`);
+    // (a decoy where the walk would look first is refused, never loaded)
+    out.push((await tryImport('dep2')) !== 'found' ? 'same' : 'decoy');
+    // (an import from a script given a filename outside the root: judged
+    // from the root, never walked from there)
+    const vm = require('vm');
+    const fromOutside = async (spec) => {
+      try { await vm.runInThisContext(`import(${JSON.stringify(spec)})`, {filename: '/nowhere.invalid/x.js', importModuleDynamically: vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER}); return 'found'; } catch (e) { return String(e.code); }
+    };
+    same('outsideParent', await fromOutside('sibpkg/../../isolation-probe/lib/bare-target.mjs'), await fromOutside('nosuchsib/../../isolation-probe/lib/bare-target.mjs'));
+    // (targets picked as Node picks them: an empty array is no target, as
+    // plain Node answers on 22.16, 24 and 26; an invalid segment falls to
+    // the array's next entry)
+    out.push((await tryImport('#emptyArr')) !== 'found' && (await tryImport('#badFirst')) === 'found' ? 'same' : 'targets');
     // (and the module's own dependency still loads, by name and by subpath)
     out.push((await tryImport('dep')) === 'found' && (await tryImport('dep/index.js')) === 'found' && tryRequire('dep') === 'found' ? 'same' : 'ownDep');
     return out.join(' ');
