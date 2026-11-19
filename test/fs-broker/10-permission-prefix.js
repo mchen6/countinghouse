@@ -144,7 +144,7 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     let code = null;
     try {
       const fsb = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
-        options: {moduleDataPath: path.join(other, 'store'), modulePath: modules}, knownRoots: [other], report: () => {}});
+        options: {moduleDataPath: path.join(other, 'store'), modulePath: modules}, knownModules: [{name: 'other', root: other}], report: () => {}});
       await fsb.bridge.close();
     } catch (e) { code = e.code; }
     assert.strictEqual(code, 'MODULE_SANDBOX_REFUSED');
@@ -168,7 +168,7 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     const tryWith = async (moduleDataPath) => {
       try {
         const fsb = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
-          options: {moduleDataPath, modulePath: modules, localModulePath: [mod, loaded]}, knownRoots: [path.join(modules, '@acme', 'b')], report: () => {}});
+          options: {moduleDataPath, modulePath: modules, localModulePath: [mod, loaded]}, knownModules: [{name: '@acme/b', root: path.join(modules, '@acme', 'b')}], report: () => {}});
         await fsb.bridge.close();
         return null;
       } catch (e) { return e.code; }
@@ -195,7 +195,7 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     const tryWith = async (moduleDataPath) => {
       try {
         const fsb = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
-          options: {moduleDataPath, modulePath: modules}, knownRoots: [mod, other], report: () => {}});
+          options: {moduleDataPath, modulePath: modules}, knownModules: [{name: 'm', root: mod}, {name: 'other', root: other}], report: () => {}});
         await fsb.bridge.close();
         return null;
       } catch (e) { return e.code; }
@@ -227,7 +227,7 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     const tryWith = async (name, modulePathOwn, moduleDataPath) => {
       try {
         const fsb = await createForWorker({name, mode: 'enforce', modulePath: modulePathOwn, declared: [],
-          options: {moduleDataPath, modulePath: modules}, knownRoots: [path.join(modules, 'tmp'), path.join(modules, 'bar'), path.join(modules, '@acme', 'baz')], report: () => {}});
+          options: {moduleDataPath, modulePath: modules}, knownModules: [{name: 'tmp', root: path.join(modules, 'tmp')}, {name: 'bar', root: path.join(modules, 'bar')}, {name: '@acme/baz', root: path.join(modules, '@acme', 'baz')}], report: () => {}});
         await fsb.bridge.close();
         return null;
       } catch (e) { return e.code; }
