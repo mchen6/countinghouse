@@ -298,6 +298,37 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     }
   });
 
+  // (and a /tmp that sits inside a package -- an unloaded module in
+  // --modulePath, its tmp/ the module's /tmp -- is not emptied at all; a
+  // node_modules in another letter case is package code too)
+  it('the emptying keeps a /tmp that sits inside a package, and a Node_Modules entry', async () => {
+    const {createForWorker} = require('../../lib/fs-broker');
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-inpkg-')));
+    const modules = path.join(base, 'modules');
+    const dev = path.join(base, 'dev', 'bar');
+    fs.mkdirSync(path.join(modules, 'bar', 'tmp'), {recursive: true});
+    fs.mkdirSync(dev, {recursive: true});
+    fs.writeFileSync(path.join(modules, 'bar', 'package.json'), '{"name": "bar"}');
+    fs.writeFileSync(path.join(modules, 'bar', 'tmp', 'fixtures.js'), 'module.exports = 1;');
+    fs.writeFileSync(path.join(dev, 'package.json'), '{"name": "bar"}');
+    const said = [];
+    const fsb = await createForWorker({name: 'bar', mode: 'off', modulePath: dev, declared: [],
+      options: {moduleDataPath: modules, modulePath: modules}, report: (rule, target) => said.push([rule, target])});
+    await fsb.bridge.close();
+    assert.ok(fs.existsSync(path.join(modules, 'bar', 'tmp', 'fixtures.js')), 'the installed copy\'s file was emptied');
+    assert.ok(said.some(([rule]) => rule === 'kept'));
+    const tmp = path.join(base, 'store', 'm', 'tmp');
+    fs.mkdirSync(path.join(tmp, 'w', 'Node_Modules', 'x'), {recursive: true});
+    fs.writeFileSync(path.join(tmp, 'w', 'Node_Modules', 'x', 'i.js'), '');
+    const mod = path.join(base, 'm');
+    fs.mkdirSync(mod);
+    fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "m"}');
+    const again = await createForWorker({name: 'm', mode: 'off', modulePath: mod, declared: [],
+      options: {moduleDataPath: path.join(base, 'store'), modulePath: modules}, report: () => {}});
+    await again.bridge.close();
+    assert.ok(fs.existsSync(path.join(tmp, 'w', 'Node_Modules', 'x', 'i.js')));
+  });
+
   // (a --moduleDataPath not made yet, reached through a link above it into
   // the module's own code: refused before anything is made there)
   it('under enforce, a --moduleDataPath through a link into the module\'s own code refuses before anything is made', async function() {

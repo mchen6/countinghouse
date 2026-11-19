@@ -620,7 +620,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       assert.strictEqual(quota().bytes, before + 1000, 'another quota\'s view: nothing given back here');
     });
 
-    it('a respawn\'s /tmp keeps an entry holding package code, and then its share stays counted (the reviewer\'s ruling on #452)', async () => {
+    it('a respawn\'s /tmp keeps an entry holding package code, and its share stays counted; what was emptied is given back (the reviewer\'s ruling on #452)', async () => {
       await make(A);
       await make(B);
       await spawn(B);
@@ -632,7 +632,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       await mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'), view);
       assert.ok(fs.existsSync(tmp(A, 'pkg/package.json')), 'package code emptied');
       assert.ok(!fs.existsSync(tmp(A, 't')), 'the rest kept');
-      assert.strictEqual(quota().bytes, before, 'given back while something is still there');
+      assert.strictEqual(quota().bytes, before - 2500, 'only what is no longer there given back');
     });
 
     it('a respawn empties its /tmp: what it held leaves its share and the total; a name in /data keeps those bytes counted', async () => {
