@@ -403,7 +403,10 @@ const out = {
         taken: {overrides: [], locks: [], formsLeft: 2, unanswered: ['enabled', 'module']}},
       {why: 'pack unanswered and enabled locked: the lock stays, nothing unanswered of it',
         row: {session: 'd'.repeat(32), resume: 'c'.repeat(64), state: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['pack']}},
-        taken: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: []}}
+        taken: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: []}},
+      {why: 'pack locked and enabled unanswered: the lock stays, nothing unanswered of it',
+        row: {session: 'e'.repeat(32), resume: 'b'.repeat(64), state: {overrides: [], locks: ['pack'], formsLeft: 1, unanswered: ['enabled', 'module']}},
+        taken: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['module']}}
     ],
     // a row naming a kind this runtime has none of is dropped alone (kinds:
     // the ones it named)

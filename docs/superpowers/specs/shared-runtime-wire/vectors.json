@@ -1606,6 +1606,34 @@
           "formsLeft": 1,
           "unanswered": []
         }
+      },
+      {
+        "why": "pack locked and enabled unanswered: the lock stays, nothing unanswered of it",
+        "row": {
+          "session": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "resume": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "state": {
+            "overrides": [],
+            "locks": [
+              "pack"
+            ],
+            "formsLeft": 1,
+            "unanswered": [
+              "enabled",
+              "module"
+            ]
+          }
+        },
+        "taken": {
+          "overrides": [],
+          "locks": [
+            "enabled"
+          ],
+          "formsLeft": 1,
+          "unanswered": [
+            "module"
+          ]
+        }
       }
     ],
     "rowDropped": [
