@@ -270,6 +270,14 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       } finally { sessions.askConditions = real; }
     });
 
+    it('a value refused when it is applied (the module reloaded, the ceiling changed): said as not applied, never applies now', async () => {
+      let asked = null;
+      const tool = make({applyModuleSettings: async (pkg) => { asked = pkg; return {applied: 0, refused: [{name: 'module.@acme/weather-tool.units', code: 'SETTING_INVALID'}]}; }});
+      const done = await tool.set('module.@acme/weather-tool.units', 'metric');
+      assert.strictEqual(asked, '@acme/weather-tool', 'only the module whose value changed');
+      assert.deepStrictEqual({applies: done.applies, refused: done.refused}, {applies: 'not applied', refused: 'SETTING_INVALID'});
+    });
+
     it('the budget binds the form too: a session past its 32 is not asked', async () => {
       const tool = make(formClient);
       const ctx = {shared: true, session: 'budget-form'};
