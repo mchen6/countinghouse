@@ -142,7 +142,7 @@ describe('mcp-contract 39: one table of declared text fields', () => {
       argument: {description: 'message'},
       question: {message: 'line'},
       promptMessage: {text: 'message'},
-      device: {modelDescription: 'message', description: 'message'}
+      device: {modelDescription: 'message', description: 'message', '*': 'line'}
     });
     assert.ok(Object.isFrozen(specText.TEXT_FIELDS) && Object.values(specText.TEXT_FIELDS).every(Object.isFrozen));
   });
@@ -151,19 +151,23 @@ describe('mcp-contract 39: one table of declared text fields', () => {
     const raw = `a${ZWSP}b\nc\td${RLO}`;
     for (const [kind, fields] of Object.entries(specText.TEXT_FIELDS)) {
       for (const [field, rule] of Object.entries(fields)) {
+        if (field === '*') continue;
         assert.strictEqual(specText.cleanText(kind, field, raw), moduleText[rule](raw), `${kind}.${field}`);
       }
     }
-    // a device's other free text: one line
+    // a device's other free text: its '*' entry, one line
     assert.strictEqual(specText.cleanText('device', 'manufacturer', raw), moduleText.line(raw));
     assert.throws(() => specText.cleanText('action', 'name', raw), /no declared text field action\.name/);
-    assert.throws(() => specText.cleanText('nothing', 'title', raw), /no declared text field nothing\.title/);
+    assert.throws(() => specText.cleanText('action', '*', raw), /no declared text field action\.\*/);
+    assert.throws(() => specText.cleanText('nothing', 'title', raw), /no declared text kind nothing/);
   });
 
   it('cleanedFields: the kind\'s string fields present, cleaned; nothing else', () => {
     assert.deepStrictEqual(specText.cleanedFields('prompt', {name: `n${ZWSP}`, title: `t${ZWSP}\n`, description: `d${RLO}\n`, x: 1}),
       {title: 't  ', description: 'd \n'});
     assert.deepStrictEqual(specText.cleanedFields('argument', {name: 'a', title: 'no'}), {});
+    assert.deepStrictEqual(specText.cleanedFields('device', {'*': 'x', manufacturer: 'm'}), {}, '\'*\' names no field');
+    assert.throws(() => specText.cleanedFields('nothing', {title: 't'}), /no declared text kind nothing/);
   });
 
   // the lists clean declared text only through the table (the high review
