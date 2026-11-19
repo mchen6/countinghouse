@@ -361,7 +361,9 @@ const out = {
         {why: 'a leftover pack field', reason: 'old-field', message: {id: 16, type: 'load', name: scenario, dirs: {[scenario]: dir(scenario, '1.0.0')}, pack: 'example'}},
         {why: 'a leftover global field', reason: 'old-field', message: {id: 17, type: 'reload', names: [scenario], dirs: {[scenario]: dir(scenario, '1.0.0')}, global: true}},
         {why: 'a leftover remoteCredentials field', reason: 'old-field', message: {id: 18, type: 'load', name: scenario, dirs: {[scenario]: dir(scenario, '1.0.0')},
-          remoteCredentials: '/home/example/.countinghouse/run/start-1/remote-credentials.json'}}
+          remoteCredentials: '/home/example/.countinghouse/run/start-1/remote-credentials.json'}},
+        // M2a: reread names only the module settings
+        {why: 'a reread of anything but the module settings', reason: 'name', message: {id: 19, type: 'reread', what: 'everything'}}
       ]
     };
   })(),
@@ -369,12 +371,15 @@ const out = {
   // countinghouse's restore.js, ch-local's session-table.js and B2's export,
   // which all read these cases
   restoreRows: {
-    rule: 'a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 2 (one per cap), one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool\'s bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; nothing else is overridden (a pack\'s or a module\'s on/off is never a session\'s own: a well-formed pack.<n> override from before M5a, with a boolean value, over null and a semver version, is dropped from its row, the rest of the row taken and its session told once; any other pack.<n> override refuses the restore); locks distinct kinds of maxOutputBytes, requestTimeout, pack; formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: "restore", sessions, declines, reset}: reset lists the sessions (each a row\'s) that lost loosenings in a handoff, to be told so',
+    rule: 'a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 2 (one per cap), one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool\'s bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; nothing else is overridden (a pack\'s or a module\'s on/off is never a session\'s own: a well-formed pack.<n> override from before M5a, with a boolean value, over null and a semver version, is dropped from its row, the rest of the row taken and its session told once; any other pack.<n> override refuses the restore); locks distinct kinds of maxOutputBytes, requestTimeout, pack, module (every module.<package>.<setting> is the one kind module); formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: "restore", sessions, declines, reset}: reset lists the sessions (each a row\'s) that lost loosenings in a handoff, to be told so',
     accepted: [
       {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}},
       {session: 'c'.repeat(32), resume: 'd'.repeat(64), state: {overrides: [], locks: ['pack'], formsLeft: 1, unanswered: ['maxOutputBytes', 'requestTimeout']}},
       {session: 'd'.repeat(32), resume: 'c'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: []}},
-      {session: 'b'.repeat(32), resume: 'e'.repeat(64), state: {overrides: [{name: 'requestTimeout', value: 120000, loosening: true, over: 30000, version: null}, {name: 'maxOutputBytes', value: 1048576, loosening: false, over: null, version: null}], locks: ['pack', 'requestTimeout'], formsLeft: 0}}
+      {session: 'b'.repeat(32), resume: 'e'.repeat(64), state: {overrides: [{name: 'requestTimeout', value: 120000, loosening: true, over: 30000, version: null}, {name: 'maxOutputBytes', value: 1048576, loosening: false, over: null, version: null}], locks: ['pack', 'requestTimeout'], formsLeft: 0}},
+      // M2b: the kind module, locked and unanswered
+      {session: 'e'.repeat(32), resume: '1'.repeat(64), state: {overrides: [], locks: ['module'], formsLeft: 3}},
+      {session: 'f'.repeat(32), resume: '2'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['module']}}
     ],
     // M5a: a well-formed pack override from before M5a is dropped from its
     // row (taken: the state as taken), the session told once

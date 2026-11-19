@@ -16,6 +16,28 @@ const hexOf = (b) => Buffer.from(b).toString('hex');
 const fromHex = (h) => Buffer.from(h, 'hex');
 
 describe('sessions 01: the wire (contract 2)', () => {
+  // the generator is the source of vectors.json: run as it is, it writes the
+  // file byte for byte, so a hand edit to either alone fails here (#438's
+  // high review). Run on a copy in a directory of its own: it writes beside
+  // itself.
+  it('make-vectors.js writes vectors.json byte for byte', function() {
+    this.timeout(30000);
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const here = path.join(__dirname, '..', '..', 'docs', 'superpowers', 'specs', 'shared-runtime-wire');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-make-vectors-'));
+    try {
+      fs.copyFileSync(path.join(here, 'make-vectors.js'), path.join(dir, 'make-vectors.js'));
+      const run = require('child_process').spawnSync(process.execPath, [path.join(dir, 'make-vectors.js')], {encoding: 'utf8', timeout: 25000});
+      assert.strictEqual(run.status, 0, run.stderr);
+      assert.ok(fs.readFileSync(path.join(dir, 'vectors.json')).equals(fs.readFileSync(path.join(here, 'vectors.json'))),
+        'make-vectors.js and vectors.json disagree: edit the generator, run it, and commit both');
+    } finally {
+      fs.rmSync(dir, {recursive: true, force: true});
+    }
+  });
+
   it('runs vectors of the contract this code speaks', () => {
     assert.strictEqual(V.contract, frames.CONTRACT);
   });
