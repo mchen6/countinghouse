@@ -20,7 +20,7 @@ const remoteFor = (url, credential) => {
   assert.deepStrictEqual(r.problems, []);
   return r.remotes[0];
 };
-const GH = remoteFor('https://api.githubcopilot.com/mcp/', {env: 'COUNTINGHOUSE_GITHUB_TOKEN', fallbackEnv: 'GITHUB_TOKEN'});
+const GH = remoteFor('https://api.githubcopilot.com/mcp/', {env: 'COUNTINGHOUSE_GITHUB_TOKEN'});
 const allowance = (obj) => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-02-')), 'remote-credentials.json');
   fs.writeFileSync(file, typeof(obj) === 'string' ? obj : JSON.stringify(obj));
@@ -34,9 +34,10 @@ describe('remote 02: the credential allowance', () => {
     assert.deepStrictEqual(c, {header: 'Authorization', value: `Bearer ${TOKEN}`, source: 'COUNTINGHOUSE_GITHUB_TOKEN'});
   });
 
-  it('reads fallbackEnv when env is unset or empty', () => {
+  // M6: one variable; another allowed and set is never read in its place
+  it('env unset or empty is unset, whatever else is set', () => {
     for (const env of [{GITHUB_TOKEN: OTHER}, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: OTHER}]) {
-      assert.deepStrictEqual(resolveCredential(GH, env, ALLOWED()), {header: 'Authorization', value: `Bearer ${OTHER}`, source: 'GITHUB_TOKEN'});
+      assert.deepStrictEqual(resolveCredential(GH, env, ALLOWED()), {missing: 'unset', variable: 'COUNTINGHOUSE_GITHUB_TOKEN', origin: 'https://api.githubcopilot.com'});
     }
   });
 
@@ -52,10 +53,10 @@ describe('remote 02: the credential allowance', () => {
     assert.deepStrictEqual(c, {missing: 'not-allowed', variable: 'CH_TEST_REMOTE_TOKEN', origin: `http://127.0.0.1:${testPort(9688)}`});
   });
 
-  it('allows env and fallbackEnv one by one', () => {
-    const onlyFallback = allowance({'https://api.githubcopilot.com': ['GITHUB_TOKEN']});
-    assert.deepStrictEqual(resolveCredential(GH, {COUNTINGHOUSE_GITHUB_TOKEN: TOKEN, GITHUB_TOKEN: OTHER}, onlyFallback),
-      {header: 'Authorization', value: `Bearer ${OTHER}`, source: 'GITHUB_TOKEN'});
+  it('an allowance for another variable only: not allowed', () => {
+    const another = allowance({'https://api.githubcopilot.com': ['GITHUB_TOKEN']});
+    assert.deepStrictEqual(resolveCredential(GH, {COUNTINGHOUSE_GITHUB_TOKEN: TOKEN, GITHUB_TOKEN: OTHER}, another),
+      {missing: 'not-allowed', variable: 'COUNTINGHOUSE_GITHUB_TOKEN', origin: 'https://api.githubcopilot.com'});
   });
 
   it('no allowance means no credential is read', () => {
@@ -197,18 +198,16 @@ describe('remote 02: version 2, by module', () => {
     assert.strictEqual(credentials.resolveModuleCredential(GHV2, env, entryOf(l, 'b'), 'b').value, `Bearer ${OTHER}`);
   });
 
-  it('an empty slot is unset; a fallbackEnv is never read under version 2', () => {
+  it('an empty slot is unset; another variable bound is never read in its place', () => {
     const l = load(BOUND);
     const e = entryOf(l, '@countinghouse/ch-access-github');
     assert.deepStrictEqual(credentials.resolveModuleCredential(GHV2, {[SLOT1]: ''}, e, 'x'),
       {missing: 'unset', variable: 'GITHUB_TOKEN', origin: ORIGIN});
-    const withFallback = remoteFor(`${ORIGIN}/mcp/`, {env: 'GITHUB_TOKEN', fallbackEnv: 'COUNTINGHOUSE_GITHUB_TOKEN'});
     const both = load({m: {[ORIGIN]: {GITHUB_TOKEN: SLOT1, COUNTINGHOUSE_GITHUB_TOKEN: SLOT2}}});
-    assert.deepStrictEqual(credentials.resolveModuleCredential(withFallback, {[SLOT2]: OTHER}, entryOf(both, 'm'), 'm'),
+    assert.deepStrictEqual(credentials.resolveModuleCredential(GHV2, {[SLOT2]: OTHER}, entryOf(both, 'm'), 'm'),
       {missing: 'unset', variable: 'GITHUB_TOKEN', origin: ORIGIN});
-    // only the fallback is bound: still nothing is sent
-    const onlyFallback = load({m: {[ORIGIN]: {COUNTINGHOUSE_GITHUB_TOKEN: SLOT2}}});
-    assert.deepStrictEqual(credentials.resolveModuleCredential(withFallback, {[SLOT2]: OTHER}, entryOf(onlyFallback, 'm'), 'm'),
+    const another = load({m: {[ORIGIN]: {COUNTINGHOUSE_GITHUB_TOKEN: SLOT2}}});
+    assert.deepStrictEqual(credentials.resolveModuleCredential(GHV2, {[SLOT2]: OTHER}, entryOf(another, 'm'), 'm'),
       {missing: 'not-allowed', why: 'new-variable', variable: 'GITHUB_TOKEN', origin: ORIGIN});
   });
 
@@ -381,7 +380,7 @@ describe('remote 02: countinghouse-validate reads the declaration', () => {
   it('accepts the first pack\'s declaration', async () => {
     const problems = await remotesProblems(withRemotes([{name: 'github', transport: 'streamable-http', url: 'https://api.githubcopilot.com/mcp/',
       headers: {'X-MCP-Toolsets': 'actions,repos'},
-      credential: {env: 'COUNTINGHOUSE_GITHUB_TOKEN', fallbackEnv: 'GITHUB_TOKEN', header: 'Authorization', scheme: 'Bearer'}}]));
+      credential: {env: 'COUNTINGHOUSE_GITHUB_TOKEN', header: 'Authorization', scheme: 'Bearer'}}]));
     assert.deepStrictEqual(problems, []);
   });
 });
