@@ -20,15 +20,14 @@ const sessions = require('../../lib/sessions');
 const settings = require('../../lib/session-settings');
 const jobSessions = require('../../lib/job-sessions');
 const settingsTool = require('../../lib/settings-tool');
+// the module manager the tool reads what is loaded from (#449's high
+// review, round 6, 8): none loaded here
+const NO_MODULES = {modules: {}};
 const Session = require('../../lib/session');
 
 const MiB = 1024 * 1024;
 
 describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)', () => {
-  // the one manager the settings tool reads what is loaded from (#449's
-  // high review, round 5, 4b/10): none loaded here
-  before(() => settingsTool.setModuleManager({modules: {}}));
-  after(() => settingsTool.setModuleManager(null));
   const A = 'a'.repeat(32);
   const B = 'b'.repeat(32);
   const C = 'c'.repeat(32);
@@ -72,7 +71,7 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     reset();
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s09-'));
     file = path.join(home, 'settings.json');
-    tool = settingsTool.create({file, lockWaitMs: 200});
+    tool = settingsTool.create({mm: NO_MODULES, file, lockWaitMs: 200});
     reg = new EventEmitter();
     sessions.attach(reg);
     sources = {};
@@ -274,7 +273,7 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
 
   it('the ceiling is read afresh before a session\'s set is judged, as a terminal-less set reads it', async () => {
     let reads = 0;
-    const t2 = settingsTool.create({file, lockWaitMs: 200, ceiling: (o) => { if (o == null || o.cacheOnly !== true) reads += 1; return {state: 'none'}; }});
+    const t2 = settingsTool.create({mm: NO_MODULES, file, lockWaitMs: 200, ceiling: (o) => { if (o == null || o.cacheOnly !== true) reads += 1; return {state: 'none'}; }});
     await t2.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
     assert.ok(reads >= 1, 'a real read, not the cache only');
   });

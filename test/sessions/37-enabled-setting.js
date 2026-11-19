@@ -172,18 +172,13 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     }
   });
 
-  // (round 5, 4b/10) one source: the manager route-manager gives the control
-  // channel, given to the settings tool once; none, a clear error
-  it('the loaded and loading modules come from the one manager given once; with none, a clear error', async () => {
-    const mip = require('../../lib/modules-in-place');
-    try {
-      settingsTool.setModuleManager(null);
-      await assert.rejects(settingsTool.create({file, ceiling: () => ({state: 'none'})}).get(), /no module manager/);
-      const mm = {packsLoading: new Map([['coming-up', {}]]), startupPending: null};
-      settingsTool.setModuleManager(mm);
-      assert.deepStrictEqual(settingsTool.loadingNow(), mip.loadingTops(mm));
-      assert.deepStrictEqual(settingsTool.loadedNow(), mip.loadedTops(mm));
-    } finally { settingsTool.setModuleManager(null); }
+  // (round 6, 8) one source: the manager passed in by the gateway (the one
+  // the control channel acts on); none, a clear error
+  it('the loaded and loading modules come from the manager passed in; with none, a clear error', async () => {
+    await assert.rejects(settingsTool.create({file, ceiling: () => ({state: 'none'})}).get(), /no module manager/);
+    const mm = {modules: {}, packsLoading: new Map([['coming-up', {}]]), startupPending: null};
+    fs.writeFileSync(path.join(dir, 'modules.json'), '{"modules": ');
+    assert.strictEqual((await settingsTool.create({file, mm, ceiling: () => ({state: 'none'})}).set('enabled.coming-up', 'off')).new, 'off', 'loading, from mm');
   });
 
   it('a part, a module not installed and a name of no grammar are SETTING_UNKNOWN', async () => {

@@ -20,14 +20,13 @@ const sessions = require('../../lib/sessions');
 const settings = require('../../lib/session-settings');
 const jobSessions = require('../../lib/job-sessions');
 const settingsTool = require('../../lib/settings-tool');
+// the module manager the tool reads what is loaded from (#449's high
+// review, round 6, 8): none loaded here
+const NO_MODULES = {modules: {}};
 
 const MiB = 1024 * 1024;
 
 describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', () => {
-  // the one manager the settings tool reads what is loaded from (#449's
-  // high review, round 5, 4b/10): none loaded here
-  before(() => settingsTool.setModuleManager({modules: {}}));
-  after(() => settingsTool.setModuleManager(null));
   const A = 'a'.repeat(32);
   const B = 'b'.repeat(32);
   const C = 'c'.repeat(32);
@@ -56,7 +55,7 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
     return s;
   };
   const ctx = (id, over = {}) => Object.assign({shared: true, session: id, clientInfo: CLIENT, capabilities: {elicitation: {form: {}}}, scope: 'all-sessions'}, over);
-  const tool = (o = {}) => settingsTool.create(Object.assign({file, lockWaitMs: 200, ceiling: () => ({state: 'none'}),
+  const tool = (o = {}) => settingsTool.create(Object.assign({mm: NO_MODULES, file, lockWaitMs: 200, ceiling: () => ({state: 'none'}),
     sessionClient: (c) => ({ok: true, client: c.clientInfo}),
     growValidators: async (bytes) => { grown.push(bytes); }}, o));
   const stored = () => JSON.parse(fs.readFileSync(file, 'utf8')).values;
@@ -471,7 +470,7 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
     });
 
     it('it is a shared runtime\'s: under --stdio, where there is one session, the scope is refused', async () => {
-      const stdio = settingsTool.create({file, lockWaitMs: 200, ceiling: () => ({state: 'none'})});
+      const stdio = settingsTool.create({mm: NO_MODULES, file, lockWaitMs: 200, ceiling: () => ({state: 'none'})});
       await refused(stdio.set('maxOutputBytes', '4MiB', 'settings tool', {scope: 'all-sessions'}), 'ARGUMENTS_INVALID');
       assert.ok(!fs.existsSync(file));
     });

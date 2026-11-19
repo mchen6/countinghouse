@@ -16,6 +16,9 @@ const os = require('os');
 const path = require('path');
 const options = require('../../lib/cli-options');
 const settingsTool = require('../../lib/settings-tool');
+// the module manager the tool reads what is loaded from (#449's high
+// review, round 6, 8): none loaded here
+const NO_MODULES = {modules: {}};
 const ms = require('../../lib/module-settings');
 const ceilingLib = require('../../lib/settings-ceiling');
 const sessions = require('../../lib/sessions');
@@ -31,10 +34,6 @@ const P = pkgOf('@acme/region-part', {region: {type: 'string'}}, {role: 'part'})
 const trusted = (obj) => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: ceilingLib.parse(JSON.stringify(Object.assign({version: 1}, obj))).ceiling});
 
 describe('validation 30: countinghouse_settings and module settings', () => {
-  // the one manager the settings tool reads what is loaded from (#449's
-  // high review, round 5, 4b/10): none loaded here
-  before(() => settingsTool.setModuleManager({modules: {}}));
-  after(() => settingsTool.setModuleManager(null));
   let home;
   let file;
   let saved;
@@ -50,7 +49,7 @@ describe('validation 30: countinghouse_settings and module settings', () => {
     assert.strictEqual(err.code, code, err.message);
     return err;
   };
-  const make = (extra = {}) => settingsTool.create(Object.assign({file, lockWaitMs: 200, ceiling: () => ceiling,
+  const make = (extra = {}) => settingsTool.create(Object.assign({mm: NO_MODULES, file, lockWaitMs: 200, ceiling: () => ceiling,
     moduleStates: () => modules, applyModuleSettings: async (pkg) => { applied += 1; reapply(pkg); return {applied: 1, refused: []}; }}, extra));
   // what a reread of one module does: its state made again from the file
   const reapply = (pkg) => {

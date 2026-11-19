@@ -8,6 +8,9 @@ const os = require('os');
 const path = require('path');
 const options = require('../../lib/cli-options');
 const settingsTool = require('../../lib/settings-tool');
+// the module manager the tool reads what is loaded from (#449's high
+// review, round 6, 8): none loaded here
+const NO_MODULES = {modules: {}};
 
 const MiB = 1024 * 1024;
 
@@ -18,10 +21,6 @@ const EN = `enabled.${SC}`;
 const core = (a) => ({name: a.name, old: a.old, new: a.new, applies: a.applies});
 
 describe('stdio 14: countinghouse_settings', () => {
-  // the one manager the settings tool reads what is loaded from (#449's
-  // high review, round 5, 4b/10): none loaded here
-  before(() => settingsTool.setModuleManager({modules: {}}));
-  after(() => settingsTool.setModuleManager(null));
   let home;
   let file;
   let tool;
@@ -47,7 +46,7 @@ describe('stdio 14: countinghouse_settings', () => {
     const tops = [SC, 'a', 'b', 'made-up', 'other'];
     fs.writeFileSync(path.join(home, 'modules.json'), JSON.stringify({modules: Object.fromEntries(tops.map((m) => [m, {version: '1.0.0', role: 'scenario'}])),
       packs: Object.fromEntries(tops.map((m, i) => [`p${i}`, {modules: {[m]: '1.0.0'}}]))}));
-    tool = settingsTool.create({file, lockWaitMs: 200});
+    tool = settingsTool.create({mm: NO_MODULES, file, lockWaitMs: 200});
     // the runtime on its defaults at each case's start, whatever the case
     // before (or a file run before this one, #285) left: a cap's value is
     // what the runtime runs with
@@ -144,7 +143,7 @@ describe('stdio 14: countinghouse_settings', () => {
   });
 
   it('requests not confirmed: one entry per kind this start (any value, any module turned on), a fresh tool per call as the gateway makes, the count written before the next change', async () => {
-    const fresh = () => require('../../lib/settings-tool').create({file});
+    const fresh = () => require('../../lib/settings-tool').create({mm: NO_MODULES, file});
     for (const p of ['a', 'b', 'made-up']) await fresh().set(`enabled.${p}`, 'off');
     const before = history().length;
     const asked = () => history().slice(before);
@@ -202,7 +201,7 @@ describe('stdio 14: countinghouse_settings', () => {
     it('started under the default, then raised this start: a value between is a this-start tightening, written nowhere (the start value is the baseline, not what runs)', async () => {
       startedAt({maxOutputBytes: 8 * MiB});
       options.maxOutputBytes = 12 * MiB;   // a raise confirmed for this start
-      const t = settingsTool.create({file, lockWaitMs: 200, ceiling: () => ({state: 'none'}), applyChange: async (staged) => { options[staged.name] = staged.next; }});
+      const t = settingsTool.create({mm: NO_MODULES, file, lockWaitMs: 200, ceiling: () => ({state: 'none'}), applyChange: async (staged) => { options[staged.name] = staged.next; }});
       assert.deepStrictEqual(await t.set('maxOutputBytes', '10MiB'), {name: 'maxOutputBytes', old: 12 * MiB, new: 10 * MiB, applies: 'this start'});
       assert.ok(!fs.existsSync(file), 'not written: 10 MiB is above what it started with');
       assert.strictEqual(options.maxOutputBytes, 10 * MiB);
@@ -215,7 +214,7 @@ describe('stdio 14: countinghouse_settings', () => {
     // never exceeds what the file yields now; a value between that and what
     // runs applies to this start only.
     describe('started above the default by a flag, nothing stored', () => {
-      const applying = (o = {}) => settingsTool.create(Object.assign({file, lockWaitMs: 200, ceiling: () => ({state: 'none'}),
+      const applying = (o = {}) => settingsTool.create(Object.assign({mm: NO_MODULES, file, lockWaitMs: 200, ceiling: () => ({state: 'none'}),
         applyChange: async (staged) => { options[staged.name] = staged.next; }}, o));
       const lines = () => (fs.existsSync(path.join(home, 'history.jsonl')) ? history() : []);
       beforeEach(() => startedAt({maxOutputBytes: 32 * MiB}));
@@ -340,7 +339,7 @@ describe('stdio 14: countinghouse_settings', () => {
     it('lowered under its start value (the default), then the default asked for: a raise of what runs, refused by a ceiling under it, else the user\'s to confirm', async () => {
       startedAt({maxOutputBytes: 16 * MiB});
       options.maxOutputBytes = 12 * MiB;   // as ch-local's control set brings it down to a ceiling lowered since
-      const under = settingsTool.create({file, lockWaitMs: 200, ceiling: () => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {maxOutputBytes: 12 * MiB, forbid: [], conversation: true}})});
+      const under = settingsTool.create({mm: NO_MODULES, file, lockWaitMs: 200, ceiling: () => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {maxOutputBytes: 12 * MiB, forbid: [], conversation: true}})});
       await refused(under.set('maxOutputBytes', '16MiB'), 'SETTING_ABOVE_CEILING');
       await refused(tool.set('maxOutputBytes', '16MiB'), 'SETTING_NEEDS_CONFIRMATION');
       assert.ok(!fs.existsSync(file), 'settings.json not written');
@@ -357,7 +356,7 @@ describe('stdio 14: countinghouse_settings', () => {
 
     it('started under the default by a flag, above the ceiling: the value that runs, asked for, is stored (it lowers what the file yields)', async () => {
       startedAt({maxOutputBytes: 14 * MiB});
-      const t = settingsTool.create({file, lockWaitMs: 200, ceiling: () => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {maxOutputBytes: 12 * MiB, forbid: [], conversation: true}})});
+      const t = settingsTool.create({mm: NO_MODULES, file, lockWaitMs: 200, ceiling: () => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {maxOutputBytes: 12 * MiB, forbid: [], conversation: true}})});
       assert.deepStrictEqual(await t.set('maxOutputBytes', '14MiB'), {name: 'maxOutputBytes', old: 14 * MiB, new: 14 * MiB, applies: 'now'});
       assert.strictEqual(stored().maxOutputBytes, 14 * MiB);
     });
@@ -371,7 +370,7 @@ describe('stdio 14: countinghouse_settings', () => {
 
   // Part 3, section 4: the operator's ceiling binds conversation too
   describe('the operator\'s ceiling', () => {
-    const withCeiling = (c) => require('../../lib/settings-tool').create({file, ceiling: () => c});
+    const withCeiling = (c) => require('../../lib/settings-tool').create({mm: NO_MODULES, file, ceiling: () => c});
     const trusted = (ceiling) => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: Object.assign({forbid: [], conversation: true}, ceiling)});
 
     it('a ceiling that cannot be trusted refuses every loosening, naming the file and why; tightening still works', async () => {

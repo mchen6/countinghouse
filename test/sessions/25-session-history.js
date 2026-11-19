@@ -19,14 +19,13 @@ const settings = require('../../lib/session-settings');
 const jobSessions = require('../../lib/job-sessions');
 const confirm = require('../../lib/settings-confirm');
 const settingsTool = require('../../lib/settings-tool');
+// the module manager the tool reads what is loaded from (#449's high
+// review, round 6, 8): none loaded here
+const NO_MODULES = {modules: {}};
 
 const MiB = 1024 * 1024;
 
 describe('sessions 25: the settings history, per session (shared runtime B5, Task 3)', () => {
-  // the one manager the settings tool reads what is loaded from (#449's
-  // high review, round 5, 4b/10): none loaded here
-  before(() => settingsTool.setModuleManager({modules: {}}));
-  after(() => settingsTool.setModuleManager(null));
   const A = 'a'.repeat(32);
   const B = 'b'.repeat(32);
   const CLIENT = {name: 'claude-code', version: '2.1.323'};
@@ -52,7 +51,7 @@ describe('sessions 25: the settings history, per session (shared runtime B5, Tas
     return s;
   };
   const ctx = (id, over = {}) => Object.assign({shared: true, session: id, clientInfo: CLIENT, capabilities: {elicitation: {form: {}}}}, over);
-  const tool = () => settingsTool.create({file, lockWaitMs: 200, ceiling: () => ({state: 'none'}),
+  const tool = () => settingsTool.create({mm: NO_MODULES, file, lockWaitMs: 200, ceiling: () => ({state: 'none'}),
     sessionClient: (c) => (c.clientInfo != null ? {ok: true, client: c.clientInfo} : {ok: false, why: 'client unknown'}),
     growValidators: async () => {}});
   const lines = () => (fs.existsSync(historyFile) ? fs.readFileSync(historyFile, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);

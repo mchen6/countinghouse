@@ -11,6 +11,9 @@ const os = require('os');
 const path = require('path');
 const options = require('../../lib/cli-options');
 const settingsTool = require('../../lib/settings-tool');
+// the module manager the tool reads what is loaded from (#449's high
+// review, round 6, 8): none loaded here
+const NO_MODULES = {modules: {}};
 const confirmModule = require('../../lib/settings-confirm');
 
 const MiB = 1024 * 1024;
@@ -23,16 +26,12 @@ const EN = `enabled.${SC}`;
 const ON_TEXT = (v) => `Turn on ${SC} ${v} in countinghouse for all your sessions? It stays on, now and after a restart, until it is turned off.`;
 
 describe('stdio 20: the settings tool asks the user in a dialog, and applies a confirmed change for this start only (part 3 P2)', () => {
-  // the one manager the settings tool reads what is loaded from (#449's
-  // high review, round 5, 4b/10): none loaded here
-  before(() => settingsTool.setModuleManager({modules: {}}));
-  after(() => settingsTool.setModuleManager(null));
   let dir;
   let file;
   let saved;
   let applied;
   const history = () => fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
-  const tool = (o = {}) => settingsTool.create(Object.assign({
+  const tool = (o = {}) => settingsTool.create(Object.assign({mm: NO_MODULES, 
     file,
     ceiling: () => ({state: 'none'}),
     mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
@@ -214,7 +213,7 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
   });
 
   it('without the injected conditions, production asks nothing yet (no tested client, conditions unknown)', async () => {
-    const t = settingsTool.create({file, ceiling: () => ({state: 'none'})});
+    const t = settingsTool.create({mm: NO_MODULES, file, ceiling: () => ({state: 'none'})});
     await refused(t.set('maxOutputBytes', '32MiB', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
   });
 
@@ -233,7 +232,7 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
       }});
       return asked;
     };
-    const prod = () => settingsTool.create({file, ceiling: () => ({state: 'none'}), allowlist: TESTED, applyChange: async () => {}});
+    const prod = () => settingsTool.create({mm: NO_MODULES, file, ceiling: () => ({state: 'none'}), allowlist: TESTED, applyChange: async () => {}});
 
     it('ch-local says yes: a form; it was asked with the client\'s name and version only', async () => {
       const asked = chLocal({ok: true, mayElicit: true});
@@ -260,17 +259,13 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
 });
 
 describe('stdio 20b: the review of Tasks 1-3 (part 3 P2)', () => {
-  // the one manager the settings tool reads what is loaded from (#449's
-  // high review, round 5, 4b/10): none loaded here
-  before(() => settingsTool.setModuleManager({modules: {}}));
-  after(() => settingsTool.setModuleManager(null));
   const MiB2 = 1024 * 1024;
   let dir;
   let file;
   let saved;
   let applied;
   const history = () => (fs.existsSync(path.join(dir, 'history.jsonl')) ? fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
-  const tool = (o = {}) => settingsTool.create(Object.assign({
+  const tool = (o = {}) => settingsTool.create(Object.assign({mm: NO_MODULES, 
     file,
     ceiling: () => ({state: 'none'}),
     mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
@@ -384,7 +379,7 @@ describe('stdio 20c: the security review of #213 (part 3 P2)', () => {
   let saved;
   const history = () => (fs.existsSync(path.join(dir, 'history.jsonl')) ? fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
   const stored = () => JSON.parse(fs.readFileSync(file, 'utf8')).values;
-  const tool = (o = {}) => settingsTool.create(Object.assign({
+  const tool = (o = {}) => settingsTool.create(Object.assign({mm: NO_MODULES, 
     file,
     ceiling: () => ({state: 'none'}),
     mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
@@ -423,7 +418,7 @@ describe('stdio 20c: the security review of #213 (part 3 P2)', () => {
 
   it('a this-start tightening that cannot be applied leaves "not applied" after its line', async () => {
     // an apply that fails (a pack ch-local would not unload, a resize gone wrong)
-    const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
+    const t = settingsTool.create({mm: NO_MODULES, file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
       applyChange: async () => { throw new Error('boom'); }});
     options.maxOutputBytes = 32 * M;   // raised this start (the file says 16 MiB)
     await refused(t.set('maxOutputBytes', '24MiB', 'settings tool', CLIENT), 'SETTING_NOT_APPLIED');
@@ -509,7 +504,7 @@ describe('stdio 20d: #213\'s nits (part 3 P2, Task 4)', () => {
     settingsTool.resetForTests();
   });
   afterEach(() => { options.maxOutputBytes = saved; fs.rmSync(dir, {recursive: true, force: true}); });
-  const withCeiling = (ceiling) => settingsTool.create({file, ceiling,
+  const withCeiling = (ceiling) => settingsTool.create({mm: NO_MODULES, file, ceiling,
     mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
     applyChange: async (st) => { options[st.name] = st.next; }});
   const trusted = (o = {}) => ({state: 'trusted', file: 'c', ceiling: Object.assign({forbid: [], packs: null}, o)});
@@ -583,7 +578,7 @@ describe('stdio 20e: Task 4\'s review (part 3 P2)', () => {
 
   it('the re-check at accept is for the client the form was staged for; another refuses', async () => {
     let client = {name: 'claude-code', version: '2.1.323'};
-    const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client}),
+    const t = settingsTool.create({mm: NO_MODULES, file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client}),
       applyChange: async (st) => { options[st.name] = st.next; }});
     const a = await t.set('maxOutputBytes', '32MiB', 'settings tool', CLIENT);
     client = {name: 'claude-code', version: '2.1.400'};
@@ -593,7 +588,7 @@ describe('stdio 20e: Task 4\'s review (part 3 P2)', () => {
 
   it('a ceiling changed while the user was asked says so, not that the setting changed', async () => {
     let current = {state: 'none'};
-    const t = settingsTool.create({file, ceiling: (o) => (o && o.cacheOnly ? {state: 'trusted', file: 'c', ceiling: {forbid: [], packs: null}} : current),
+    const t = settingsTool.create({mm: NO_MODULES, file, ceiling: (o) => (o && o.cacheOnly ? {state: 'trusted', file: 'c', ceiling: {forbid: [], packs: null}} : current),
       mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}), applyChange: async () => {}});
     const a = await t.set('maxOutputBytes', '32MiB', 'settings tool', CLIENT);
     const e = await refused(t.confirm('maxOutputBytes', '32MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), 'SETTING_CEILING_CHANGED_MEANWHILE');
@@ -708,7 +703,7 @@ describe('stdio 20h: never silent, for confirmed changes (part 3 P2, Task 6)', (
     LOG.I = (line) => { logged.push(String(line)); return line; };
   });
   afterEach(() => { LOG.I = logI; options.maxOutputBytes = saved; fs.rmSync(dir, {recursive: true, force: true}); notices.take(null); });
-  const tool = (applyChange = async (st) => { options[st.name] = st.next; }) => settingsTool.create({file, ceiling: () => ({state: 'none'}),
+  const tool = (applyChange = async (st) => { options[st.name] = st.next; }) => settingsTool.create({mm: NO_MODULES, file, ceiling: () => ({state: 'none'}),
     mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}), applyChange});
 
   it('an applied confirmation is told as a notice and logged, in the same words; a decline tells nothing', async () => {
@@ -783,7 +778,7 @@ describe('stdio 20i: Task 5\'s review (part 3 P2)', () => {
       fs.writeFileSync(file, JSON.stringify({version: 1, values: {[EN]: false}}));
       fs.writeFileSync(path.join(dir, 'packs.json'), JSON.stringify({packs: {'ci-failure-triage': {packages: {'@countinghouse/ch-pack-ci-failure-triage': '0.4.0'}}}}));
       confirmModule.resetForTests();
-      const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}), applyChange: async () => {}});
+      const t = settingsTool.create({mm: NO_MODULES, file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}), applyChange: async () => {}});
       const a = await t.set(EN, 'on', 'settings tool', CLIENT);
       await t.confirm(EN, 'on', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT);
       assert.strictEqual((await t.set(EN, 'on', 'settings tool', CLIENT)).applies, 'now', 'on already: a no-op');
@@ -806,7 +801,7 @@ describe('stdio 20j: #222\'s review (part 3 P2)', () => {
 
   it('an apply that fails with no code says "error", never its message (in the notice, the history and the refusal)', async () => {
     const file = path.join(dir, 'settings.json');
-    const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
+    const t = settingsTool.create({mm: NO_MODULES, file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
       applyChange: async () => { throw new Error('a message that could carry /home/someone or a key'); }});
     const a = await t.set('maxOutputBytes', '32MiB', 'settings tool', CLIENT);
     const e = await t.confirm('maxOutputBytes', '32MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT).then(() => null, (err) => err);
