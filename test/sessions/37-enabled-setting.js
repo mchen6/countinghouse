@@ -143,6 +143,21 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.deepStrictEqual([reads, tops], [1, 1]);
   });
 
+  // the medium review of round 3, 5: only a runtime that serves the
+  // settings tool tells an unload as its off
+  it('storedOff: a module the settings file has off, read only where the settings tool is served', () => {
+    const saved = {settingsFile: options.settingsFile, settingsTool: options.settingsTool};
+    try {
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {[`enabled.${TOOL}`]: false}}));
+      options.settingsFile = file;
+      options.settingsTool = true;
+      assert.strictEqual(settingsTool.storedOff(TOOL), true);
+      assert.strictEqual(settingsTool.storedOff(CALLER), false);
+      options.settingsTool = false;
+      assert.strictEqual(settingsTool.storedOff(TOOL), false);
+    } finally { Object.assign(options, saved); }
+  });
+
   it('a part, a module not installed and a name of no grammar are SETTING_UNKNOWN', async () => {
     for (const name of [`enabled.${PART}`, 'enabled.not-installed', 'pack.ci-failure-triage']) {
       await refused(tool().set(name, 'off'), 'SETTING_UNKNOWN');
