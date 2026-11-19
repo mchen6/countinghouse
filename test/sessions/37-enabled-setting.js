@@ -94,6 +94,44 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     await refused(tool().set(`enabled.${TOOL}`, 'off'), 'SETTING_UNKNOWN');
   });
 
+  // #449's high review, 9: the enabled rows are paged with the module rows
+  // (theirs first), and a request reads ch-local's record and the loaded
+  // modules once
+  it('the enabled rows are paged with the module rows, at most 64 a call; each get reads the record and the loaded modules once', async () => {
+    const many = Object.fromEntries(Array.from({length: 70}, (_, i) => [`tool-${String(i).padStart(2, '0')}`, {version: '1.0.0', role: null}]));
+    record(many);
+    let tops = 0;
+    let reads = 0;
+    const realRead = fs.readFileSync;
+    const t = tool({loadedTops: () => { tops += 1; return []; }});
+    fs.readFileSync = function(f, ...rest) { if (typeof(f) === 'string' && f.endsWith('modules.json')) reads += 1; return realRead.call(fs, f, ...rest); };
+    let first;
+    let second;
+    try {
+      first = await t.get();
+      assert.deepStrictEqual([reads, tops], [1, 1], 'once each');
+      second = await t.get({}, {cursor: first.nextCursor});
+    } finally { fs.readFileSync = realRead; }
+    const names = (a) => a.settings.filter((r) => r.name.startsWith('enabled.')).map((r) => r.module);
+    assert.strictEqual(names(first).length, 64);
+    assert.strictEqual(typeof(first.nextCursor), 'string');
+    assert.deepStrictEqual(names(first).concat(names(second)), Object.keys(many));
+    assert.strictEqual(second.nextCursor, undefined);
+    assert.strictEqual(second.history, undefined, 'a later page: the paged rows alone');
+  });
+
+  it('set reads the record and the loaded modules once', async () => {
+    let tops = 0;
+    let reads = 0;
+    const realRead = fs.readFileSync;
+    const t = tool({loadedTops: () => { tops += 1; return [{name: TOOL, modules: [TOOL], tools: []}, {name: CALLER, modules: [CALLER, TOOL], tools: []}]; }});
+    fs.readFileSync = function(f, ...rest) { if (typeof(f) === 'string' && f.endsWith('modules.json')) reads += 1; return realRead.call(fs, f, ...rest); };
+    try {
+      assert.deepStrictEqual((await t.set(`enabled.${TOOL}`, 'off')).alsoOff, [CALLER]);
+    } finally { fs.readFileSync = realRead; }
+    assert.deepStrictEqual([reads, tops], [1, 1]);
+  });
+
   it('a part, a module not installed and a name of no grammar are SETTING_UNKNOWN', async () => {
     for (const name of [`enabled.${PART}`, 'enabled.not-installed', 'pack.ci-failure-triage']) {
       await refused(tool().set(name, 'off'), 'SETTING_UNKNOWN');
