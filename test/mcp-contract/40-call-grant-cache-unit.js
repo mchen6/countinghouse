@@ -130,6 +130,46 @@ describe('mcp-contract 40: the grant set a tools/call is answered by (unit)', ()
     assert.deepStrictEqual(registry.grantKeysForTests(), []);
   });
 
+  it('a key a call resolved before: resolved again and its grants read side by side; a key never resolved: one read at a time', async () => {
+    const order = [];
+    const slowIdentify = (key, cb) => { order.push(`identify ${key}`); setImmediate(() => { order.push(`identified ${key}`); cb(knownKeys.has(key) ? null : UNKNOWN); }); };
+    registry.resetGrantsForTests({now: () => t, read: (key, cb) => { order.push(`read ${key}`); setImmediate(cb, null, {devices: grants[key] || []}); }});
+    const callWith = (key) => new Promise((resolve, reject) => registry.grantsForCall(key, slowIdentify, (err, g) => (err ? reject(err) : resolve(g))));
+    await callWith('key-a');
+    assert.deepStrictEqual(order, ['identify key-a', 'identified key-a', 'read key-a'], 'never resolved: the grants after');
+    order.length = 0;
+    t += registry.GRANT_TTL_MS;
+    await callWith('key-a');
+    assert.deepStrictEqual(order.slice(0, 2).sort(), ['identify key-a', 'read key-a'], 'lapsed: both begun before either answers');
+    order.length = 0;
+    await assert.rejects(callWith('never-seen'), (e) => e === UNKNOWN);
+    assert.deepStrictEqual(order, ['identify never-seen', 'identified never-seen'], 'an unknown key costs one read');
+  });
+
+  it('of two reads in flight, the older answer never overwrites the newer', async () => {
+    await call('key-a');
+    t += registry.GRANT_TTL_MS;
+    const answers = [];
+    registry.resetGrantsForTests({now: () => t, read: (key, cb) => answers.push(cb)});
+    // the reset forgot key-a: make it known again, then let its set lapse
+    knownKeys.add('key-a');
+    const first = call('key-a');
+    while (answers.length < 1) await new Promise((r) => setImmediate(r));
+    answers[0](null, {devices: ['old']});
+    await first;
+    t += registry.GRANT_TTL_MS;
+    const older = call('key-a');
+    while (answers.length < 2) await new Promise((r) => setImmediate(r));
+    t += 1;
+    const newer = call('key-a');
+    while (answers.length < 3) await new Promise((r) => setImmediate(r));
+    answers[2](null, {devices: ['new']});
+    await newer;
+    answers[1](null, {devices: ['old']});
+    await older;
+    assert.deepStrictEqual([...await call('key-a')], ['new']);
+  });
+
   it('a provider failure is not kept', async () => {
     registry.resetGrantsForTests({now: () => t, read: (key, cb) => { reads.push(key); setImmediate(cb, Object.assign(new Error('down'), {code: 'SYSTEM_ERROR_USERDB_NA'})); }});
     await assert.rejects(call('key-a'), (e) => e.code === 'SYSTEM_ERROR_USERDB_NA');
