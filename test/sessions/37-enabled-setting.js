@@ -278,6 +278,20 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     }
   });
 
+  // the medium review of the #449 fixes, 1: an off with ch-local's record
+  // unreadable names no module known to be installed, so it counts (else any
+  // name, without end, each a line and a notice)
+  it('an off while ch-local\'s record cannot be read counts against the budget; past it, the terminal', async () => {
+    fs.writeFileSync(path.join(dir, 'modules.json'), '{"modules": ');
+    const t = tool();
+    for (let i = 0; i < 32; i++) assert.strictEqual((await t.set(`enabled.made-up-${i}`, 'off')).new, 'off', `${i}`);
+    const e = await refused(t.set('enabled.made-up-32', 'off'), 'SETTING_NEEDS_CONFIRMATION');
+    assert.match(e.message, /ch-local settings set enabled\.made-up-32 off/);
+    // the record readable again: an installed module's off is made, uncounted
+    record({[TOOL]: {version: '1.2.0', role: null}});
+    assert.strictEqual((await t.set(`enabled.${TOOL}`, 'off')).new, 'off');
+  });
+
   it('the budget counts a module turned on, and is checked under the lock: confirmations at once never pass it together', async () => {
     const t = tool();
     const on = async () => {
