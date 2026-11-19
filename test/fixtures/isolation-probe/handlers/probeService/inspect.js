@@ -68,6 +68,23 @@ const STEPS = {
     } else {
       out.push('same', 'same');
     }
+    // (a %-escape is no '..': judged and read as written, so this one finds
+    // the module's own package.json, never one above it; the review of
+    // e0f39de9)
+    if (typeof(M.findPackageJSON) === 'function') {
+      const found = M.findPackageJSON('./%2e%2e/%2e%2e/%2e%2e/%2e%2e/', __filename);
+      // (by its virtual name: the module's own root's package.json; where
+      // this Node throws for a directory that isn't there, as 22.16 and
+      // 24.0-24.14 do, nothing, as for a plainly missing one)
+      const throwsMissing = M.findPackageJSON('./no-such-isolation-dir/', __filename) === undefined;
+      const isOwn = (f) => typeof(f) === 'string' && /^(\/app\/|[A-Z]:\\app\\)package\.json$/.test(f);
+      // (and the module's own lookup, from its own file, answers on every
+      // Node)
+      const here = M.findPackageJSON('./', __filename);
+      out.push(isOwn(here) && (isOwn(found) || (throwsMissing && found === undefined)) ? 'same' : `climbed(${String(here)} ${String(found)})`);
+    } else {
+      out.push('same');
+    }
     const like = (dir) => ({length: 1, 0: dir});
     out.push(same(() => M._findPath('sshpk', like(nm)), () => M._findPath('no-such-isolation-pkg', like(nm))));
     // a primitive parent, whose filename Node would read off its prototype
