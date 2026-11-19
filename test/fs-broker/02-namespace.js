@@ -92,6 +92,26 @@ describe('fs-broker 02: namespace', () => {
     assert.strictEqual(n.toVirtual('/etc/passwd'), null);
   });
 
+  it('refuses a writable declared path over the module\'s own code, either way round (the _stat PR)', async () => {
+    const declared = [{path: '/srv/modules/weather/lib', access: 'rw'}, {path: '/srv/modules', access: 'rw'}, {path: '/srv/modules/weather/docs', access: 'r'}];
+    // (no protected path in the way: the own-code rule alone)
+    const n = await prepared(Object.assign({}, CFG, {mode: 'enforce', declared, protectedPaths: []}));
+    assert.deepStrictEqual(n.refused.filter((r) => /module's own code/.test(r.reason)).map((r) => r.path), ['/srv/modules/weather/lib', '/srv/modules']);
+    // (under audit kept, and listed for the spawn to say)
+    const a = await prepared(Object.assign({}, CFG, {mode: 'audit', declared, protectedPaths: []}));
+    assert.deepStrictEqual(a.refused.filter((r) => /module's own code/.test(r.reason)), []);
+    assert.deepStrictEqual(a.ownCodeWritable, ['/srv/modules/weather/lib', '/srv/modules']);
+    // (off decides nothing: kept, unsaid)
+    const o = await prepared(Object.assign({}, CFG, {mode: 'off', declared, protectedPaths: []}));
+    assert.deepStrictEqual(o.refused.filter((r) => /module's own code/.test(r.reason)), []);
+    // (and a caller that gives no mode fails closed: refused; the high
+    // review of #452)
+    const none = Object.assign({}, CFG, {declared, protectedPaths: []});
+    delete none.mode;
+    const u = await prepared(none);
+    assert.deepStrictEqual(u.refused.filter((r) => /module's own code/.test(r.reason)).map((r) => r.path), ['/srv/modules/weather/lib', '/srv/modules']);
+  });
+
   it('refuses a declared path that overlaps a protected path, either way round', async () => {
     const n = await prepared(Object.assign({}, CFG, {declared: [{path: '/srv', access: 'r'}, {path: '/srv/data/other', access: 'rw'}, {path: '/opt/ok', access: 'r'}]}));
     assert.deepStrictEqual(n.refused.map((r) => r.path), ['/srv', '/srv/data/other']);

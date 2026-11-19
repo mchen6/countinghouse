@@ -87,4 +87,43 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
       await t.broker.handle('close', [fd]);
     } finally { await t.done(); }
   });
+
+  // (a file swapped after the check for one whose inode number differs only
+  // past 2^53, as a Windows file index can: as Numbers they compare alike,
+  // and the open would be taken as the file checked)
+  it('a file swapped after the check is refused even when the two inode numbers collide as Numbers', async () => {
+    const X1 = (2n ** 60n) + 1n;
+    const X2 = (2n ** 60n) + 2n;
+    const t = await setup('enforce', (syscall, host, dirs) => {
+      if (syscall === 'open' && path.basename(host) === 'f') {
+        fs.writeFileSync(path.join(dirs.data, 'g'), 'other');
+        fs.renameSync(path.join(dirs.data, 'g'), host);
+      }
+    });
+    fs.writeFileSync(path.join(t.dirs.data, 'f'), 'mine');
+    const fake = (st, big, x) => {
+      Object.defineProperty(st, 'ino', {value: big ? x : Number(x), configurable: true});
+      Object.defineProperty(st, 'dev', {value: big ? 1n : 1, configurable: true});
+      return st;
+    };
+    const realLstat = fs.promises.lstat;
+    const probe = await fs.promises.open(__filename);
+    const proto = Object.getPrototypeOf(probe);
+    await probe.close();
+    const realStat = proto.stat;
+    fs.promises.lstat = async function(p, o) {
+      const st = await realLstat.call(this, p, o);
+      return path.basename(String(p)) === 'f' ? fake(st, o != null && o.bigint === true, X1) : st;
+    };
+    proto.stat = async function(o) { return fake(await realStat.call(this, o), o != null && o.bigint === true, X2); };
+    try {
+      await assert.rejects(t.broker.handle('open', ['/data/f', 'r']), enoent('/data/f'));
+      assert.ok(t.reports.includes('escape /data/f'), t.reports.join(', '));
+      assert.strictEqual(t.broker.fds.size, 0);
+    } finally {
+      fs.promises.lstat = realLstat;
+      proto.stat = realStat;
+      await t.done();
+    }
+  });
 });

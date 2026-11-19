@@ -195,6 +195,14 @@ Notes:
   every start of the module, group and setgid bits included: they are the
   module's private directories by design. A backup that needs them runs as
   the runtime's user, or backs up `--moduleDataPath` as a whole.
+- A module's `data` and `tmp` never overlap module code. One inside (or
+  holding) its own directory, a `--loadModule` directory, any module the
+  runtime has loaded, or a `--modulePath` folder refuses the spawn under
+  `--moduleSandbox enforce`, is reported under `audit`, and its `tmp` is
+  never emptied; so does a module whose own code is inside, or holds, a
+  known module's data (its data root, or its `data` and `tmp` where they
+  really are). `--moduleDataPath` may sit in `--modulePath` beside the modules.
+  Don't install modules inside another module's data directory.
 - `--modulePath` and `--moduleDataPath` are distinct names: under
   `--hardened`, a granted directory whose name another grant extends is
   refused (`X` beside `X_data`; see

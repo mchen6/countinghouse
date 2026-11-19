@@ -181,6 +181,18 @@ describe('module-loading 21: one module format, decided statically', function() 
         assert.strictEqual(r._meta['countinghouse/code'], 'MODULE_LAYOUT_UNSUPPORTED', JSON.stringify(r));
       });
 
+      // (a package.json that starts with a byte-order mark: Node reads past
+      // one, the runtime's own readers don't; refused, every mode, the high
+      // review of #452)
+      it('countinghouse_load_module answers MODULE_PACKAGE_BOM for a package.json that starts with a byte-order mark', async () => {
+        const dir = writeModule(path.join(home, `load-bom-${id}`), 'load-bom', {handlers: true});
+        fs.writeFileSync(path.join(dir, 'package.json'), `\uFEFF${fs.readFileSync(path.join(dir, 'package.json'), 'utf8')}`);
+        const r = await load(dir, 'load-bom');
+        assert.strictEqual(r.isError, true, JSON.stringify(r));
+        assert.strictEqual(r._meta['countinghouse/code'], 'MODULE_PACKAGE_BOM', JSON.stringify(r));
+        assert.match(JSON.stringify(r), /package\.json starts with a byte-order mark; save it without one/);
+      });
+
       // The module format's schema, with `input` as ping's input and `extra`
       // beside it in schema.json (lib/schema-safety.js).
       const withInput = (dir, name, input, extra = {}) => {
