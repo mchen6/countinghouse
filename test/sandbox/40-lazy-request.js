@@ -78,8 +78,11 @@ function request(io, message, timeoutMs = 30000) {
   ['the worker under audit, net declared', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', WITH_NET, true],
   ['single-thread mode', ['--no-workerThread'], 'off', WITH_NET, false],
   ['the worker under enforce, no net declared', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'enforce'], 'enforce', NO_NET, false],
-  ['the worker under audit, no net declared', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', NO_NET, false]
-].forEach(([where, flags, mode, MODULE, atBoot]) => {
+  ['the worker under audit, no net declared', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', NO_NET, false],
+  // (the module sets Node's wrapper of a file's source first: the late load
+  // then runs no window, so the library's requires are each said)
+  ['the worker under audit, no net declared, Module.wrap set first', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', NO_NET, false, true]
+].forEach(([where, flags, mode, MODULE, atBoot, wrapFirst = false]) => {
   const refuses = (mode === 'enforce');
   const declares = (MODULE === WITH_NET);
   const name = path.basename(MODULE);
@@ -134,20 +137,28 @@ function request(io, message, timeoutMs = 30000) {
     if (mode === 'audit') {
       // localhost is not the declared 127.0.0.1, and needs no lookup beyond the hosts file.
       it(`a CHUtil.request to an undeclared host is reported under audit, and allowed${atBoot ? '' : ' (the library loads then, after the lockdown)'}`, async () => {
+        if (wrapFirst) assert.deepStrictEqual(await probe({what: 'patchWrap'}), {patched: true});
         const r = await probe({what: 'request', url: `http://localhost:${server.port}/`});
         assert.notStrictEqual(r.code, 'ERR_ACCESS_DENIED', JSON.stringify(r));
         const line = new RegExp(`${name} violation net localhost`);
         const deadline = Date.now() + 5000;
         while (!line.test(io.err) && Date.now() < deadline) await new Promise((res) => setTimeout(res, 50));
         assert.match(io.err, line);
-        assert.strictEqual(r.loaded.request, true);
+        // (loaded before the lockdown: still in the probe's list; loaded now,
+        // late: moved out of the cache once loaded, so module code finds none
+        // of it, the review of e0f39de9)
+        assert.strictEqual(r.loaded.request, atBoot);
         // (the library's own requires, in a late load the net reported, are
         // the runtime's: said once, as that load, never one by one against
-        // the module; #434's review)
+        // the module; #434's review; but with Node's wrapper set by module
+        // code no window opens, and each is said)
         if (!atBoot) {
           const said = io.err.split('\n').filter((l) => l.includes(`${name} violation require`));
           assert.ok(said.some((l) => /postman-request \(a load by the runtime after the lockdown\)/.test(l)), said.join('\n'));
-          assert.ok(said.length <= 2, `the library's own requires said against the module:\n${said.join('\n')}`);
+          if (wrapFirst) assert.ok(said.length > 2, `a window opened with Module.wrap set:\n${said.join('\n')}`);
+          else assert.ok(said.length <= 2, `the library's own requires said against the module:\n${said.join('\n')}`);
+          const left = await probe({what: 'outside'});
+          assert.strictEqual(left.count, 0, JSON.stringify(left));
         }
       });
     }
