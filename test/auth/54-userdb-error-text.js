@@ -15,17 +15,28 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
 
   it('a provider error answers SYSTEM_ERROR_USERDB_NA in the catalogue\'s words; the host and port are only in the log', () => {
     const script = `
+      // the real lib/auth (its outage log), with a provider that fails
       const authPath = require.resolve(${JSON.stringify(path.join(LIB, 'auth'))});
-      require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: {getAuthProvider: () => ({
-        authenticate: (appKey, deviceID, serviceID, actionName, cb) => cb(Object.assign(new Error('connect ECONNREFUSED couch.internal.example:5984'), {code: 'ECONNREFUSED'}))
-      })}};
+      const realAuth = require(authPath);
+      let up = false;
+      require.cache[authPath].exports = Object.assign({}, realAuth, {getAuthProvider: () => ({
+        authenticate: (appKey, deviceID, serviceID, actionName, cb) => (up ? cb(null, {ok: true, userName: 'u', isAdmin: false})
+          : cb(Object.assign(new Error('connect ECONNREFUSED couch.internal.example:5984'), {code: 'ECONNREFUSED'})))
+      })});
       const logged = [];
       const LOG = require(${JSON.stringify(path.join(LIB, 'logger'))});
+      const warned = [];
       LOG.E = (e) => logged.push(String(e && e.message));
+      LOG.W = (w) => warned.push(String(w));
       const userAuth = require(${JSON.stringify(path.join(LIB, 'user-auth'))});
-      userAuth(null, null, 'dev', 'some-key', 'svc', 'act', () => {}, (err) => {
-        process.stdout.write('OUT ' + JSON.stringify({code: err && err.code, message: err && err.message, logged}) + '\\n');
-      });`;
+      const ask = () => new Promise((resolve) => userAuth(null, null, 'dev', 'some-key', 'svc', 'act', () => {}, (err) => resolve(err)));
+      (async () => {
+        const err = await ask();
+        await ask();   // the same outage: not logged again
+        up = true;
+        await ask();   // it answers again: said once, with the count
+        process.stdout.write('OUT ' + JSON.stringify({code: err && err.code, message: err && err.message, logged, warned}) + '\\n');
+      })();`;
     const r = spawnSync(process.execPath, ['-e', script], {cwd: path.join(__dirname, '..', '..'), encoding: 'utf8', timeout: 20000});
     const line = (r.stdout || '').split('\n').find((l) => l.startsWith('OUT '));
     assert.ok(line != null, `no output: ${r.stdout} ${r.stderr}`);
@@ -33,5 +44,9 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
     assert.strictEqual(o.code, 'SYSTEM_ERROR_USERDB_NA');
     assert.ok(!/couch\.internal|5984|ECONNREFUSED/.test(o.message), `the caller sees: ${o.message}`);
     assert.ok(o.logged.some((l) => /couch\.internal\.example:5984/.test(l)), `logged: ${JSON.stringify(o.logged)}`);
+    // once per outage, never a line per request; and when it answers again,
+    // how many failed meanwhile (the high review of #445, 6)
+    assert.strictEqual(o.logged.length, 1, JSON.stringify(o.logged));
+    assert.ok(o.warned.some((w) => /the auth provider answers again: 2 lookups failed meanwhile/.test(w)), JSON.stringify(o.warned));
   });
 });
