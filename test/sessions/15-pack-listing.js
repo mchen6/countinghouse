@@ -272,4 +272,31 @@ describe('sessions 15: a module going on or off is in no session\'s lists (B3 Ta
     visibility.show(['ch-pack-x', 'ch-step-a']);
     assert.deepStrictEqual(await shown(), expect(['ch-pack-x', 'ch-pack-docs', 'plain']), 'shown again');
   });
+
+  // forCaller's fast path (#457's high round): whenever everyoneSeesAll
+  // holds, walking the table by listedFor, device by device, keeps every
+  // target, so the table handed back with no walk is the walk's. A condition
+  // added to listedFor alone, that leaves out a device a built table lists,
+  // fails here: in both profiles, over scenarios, a part, a plain module.
+  it('whenever everyoneSeesAll holds, the walk by listedFor gives the table the fast path hands back', () => {
+    const savedSingle = options.singleIdentity;
+    try {
+      for (const single of [false, true]) {
+        options.singleIdentity = single;
+        for (const granted of [null, new Set(['d1', 'd3', 'd4'])]) {
+          const table = toolRegistry.buildToolTargets(ci);
+          const walked = Object.keys(table).filter((n) => toolRegistry.listedFor(ci, table[n].deviceID, granted));
+          if (toolRegistry.everyoneSeesAll(granted)) {
+            assert.deepStrictEqual(walked, Object.keys(table), `single ${single}`);
+            assert.strictEqual(toolRegistry.forCaller(ci, table, granted), table);
+          } else {
+            assert.deepStrictEqual(Object.keys(toolRegistry.forCaller(ci, table, granted)), walked, `single ${single}, granted`);
+          }
+        }
+        assert.strictEqual(toolRegistry.everyoneSeesAll(null), true, 'nothing hidden, no grants: the fast path is taken');
+      }
+    } finally {
+      options.singleIdentity = savedSingle;
+    }
+  });
 });
