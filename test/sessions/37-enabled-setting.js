@@ -182,6 +182,21 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.deepStrictEqual((await tool().get()).settings.filter((r) => r.name.startsWith('enabled.')), [], 'no rows to show');
   });
 
+  // #449's high review, 3: the record before modules.json, the same way
+  it('no modules.json and packs.json unreadable, or not a record: off is still made, on is the terminal\'s', async () => {
+    fs.rmSync(path.join(dir, 'modules.json'));
+    for (const text of ['{"packs": ', '[]', '{"packs": 7}']) {
+      fs.writeFileSync(path.join(dir, 'packs.json'), text);
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {}}));
+      assert.strictEqual((await tool().set(`enabled.${TOOL}`, 'off')).new, 'off', text);
+      assert.strictEqual(stored()[`enabled.${TOOL}`], false, text);
+      await refused(tool().set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+    }
+    // neither record there: nothing installed, so no module to name
+    fs.rmSync(path.join(dir, 'packs.json'));
+    await refused(tool().set(`enabled.${TOOL}`, 'off'), 'SETTING_UNKNOWN');
+  });
+
   it('two requests turning one module off at once: one writes and tells; the other changes nothing and tells no one', async () => {
     const t = tool();
     const both = await Promise.all([t.set(`enabled.${TOOL}`, 'off'), t.set(`enabled.${TOOL}`, 'off')]);
