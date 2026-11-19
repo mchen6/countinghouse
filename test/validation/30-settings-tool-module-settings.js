@@ -92,6 +92,11 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       assert.strictEqual(rows['module.@acme/weather-tool.maxResults'].changes, 'at a terminal only');
     });
 
+    it('during startup it says some modules may not be listed yet', async () => {
+      assert.strictEqual((await make({startingUp: () => true}).get()).starting, 'still starting: some modules may not be listed yet');
+      assert.strictEqual((await make({startingUp: () => false}).get()).starting, undefined);
+    });
+
     it('at most 64 module settings a call, with a cursor', async () => {
       const many = [];
       for (let m = 0; m < 3; m += 1) {
