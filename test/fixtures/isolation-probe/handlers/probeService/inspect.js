@@ -212,6 +212,11 @@ const STEPS = {
        String(fpj('dep/esm/x.mjs', __filename)).endsWith('/node_modules/dep/package.json') && fpj('sibpkg', __filename) === undefined) ? 'same' : `findPackageJSON(${fpj('dep', asDir)} ${fpj('dep/esm/x.mjs', __filename)})`);
     // (a '#' target is an exact file, as in Node: none with no extension)
     out.push(direct('#noext') !== 'found' ? 'same' : 'noext');
+    // (findPackageJSON of a '#' name, one mapped to a built-in too, is
+    // nothing; a bare name holding '?' or '#', which Node's URL lookup would
+    // cut short and climb with, is the one refusal, as a missing one)
+    out.push(typeof(fpj) !== 'function' || (fpj('#builtin', __filename) === undefined && fpj('#sibclimb', __filename) === undefined) ? 'same' : 'fpjMapped');
+    same('queryName', await tryImport('q?x/index.js'), await tryImport('nosuchq/index.js'));
     // (and the module's own dependency still loads, by name and by subpath)
     out.push((await tryImport('dep')) === 'found' && (await tryImport('dep/index.js')) === 'found' && tryRequire('dep') === 'found' &&
       tryRequire('filedep') === 'found' ? 'same' : 'ownDep');
