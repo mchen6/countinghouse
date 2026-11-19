@@ -401,9 +401,9 @@ const out = {
       {why: 'an unanswered form of the kind pack: unanswered enabled',
         row: {session: 'c'.repeat(32), resume: 'd'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['pack', 'module']}},
         taken: {overrides: [], locks: [], formsLeft: 2, unanswered: ['enabled', 'module']}},
-      {why: 'pack unanswered and enabled locked: the lock stays, nothing unanswered of it',
+      {why: 'pack unanswered and enabled locked: the lock stays, nothing unanswered of it (unanswered, left empty, is gone)',
         row: {session: 'd'.repeat(32), resume: 'c'.repeat(64), state: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['pack']}},
-        taken: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: []}},
+        taken: {overrides: [], locks: ['enabled'], formsLeft: 1}},
       {why: 'pack locked and enabled unanswered: the lock stays, nothing unanswered of it',
         row: {session: 'e'.repeat(32), resume: 'b'.repeat(64), state: {overrides: [], locks: ['pack'], formsLeft: 1, unanswered: ['enabled', 'module']}},
         taken: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['module']}}
@@ -414,7 +414,9 @@ const out = {
       {why: 'a lock of a kind this runtime has none of, beside a known one: the known lock and the forms kept', row: {session: 'e'.repeat(32), resume: '1'.repeat(64), state: {overrides: [], locks: ['locale', 'requestTimeout'], formsLeft: 1}},
         taken: {overrides: [], locks: ['requestTimeout'], formsLeft: 1}, kinds: ['locale']},
       {why: 'an unanswered form of a kind this runtime has none of: the other unanswered kept', row: {session: 'f'.repeat(32), resume: '2'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['locale', 'module']}},
-        taken: {overrides: [], locks: [], formsLeft: 2, unanswered: ['module']}, kinds: ['locale']}
+        taken: {overrides: [], locks: [], formsLeft: 2, unanswered: ['module']}, kinds: ['locale']},
+      {why: 'an unanswered form of an unknown kind alone: unanswered, left empty, is gone; the spent forms kept', row: {session: 'a'.repeat(32), resume: '3'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['locale']}},
+        taken: {overrides: [], locks: [], formsLeft: 2}, kinds: ['locale']}
     ],
     refused: [
       // each with the reason it must be refused for: a substring of restore.js's message
