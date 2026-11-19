@@ -20,20 +20,17 @@ describe('validation 10: a worker\'s durations equal the main thread\'s', () => 
     return {main, worker: options.getOptions()};
   };
   const durations = (o) => [o.requestTimeout, o.jobTimeout, o.jobResultTtl];
-  // (a worker reads requestTimeout only: jobs run on the main thread, so
-  // their durations are never sent, F4-8)
-  const workerDuration = (o) => o.requestTimeout;
 
   it('the defaults: 30 s, an hour, an hour', () => {
     const {main, worker} = asWorker({});
     assert.deepStrictEqual(durations(main), [30000, 3600000, 3600000]);
-    assert.strictEqual(workerDuration(worker), workerDuration(main));
+    assert.deepStrictEqual(durations(worker), durations(main));
   });
 
   it('--requestTimeout 10, --jobTimeout 120, --jobResultTtl 60, as the CLI gives them (seconds)', () => {
     const {main, worker} = asWorker({requestTimeout: 10, jobTimeout: 120, jobResultTtl: 60});
     assert.deepStrictEqual(durations(main), [10000, 120000, 60000]);
-    assert.strictEqual(workerDuration(worker), workerDuration(main));
+    assert.deepStrictEqual(durations(worker), durations(main));
   });
 
   it('set again and again (a reload\'s set-options), they stay as they are', () => {
