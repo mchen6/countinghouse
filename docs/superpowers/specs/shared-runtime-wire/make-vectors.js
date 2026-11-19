@@ -457,7 +457,7 @@ const out = {
     const P = '@countinghouse/ch-step-example';
     const T = 'weather-tool';
     return {
-      rule: 'a module is top-level when it is the scenario of a pack in packs: of that pack\'s modules (in their order), the first that modules gives role "scenario", else the pack\'s first module; and only when modules holds it. Every other module in modules is a part, whatever its role, and has no enabled.<module>',
+      rule: 'a module is top-level when it is the scenario of a pack in packs: of that pack\'s modules (in their order), the first that modules gives role "scenario", else the pack\'s first module; and only when modules holds it. Every other module in modules is a part, whatever its role, and has no enabled.<module>. Only own properties are read (Object.hasOwn), so a name like "constructor" is a name like any other',
       cases: [
         {why: 'a pack\'s scenario and its part', record: {modules: {[S]: {version: '1.0.0', role: 'scenario'}, [P]: {version: '0.2.0', role: 'part'}}, packs: {example: {modules: {[S]: '1.0.0', [P]: '0.2.0'}}}}, topLevel: [S]},
         {why: 'the scenario listed after its part', record: {modules: {[P]: {version: '0.2.0', role: 'part'}, [S]: {version: '1.0.0', role: 'scenario'}}, packs: {example: {modules: {[P]: '0.2.0', [S]: '1.0.0'}}}}, topLevel: [S]},
@@ -467,7 +467,11 @@ const out = {
         {why: 'a pack\'s scenario that modules does not hold: none', record: {modules: {[P]: {version: '0.2.0', role: 'part'}}, packs: {example: {modules: {[S]: '1.0.0', [P]: '0.2.0'}}}}, topLevel: []},
         {why: 'a scenario of one pack that another lists too: top-level once', record: {modules: {[S]: {version: '1.0.0', role: 'scenario'}, [T]: {version: '1.2.0', role: 'scenario'}}, packs: {example: {modules: {[S]: '1.0.0'}}, weather: {modules: {[T]: '1.2.0', [S]: '1.0.0'}}}}, topLevel: [S, T].sort()},
         {why: 'two of role scenario in one pack: the first', record: {modules: {[T]: {version: '1.2.0', role: 'scenario'}, [S]: {version: '1.0.0', role: 'scenario'}}, packs: {example: {modules: {[T]: '1.2.0', [S]: '1.0.0'}}}}, topLevel: [T]},
-        {why: 'a pack with no modules', record: {modules: {[S]: {version: '1.0.0', role: 'scenario'}}, packs: {example: {modules: {}}}}, topLevel: []}
+        {why: 'a pack with no modules', record: {modules: {[S]: {version: '1.0.0', role: 'scenario'}}, packs: {example: {modules: {}}}}, topLevel: []},
+        // own properties only, in both repos (#449's high review, round 3, 7)
+        {why: 'a pack listing "constructor" first, which modules does not hold: none, the other a part', record: {modules: {[P]: {version: '0.2.0', role: null}}, packs: {example: {modules: {constructor: '1.0.0', [P]: '0.2.0'}}}}, topLevel: []},
+        {why: 'a module named "constructor", held and of role scenario: top-level', record: {modules: {constructor: {version: '1.0.0', role: 'scenario'}, [P]: {version: '0.2.0', role: 'part'}}, packs: {example: {modules: {[P]: '0.2.0', constructor: '1.0.0'}}}}, topLevel: ['constructor']},
+        {why: 'a pack named "constructor"', record: {modules: {[T]: {version: '1.2.0', role: null}}, packs: {constructor: {modules: {[T]: '1.2.0'}}}}, topLevel: [T]}
       ]
     };
   })(),
