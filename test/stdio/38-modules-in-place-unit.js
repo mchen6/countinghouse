@@ -8,6 +8,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const {realPath} = require('../helpers/real-path');
 
 const SVC = (s) => `urn:countinghouse-test:serviceID:${s}`;
 function writeModule(dir, {name, version = '1.0.0', role, calls, service = 'svc', friendly}) {
@@ -54,7 +55,7 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
   it('a well-formed message is read: its name, and each directory by its real path', () => {
     const r = mip.readModuleRequest(msg(), {needsDirs: true});
     assert.strictEqual(r.name, '@t/ch-pack-a');
-    assert.strictEqual(r.dirs.get('@t/ch-step-s'), fs.realpathSync(dirs.part));
+    assert.strictEqual(r.dirs.get('@t/ch-step-s'), realPath(dirs.part));
   });
 
   it('refuses a name that is not a package name, and an old-form field beside the module form', () => {
@@ -114,7 +115,7 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
   // #427's high review, 4: what loads is checked again by its resolved path
   it('a directory resolved outside --modulesRoot after it was read (a link swapped in between) is refused', () => {
     const r = mip.readModuleRequest(msg(), {needsDirs: true});
-    r.dirs.set('@t/ch-step-s', fs.realpathSync(dirs.out));
+    r.dirs.set('@t/ch-step-s', realPath(dirs.out));
     assert.throws(() => mip.closureOf(r), (e) => e.code === 'CONTROL_FAILED' && /outside --modulesRoot/.test(e.message));
   });
 
@@ -126,6 +127,27 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
       assert.throws(() => mip.closureOf(r), (e) => e.code === 'CONTROL_FAILED' && /link outside --modulesRoot/.test(e.message));
     } finally {
       fs.unlinkSync(link);
+    }
+  });
+
+  // the back-sweep (the Reviewer, 11-19): confinement decides on the
+  // kernel's real path (#10). Node's JS realpath resolves this chain to the
+  // module's own directory at every step; a POSIX kernel walks one level up
+  // per link, so the fifth is --modulesRoot's parent. Windows normalises
+  // '..' in a reparse point's target lexically, so there the chain stays
+  // inside and nothing escapes: POSIX only (the Reviewer's high review of
+  // #441, 2).
+  (process.platform === 'win32' ? it.skip : it)('a link chain the kernel resolves out of --modulesRoot (x -> ".", a -> "x/..", b -> "a/..", ...) is refused, though JS realpath puts it inside (POSIX)', () => {
+    const chain = [['x', '.'], ['a', 'x/..'], ['b', 'a/..'], ['c', 'b/..'], ['d', 'c/..']];
+    for (const [n, target] of chain) fs.symlinkSync(target, path.join(dirs.part, n));
+    try {
+      const d = path.join(dirs.part, 'd');
+      assert.strictEqual(fs.realpathSync(d), fs.realpathSync(dirs.part), 'JS realpath: inside the module');
+      assert.strictEqual(realPath(d), path.dirname(realPath(path.join(root, 'module-store'))), 'the kernel: --modulesRoot\'s parent');
+      const r = mip.readModuleRequest(msg(), {needsDirs: true});
+      assert.throws(() => mip.closureOf(r), (e) => e.code === 'CONTROL_FAILED' && /link outside --modulesRoot \(d\)/.test(e.message));
+    } finally {
+      for (const [n] of chain) fs.unlinkSync(path.join(dirs.part, n));
     }
   });
 

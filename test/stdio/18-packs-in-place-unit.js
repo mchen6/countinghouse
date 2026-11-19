@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const {realPath} = require('../helpers/real-path');
 const {PACK_NAME, insideRoots, linkOut, chLocalPackOf, ceilingRefusal} = require('../../lib/modules-in-place');
 const settingsTool = require('../../lib/settings-tool');
 const {mergedAllowance, START_ALLOWANCE} = require('../../lib/module-manager');
@@ -37,7 +38,7 @@ describe('stdio 18: packs in place, server-free', () => {
       fs.mkdirSync(path.join(base, 'packs-evil', 'm'), {recursive: true});
       fs.mkdirSync(path.join(base, 'away'), {recursive: true});
       fs.symlinkSync(path.join(base, 'away'), path.join(root, 'p', 'node_modules', 'link'), 'dir');
-      const rs = [fs.realpathSync(root)];
+      const rs = [realPath(root)];
       assert.strictEqual(insideRoots(path.join(root, 'p', 'node_modules', 'm'), rs), true);
       assert.strictEqual(insideRoots(path.join(root, 'p', 'node_modules', 'link'), rs), false);
       assert.strictEqual(insideRoots(path.join(base, 'packs-evil', 'm'), rs), false);
@@ -55,14 +56,14 @@ describe('stdio 18: packs in place, server-free', () => {
       fs.mkdirSync(path.join(m, 'handlers', 's'), {recursive: true});
       fs.writeFileSync(path.join(root, 'p', 'inside.js'), '');
       fs.symlinkSync(path.join(root, 'p', 'inside.js'), path.join(m, 'handlers', 's', 'ok.js'));
-      const rs = [fs.realpathSync(root)];
-      assert.strictEqual(linkOut(fs.realpathSync(m), rs), null);
+      const rs = [realPath(root)];
+      assert.strictEqual(linkOut(realPath(m), rs), null);
       fs.writeFileSync(path.join(base, 'away.js'), '');
       fs.symlinkSync(path.join(base, 'away.js'), path.join(m, 'handlers', 's', 'out.js'));
-      assert.strictEqual(linkOut(fs.realpathSync(m), rs), path.join(fs.realpathSync(m), 'handlers', 's', 'out.js'));
+      assert.strictEqual(linkOut(realPath(m), rs), path.join(realPath(m), 'handlers', 's', 'out.js'));
       fs.rmSync(path.join(m, 'handlers', 's', 'out.js'));
       fs.symlinkSync(path.join(base, 'missing.js'), path.join(m, 'handlers', 's', 'dangling.js'));
-      assert.ok(linkOut(fs.realpathSync(m), rs) != null, 'a dangling link');
+      assert.ok(linkOut(realPath(m), rs) != null, 'a dangling link');
     } finally {
       fs.rmSync(base, {recursive: true, force: true});
     }
@@ -83,7 +84,7 @@ describe('stdio 18: packs in place, server-free', () => {
     beforeEach(() => {
       base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-18-'));
       fs.mkdirSync(path.join(base, 'packs'));
-      rs = [fs.realpathSync(path.join(base, 'packs'))];
+      rs = [realPath(path.join(base, 'packs'))];
     });
     afterEach(() => {
       settingsTool.ceilingForControl(() => ({state: 'none'}));

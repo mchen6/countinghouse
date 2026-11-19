@@ -14,6 +14,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const {realPath} = require('../helpers/real-path');
 require('../../lib/logger').createLogger();
 
 const SVC = (s) => `urn:countinghouse-test:serviceID:${s}`;
@@ -166,8 +167,8 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
     const link = path.join(store, 'link-to-real');
     fs.symlinkSync(real, link, 'dir');
     const r = mip.checkStartPlan([link], []);
-    assert.deepStrictEqual(r.tops, [fs.realpathSync(real)]);
-    assert.deepStrictEqual(r.partDirs, [fs.realpathSync(real)]);
+    assert.deepStrictEqual(r.tops, [realPath(real)]);
+    assert.deepStrictEqual(r.partDirs, [realPath(real)]);
   });
 
   it('high 3: a start refusal from the scenario expansion is told by package name only', () => {
