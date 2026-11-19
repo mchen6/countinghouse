@@ -77,5 +77,9 @@ describe('stdio 13: pack change notices', () => {
     assert.deepStrictEqual(notices.take('ch-pack-\u001b[31mx\u2028'), ['a b [2Jc d e f'], 'the same key, cleaned');
     notices.add('m'.repeat(500), 'long key');
     assert.deepStrictEqual(notices.take('m'.repeat(128)), ['long key']);
+    // the one module-text rule: a bidi override or isolate is no character
+    // a notice carries (#445's third round)
+    notices.add('bidi', 'pay\u202eevil\u2066x');
+    assert.deepStrictEqual(notices.take('bidi'), ['pay evil x']);
   });
 });

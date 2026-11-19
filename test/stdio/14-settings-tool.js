@@ -13,6 +13,10 @@ const MiB = 1024 * 1024;
 
 
 describe('stdio 14: countinghouse_settings', () => {
+  it('a refused ask\'s reason is one plain line by the one module-text rule: control and bidi characters are spaces, cut at 120', () => {
+    assert.strictEqual(settingsTool.askedReason('not confirmed (a\u202eb\u2067c\n\u0007d)'), 'not confirmed (a b c d)');
+    assert.strictEqual(settingsTool.askedReason('x'.repeat(200)).length, 120);
+  });
   let home;
   let file;
   let tool;
