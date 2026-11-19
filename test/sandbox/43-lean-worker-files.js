@@ -57,6 +57,8 @@ const ALLOWED = [
   'lib/node-version.js',
   'lib/fs-broker/identity.js',
   'lib/fs-broker/patch.js',
+  // (the in-root resolver identity uses for a bare or '#' request, C-bare)
+  'lib/fs-broker/resolve-inside.js',
   'lib/fs-broker/client.js',
   'lib/fs-broker/roots.js',
   'lib/module-lockdown.js',

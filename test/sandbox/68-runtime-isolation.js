@@ -91,7 +91,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     const probePkg = JSON.parse(fs.readFileSync(path.join(probe, 'package.json'), 'utf8'));
     probePkg.imports = Object.assign({}, probePkg.imports, {'#sibclimb': 'sibpkg/../../isolation-probe/lib/bare-target.mjs',
       '#nosibclimb': 'nosuchsib/../../isolation-probe/lib/bare-target.mjs',
-      '#builtin': {node: 'node:crypto', default: './lib/bare-target.mjs'}, '#fallback': ['https://x.invalid/a.js', './lib/bare-target.mjs'],
+      '#builtin': {node: 'node:crypto', default: './lib/bare-target.mjs'}, '#bare': 'crypto', '#fallback': ['https://x.invalid/a.js', './lib/bare-target.mjs'],
       '#emptyArr': {node: [], default: './lib/bare-target.mjs'}, '#badFirst': ['./lib/../lib/bare-target.mjs', './lib/bare-target.mjs'],
       '#pat/*': './lib/pat/*', '#noext': './lib/bare-target', '#z': {node: ['https://x.invalid/a.js', {browser: './nope.mjs'}], default: './lib/bare-target.mjs'}});
     fs.mkdirSync(path.join(probe, 'lib', 'pat'), {recursive: true});

@@ -146,8 +146,12 @@ const STEPS = {
     // null: no self-reference, so the one answer again)
     const selfTry = require('../../lib/selfscope/try.js');
     same('nullExports', await selfTry('sibpkg/../../isolation-probe/lib/bare-target.mjs'), await selfTry('nosuchsib/../../isolation-probe/lib/bare-target.mjs'));
-    // (a '#' mapping to a built-in, and an array's first valid target)
-    out.push((await tryImport('#builtin')) === 'found' && (await tryImport('#fallback')) === 'found' && tryRequire('#builtin') === 'found' ? 'same' : 'mapped');
+    // (a '#' mapping as plain Node resolves it: to a bare built-in name
+    // loads; to a 'node:' URL is an invalid target (ERR_INVALID_PACKAGE_
+    // TARGET in plain Node on 22.16, 24 and 26); an array's first valid
+    // target loads)
+    out.push((await tryImport('#bare')) === 'found' && tryRequire('#bare') === 'found' && (await tryImport('#builtin')) !== 'found' &&
+      (await tryImport('#fallback')) === 'found' ? 'same' : 'mapped');
     // (a subpath climbing out of the module's own dependency: no getter of
     // module code's runs inside Node's step)
     let ran = 'not run';
