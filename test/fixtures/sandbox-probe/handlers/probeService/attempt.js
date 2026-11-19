@@ -66,6 +66,15 @@ const ATTEMPTS = {
     const s = new vm.Script('1;', {filename: 'ch-probe-freeze.js'});
     if (s.runInThisContext() !== 1 || vm.Script.length < 1 || vm.Script.name !== 'Script') throw Object.assign(new Error('changed'), {code: 'CHANGED'});
   },
+  // ... vm's module classes (with --experimental-vm-modules): gone from
+  // module code's vm under enforce, its key too; under audit there, and
+  // their use said
+  vmModules:        () => {
+    const vm = require('vm');
+    if (!('SourceTextModule' in vm) && vm.SourceTextModule === undefined) return;
+    void new vm.SourceTextModule('export default 1;');
+    throw Object.assign(new Error('present'), {code: 'PRESENT'});
+  },
   // ... a script asked only to produce a cache is never marked rejected
   vmProduce:        () => {
     const s = new (require('vm').Script)('1;', {filename: 'ch-probe-produce.js', produceCachedData: true});

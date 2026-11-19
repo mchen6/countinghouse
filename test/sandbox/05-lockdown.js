@@ -212,7 +212,8 @@ describe('sandbox 05: worker lockdown', function() {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'holdDefineProps'})), {outcome: 'allowed', code: null});
     });
     it('vm: no prototype leads to Node\'s native class; a produce-only script is not marked rejected; inherited options are kept', async () => {
-      for (const what of ['vmNative', 'vmFreeze', 'vmProduce', 'vmInherited']) {
+      // (vmFreeze last: it freezes the worker's vm.Script for good)
+      for (const what of ['vmNative', 'vmProduce', 'vmInherited', 'vmFreeze']) {
         assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what})), {outcome: 'allowed', code: null}, what);
       }
     });
@@ -444,6 +445,27 @@ describe('sandbox 05: worker lockdown', function() {
 });
 
 // The file broker runs in every mode, so its limits do too.
+// vm's module classes, with --experimental-vm-modules (which a worker
+// inherits from the server's own flags): each takes a code cache by more
+// routes than a view can close, so under enforce they are gone from module
+// code's vm; under audit their use is said (#194's PR 3)
+describe('sandbox 05: vm module classes (--experimental-vm-modules)', function() {
+  this.timeout(120000);
+  ['enforce', 'audit'].forEach((mode) => {
+    it(`${mode}: ${mode === 'enforce' ? 'gone, the key too' : 'there, and their use said'}`, async () => {
+      const port = testPort(9773);
+      const server = await startServer(port, serverArgs(mode), {nodeArgs: ['--experimental-vm-modules']});
+      try {
+        const from = server.output.length;
+        assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'vmModules'})), {outcome: 'allowed', code: mode === 'enforce' ? null : 'PRESENT'});
+        if (mode === 'audit') await waitFor(() => server.output.slice(from).includes('violation vm SourceTextModule (--experimental-vm-modules: removed under enforce)'), 20000, 'the vm module line');
+      } finally {
+        stopServer(server);
+      }
+    });
+  });
+});
+
 describe('sandbox 05: off', function() {
   this.timeout(120000);
   let server = null;
