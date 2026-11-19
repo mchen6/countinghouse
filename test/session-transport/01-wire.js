@@ -175,7 +175,7 @@ describe('sessions 01: the wire (contract 2)', () => {
     it('the pack messages\' vectors, by the runtime: a shared runtime takes each accepted message and refuses each refused one', async () => {
       const P = V.packMessages;
       const control = require('../../lib/module-control').createModuleControl({
-        shared: () => true, mm: {}, dm: {}, toolsOf: async () => [], packUnloaded: () => {},
+        shared: () => true, mm: {}, dm: {}, toolsOf: async () => [],
         packs: {loadPack: async () => ({modules: []}), reloadPack: async () => ({modules: []}), unloadPack: async () => ({modules: []})},
         notices: {add: () => {}},
         applyControlSet: async (msg) => { throw Object.assign(new Error(`${msg.name} was not applied`), {code: 'CONTROL_FAILED'}); }});

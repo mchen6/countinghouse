@@ -41,6 +41,18 @@ describe('stdio 13: pack change notices', () => {
     assert.strictEqual(t.length, 200);
   });
 
+  // #449's high review, round 3, R: the runtime's own off notice (its
+  // callers bounded, both ways back) is said whole, still one line, at most
+  // OWN_NOTICE_MAX; a module's text keeps the 200 bound
+  it('the runtime\'s own text may take a larger bound, at most OWN_NOTICE_MAX, still one line', () => {
+    notices.add('ch-pack-x', `own\n${'o'.repeat(900)}`, {max: 1000});
+    const [t] = notices.take('ch-pack-x');
+    assert.ok(!t.includes('\n'));
+    assert.strictEqual(t.length, notices.OWN_NOTICE_MAX);
+    notices.add('ch-pack-x', 'p'.repeat(300), {max: 400});
+    assert.strictEqual(notices.take('ch-pack-x')[0].length, 300);
+  });
+
   it('past PER_MODULE_MAX, the newest are kept and the others counted in one line: never silent', () => {
     for (let n = 1; n <= notices.PER_MODULE_MAX + 3; n++) notices.add('ch-pack-x', `change ${n}`);
     const out = notices.take('ch-pack-x');

@@ -333,7 +333,7 @@ const out = {
     const slot = 'COUNTINGHOUSE_CREDENTIAL_1';
     const creds = {'@countinghouse/ch-access-example': {'https://api.example.com': {EXAMPLE_TOKEN: slot}}};
     return {
-      rule: 'load names one top-level module (name) and reload one or more (names), each by its package name, with dirs: the absolute directory of each module of their closures, by package name, 1 to 64; credentials (optional) is the per-module allowance of the version 2 --remoteCredentials file, each environment name a slot, each package one dirs names. unload names one top-level module. A module-form message carries no scenario, pack, global or remoteCredentials. notice: module a package name or null, and text. reread: what is module-settings. module-stopped (the runtime to ch-local, unasked, no id): name, code, when start or restart',
+      rule: 'load names one top-level module (name) and reload one or more (names), each by its package name, with dirs: the absolute directory of each module of their closures, by package name, 1 to 64; credentials (optional) is the per-module allowance of the version 2 --remoteCredentials file, each environment name a slot, each package one dirs names. unload names one top-level module; its notice is told once, as given, on the next result of any tool, unless it carries reason: "off" (the module turned off), the runtime serves the settings tool (the single-identity profile with --settingsFile) and its settings file holds enabled.<name> false, when it tells every session its own off text instead: what went with it (the callers loaded at that unload; one unloaded before it is told by its own unload) and both ways back. With reason: "calls" and because: <the package it went with>, on such a runtime whose settings file holds enabled.<because> false, it tells "<name> unloaded: it calls <because>, which is turned off for all your sessions (turning <because> on brings it back)." reason and because are optional and not checked: any other value, or none, is the notice as given. A module-form message carries no scenario, pack, global or remoteCredentials. notice: module a package name or null, and text. reread: what is module-settings. module-stopped (the runtime to ch-local, unasked, no id): name, code, when start or restart',
       packagePattern: '^(?:@[a-z0-9~-][a-z0-9._~-]*/)?[a-z0-9~-][a-z0-9._~-]*$',
       slotPattern: '^COUNTINGHOUSE_CREDENTIAL_[1-9][0-9]{0,3}$',
       accepted: [
@@ -345,6 +345,8 @@ const out = {
         {why: 'a reload of three names over two shared parts', message: {id: 4, type: 'reload', names: ['@t/s1', '@t/s2', '@t/s3'],
           dirs: {'@t/s1': dir('@t/s1', '1.0.0'), '@t/s2': dir('@t/s2', '1.0.0'), '@t/s3': dir('@t/s3', '1.0.0'), '@t/x': dir('@t/x', '2.0.0'), '@t/y': dir('@t/y', '2.0.0')}}},
         {why: 'an unload', message: {id: 5, type: 'unload', name: scenario, notice: 'example turned off'}},
+        {why: 'an unload of a module turned off, said so: the runtime tells every session its full off text', message: {id: 9, type: 'unload', name: scenario, notice: 'example turned off', reason: 'off'}},
+        {why: 'an unload of a caller, with the module turned off it went with: the runtime tells its line with the way back', message: {id: 10, type: 'unload', name: '@countinghouse/ch-pack-other', notice: 'ch-pack-other unloaded: it calls ch-pack-example, which is turned off', reason: 'calls', because: scenario}},
         {why: 'a reread of the module settings', message: {id: 6, type: 'reread', what: 'module-settings'}},
         {why: 'a notice about a module', message: {id: 7, type: 'notice', module: scenario, text: 'example upgraded 1.0.0 → 1.1.0'}},
         {why: 'a notice about no module', message: {id: 8, type: 'notice', module: null, text: 'requestTimeout set to 60 s'}},
@@ -371,12 +373,12 @@ const out = {
   // countinghouse's restore.js, ch-local's session-table.js and B2's export,
   // which all read these cases
   restoreRows: {
-    rule: 'a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 2 (one per cap), one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool\'s bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; nothing else is overridden (a pack\'s or a module\'s on/off is never a session\'s own: a well-formed pack.<n> override from before M5a, with a boolean value, over null and a semver version, is dropped from its row, the rest of the row taken and its session told once; any other pack.<n> override refuses the restore); locks distinct kinds of maxOutputBytes, requestTimeout, pack, module (every module.<package>.<setting> is the one kind module); formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: "restore", sessions, declines, reset}: reset lists the sessions (each a row\'s) that lost loosenings in a handoff, to be told so',
+    rule: 'a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 2 (one per cap), one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool\'s bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; nothing else is overridden (a pack\'s or a module\'s on/off is never a session\'s own: a well-formed pack.<n> override from before M5a, with a boolean value, over null and a semver version, is dropped from its row, the rest of the row taken and its session told once; any other pack.<n> override refuses the restore); locks distinct kinds of maxOutputBytes, requestTimeout, enabled, module (every enabled.<module> is the one kind enabled, every module.<package>.<setting> the one kind module; the kind pack, from a runtime before M5b, is taken as enabled in locks, unanswered and declines, deduped, a kind both locked and unanswered after it staying locked, and said once (mapped); a kind this runtime has none of, of a kind\'s shape (a letter, then letters and digits, at most 64), in a row\'s locks or unanswered is dropped from it when nothing else in the row refuses, the rest of the row (its known locks, its forms) taken; a decline of such a kind is dropped (kindsDropped); anything else in a kind\'s place refuses the restore); formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: "restore", sessions, declines, reset}: reset lists the sessions (each a row\'s) that lost loosenings in a handoff, to be told so',
     accepted: [
       {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}},
-      {session: 'c'.repeat(32), resume: 'd'.repeat(64), state: {overrides: [], locks: ['pack'], formsLeft: 1, unanswered: ['maxOutputBytes', 'requestTimeout']}},
+      {session: 'c'.repeat(32), resume: 'd'.repeat(64), state: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['maxOutputBytes', 'requestTimeout']}},
       {session: 'd'.repeat(32), resume: 'c'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: []}},
-      {session: 'b'.repeat(32), resume: 'e'.repeat(64), state: {overrides: [{name: 'requestTimeout', value: 120000, loosening: true, over: 30000, version: null}, {name: 'maxOutputBytes', value: 1048576, loosening: false, over: null, version: null}], locks: ['pack', 'requestTimeout'], formsLeft: 0}},
+      {session: 'b'.repeat(32), resume: 'e'.repeat(64), state: {overrides: [{name: 'requestTimeout', value: 120000, loosening: true, over: 30000, version: null}, {name: 'maxOutputBytes', value: 1048576, loosening: false, over: null, version: null}], locks: ['enabled', 'requestTimeout'], formsLeft: 0}},
       // M2b: the kind module, locked and unanswered
       {session: 'e'.repeat(32), resume: '1'.repeat(64), state: {overrides: [], locks: ['module'], formsLeft: 3}},
       {session: 'f'.repeat(32), resume: '2'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['module']}}
@@ -389,13 +391,41 @@ const out = {
         taken: {overrides: [{name: 'maxOutputBytes', value: 2097152, loosening: false, over: null, version: null}], locks: ['requestTimeout'], formsLeft: 2},
         packs: ['weather']}
     ],
+    // #449's high review, 2: a table from a runtime before M5b; the kind
+    // pack is enabled now, per row (taken: the state as taken)
+    mapped: [
+      {why: 'a lock of the kind pack: locked enabled, the session\'s cap override kept',
+        row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'maxOutputBytes', value: 2097152, loosening: false, over: null, version: null}], locks: ['pack', 'requestTimeout'], formsLeft: 2}},
+        taken: {overrides: [{name: 'maxOutputBytes', value: 2097152, loosening: false, over: null, version: null}], locks: ['enabled', 'requestTimeout'], formsLeft: 2}},
+      {why: 'the kinds pack and enabled both locked: enabled once',
+        row: {session: 'b'.repeat(32), resume: 'e'.repeat(64), state: {overrides: [], locks: ['enabled', 'pack'], formsLeft: 3}},
+        taken: {overrides: [], locks: ['enabled'], formsLeft: 3}},
+      {why: 'an unanswered form of the kind pack: unanswered enabled',
+        row: {session: 'c'.repeat(32), resume: 'd'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['pack', 'module']}},
+        taken: {overrides: [], locks: [], formsLeft: 2, unanswered: ['enabled', 'module']}},
+      {why: 'pack unanswered and enabled locked: the lock stays, nothing unanswered of it (unanswered, left empty, is gone)',
+        row: {session: 'd'.repeat(32), resume: 'c'.repeat(64), state: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['pack']}},
+        taken: {overrides: [], locks: ['enabled'], formsLeft: 1}},
+      {why: 'pack locked and enabled unanswered: the lock stays, nothing unanswered of it',
+        row: {session: 'e'.repeat(32), resume: 'b'.repeat(64), state: {overrides: [], locks: ['pack'], formsLeft: 1, unanswered: ['enabled', 'module']}},
+        taken: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['module']}}
+    ],
+    // a row naming a kind this runtime has none of keeps the rest (taken:
+    // the state as taken; kinds: the ones dropped)
+    kindsDropped: [
+      {why: 'a lock of a kind this runtime has none of, beside a known one: the known lock and the forms kept', row: {session: 'e'.repeat(32), resume: '1'.repeat(64), state: {overrides: [], locks: ['locale', 'requestTimeout'], formsLeft: 1}},
+        taken: {overrides: [], locks: ['requestTimeout'], formsLeft: 1}, kinds: ['locale']},
+      {why: 'an unanswered form of a kind this runtime has none of: the other unanswered kept', row: {session: 'f'.repeat(32), resume: '2'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['locale', 'module']}},
+        taken: {overrides: [], locks: [], formsLeft: 2, unanswered: ['module']}, kinds: ['locale']},
+      {why: 'an unanswered form of an unknown kind alone: unanswered, left empty, is gone; the spent forms kept', row: {session: 'a'.repeat(32), resume: '3'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['locale']}},
+        taken: {overrides: [], locks: [], formsLeft: 2}, kinds: ['locale']}
+    ],
     refused: [
       // each with the reason it must be refused for: a substring of restore.js's message
-      {why: 'unanswered that is no list', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: 'pack'}}},
-      {why: 'an unanswered kind twice', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 1, unanswered: ['pack', 'pack']}}},
-      {why: 'an unanswered kind that is none', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['locale']}}},
-      {why: 'a kind both locked and unanswered', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['pack'], formsLeft: 1, unanswered: ['pack']}}},
-      {why: 'an unanswered form with no form spent', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3, unanswered: ['pack']}}},
+      {why: 'unanswered that is no list', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: 'enabled'}}},
+      {why: 'an unanswered kind twice', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 1, unanswered: ['enabled', 'enabled']}}},
+      {why: 'a kind both locked and unanswered', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['enabled']}}},
+      {why: 'an unanswered form with no form spent', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3, unanswered: ['enabled']}}},
       {why: 'a key beside unanswered', reason: 'not exactly {overrides, locks, formsLeft}', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: [], nonce: 'x'}}},
       {why: 'no resume', reason: 'not exactly {session, resume, state}', row: {session: 'a'.repeat(32), state: {overrides: [], locks: [], formsLeft: 3}}},
       {why: 'an uppercase resume', reason: 'resume hash', row: {session: 'a'.repeat(32), resume: 'F'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}}},
@@ -403,7 +433,11 @@ const out = {
       {why: 'an extra row key', reason: 'not exactly {session, resume, state}', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}, mac: 'x'}},
       {why: 'an extra state key', reason: 'not exactly {overrides, locks, formsLeft}', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3, nonce: 'x'}}},
       {why: 'formsLeft 4', reason: 'formsLeft', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 4}}},
-      {why: 'a lock twice', reason: 'locks', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['pack', 'pack'], formsLeft: 3}}},
+      {why: 'a lock twice', reason: 'locks', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['enabled', 'enabled'], formsLeft: 3}}},
+      // the kind pack is mapped, so the sent list is checked as sent
+      {why: 'a lock of the kind pack twice', reason: 'locks', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['pack', 'pack'], formsLeft: 3}}},
+      {why: 'a lock that is not a kind\'s shape', reason: 'locks', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['other-kind'], formsLeft: 3}}},
+      {why: 'a row of an unknown kind that refuses for another reason', reason: 'formsLeft', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['locale'], formsLeft: 4}}},
       {why: 'a pack override not of the old shape (no version)', reason: 'names no cap', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'pack.weather', value: false, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}},
       {why: 'a cap loosening with no over', reason: 'over does not fit', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'maxOutputBytes', value: 16777216, loosening: true, over: null, version: null}], locks: [], formsLeft: 3}}},
       {why: 'an unknown override name', reason: 'names no cap', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'secret', value: 1, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}},
@@ -415,6 +449,34 @@ const out = {
   // A module setting's value in the history (#413 rev 3 section 4.2): one
   // shape for the runtime's lines and ch-local's (lib/history-cut.js, and
   // ch-local's settings history and outside-edits check)
+  // The top-level modules of ch-local's record (modules.json): the ones a
+  // module's on/off (enabled.<module>) is for. One rule for countinghouse's
+  // settings tool (lib/settings-tool.js topLevelModules) and ch-local's
+  // lib/module-roles.js topLevel with lib/packs.js packScenario (#449's high
+  // review, 1). topLevel is sorted.
+  topLevelModules: (() => {
+    const S = '@countinghouse/ch-pack-example';
+    const P = '@countinghouse/ch-step-example';
+    const T = 'weather-tool';
+    return {
+      rule: 'a module is top-level when it is the scenario of a pack in packs: of that pack\'s modules (in their order), the first that modules gives role "scenario", else the pack\'s first module; and only when modules holds it. Every other module in modules is a part, whatever its role, and has no enabled.<module>. Only own properties are read (Object.hasOwn), so a name like "constructor" is a name like any other',
+      cases: [
+        {why: 'a pack\'s scenario and its part', record: {modules: {[S]: {version: '1.0.0', role: 'scenario'}, [P]: {version: '0.2.0', role: 'part'}}, packs: {example: {modules: {[S]: '1.0.0', [P]: '0.2.0'}}}}, topLevel: [S]},
+        {why: 'the scenario listed after its part', record: {modules: {[P]: {version: '0.2.0', role: 'part'}, [S]: {version: '1.0.0', role: 'scenario'}}, packs: {example: {modules: {[P]: '0.2.0', [S]: '1.0.0'}}}}, topLevel: [S]},
+        {why: 'a pack with no module of role scenario: its first module', record: {modules: {[T]: {version: '1.2.0', role: null}, [P]: {version: '0.2.0', role: null}}, packs: {weather: {modules: {[T]: '1.2.0', [P]: '0.2.0'}}}}, topLevel: [T]},
+        {why: 'a module of role null in no pack is a part', record: {modules: {[S]: {version: '1.0.0', role: 'scenario'}, [T]: {version: '1.2.0', role: null}}, packs: {example: {modules: {[S]: '1.0.0'}}}}, topLevel: [S]},
+        {why: 'a module of role scenario in no pack is a part', record: {modules: {[S]: {version: '1.0.0', role: 'scenario'}, [T]: {version: '1.2.0', role: 'scenario'}}, packs: {example: {modules: {[S]: '1.0.0'}}}}, topLevel: [S]},
+        {why: 'a pack\'s scenario that modules does not hold: none', record: {modules: {[P]: {version: '0.2.0', role: 'part'}}, packs: {example: {modules: {[S]: '1.0.0', [P]: '0.2.0'}}}}, topLevel: []},
+        {why: 'a scenario of one pack that another lists too: top-level once', record: {modules: {[S]: {version: '1.0.0', role: 'scenario'}, [T]: {version: '1.2.0', role: 'scenario'}}, packs: {example: {modules: {[S]: '1.0.0'}}, weather: {modules: {[T]: '1.2.0', [S]: '1.0.0'}}}}, topLevel: [S, T].sort()},
+        {why: 'two of role scenario in one pack: the first', record: {modules: {[T]: {version: '1.2.0', role: 'scenario'}, [S]: {version: '1.0.0', role: 'scenario'}}, packs: {example: {modules: {[T]: '1.2.0', [S]: '1.0.0'}}}}, topLevel: [T]},
+        {why: 'a pack with no modules', record: {modules: {[S]: {version: '1.0.0', role: 'scenario'}}, packs: {example: {modules: {}}}}, topLevel: []},
+        // own properties only, in both repos (#449's high review, round 3, 7)
+        {why: 'a pack listing "constructor" first, which modules does not hold: none, the other a part', record: {modules: {[P]: {version: '0.2.0', role: null}}, packs: {example: {modules: {constructor: '1.0.0', [P]: '0.2.0'}}}}, topLevel: []},
+        {why: 'a module named "constructor", held and of role scenario: top-level', record: {modules: {constructor: {version: '1.0.0', role: 'scenario'}, [P]: {version: '0.2.0', role: 'part'}}, packs: {example: {modules: {[P]: '0.2.0', constructor: '1.0.0'}}}}, topLevel: ['constructor']},
+        {why: 'a pack named "constructor"', record: {modules: {[T]: {version: '1.2.0', role: null}}, packs: {constructor: {modules: {[T]: '1.2.0'}}}}, topLevel: [T]}
+      ]
+    };
+  })(),
   historyCut: (() => {
     const sha = (v) => crypto.createHash('sha256').update(JSON.stringify(v), 'utf8').digest('hex');
     const of = (why, value) => {

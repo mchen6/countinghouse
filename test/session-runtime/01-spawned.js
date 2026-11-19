@@ -171,16 +171,16 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
       assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
       assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_CONFIRMATION_INVALID', JSON.stringify(r2));
     }
-    // everything else is the terminal's: any other setting, a pack's on and
-    // off included (never a session's own since M5a), and its retries;
-    // nothing is written
-    for (const [args, extra] of [[{action: 'set', name: 'moduleSandbox', value: 'audit'}, {}], [{action: 'set', name: 'locale', value: 'zh'}, {}],
-      [{action: 'set', name: 'pack.ch-pack-x', value: 'on'}, {}], [{action: 'set', name: 'pack.ch-pack-x', value: 'off'}, {}]]) {
+    // everything else is the terminal's: any other setting, and its retries;
+    // nothing is written (no setting is a pack's since M5b: unknown)
+    for (const [args, extra] of [[{action: 'set', name: 'moduleSandbox', value: 'audit'}, {}], [{action: 'set', name: 'locale', value: 'zh'}, {}]]) {
       const r2 = await call(args, extra);
       assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
       assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_TERMINAL_ONLY_SHARED', `${JSON.stringify(args)}: ${JSON.stringify(r2)}`);
       assert.match(r2.result.content[0].text, /ch-local settings set/);
     }
+    const noPack = await call({action: 'set', name: 'pack.ch-pack-x', value: 'off'}, {});
+    assert.strictEqual(noPack.result._meta['countinghouse/code'], 'SETTING_UNKNOWN', JSON.stringify(noPack));
     assert.strictEqual(valueOf(await call({action: 'get'}), 'requestTimeout'), 20000, 'as it was');
     b.c.end();
     assert.ok(!fs.existsSync(settingsFile), 'settings.json never written');
@@ -353,8 +353,7 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.strictEqual(valueOf(await call(b, {action: 'get'}), 'requestTimeout'), 60000);
 
     // every other setting is the terminal's, for all sessions too; a scope that is not one is refused
-    for (const args of [{action: 'set', name: 'moduleSandbox', value: 'audit', scope: 'all-sessions'}, {action: 'set', name: 'locale', value: 'zh', scope: 'all-sessions'},
-      {action: 'set', name: 'pack.ch-pack-x', value: 'on', scope: 'all-sessions'}]) {
+    for (const args of [{action: 'set', name: 'moduleSandbox', value: 'audit', scope: 'all-sessions'}, {action: 'set', name: 'locale', value: 'zh', scope: 'all-sessions'}]) {
       const refusedAll = await call(a, args);
       assert.strictEqual(refusedAll.result._meta['countinghouse/code'], 'SETTING_TERMINAL_ONLY_SHARED', JSON.stringify(refusedAll));
     }

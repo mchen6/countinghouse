@@ -28,7 +28,7 @@ describe('sessions 23: the latch says why (conditionsWhy)', () => {
     const a = confirm.confirmations(A);
     a.decline('maxOutputBytes');
     confirm.latch(A, {reason: 'client hook present'});
-    assert.deepStrictEqual([a.latchedFor('maxOutputBytes'), a.latchedFor('requestTimeout'), a.latchedFor('pack.x')], [false, true, true]);
+    assert.deepStrictEqual([a.latchedFor('maxOutputBytes'), a.latchedFor('requestTimeout'), a.latchedFor('enabled.x')], [false, true, true]);
     assert.deepStrictEqual([a.declined('maxOutputBytes'), a.declined('requestTimeout')], [true, true], 'every kind is locked all the same');
   });
 

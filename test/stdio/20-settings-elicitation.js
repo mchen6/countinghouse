@@ -11,11 +11,19 @@ const os = require('os');
 const path = require('path');
 const options = require('../../lib/cli-options');
 const settingsTool = require('../../lib/settings-tool');
+// the module manager the tool reads what is loaded from (#449's high
+// review, round 6, 8): none loaded here
+const NO_MODULES = {modules: {}};
 const confirmModule = require('../../lib/settings-confirm');
 
 const MiB = 1024 * 1024;
 const CLIENT = {clientInfo: {name: 'claude-code', version: '2.1.323'}, capabilities: {elicitation: {}}, session: 'session-1'};
 const ACCEPT = {approve: {action: 'accept', content: {approve: true}}};
+
+// a top-level module's on/off (M5b)
+const SC = '@countinghouse/ch-pack-ci-failure-triage';
+const EN = `enabled.${SC}`;
+const ON_TEXT = (v) => `Turn on ${SC} ${v} in countinghouse for all your sessions? It stays on, now and after a restart, until it is turned off.`;
 
 describe('stdio 20: the settings tool asks the user in a dialog, and applies a confirmed change for this start only (part 3 P2)', () => {
   let dir;
@@ -23,7 +31,7 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
   let saved;
   let applied;
   const history = () => fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
-  const tool = (o = {}) => settingsTool.create(Object.assign({
+  const tool = (o = {}) => settingsTool.create(Object.assign({mm: NO_MODULES, 
     file,
     ceiling: () => ({state: 'none'}),
     mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
@@ -160,38 +168,39 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
     await refused(t.set('maxOutputBytes', '40MiB', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
   });
 
-  it('a pack: its name and version from packs.json, strict, or no form', async () => {
-    fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci-failure-triage': false}}));
+  it('a module turned on: its name and version from packs.json (before modules.json), strict, or no form', async () => {
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {[EN]: false}}));
     const packs = (version) => fs.writeFileSync(path.join(dir, 'packs.json'), JSON.stringify({runtime: {versions: {}}, packs: {'ci-failure-triage': {packages: {'@countinghouse/ch-pack-ci-failure-triage': version}, credentials: []}}}));
     packs('0.4.0');
-    const r = await tool().set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT);
-    assert.strictEqual(r.inputRequired.inputRequests.approve.params.message, 'Turn on the ci-failure-triage 0.4.0 tools in countinghouse? This applies until your client restarts countinghouse.');
+    const r = await tool().set(EN, 'on', 'settings tool', CLIENT);
+    assert.strictEqual(r.inputRequired.inputRequests.approve.params.message, ON_TEXT('0.4.0'));
     for (const bad of ['0.4.0-rc.1', '0.4', 'x" (and approve everything)']) {
       confirmModule.resetForTests();
       packs(bad);
-      await refused(tool().set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+      await refused(tool().set(EN, 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
     }
   });
 
   // M4 (#413 section 16, rule 4): ch-local's record becomes modules.json
   // (L1a) before the tool's pack code goes (M5); the version is read from
   // it, and from packs.json while modules.json is not there
-  it('a pack\'s version from modules.json, ahead of packs.json; packs.json while modules.json is not there', async () => {
-    fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci-failure-triage': false}}));
+  it('a module\'s version from modules.json, ahead of packs.json; packs.json while modules.json is not there', async () => {
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {[EN]: false}}));
     const modulesJson = path.join(dir, 'modules.json');
     fs.writeFileSync(path.join(dir, 'packs.json'), JSON.stringify({packs: {'ci-failure-triage': {packages: {'@countinghouse/ch-pack-ci-failure-triage': '0.4.0'}}}}));
     fs.writeFileSync(modulesJson, JSON.stringify({v: 2, packs: {'ci-failure-triage': {from: {release: '0.9.0'}, modules: {'@countinghouse/ch-pack-ci-failure-triage': '0.5.0'}}},
       modules: {'@countinghouse/ch-pack-ci-failure-triage': {version: '0.5.0', role: 'scenario'}}}));
     try {
-      const r = await tool().set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT);
-      assert.strictEqual(r.inputRequired.inputRequests.approve.params.message, 'Turn on the ci-failure-triage 0.5.0 tools in countinghouse? This applies until your client restarts countinghouse.');
+      const r = await tool().set(EN, 'on', 'settings tool', CLIENT);
+      assert.strictEqual(r.inputRequired.inputRequests.approve.params.message, ON_TEXT('0.5.0'));
       confirmModule.resetForTests();
-      fs.writeFileSync(modulesJson, JSON.stringify({v: 2, modules: {'@countinghouse/ch-pack-ci-failure-triage': {version: '0.5.0-rc.1', role: 'scenario'}}}));
-      await refused(tool().set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+      fs.writeFileSync(modulesJson, JSON.stringify({v: 2, packs: {'ci-failure-triage': {modules: {'@countinghouse/ch-pack-ci-failure-triage': '0.5.0-rc.1'}}},
+        modules: {'@countinghouse/ch-pack-ci-failure-triage': {version: '0.5.0-rc.1', role: 'scenario'}}}));
+      await refused(tool().set(EN, 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
       confirmModule.resetForTests();
       fs.rmSync(modulesJson);
-      const old = await tool().set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT);
-      assert.match(old.inputRequired.inputRequests.approve.params.message, /ci-failure-triage 0\.4\.0 tools/);
+      const old = await tool().set(EN, 'on', 'settings tool', CLIENT);
+      assert.match(old.inputRequired.inputRequests.approve.params.message, /ch-pack-ci-failure-triage 0\.4\.0 in countinghouse/);
     } finally {
       fs.rmSync(modulesJson, {force: true});
     }
@@ -204,7 +213,7 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
   });
 
   it('without the injected conditions, production asks nothing yet (no tested client, conditions unknown)', async () => {
-    const t = settingsTool.create({file, ceiling: () => ({state: 'none'})});
+    const t = settingsTool.create({mm: NO_MODULES, file, ceiling: () => ({state: 'none'})});
     await refused(t.set('maxOutputBytes', '32MiB', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
   });
 
@@ -223,7 +232,7 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
       }});
       return asked;
     };
-    const prod = () => settingsTool.create({file, ceiling: () => ({state: 'none'}), allowlist: TESTED, applyChange: async () => {}});
+    const prod = () => settingsTool.create({mm: NO_MODULES, file, ceiling: () => ({state: 'none'}), allowlist: TESTED, applyChange: async () => {}});
 
     it('ch-local says yes: a form; it was asked with the client\'s name and version only', async () => {
       const asked = chLocal({ok: true, mayElicit: true});
@@ -242,8 +251,9 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
       await refused(prod().set('requestTimeout', '60s', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
       assert.ok(history().some((h) => h.setting === 'requestTimeout' && h.change === 'not confirmed (client conditions unknown)'));
       control.resetForTests();   // no channel at all
-      fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.x': false}}));
-      await refused(prod().set('pack.x', 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {'enabled.x': false}}));
+      fs.writeFileSync(path.join(path.dirname(file), 'modules.json'), JSON.stringify({modules: {x: {version: '1.0.0', role: 'scenario'}}, packs: {x: {modules: {x: '1.0.0'}}}}));
+      await refused(prod().set('enabled.x', 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
     });
   });
 });
@@ -255,7 +265,7 @@ describe('stdio 20b: the review of Tasks 1-3 (part 3 P2)', () => {
   let saved;
   let applied;
   const history = () => (fs.existsSync(path.join(dir, 'history.jsonl')) ? fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
-  const tool = (o = {}) => settingsTool.create(Object.assign({
+  const tool = (o = {}) => settingsTool.create(Object.assign({mm: NO_MODULES, 
     file,
     ceiling: () => ({state: 'none'}),
     mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
@@ -294,16 +304,19 @@ describe('stdio 20b: the review of Tasks 1-3 (part 3 P2)', () => {
     assert.ok(!fs.existsSync(file));
   });
 
-  it('a pack turned on this start can be turned off again in conversation', async () => {
-    fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci-failure-triage': false}}));
+  // M5b: a module turned on is the file's (never this start's): written
+  // with the version confirmed, and turned off again on request
+  it('a module turned on in conversation is written; off again is on request, written too; nothing is applied here', async () => {
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {[EN]: false}}));
     fs.writeFileSync(path.join(dir, 'packs.json'), JSON.stringify({packs: {'ci-failure-triage': {packages: {'@countinghouse/ch-pack-ci-failure-triage': '0.4.0'}}}}));
     const t = tool();
-    await confirmed(t, 'pack.ci-failure-triage', 'on');
-    const off = await t.set('pack.ci-failure-triage', 'off', 'settings tool', CLIENT);
-    assert.deepStrictEqual(off, {name: 'pack.ci-failure-triage', old: 'on', new: 'off', applies: 'this start'});
-    assert.deepStrictEqual(applied.map((s) => [s.name, s.next]), [['pack.ci-failure-triage', true], ['pack.ci-failure-triage', false]]);
-    // the staged change kept the version the form showed
-    assert.strictEqual(applied[0].version, '0.4.0');
+    const on = await confirmed(t, EN, 'on');
+    assert.deepStrictEqual({old: on.old, new: on.new, applies: on.applies}, {old: 'off', new: 'on', applies: 'now'});
+    assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).values[EN], true);
+    const off = await t.set(EN, 'off', 'settings tool', CLIENT);
+    assert.deepStrictEqual({old: off.old, new: off.new, applies: off.applies}, {old: 'on', new: 'off', applies: 'now'});
+    assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).values[EN], false);
+    assert.deepStrictEqual(applied, [], 'ch-local loads and unloads it: nothing applied by the tool');
   });
 
   it('accepting re-checks conversation off and the decline lock, as set does', async () => {
@@ -366,7 +379,7 @@ describe('stdio 20c: the security review of #213 (part 3 P2)', () => {
   let saved;
   const history = () => (fs.existsSync(path.join(dir, 'history.jsonl')) ? fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
   const stored = () => JSON.parse(fs.readFileSync(file, 'utf8')).values;
-  const tool = (o = {}) => settingsTool.create(Object.assign({
+  const tool = (o = {}) => settingsTool.create(Object.assign({mm: NO_MODULES, 
     file,
     ceiling: () => ({state: 'none'}),
     mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
@@ -405,7 +418,7 @@ describe('stdio 20c: the security review of #213 (part 3 P2)', () => {
 
   it('a this-start tightening that cannot be applied leaves "not applied" after its line', async () => {
     // an apply that fails (a pack ch-local would not unload, a resize gone wrong)
-    const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
+    const t = settingsTool.create({mm: NO_MODULES, file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
       applyChange: async () => { throw new Error('boom'); }});
     options.maxOutputBytes = 32 * M;   // raised this start (the file says 16 MiB)
     await refused(t.set('maxOutputBytes', '24MiB', 'settings tool', CLIENT), 'SETTING_NOT_APPLIED');
@@ -450,10 +463,10 @@ describe('stdio 20c: the security review of #213 (part 3 P2)', () => {
     }
   });
 
-  it('a pack version over 32 characters is no plain version: no form', async () => {
-    fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci-failure-triage': false}}));
+  it('a module version over 32 characters is no plain version: no form', async () => {
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {[EN]: false}}));
     fs.writeFileSync(path.join(dir, 'packs.json'), JSON.stringify({packs: {'ci-failure-triage': {packages: {'@countinghouse/ch-pack-ci-failure-triage': `1.0.${'9'.repeat(5000)}`}}}}));
-    await refused(tool().set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+    await refused(tool().set(EN, 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
   });
 
   it('no session: no form, and a confirmation is never bound to the string "undefined"', async () => {
@@ -491,7 +504,7 @@ describe('stdio 20d: #213\'s nits (part 3 P2, Task 4)', () => {
     settingsTool.resetForTests();
   });
   afterEach(() => { options.maxOutputBytes = saved; fs.rmSync(dir, {recursive: true, force: true}); });
-  const withCeiling = (ceiling) => settingsTool.create({file, ceiling,
+  const withCeiling = (ceiling) => settingsTool.create({mm: NO_MODULES, file, ceiling,
     mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
     applyChange: async (st) => { options[st.name] = st.next; }});
   const trusted = (o = {}) => ({state: 'trusted', file: 'c', ceiling: Object.assign({forbid: [], packs: null}, o)});
@@ -534,11 +547,12 @@ describe('stdio 20d: #213\'s nits (part 3 P2, Task 4)', () => {
   });
 
   it('the apply\'s refusal does not call an unconfirmed change confirmed', async () => {
-    // the default apply, for a pack with no ch-local to ask (no control channel)
-    const e = await refused(settingsTool.applyConfirmed({name: 'pack.x', old: true, next: false, version: null},
+    // the default apply, for a setting it cannot apply (a module's on/off is
+    // the file's: ch-local applies it, never this)
+    const e = await refused(settingsTool.applyConfirmed({name: 'enabled.x', old: true, next: false, version: null},
       {pool: null, modules: () => null, ask: (m, o) => require('../../lib/control-channel').ask(m, o)}), 'SETTING_NOT_APPLIED');
-    assert.match(e.message, /CONTROL_NONE/);
-    assert.match(e.message, /pack\.x/);
+    assert.match(e.message, /not live/);
+    assert.match(e.message, /enabled\.x/);
     assert.doesNotMatch(e.message, /confirmed/i);
   });
 });
@@ -564,7 +578,7 @@ describe('stdio 20e: Task 4\'s review (part 3 P2)', () => {
 
   it('the re-check at accept is for the client the form was staged for; another refuses', async () => {
     let client = {name: 'claude-code', version: '2.1.323'};
-    const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client}),
+    const t = settingsTool.create({mm: NO_MODULES, file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client}),
       applyChange: async (st) => { options[st.name] = st.next; }});
     const a = await t.set('maxOutputBytes', '32MiB', 'settings tool', CLIENT);
     client = {name: 'claude-code', version: '2.1.400'};
@@ -574,7 +588,7 @@ describe('stdio 20e: Task 4\'s review (part 3 P2)', () => {
 
   it('a ceiling changed while the user was asked says so, not that the setting changed', async () => {
     let current = {state: 'none'};
-    const t = settingsTool.create({file, ceiling: (o) => (o && o.cacheOnly ? {state: 'trusted', file: 'c', ceiling: {forbid: [], packs: null}} : current),
+    const t = settingsTool.create({mm: NO_MODULES, file, ceiling: (o) => (o && o.cacheOnly ? {state: 'trusted', file: 'c', ceiling: {forbid: [], packs: null}} : current),
       mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}), applyChange: async () => {}});
     const a = await t.set('maxOutputBytes', '32MiB', 'settings tool', CLIENT);
     const e = await refused(t.confirm('maxOutputBytes', '32MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), 'SETTING_CEILING_CHANGED_MEANWHILE');
@@ -651,16 +665,14 @@ describe('stdio 20g: the confirmed change applied, this start only (part 3 P2, T
     assert.strictEqual(d.sent[0].options.requestTimeout, 60000);
   });
 
-  it('a pack on: load-pack asked of ch-local with the version the form showed, within 45 s; a refusal applies nothing; off: unload-pack', async () => {
-    const d = deps();
-    await settingsTool.applyConfirmed({name: 'pack.ci-failure-triage', old: false, next: true, version: '0.4.0'}, d);
-    assert.deepStrictEqual(d.asked, [[{type: 'load-pack', name: 'ci-failure-triage', version: '0.4.0'}, {timeoutMs: 45000}]]);
-    const no = deps({ask: async () => ({ok: false, code: 'CONTROL_VERSION_CHANGED'})});
-    await assert.rejects(settingsTool.applyConfirmed({name: 'pack.ci-failure-triage', old: false, next: true, version: '0.4.0'}, no),
-      (e) => e.code === 'SETTING_NOT_APPLIED' && /CONTROL_VERSION_CHANGED/.test(e.message));
-    const off = deps();
-    await settingsTool.applyConfirmed({name: 'pack.ci-failure-triage', old: true, next: false, version: null}, off);
-    assert.deepStrictEqual(off.asked.map(([m]) => m), [{type: 'unload-pack', name: 'ci-failure-triage'}]);
+  // M5b: no load-pack or unload-pack is asked of ch-local (a module's on/off
+  // is the file's; its watcher loads or unloads the module)
+  it('a module\'s on/off is never applied here, and nothing is asked of ch-local', async () => {
+    for (const next of [true, false]) {
+      const d = deps();
+      await assert.rejects(settingsTool.applyConfirmed({name: EN, old: !next, next, version: '0.4.0'}, d), (e) => e.code === 'SETTING_NOT_APPLIED' && /not live/.test(e.message));
+      assert.deepStrictEqual(d.asked, []);
+    }
   });
 
   it('atStart is captured at start: a value raised before the first control set is not taken as the start value', () => {
@@ -691,7 +703,7 @@ describe('stdio 20h: never silent, for confirmed changes (part 3 P2, Task 6)', (
     LOG.I = (line) => { logged.push(String(line)); return line; };
   });
   afterEach(() => { LOG.I = logI; options.maxOutputBytes = saved; fs.rmSync(dir, {recursive: true, force: true}); notices.take(null); });
-  const tool = (applyChange = async (st) => { options[st.name] = st.next; }) => settingsTool.create({file, ceiling: () => ({state: 'none'}),
+  const tool = (applyChange = async (st) => { options[st.name] = st.next; }) => settingsTool.create({mm: NO_MODULES, file, ceiling: () => ({state: 'none'}),
     mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}), applyChange});
 
   it('an applied confirmation is told as a notice and logged, in the same words; a decline tells nothing', async () => {
@@ -749,12 +761,7 @@ describe('stdio 20i: Task 5\'s review (part 3 P2)', () => {
     assert.strictEqual(options.maxOutputBytes, 24 * M);
   });
 
-  it('a load-pack with no answer is undone with an unload-pack; a resize that stopped, or no modules to tell, applies nothing', async () => {
-    const asked = [];
-    const d = base({ask: async (m) => { asked.push(m.type); return m.type === 'load-pack' ? {ok: false, code: 'CONTROL_NO_ANSWER'} : {ok: true}; }});
-    await assert.rejects(settingsTool.applyConfirmed({name: 'pack.x', old: false, next: true, version: '1.0.0'}, d), {code: 'SETTING_NOT_APPLIED'});
-    await new Promise((r) => setImmediate(r));
-    assert.deepStrictEqual(asked, ['load-pack', 'unload-pack']);
+  it('a resize that stopped, or no modules to tell, applies nothing', async () => {
     await assert.rejects(settingsTool.applyConfirmed({name: 'maxOutputBytes', old: 16 * M, next: 64 * M},
       base({pool: {resize: async () => { throw Object.assign(new Error('x'), {code: 'RESIZE_STOPPED'}); }}})), (e) => e.code === 'SETTING_NOT_APPLIED' && /RESIZE_STOPPED/.test(e.message));
     assert.strictEqual(options.maxOutputBytes, 16 * M);
@@ -762,22 +769,21 @@ describe('stdio 20i: Task 5\'s review (part 3 P2)', () => {
     assert.strictEqual(options.requestTimeout, 30000);
   });
 
-  it('a pack turned on this start is off again when ch-local unloads it, or when its value is written to the file', async () => {
+  // M5b: on is the file's: on again is a no-op while the file says on, and
+  // asked again once the file says off (a terminal, or ch-local, wrote it)
+  it('a module turned on stays on while the file says so; written off by someone else, it is asked for again', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s20i-'));
     const file = path.join(dir, 'settings.json');
     try {
-      fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci-failure-triage': false}}));
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {[EN]: false}}));
       fs.writeFileSync(path.join(dir, 'packs.json'), JSON.stringify({packs: {'ci-failure-triage': {packages: {'@countinghouse/ch-pack-ci-failure-triage': '0.4.0'}}}}));
       confirmModule.resetForTests();
-      const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}), applyChange: async () => {}});
-      const on = async () => {
-        const a = await t.set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT);
-        return t.confirm('pack.ci-failure-triage', 'on', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT);
-      };
-      await on();
-      assert.strictEqual((await t.set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT)).applies, 'this start', 'on this start: a no-op');
-      settingsTool.packUnloaded('@countinghouse/ch-pack-ci-failure-triage');
-      const again = await t.set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT);
+      const t = settingsTool.create({mm: NO_MODULES, file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}), applyChange: async () => {}});
+      const a = await t.set(EN, 'on', 'settings tool', CLIENT);
+      await t.confirm(EN, 'on', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT);
+      assert.strictEqual((await t.set(EN, 'on', 'settings tool', CLIENT)).applies, 'now', 'on already: a no-op');
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {[EN]: false}}));
+      const again = await t.set(EN, 'on', 'settings tool', CLIENT);
       assert.ok(again.inputRequired != null, 'off again: asked again');
     } finally {
       fs.rmSync(dir, {recursive: true, force: true});
@@ -795,7 +801,7 @@ describe('stdio 20j: #222\'s review (part 3 P2)', () => {
 
   it('an apply that fails with no code says "error", never its message (in the notice, the history and the refusal)', async () => {
     const file = path.join(dir, 'settings.json');
-    const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
+    const t = settingsTool.create({mm: NO_MODULES, file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
       applyChange: async () => { throw new Error('a message that could carry /home/someone or a key'); }});
     const a = await t.set('maxOutputBytes', '32MiB', 'settings tool', CLIENT);
     const e = await t.confirm('maxOutputBytes', '32MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT).then(() => null, (err) => err);
