@@ -24,9 +24,10 @@ function run(scenario) {
     require(${JSON.stringify(path.join(LIB, 'cli-options'))}).setOptions({workerThread: true, peerChannelAuthRecheckSeconds: 0});
     require(${JSON.stringify(path.join(LIB, 'logger'))}).createLogger();
     let during = () => {};
+    let denied = null;   // the access check's own refusal
     const authPath = require.resolve(${JSON.stringify(path.join(LIB, 'user-auth'))});
     require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,
-      exports: (a, b, deviceID, appKey, c, d, localCB, cb) => setImmediate(() => { during(); cb(null); })};
+      exports: (a, b, deviceID, appKey, c, d, localCB, cb) => setImmediate(() => { during(); cb(denied); })};
     const Broker = require(${JSON.stringify(path.join(LIB, 'peer-channel-broker'))});
     const sent = [];
     const wm = (id) => ({workerId: id, ended: null, unloading: false,
@@ -45,6 +46,18 @@ function run(scenario) {
     if (scenario === 'unloading') callee.unloading = true;
     if (scenario === 'replaced') during = () => { dm.deviceMap.D = replacement; };
     if (scenario === 'caller-ended') during = () => { caller.ended = {code: 'MODULE_UNLOADED'}; };
+    // the Reviewer's high review of #441 (5, 8): replacing is the worker's
+    // own mark, asked of the worker the map holds after the check
+    if (scenario === 'replacing') during = () => { callee.replacing = true; callee.hostModuleName = 'ch-step-d'; };
+    if (scenario === 'replaced-registered') {
+      callee.replacing = true;
+      dm.replacingInPlace = () => true;   // the reload not finished
+      during = () => { dm.deviceMap.D = replacement; };
+    }
+    if (scenario === 'replacing-no-access') {
+      callee.replacing = true;
+      denied = Object.assign(new Error('no access'), {code: 'USER_HAS_NO_DEVICE'});
+    }
     // the open takes the call's token (the review of #138, 5a)
     const token = require(${JSON.stringify(path.join(LIB, 'call-tokens'))}).issue({billingKey: 'k', workerId: caller.workerId, deviceID: 'C'});
     broker.handleRequest({targetDeviceID: 'D', appKey: 'k', token: token}, caller);
@@ -72,6 +85,18 @@ describe('sandbox 31: a peer channel is granted only to a callee that is still t
 
   it('the callee is replaced during the check: the new worker gets the channel', () => {
     assert.deepStrictEqual(run('replaced'), [{to: 3, open: 1}, {to: 1, grant: 3}]);
+  });
+
+  it('the callee begins being replaced in place during the check: refused MODULE_RELOADING, no port to the old worker', () => {
+    assert.deepStrictEqual(run('replacing'), [{to: 1, deny: 'MODULE_RELOADING'}]);
+  });
+
+  it('the new worker registered while its reload finishes: it gets the channel', () => {
+    assert.deepStrictEqual(run('replaced-registered'), [{to: 3, open: 1}, {to: 1, grant: 3}]);
+  });
+
+  it('a caller without access to a device being replaced gets the access error, never MODULE_RELOADING', () => {
+    assert.deepStrictEqual(run('replacing-no-access'), [{to: 1, deny: 'USER_HAS_NO_DEVICE'}]);
   });
 
   it('the caller ends during the check: nothing is sent', () => {
