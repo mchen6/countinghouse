@@ -194,6 +194,10 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
       const own = 'trip-planner unloaded: it calls ch-pack-mod, which is turned off';
       await c().unload({type: 'unload', name: CALLER, notice: own, reason: 'calls', because: MOD});
       assert.deepStrictEqual(all(null), each(`${CALLER} unloaded: it calls ${MOD}, which is turned off for all your sessions (turning ${MOD} on brings it back).`));
+      // (round 6, 6) a name that is no package name: its own words
+      units.set('Not A Package', {form: 'module', pack: moduleKey('Not A Package')});
+      await c().unload({type: 'unload', name: 'Not A Package', notice: own, reason: 'calls', because: MOD});
+      assert.deepStrictEqual(all(null), each(own));
       // the module it names not held off, a because that is no package name,
       // or none: its own words
       for (const because of ['other-module', 7, undefined]) {
