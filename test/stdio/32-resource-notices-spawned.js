@@ -36,6 +36,8 @@ function packWithResource(home, name) {
   return dir;
 }
 
+const {dirsOf} = require('../helpers/module-dirs');
+
 describe('stdio 32: resource and prompt notices on a listen, spawned (M8)', function() {
   this.timeout(120000);
   let home = null;
@@ -131,14 +133,14 @@ describe('stdio 32: resource and prompt notices on a listen, spawned (M8)', func
   it('a pack loaded in place, and unloaded, moves the resource and prompt lists: each list_changed once, to the listen that asked, and the tools list not', async () => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-32-'));
     io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
-      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--packsRoot', path.join(home, 'packs'), '--loadModule', NOTES], {ipc: true});
+      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--modulesRoot', path.join(home, 'packs'), '--loadModule', NOTES], {ipc: true});
     const first = await io.request({jsonrpc: '2.0', id: 1, method: 'resources/list', params: {_meta: MODERN_META}}, 60000);
     assert.ok(first.result != null, `${JSON.stringify(first)}\n${io.err.slice(-1500)}`);
     io.notify({jsonrpc: '2.0', id: 200, method: 'subscriptions/listen', params: {_meta: MODERN_META, notifications: {resourcesListChanged: true, promptsListChanged: true}}});
     io.notify({jsonrpc: '2.0', id: 201, method: 'subscriptions/listen', params: {_meta: MODERN_META, notifications: {toolsListChanged: true}}});
     assert.ok(await until(() => ackOf(200) != null && ackOf(201) != null), io.err.slice(-1500));
     const of = (sub, method) => messages().filter((m) => m.method === method && m.params._meta[SUB] === sub).length;
-    const loaded = await io.control({type: 'load', name: 'ch-pack-status', scenario: packWithResource(home, 'ch-pack-status')});
+    const loaded = await io.control({type: 'load', name: 'ch-pack-status', dirs: dirsOf(packWithResource(home, 'ch-pack-status'))});
     assert.strictEqual(loaded.ok, true, `${JSON.stringify(loaded)}\n${io.err.slice(-2000)}`);
     assert.ok(await until(() => of(200, 'notifications/resources/list_changed') === 1 && of(200, 'notifications/prompts/list_changed') === 1),
       JSON.stringify(messages().filter((m) => m.method != null && m.method.startsWith('notifications/'))));

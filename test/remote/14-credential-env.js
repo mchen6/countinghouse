@@ -9,7 +9,6 @@
 // COUNTINGHOUSE_* name stays denied whatever the policy says.
 const assert = require('assert');
 const fs     = require('fs');
-const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
 const {testPort} = require('../helpers/test-env');
@@ -23,7 +22,7 @@ const SLOT_VALUE = `ghp_${'F'.repeat(36)}`;
 
 // The deny probe, declaring `env` and nothing on the file system.
 function probe(env) {
-  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14-')), NAME);
+  const dir = path.join(tmpDirs.mkdtemp('ch-remote-14-'), NAME);
   fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'deny-probe'), dir, {recursive: true});
   const pkgPath = path.join(dir, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
@@ -32,10 +31,15 @@ function probe(env) {
   return dir;
 }
 const policyFile = (entry) => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14p-')), 'policy.json');
+  const file = path.join(tmpDirs.mkdtemp('ch-remote-14p-'), 'policy.json');
   fs.writeFileSync(file, JSON.stringify({modules: {[NAME]: entry}}));
   return file;
 };
+
+// this file's temporary trees, in os.tmpdir() (a module a runtime loads
+// stays outside the runtime's tree) and removed (test/helpers/test-tmp.js
+// forFile); nothing left there
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-14'], {base: require('os').tmpdir()});
 
 describe('remote 14: a name a credentials allowance reads is never copied to a worker', () => {
   const {build} = require('../../lib/module-sandbox-config');
@@ -86,7 +90,7 @@ describe('remote 14: a name a credentials allowance reads is never copied to a w
   it('under version 2, a variable name the file binds is denied too, though the value is read from a slot', () => {
     const credentials = require('../../lib/remote/credentials');
     const saved = credentials.snapshot();
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14b-'));
+    const tmp = tmpDirs.mkdtemp('ch-remote-14b-');
     const file = path.join(tmp, 'allow.json');
     fs.writeFileSync(file, JSON.stringify({version: 2, modules: {'some-module': {'https://api.githubcopilot.com': {GITHUB_TOKEN: SLOT1}}}}));
     try {
@@ -97,25 +101,25 @@ describe('remote 14: a name a credentials allowance reads is never copied to a w
       assert.ok(c.notes.some((n) => n.startsWith('env GITHUB_TOKEN denied: a credentials allowance reads it')), JSON.stringify(c.notes));
     } finally {
       credentials.restore(saved);
-      fs.rmSync(tmp, {recursive: true, force: true});
+      tmpDirs.remove(tmp);
     }
   });
 
-  it('the names at a spawn are the start\'s and every pack\'s version 1 allowance\'s (lib/module-manager.js)', () => {
+  // (a pack's own version 1 allowance went with the pack form, M6)
+  it('the names at a spawn are the start\'s version 1 allowance\'s (lib/module-manager.js)', () => {
     const credentials = require('../../lib/remote/credentials');
     const mmod = require('../../lib/module-manager');
     const saved = credentials.snapshot();
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14a-')), 'allow.json');
+    const file = path.join(tmpDirs.mkdtemp('ch-remote-14a-'), 'allow.json');
     fs.writeFileSync(file, JSON.stringify({'https://api.githubcopilot.com': ['GITHUB_TOKEN']}));
     try {
       credentials.configure(file);
-      mmod.packRemotes.set('some-module', new Map([['some-pack', new Map([['https://api.x.example', new Set(['X_KEY'])]])]]));
-      assert.deepStrictEqual([...mmod.credentialNamesNow()].sort(), ['GITHUB_TOKEN', 'X_KEY']);
+      assert.deepStrictEqual([...mmod.credentialNamesNow()].sort(), ['GITHUB_TOKEN']);
     } finally {
-      mmod.packRemotes.delete('some-module');
       credentials.restore(saved);
     }
   });
+  tmpDirs.hooks();
 });
 
 // The probe end to end: a real worker's environment, under audit and
@@ -128,9 +132,9 @@ describe('remote 14: a worker\'s environment', function() {
     describe(mode, () => {
       let server = null;
       before(async () => {
-        const allow = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14s-')), 'allow.json');
+        const allow = path.join(tmpDirs.mkdtemp('ch-remote-14s-'), 'allow.json');
         fs.writeFileSync(allow, JSON.stringify({'https://api.githubcopilot.com': ['GITHUB_TOKEN']}));
-        const store = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14d-'));
+        const store = tmpDirs.mkdtemp('ch-remote-14d-');
         server = await startServer(port, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleDataPath', store,
           '--moduleSandbox', mode, '--modulePolicy', policyFile({approve: 'as-declared'}), '--remoteCredentials', allow,
           '--loadModule', probe(['GITHUB_TOKEN', SLOT1])], {env: {GITHUB_TOKEN: SERVER_TOKEN, [SLOT1]: SLOT_VALUE}});
@@ -148,4 +152,5 @@ describe('remote 14: a worker\'s environment', function() {
       });
     });
   });
+  tmpDirs.hooks();
 });

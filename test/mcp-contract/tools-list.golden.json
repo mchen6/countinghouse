@@ -77,7 +77,7 @@
   },
   {
     "name": "countinghouse_usage_report",
-    "description": "What this countinghouse has done for you: per tool, server, pack or module, the calls, the server calls made for them, and the lines and bytes read from servers and returned to the model, from this process and earlier ones. On a shared runtime, the calls of this session only. Token columns are an estimate (utf8 bytes / 4).",
+    "description": "What this countinghouse has done for you: per tool, server, scenario or module, the calls, the server calls made for them, and the lines and bytes read from servers and returned to the model, from this process and earlier ones. On a shared runtime, the calls of this session only. Token columns are an estimate (utf8 bytes / 4).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -94,10 +94,10 @@
           "enum": [
             "tool",
             "server",
-            "pack",
+            "scenario",
             "module"
           ],
-          "description": "what each row counts: a tool (the default), a server, a pack, or a module"
+          "description": "what each row counts: a tool (the default), a server, a scenario (the top-level module a call was made to), or a module"
         }
       },
       "additionalProperties": false
@@ -149,7 +149,7 @@
           "enum": [
             "tool",
             "server",
-            "pack",
+            "scenario",
             "module"
           ]
         },
@@ -188,7 +188,7 @@
                 "type": "string",
                 "maxLength": 256
               },
-              "pack": {
+              "scenario": {
                 "type": "string",
                 "maxLength": 256
               },

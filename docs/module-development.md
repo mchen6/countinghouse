@@ -1381,7 +1381,7 @@ The full form:
       "transport": "streamable-http",
       "url": "https://api.githubcopilot.com/mcp/",
       "headers": {"X-MCP-Toolsets": "actions,repos"},
-      "credential": {"env": "COUNTINGHOUSE_GITHUB_TOKEN", "fallbackEnv": "GITHUB_TOKEN",
+      "credential": {"env": "COUNTINGHOUSE_GITHUB_TOKEN",
                      "header": "Authorization", "scheme": "Bearer"}
     }
   ]
@@ -1400,9 +1400,9 @@ The full form:
   sets itself (`Host`, `Content-Type`, `Accept`, `Mcp-Session-Id` and the
   like) are refused.
 - `credential` (optional): a variable name (the short form), or an
-  object: the environment variable to read (`env`, then `fallbackEnv`
-  when `env` is empty, under a version 1 `--remoteCredentials` file only),
-  the header (default `Authorization`) and the scheme (default `Bearer`;
+  object: the environment variable to read (`env`; a credential is one
+  variable, and a `fallbackEnv` is refused), the header (default
+  `Authorization`) and the scheme (default `Bearer`;
   `""` sends the bare value). It is a request, not a grant: the
   operator's `--remoteCredentials` file decides where it may go. Under a
   version 2 file a key is bound to one module, one variable and one

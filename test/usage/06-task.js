@@ -36,7 +36,7 @@ describe('task-augmented tools/call: counting and the receipt', () => {
     t += 40;
     hooks.complete(job(SCENARIO), {output: {summary: 'x'}}, {extra});
     const out = u.records()[0];
-    assert.deepStrictEqual([out.call, out.pack, out.module, out.tool, out.caller, out.ms], [extra.usageCall, 'ch-pack-ci-failure-triage', 'ch-pack-ci-failure-triage', 'ci_failure_triage', 'u_k1', 40]);
+    assert.deepStrictEqual([out.call, out.scenario, out.module, out.tool, out.caller, out.ms], [extra.usageCall, 'ch-pack-ci-failure-triage', 'ch-pack-ci-failure-triage', 'ci_failure_triage', 'u_k1', 40]);
   });
 
   it('a completion takes no pack notice: its sentence is the receipt\'s, and the notice stays for a result that is sent (B2 Task 3 review, 2)', () => {
@@ -91,7 +91,7 @@ describe('task-augmented tools/call: counting and the receipt', () => {
   it('a module that is not a scenario gets its Out record and no receipt', () => {
     const extra = hooks.start(job(PLAIN));
     assert.strictEqual(hooks.complete(job(PLAIN), {output: {ok: true}}, {extra}), null);
-    assert.deepStrictEqual([u.records()[0].pack, u.records()[0].module, u.records()[0].outcome], [null, 'plain', 'ok']);
+    assert.deepStrictEqual([u.records()[0].scenario, u.records()[0].module, u.records()[0].outcome], [null, 'plain', 'ok']);
   });
 
   it('the Out record counts the text tasks/result sends: built with the stamped schema, and RECEIPT_RESERVED for a reserved output', () => {

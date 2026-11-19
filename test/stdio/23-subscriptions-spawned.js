@@ -35,7 +35,7 @@ function writeModule(dir, {name, version = '1.0.0', role, calls, remotes, servic
 
 // A pack version as ch-local lays it out: <home>/packs/<pack>/<version>/
 // node_modules/<scenario>, with the shared part beside it.
-// base: where the trees are (<home>/packs, the runtime's --packsRoot, unless
+// base: where the trees are (<home>/packs, the runtime's --modulesRoot, unless
 // a case puts one elsewhere). brokenPart: the scenario also calls a part
 // whose handler file is missing, so that part's load is refused.
 // sharedVersion, sharedBroken: the shared part at another version, whose
@@ -60,6 +60,8 @@ function packVersion(home, scenario, tool, version, {slow = false, remote = fals
     remotes: remote ? [{name: 'needs', transport: 'streamable-http', url: 'https://remote.invalid/mcp', credential: {env: 'CH_TEST_PACK_TOKEN'}}] : undefined});
 }
 
+const {dirsOf} = require('../helpers/module-dirs');
+
 describe('stdio 23: subscriptions/listen, spawned (#231)', function() {
   this.timeout(120000);
   let home = null;
@@ -79,7 +81,7 @@ describe('stdio 23: subscriptions/listen, spawned (#231)', function() {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-23-'));
     const one = packVersion(home, 'ch-pack-one', 'tool_one', '1.0.0');
     io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
-      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--packsRoot', path.join(home, 'packs'), '--loadModule', one],
+      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--modulesRoot', path.join(home, 'packs'), '--loadModule', one],
     {ipc: true, env: {CH_TEST_PACK_TOKEN: ''}});
     const list = await io.request({jsonrpc: '2.0', id: 1, method: 'tools/list', params: {_meta: MODERN_META}}, 60000);
     assert.ok(list.result != null, JSON.stringify(list));
@@ -88,7 +90,7 @@ describe('stdio 23: subscriptions/listen, spawned (#231)', function() {
     const ack = messages().find((m) => m.method === 'notifications/subscriptions/acknowledged');
     assert.deepStrictEqual(ack.params, {notifications: {toolsListChanged: true}, _meta: {'io.modelcontextprotocol/subscriptionId': 2}});
     const two = packVersion(home, 'ch-pack-two', 'tool_two', '1.0.0');
-    const r = await io.control({type: 'load', name: 'ch-pack-two', scenario: two});
+    const r = await io.control({type: 'load', name: 'ch-pack-two', dirs: dirsOf(two)});
     assert.strictEqual(r.ok, true, `${JSON.stringify(r)}\n${io.err.slice(-2000)}`);
     assert.ok(await until(() => messages().some((m) => m.method === 'notifications/tools/list_changed')), 'no list_changed on the listen');
     const changed = messages().filter((m) => m.method === 'notifications/tools/list_changed');
@@ -101,7 +103,7 @@ describe('stdio 23: subscriptions/listen, spawned (#231)', function() {
     await new Promise((r) => setTimeout(r, 300));
     const before3 = messages().filter((m) => m.method === 'notifications/tools/list_changed' && m.params._meta['io.modelcontextprotocol/subscriptionId'] === 3).length;
     const three = packVersion(home, 'ch-pack-three', 'tool_three', '1.0.0');
-    assert.strictEqual((await io.control({type: 'load', name: 'ch-pack-three', scenario: three})).ok, true);
+    assert.strictEqual((await io.control({type: 'load', name: 'ch-pack-three', dirs: dirsOf(three)})).ok, true);
     assert.ok(await until(() => messages().filter((m) => m.method === 'notifications/tools/list_changed' && m.params._meta['io.modelcontextprotocol/subscriptionId'] === 2).length >= 2), 'the open listen hears the second load');
     assert.strictEqual(messages().filter((m) => m.method === 'notifications/tools/list_changed' && m.params._meta['io.modelcontextprotocol/subscriptionId'] === 3).length, before3, 'the cancelled one hears nothing');
     const started = Date.now();

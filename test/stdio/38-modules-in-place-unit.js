@@ -50,7 +50,14 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
     fs.rmSync(outside, {recursive: true, force: true});
   });
   const msg = (extra) => Object.assign({type: 'load', name: '@t/ch-pack-a', dirs: {'@t/ch-pack-a': dirs.scenario, '@t/ch-step-s': dirs.part}}, extra);
-  const refusedWith = (m, re) => assert.throws(() => mip.readModuleRequest(m, {needsDirs: true}), (e) => e.code === 'CONTROL_FAILED' && re.test(e.message), JSON.stringify(m).slice(0, 200));
+  // its shape as the load handler checks it (lib/module-control.js, once),
+  // then what the request reads from disk
+  const readAsLoaded = (m) => {
+    const problem = mip.moduleMessageProblem('load', m);
+    if (problem != null) throw Object.assign(new Error(problem.message), {code: 'CONTROL_FAILED'});
+    return mip.readModuleRequest(m, {needsDirs: true});
+  };
+  const refusedWith = (m, re) => assert.throws(() => readAsLoaded(m), (e) => e.code === 'CONTROL_FAILED' && re.test(e.message), JSON.stringify(m).slice(0, 200));
 
   it('a well-formed message is read: its name, and each directory by its real path', () => {
     const r = mip.readModuleRequest(msg(), {needsDirs: true});
@@ -177,7 +184,7 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
   });
 
   describe('the ceiling, by each module\'s package name (section 8)', () => {
-    const trusted = (ceiling) => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: Object.assign({packs: null}, ceiling)});
+    const trusted = (ceiling) => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: Object.assign({}, ceiling)});
     const names = ['@t/ch-pack-a', '@t/ch-step-s'];
 
     it('none, or a trusted one with no list: allowed', () => {
@@ -196,11 +203,16 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
       assert.match(r.message, /enabled\.@t\/ch-step-s/);
     });
 
-    it('a ceiling that still lists packs and no modules refuses a module-form load (fail closed, the plan review\'s Q2)', () => {
-      settingsTool.ceilingForControl(() => trusted({packs: ['a']}));
+    // M6 (#413 rev 3 section 8): a ceiling that still holds packs is not
+    // trusted at all (lib/settings-ceiling.js), so a module-form load is
+    // refused, saying why
+    it('a ceiling that still holds packs refuses a module-form load (fail closed), saying to list modules', () => {
+      const {parse} = require('../../lib/settings-ceiling');
+      const read = parse('{"version": 1, "packs": ["a"]}');
+      settingsTool.ceilingForControl(() => ({state: 'untrusted', file: '/etc/countinghouse/ceiling.json', problem: read.problem}));
       const r = mip.moduleCeilingRefusal(names);
       assert.strictEqual(r.code, 'SETTING_CEILING_UNTRUSTED');
-      assert.match(r.message, /lists packs, not modules/);
+      assert.match(r.message, /it holds "packs", which is no longer read: list each module under "modules"/);
     });
 
     it('an untrusted ceiling refuses', () => {

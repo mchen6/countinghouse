@@ -15,6 +15,11 @@ function run(args, done) {
   });
 }
 
+// this file's temporary trees, in os.tmpdir() (a module a runtime loads
+// stays outside the runtime's tree) and removed (test/helpers/test-tmp.js
+// forFile); nothing left there
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-validate-cli-'], {base: require('os').tmpdir()});
+
 describe('countinghouse-validate CLI', function() {
   this.timeout(20000);
 
@@ -38,8 +43,7 @@ describe('countinghouse-validate CLI', function() {
   // means, whichever form the author wrote; asserted byte for byte.
   const withRemote = (remote) => {
     const fs = require('fs');
-    const os = require('os');
-    const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-validate-cli-')), 'm');
+    const dir = path.join(tmpDirs.mkdtemp('ch-validate-cli-'), 'm');
     fs.cpSync(path.join(FIXTURES, 'handler-map-convention'), dir, {recursive: true});
     const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
     pkg.countinghouse = Object.assign({}, pkg.countinghouse, {remotes: [remote]});
@@ -116,8 +120,8 @@ describe('countinghouse-validate CLI', function() {
   });
 
   it('a credential field the grammar refuses is a placeholder in the full form, never dropped', (done) => {
-    run(withRemote({name: 'gh', url: 'https://example.com/mcp', credential: {env: 'GH_TOKEN', header: 'Bad Header', scheme: 'B a d', fallbackEnv: '1X'}}).dir, (r) => {
-      assert.ok(r.stdout.includes('"credential":{"env":"GH_TOKEN","fallbackEnv":"<VARIABLE>","header":"<header>","scheme":"<scheme>"}'), r.stdout);
+    run(withRemote({name: 'gh', url: 'https://example.com/mcp', credential: {env: 'GH_TOKEN', header: 'Bad Header', scheme: 'B a d'}}).dir, (r) => {
+      assert.ok(r.stdout.includes('"credential":{"env":"GH_TOKEN","header":"<header>","scheme":"<scheme>"}'), r.stdout);
       done();
     });
   });
@@ -150,11 +154,13 @@ describe('countinghouse-validate CLI', function() {
     });
   });
 
-  it('a fallbackEnv is said to be read under a version 1 file only', (done) => {
+  // M6: a credential is one variable; the fix is the shortest form
+  it('a fallbackEnv is refused, and the fix leaves it out', (done) => {
     const m = withRemote({name: 'gh', url: 'https://api.example.com/mcp', credential: {env: 'A_TOKEN', fallbackEnv: 'B_TOKEN'}});
     run(m.dir, (r) => {
-      assert.ok(r.stdout.includes('  sends the credential A_TOKEN to https://api.example.com as "Authorization: Bearer <value>" ' +
-        '(its fallbackEnv B_TOKEN is read only under a version 1 --remoteCredentials file)\n'), r.stdout);
+      assert.ok(r.stdout.includes('remotes[0].credential.fallbackEnv is no longer read: a credential is one variable, named by env'), r.stdout);
+      assert.ok(r.stdout.includes('the shortest form is {"name":"gh","url":"https://api.example.com/mcp","credential":"A_TOKEN"}'), r.stdout);
+      assert.ok(!r.stdout.includes('B_TOKEN'), r.stdout);
       done();
     });
   });
@@ -173,4 +179,5 @@ describe('countinghouse-validate CLI', function() {
       done();
     });
   });
+  tmpDirs.hooks();
 });

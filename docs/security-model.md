@@ -708,17 +708,20 @@ conversation or the `ch-local` command, with an optional, machine-wide file:
 
 ```json
 {"version": 1, "maxOutputBytes": 16777216, "requestTimeout": 60000,
- "forbid": ["moduleSandbox", "autoUpgrade"], "packs": ["ci-failure-triage"],
+ "forbid": ["moduleSandbox", "autoUpgrade"],
+ "modules": ["@countinghouse/ch-pack-ci-failure-triage", "@countinghouse/ch-access-github"],
  "conversation": false}
 ```
 
 Every key but `version` is optional: `maxOutputBytes` and `requestTimeout`
 lower the hard bounds (`requestTimeout` in whole seconds, as milliseconds:
 the runtime takes seconds, so any other value fails closed); `forbid`
-refuses loosening the sandbox or turning automatic upgrades on; `packs` is
-the operator's allowlist of packs: when present, only those packs ever
-load, at start, in place and on install, whatever `settings.json` or the
-history say, and installing another is refused; `"conversation": false` refuses every
+refuses loosening the sandbox or turning automatic upgrades on; `modules`
+is the operator's list of modules by package name, parts included: when
+present, only those ever load, at start, in place and on install, whatever
+`settings.json` or the history say, and installing another is refused (a
+ceiling that still holds `packs`, the list before it, is not trusted: it
+says to list each module under `modules`); `"conversation": false` refuses every
 loosening asked for in conversation, so no dialog is ever shown and each
 ends at the terminal command (below). A value above it is
 `SETTING_ABOVE_CEILING`, a loosening it forbids `SETTING_FORBIDDEN_BY_CEILING`.
@@ -841,9 +844,13 @@ beyond any ceiling, as they are beyond the runtime itself.
 A loosening asked for in conversation could come from a prompt injected
 through a tool's result, not from the user. So `countinghouse_settings`
 never applies one on the model's word. A raised `maxOutputBytes` or
-`requestTimeout`, or a pack turned on, is either confirmed by the user in
-their client's own dialog (an MCP elicitation form) or refused with the
-`ch-local` command the user runs at a terminal. Loosening the sandbox or
+`requestTimeout`, or a module turned on (`enabled.<module>`), is either
+confirmed by the user in their client's own dialog (an MCP elicitation
+form) or refused with the `ch-local` command the user runs at a terminal.
+A module turned on is written to the settings file for every session of
+the user, with the version the dialog named, and ch-local loads it; a
+module turned off is made on request, every session told what went with
+it and the command that turns it back on. Loosening the sandbox or
 turning on automatic upgrades is terminal only.
 
 A dialog is shown only when all of these hold:
@@ -877,8 +884,8 @@ A dialog is shown only when all of these hold:
   three dialogs.
 
 The dialog has one checkbox and no default. Its text is built from the
-change alone, naming the current value (and a pack's version, from
-`packs.json`); no text from the model appears in it. The model's arguments
+change alone, naming the current value (and a module's version, from
+ch-local's `modules.json`); no text from the model appears in it. The model's arguments
 cannot carry the answer: `requestState` and the user's answer are read only
 from the request's own parameters. `requestState` carries only a random
 nonce and an HMAC, under a key held in memory for this start, binding the
@@ -1347,8 +1354,8 @@ directory of each module of its closure:
   (`lib/module-visibility.js`).
 - **The ceiling by module.** A trusted ceiling's `modules` list must name
   every module of a closure, parts included (`SETTING_FORBIDDEN_BY_CEILING`
-  for one it leaves out). A ceiling that still lists `packs` and no
-  `modules` refuses every module-form load (fail closed).
+  for one it leaves out). A ceiling that still holds `packs` is not trusted,
+  so it refuses every load (fail closed).
 - **Credentials by repetition only.** A load's `credentials` may only
   repeat a binding the start's `--remoteCredentials` file fixed (the same
   slot for the same module, origin and variable): a message can never bind
@@ -1379,8 +1386,8 @@ directory of each module of its closure:
   stays loaded, and its calls answer `SETTING_REQUIRED`.
 
 The pack form (`scenario`, `pack`, `global`, a pack's own credentials file)
-is still taken until it is removed, never mixed with the module form in one
-message.
+is gone: a message carrying any of its fields is refused, and so is
+`--packsRoot` at the start.
 
 ### Modules that keep state per session
 
@@ -1416,10 +1423,6 @@ What keeps one session out of another's:
   per-session worker. Only load as shared a module you would trust with
   all of the user's sessions. That is the case already: on the shared
   runtime every session is the same user.
-- **With session packs (B3),** a session sees and calls only the modules in
-  packs that are on for it (the global ones and its own). A module it
-  doesn't list answers like a missing one, and its per-session workers stop
-  when the session turns its pack off.
 - **The memory bound is the operator's.** `--maxSessionWorkers` (default
   16, in all) is a terminal flag only, not a setting a session can change.
   It bounds their memory at about 15 MB once plus about 24 MB per
@@ -1734,9 +1737,8 @@ the main thread's, not the module's (spec:
   handed over). Only a value the operator's
   `--modulePolicy` sets for that module under that name is given: it is the
   operator's own value, not the runtime's credential. The names are those
-  in force at the spawn: a worker spawned before a pack loaded in place
-  added a version 1 name keeps its environment until its next spawn (until
-  version 1 leaves a runtime with a control channel).
+  in force at the spawn; a runtime with a control channel takes only a
+  version 2 file, so the names are fixed for its life.
 - **Pinned.** A module's remotes join its manifest pin: a supervised
   restart uses the remotes the last operator action took, and a
   `package.json` rewritten since (under audit, by a route the file broker

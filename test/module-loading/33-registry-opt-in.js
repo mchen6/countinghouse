@@ -35,6 +35,8 @@ function pack(packs, scenario, tool) {
   return dir;
 }
 
+const {dirsOf} = require('../helpers/module-dirs');
+
 describe('module-loading 33: the module registry is opt-in (--moduleRegistry)', function() {
   this.timeout(120000);
   const homes = [];
@@ -61,8 +63,8 @@ describe('module-loading 33: the module registry is opt-in (--moduleRegistry)', 
     const h = home();
     const packs = path.join(h, 'packs');
     const dir = pack(packs, 'ch-pack-reg', 'reg_tool');
-    io = startStdio(base(h).concat(['--controlChannel', 'ipc', '--packsRoot', packs]), {ipc: true, nodeArgs: ['-r', PRELOAD]});
-    const loaded = await io.control({type: 'load', name: 'ch-pack-reg', scenario: dir});
+    io = startStdio(base(h).concat(['--controlChannel', 'ipc', '--modulesRoot', packs]), {ipc: true, nodeArgs: ['-r', PRELOAD]});
+    const loaded = await io.control({type: 'load', name: 'ch-pack-reg', dirs: dirsOf(dir)});
     assert.strictEqual(loaded.ok, true, `${JSON.stringify(loaded)}\n${io.err.slice(-2000)}`);
     const gone = await io.control({type: 'unload', name: 'ch-pack-reg'});
     assert.strictEqual(gone.ok, true, `${JSON.stringify(gone)}\n${io.err.slice(-2000)}`);

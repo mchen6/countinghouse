@@ -80,6 +80,8 @@ function two(home, opts = {}) {
   return dir;
 }
 
+const {dirsOf} = require('../helpers/module-dirs');
+
 describe('session-runtime 13: two per-session modules, three sessions (R1)', function() {
   this.timeout(240000);
   if (process.platform === 'win32') return; // the named pipe is C2's
@@ -216,14 +218,14 @@ describe('session-runtime 13: two per-session modules, three sessions (R1)', fun
   // (the two modules independent here: per-session-module calls nothing, so
   // its pack's new version brings no part with it)
   it('a reload of per-session-module stops its three workers only; ps-two\'s three run on, their memory kept', async() => {
-    const s = await three(['--packsRoot', path.join(home, 'packs')], {hop: false});
+    const s = await three(['--modulesRoot', path.join(home, 'packs'), '--modulesRoot', path.join(home, 'pack')], {hop: false});
     for (const who of SESSIONS) {
       outOf(await s.call(who, 'one', 'touch'));
       outOf(await s.call(who, 'two', 'touch'));
     }
     const v2 = one(home, {hop: false, dir: path.join(home, 'packs', NAME, '1.1.0', 'node_modules', NAME), version: '1.1.0',
       edit: (src) => src.replace('return {output: {file: n, store: stored, memory}};', 'return {output: {file: n, store: stored, memory: memory + 1000}};')});
-    const answer = await r.control({type: 'reload', name: NAME, scenario: v2, pack: NAME, global: true});
+    const answer = await r.control({type: 'reload', names: [NAME], dirs: dirsOf(v2)});
     assert.strictEqual(answer.ok, true, JSON.stringify(answer));
     assert.ok(await until(async() => workers(NAME).ended === 3, 20000), r.log().slice(-2000));
     for (const who of SESSIONS) {
@@ -238,11 +240,11 @@ describe('session-runtime 13: two per-session modules, three sessions (R1)', fun
   // (MODULE_NOT_LISTED on touchTwo). Skipped until #391 is fixed; then this
   // runs as it stands.
   it.skip('#391: a reload of per-session-module\'s pack, which brings ps-two as its part, leaves ps-two listed and running', async() => {
-    const s = await three(['--packsRoot', path.join(home, 'packs')]);
+    const s = await three(['--modulesRoot', path.join(home, 'packs'), '--modulesRoot', path.join(home, 'pack')]);
     for (const who of SESSIONS) outOf(await s.call(who, 'two', 'touch'));
     const v2 = one(home, {dir: path.join(home, 'packs', NAME, '1.1.0', 'node_modules', NAME), version: '1.1.0'});
     fs.cpSync(two(home, {dir: path.join(home, 'tmp-two')}), path.join(path.dirname(v2), TWO), {recursive: true});
-    const answer = await r.control({type: 'reload', name: NAME, scenario: v2, pack: NAME, global: true});
+    const answer = await r.control({type: 'reload', names: [NAME], dirs: dirsOf(v2)});
     assert.strictEqual(answer.ok, true, JSON.stringify(answer));
     await until(async() => workers(NAME).ended === workers(NAME).up, 20000);
     for (const who of SESSIONS) {

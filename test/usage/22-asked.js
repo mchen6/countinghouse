@@ -14,7 +14,7 @@ const ADMIN = {caller: 'c1', isAdmin: true};
 
 describe('usage 22: the record of a call that asked (MCP completeness M13)', () => {
   const asked = (u, round) => {
-    const c = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+    const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
     u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round});
     return c;
   };
@@ -23,9 +23,9 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
     const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
     const first = asked(u, 1);
     const second = asked(u, 2);
-    const done = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+    const done = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
     u.recordOut(done, {tool: 't', bytes: 10, lines: 1, ms: 7, outcome: 'ok', round: 3});
-    const failed = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+    const failed = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
     u.recordOut(failed, {tool: 't', bytes: 10, lines: 1, ms: 7, outcome: 'error', code: 'ASK_STATE_INVALID'});
     const by = (call) => u.records().find((r) => r.call === call);
     assert.deepStrictEqual([by(first).outcome, by(first).round, by(second).round], ['asked', 1, 2]);
@@ -39,24 +39,24 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
   // really asked: a part's module, action and question
   it('an asked pass names who asked: a module, an action, a question, each a bounded clean string', () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
-    const c = u.beginCall({pack: 'p', module: 'pack', tool: 't', caller: 'c1'});
+    const c = u.beginCall({scenario: 'p', module: 'pack', tool: 't', caller: 'c1'});
     u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: 'asks-part', action: 'store', question: 'overwrite'}});
     const by = (call) => u.records().find((r) => r.call === call);
     assert.deepStrictEqual(by(c).askedBy, {module: 'asks-part', action: 'store', question: 'overwrite'});
     // only on an asked pass, and only as three strings: cut to 128 characters, controls taken out
-    const ok = u.beginCall({pack: 'p', module: 'pack', tool: 't', caller: 'c1'});
+    const ok = u.beginCall({scenario: 'p', module: 'pack', tool: 't', caller: 'c1'});
     u.recordOut(ok, {tool: 't', bytes: 1, lines: 1, ms: 5, outcome: 'ok', askedBy: {module: 'x', action: 'y', question: 'z'}});
     assert.ok(!('askedBy' in by(ok)));
-    const odd = u.beginCall({pack: 'p', module: 'pack', tool: 't', caller: 'c1'});
+    const odd = u.beginCall({scenario: 'p', module: 'pack', tool: 't', caller: 'c1'});
     u.recordOut(odd, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: `m\n${'x'.repeat(300)}`, action: 7, question: 'q'}});
     assert.ok(!('askedBy' in by(odd)), 'not three strings: not recorded');
-    const long = u.beginCall({pack: 'p', module: 'pack', tool: 't', caller: 'c1'});
+    const long = u.beginCall({scenario: 'p', module: 'pack', tool: 't', caller: 'c1'});
     u.recordOut(long, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: `m\u001b[2J${'x'.repeat(300)}`, action: 'a', question: 'q'}});
     assert.strictEqual(by(long).askedBy.module.length, 128);
     assert.doesNotMatch(by(long).askedBy.module, /[\u0000-\u001f]/);
     // the one module-text rule: an override, the bidi marks, a zero-width
     // character
-    const bidi = u.beginCall({pack: 'p', module: 'pack', tool: 't', caller: 'c1'});
+    const bidi = u.beginCall({scenario: 'p', module: 'pack', tool: 't', caller: 'c1'});
     u.recordOut(bidi, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: 'a\u202eb\u200fc\u061cd\u200be', action: 'a', question: 'q'}});
     assert.strictEqual(by(bidi).askedBy.module, 'a b c d e');
   });
@@ -65,9 +65,9 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
     const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
     asked(u, 1);
     asked(u, 2);
-    const done = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+    const done = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
     u.recordOut(done, {tool: 't', bytes: 10, lines: 1, ms: 7, outcome: 'ok'});
-    const failed = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+    const failed = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
     u.recordOut(failed, {tool: 't', bytes: 10, lines: 1, ms: 7, outcome: 'error', code: 'ASK_STATE_INVALID'});
     const report = await usageReport({since: 'all'}, ADMIN, {usage: u, usageDir: null, now: () => NOW});
     assert.deepStrictEqual(report.profile.errors.calls, {ASK_STATE_INVALID: 1});
@@ -84,7 +84,7 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
     const asking = () => {
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
       for (const round of [1, 2, null]) {
-        const c = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+        const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
         u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, lines: 10, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
         if (round != null) u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'asked', round});
         else u.recordOut(c, {tool: 't', bytes: 2000, lines: 5, ms: 50, outcome: 'ok'});
@@ -106,7 +106,7 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       // 100 KB read, 2 KB sent: 98,000 bytes kept, as tokens; never three passes\' worth
       const oncePass = await reportOf((() => {
         const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
-        const c = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+        const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
         u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, lines: 10, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
         u.recordOut(c, {tool: 't', bytes: 2000, lines: 5, ms: 50, outcome: 'ok'});
         return u;
@@ -144,7 +144,7 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
     it('an asked pass whose result falls just past the window kept nothing out', async () => {
       let now = Date.parse('2026-11-14T23:59:59.900Z');
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => now});
-      const c = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+      const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
       u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, lines: 10, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
       now = Date.parse('2026-11-15T00:00:00.100Z');
       u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'asked', round: 1});
@@ -160,12 +160,12 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       const {normalise} = require('../../lib/usage/read');
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
       for (const round of [1, 2]) {
-        const c = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+        const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
         u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 1000, lines: 1, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
         u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'asked', round});
       }
       const out = require('../../lib/usage/aggregate').aggregate(u.records().map((r) => normalise(r)).filter((r) => r != null).map((r) => Object.assign(r, {process: '1-1'})));
-      assert.deepStrictEqual(out.replaced.map((r) => [r.tool, r.packCalls, r.serverCalls]), [['t', 0, 2]]);
+      assert.deepStrictEqual(out.replaced.map((r) => [r.tool, r.scenarioCalls, r.serverCalls]), [['t', 0, 2]]);
     });
 
     it('the report and the CLI\'s aggregate tell an asked pass by one rule', () => {
@@ -178,10 +178,10 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
     // method says so
     it('a call that asked is counted from its final pass only, also when that pass read nothing; the method says so', async () => {
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
-      const first = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+      const first = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
       u.recordIn(first, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, lines: 10, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
       u.recordOut(first, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'asked', round: 1});
-      const retry = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+      const retry = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
       u.recordOut(retry, {tool: 't', bytes: 2000, lines: 5, ms: 50, outcome: 'ok'});
       const report = await reportOf(u);
       assert.strictEqual(report.totals.keptOut.estimate, 0, 'the final pass read nothing, so nothing is counted kept out');
@@ -191,7 +191,7 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
 
     it('a call that asked and was never retried is no call, and kept nothing out: its server calls are still its cost', async () => {
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
-      const c = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+      const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
       u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, lines: 10, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
       u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'asked', round: 1});
       const report = await reportOf(u);

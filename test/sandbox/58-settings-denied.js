@@ -38,7 +38,7 @@ function world(tag) {
   const at = (...p) => path.join(home, ...p);
   const w = {base, home, rw: path.join(base, 'rw'),
     settings: at('settings.json'), history: at('history.jsonl'), lock: at('settings.lock'), temp: at('settings.json.123.abcd.tmp'),
-    secret: at('run', 'daemon', 'secret'), launcher: at('bin', 'ch-local.js'), packs: at('packs.json'),
+    secret: at('run', 'daemon', 'secret'), launcher: at('bin', 'ch-local.js'), record: at('modules.json'),
     // the tokens ch-local credentials add stores (ch-local's credential store)
     credentials: at('credentials', 'credentials.json'),
     otherCode: at('modules', 'other', 'index.js'), otherData: at('module_data', 'other', 'data', 'x.txt'),
@@ -53,7 +53,7 @@ function world(tag) {
   w.settingsBytes = `${JSON.stringify({version: 1, values: {maxOutputBytes: 1000}})}\n`;
   fs.writeFileSync(w.settings, w.settingsBytes);
   fs.writeFileSync(w.history, '{"setting":"maxOutputBytes"}\n');
-  for (const f of [w.lock, w.temp, w.secret, w.launcher, w.packs, w.otherCode, w.otherData, w.credentials]) fs.writeFileSync(f, 'x');
+  for (const f of [w.lock, w.temp, w.secret, w.launcher, w.record, w.otherCode, w.otherData, w.credentials]) fs.writeFileSync(f, 'x');
   w.launcherBytes = 'x';
   fs.writeFileSync(path.join(w.rw, 'ok.txt'), 'declared');
   // a hard link to the settings file in the directory the module may declare
@@ -118,7 +118,7 @@ describe('sandbox 58: ch-local\'s home is no module\'s', function() {
       });
 
       it('everything else in the home is EACCES to read and to write, by its own path', async () => {
-        for (const p of [w.settings, w.history, w.lock, w.temp, w.secret, w.launcher, w.packs, w.otherCode, w.otherData, w.credentials]) {
+        for (const p of [w.settings, w.history, w.lock, w.temp, w.secret, w.launcher, w.record, w.otherCode, w.otherData, w.credentials]) {
           assert.deepStrictEqual(await call('read', {path: p}), {content: null, code: 'EACCES'}, `read ${p}`);
           assert.deepStrictEqual(await call('write', {path: p, content: 'planted'}), {ok: false, code: 'EACCES'}, `write ${p}`);
         }
@@ -129,7 +129,7 @@ describe('sandbox 58: ch-local\'s home is no module\'s', function() {
       });
 
       it('EACCES through \'/data/..\' (the dots reach the broker) and through a symlink in its own /tmp', async () => {
-        for (const [p, tag] of [[w.secret, 'secret'], [w.launcher, 'bin'], [w.packs, 'packs'], [w.otherCode, 'code'], [w.otherData, 'data'], [w.settings, 'settings'], [w.credentials, 'credentials']]) {
+        for (const [p, tag] of [[w.secret, 'secret'], [w.launcher, 'bin'], [w.record, 'record'], [w.otherCode, 'code'], [w.otherData, 'data'], [w.settings, 'settings'], [w.credentials, 'credentials']]) {
           const dotted = `/data/..${p}`;   // a string, not path.join: the broker resolves the '..'
           assert.deepStrictEqual(await call('read', {path: dotted}), {content: null, code: 'EACCES'}, dotted);
           fs.symlinkSync(p, path.join(w.moduleTmp, `${tag}-link`));

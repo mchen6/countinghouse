@@ -78,7 +78,8 @@ describe('sessions 36: no session view (M5a)', () => {
     assert.strictEqual(jobs.packsOffFor, undefined);
   });
 
-  it('the settings tool: a shared session\'s pack.<n> is the terminal\'s, never the session\'s own', async () => {
+  // (M5b: no setting is a pack's; a module's on/off is enabled.<module>, every session's: sessions 37)
+  it('the settings tool: a shared session\'s pack.<n> is no setting, never the session\'s own', async () => {
     const fs = require('fs');
     const os = require('os');
     const path = require('path');
@@ -93,8 +94,7 @@ describe('sessions 36: no session view (M5a)', () => {
       for (const value of [false, true]) {
         let err = null;
         try { await tool.set('pack.weather', value, 'settings tool', {shared: true, session: A}); } catch (e) { err = e; }
-        assert.ok(err != null && err.code === 'SETTING_TERMINAL_ONLY_SHARED', String(err && err.code));
-        assert.match(err.message, /ch-local settings set pack\.weather (on|off)/);
+        assert.ok(err != null && err.code === 'SETTING_UNKNOWN', String(err && err.code));
       }
       assert.strictEqual(require('../../lib/session-settings').overridesOf(A).length, 0, 'no session override');
     } finally {
@@ -103,7 +103,7 @@ describe('sessions 36: no session view (M5a)', () => {
     }
   });
 
-  it('module control: a pack\'s notice goes to every open session; set pack.<n> true is no session view\'s (applyControlSet\'s)', async () => {
+  it('module control: a module\'s notice goes to every open session; set pack.<n> true is no session view\'s (applyControlSet\'s)', async () => {
     open(A, B);
     const told = [];
     let applied = null;
@@ -111,7 +111,8 @@ describe('sessions 36: no session view (M5a)', () => {
       shared: () => true, mm: {}, dm: {}, packs: {}, toolsOf: async () => [],
       notices: {add: (module, text, opts) => told.push([module, text, opts && opts.session])},
       applyControlSet: async (msg) => { applied = msg; return {}; }});
-    await control.notice({pack: 'weather', module: 'weather-tool', text: 'hello'});
+    // (no type: the handler's own is what the message is judged as)
+    await control.notice({module: 'weather-tool', text: 'hello'});
     assert.deepStrictEqual(told.map((t) => [t[1], t[2]]).sort(), [['hello', A], ['hello', B]], 'once to each open session');
     await control.set({name: 'pack.weather', value: true});
     assert.deepStrictEqual(applied, {name: 'pack.weather', value: true});

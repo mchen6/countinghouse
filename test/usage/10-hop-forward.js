@@ -79,7 +79,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
   const forward = (w, args) => DeviceManager.prototype.sendInvokeActionMessageToWorker.call(w.dm, 'k', 'k', 'd2', 'svc', 'act', asSent(args), 'm1', w.caller, tokenFor(w.caller.workerId));
   // (the decoded args have no prototype, by design: compared by their fields)
   const forwarded = (w) => { const {token, ...rest} = w.sent[0].m.args; assert.strictEqual(typeof(token), 'string', 'the callee got no token of its own'); return {...hopInput.decodeArgs(rest)}; };
-  const begin = () => { const c = usage().beginCall({pack: 'p', module: 'p', tool: 't', caller: 'u_a'}); begun.push(c); return c; };
+  const begin = () => { const c = usage().beginCall({scenario: 'p', module: 'p', tool: 't', caller: 'u_a'}); begun.push(c); return c; };
 
   it('the gateway\'s call is granted to the worker invokeAction sends it to', () => {
     const call = begin();

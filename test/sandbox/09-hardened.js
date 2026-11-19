@@ -89,8 +89,7 @@ describe('sandbox 09: --hardened', function() {
   // never half-supported
   // (a bare or empty flag too: refused by its being given, never its value;
   // and the control channel, in the same message)
-  for (const flags of [['--modulesRoot', 'm'], ['--packsRoot', 'p'], ['--modulesRoot', 'm', '--packsRoot', 'p'], ['--modulesRoot'], ['--packsRoot', ''],
-    ['--controlChannel', 'ipc']]) {
+  for (const flags of [['--modulesRoot', 'm'], ['--modulesRoot'], ['--modulesRoot', 'm', '--controlChannel', 'ipc'], ['--controlChannel', 'ipc']]) {
     it(`refuses ${flags.filter((f) => f.startsWith('--')).join(' and ')}${flags.length === 1 || flags[1] === '' ? ' (bare or empty)' : ''} with --hardened, before anything starts`, () => {
       const {spawnSync} = require('child_process');
       const r = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--port', String(testPort(9614)), '--hardened', '--workerThread',
@@ -98,6 +97,18 @@ describe('sandbox 09: --hardened', function() {
       assert.strictEqual(r.status, 2, `${r.stdout}\n${r.stderr}`);
       assert.match(r.stderr, /in-place loading isn't available under --hardened in this release/);
       for (const f of flags.filter((x) => x.startsWith('--'))) assert.ok(r.stderr.includes(f), r.stderr);
+    });
+  }
+  // M6 (#413 rev 3 section 16, rule 7): --packsRoot went with the pack
+  // form; given at all (a bare or empty one too), with --hardened or not,
+  // the start stops, naming what ch-local passes now
+  for (const flags of [['--packsRoot', 'p'], ['--packsRoot', ''], ['--hardened', '--packsRoot', 'p']]) {
+    it(`refuses ${flags.join(' ')} before anything starts: no longer taken`, () => {
+      const {spawnSync} = require('child_process');
+      const r = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--port', String(testPort(9614)), '--workerThread',
+        '--modulePath', root].concat(flags.map((f) => (f === 'p' ? path.join(root, f) : f))), {cwd: ROOT, encoding: 'utf8', timeout: 30000});
+      assert.strictEqual(r.status, 2, `${r.stdout}\n${r.stderr}`);
+      assert.match(r.stderr, /--packsRoot is no longer taken: the pack form is gone; ch-local passes --modulesRoot/);
     });
   }
 
