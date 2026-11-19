@@ -245,7 +245,19 @@ any module code). Stops:
   kept, and a redefinition (`Object.defineProperty`,
   `Object.defineProperties`, `Reflect.defineProperty`) is reported and
   fails as Node's own would. The extensions table takes no new extension in
-  either mode; a key added, redefined or removed is reported and refused.
+  either mode; a key added, redefined or removed is reported and refused
+  (the locked `.node` handler included). `Reflect.deleteProperty` of
+  anything held is reported under `audit`. What `audit` can't see, though
+  it is refused all the same: an assignment to `Module.prototype` (a
+  function's own `prototype`, which can't be made an accessor), the
+  `delete` operator on a held property, a redefinition through another
+  realm's `Object.defineProperty` (one a `vm` context gives), and one made
+  through a Proxy that module code wraps around a held object. Nor, with
+  Node's `--experimental-vm-modules` (a development-only flag, which a
+  worker inherits), does `audit` cover `vm`'s module classes: under
+  `enforce` they are deleted from module code's `vm`, while under `audit`
+  their construction through `vm` is said but other routes to them, and
+  the code caches they take, are not.
   The other routes
   into what the runtime loads are closed by #194: the runtime loads nothing
   after the lockdown (its PR 1), and at the lockdown its modules are sealed
@@ -271,6 +283,39 @@ any module code). Stops:
   later change. Under `audit` a require of one is reported, and the
   loader's helpers called directly answer truthfully, unreported, as every
   lookup does under `audit` (test/sandbox/68);
+- what that costs loader-related libraries a module depends on, measured
+  by test/sandbox/69 (each used as its dependents use it, pinned in the
+  repo's devDependencies), in single-thread mode and in a worker under each
+  `--moduleSandbox`:
+
+  | Library, as used | single-thread | `off` | `audit` | `enforce` |
+  | --- | --- | --- | --- | --- |
+  | `source-map-support`, `install()` | works | works | works | works |
+  | `source-map-support`, `install({hookRequire: true})` | works | works | no hook (reported) | throws |
+  | `require-in-the-middle`, a `Hook` | works | works | throws | no hook |
+  | `resolve-from`, from `__dirname` | fails (works on Windows) | fails (works below Node 24.15) | fails (works below Node 24.15) | throws |
+  | `import-fresh`, a relative name | fails (works on Windows) | fails (works below Node 24.15) | fails (works below Node 24.15) | throws |
+  | `module-alias`, `addAlias` | no alias (works on Windows) | no alias | no alias | throws |
+
+  Why:
+  - a module's own directory is virtual (`/app/...`) in every mode,
+    single-thread included, and these three hand a path made from it to
+    Node's resolver, which reads it as the host's own `/app`; on Windows
+    in single-thread mode it is `<V>:\app\...`, on a drive no host path is
+    on, and they work;
+  - in a worker a module's requires are resolved by the file broker with
+    Node's own resolver, so `module-alias`'s replaced `_resolveFilename` is
+    never asked;
+  - under `audit` the loader's statics and `process.getBuiltinModule` are
+    held, so a replacement is reported and never takes;
+  - under `enforce` the reduced `module` has no prototype, statics or
+    `_nodeModulePaths` to reach.
+
+  So a dependency that hooks the loader (`hookRequire`,
+  `require-in-the-middle`) needs `--moduleSandbox off` or single-thread
+  mode, and one that resolves from the module's own directory
+  (`resolve-from`, `import-fresh`, `module-alias`) fails in every mode
+  until a module's own paths reach Node's resolver in their host form;
 - other routes to files: `module.enableCompileCache`, `process.report`'s
   file output and `process.setSourceMapsEnabled` are locked;
   `process.loadEnvFile` goes through the file broker. Of `process.report`'s

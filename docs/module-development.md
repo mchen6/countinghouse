@@ -765,6 +765,35 @@ that uses none never pays for them. `ctx` works the same way: `ctx.call`,
 `dm` or `ci`. Those were the runtime's own objects, never part of the
 module API.
 
+### A require or import that can't be resolved, under `enforce`
+
+Under `--moduleSandbox enforce` a bare name (`require('dep/sub')`,
+`import('dep')`) or a `#` import that your code can't resolve gets one
+answer, whatever Node's resolver would have said:
+
+- a `require` gets `MODULE_NOT_FOUND`, an `import` `ERR_MODULE_NOT_FOUND`;
+- the message is "Cannot find module '<name>' (countinghouse module
+  sandbox)";
+- a `require`'s error has a `requireStack` of `/app/...` names only (your
+  own file where the refusal knows it), never a host path.
+
+Node looks a bare name up in the `node_modules` above your module too, so
+any other answer would tell your code what exists outside it. The cost is
+that an error from one of your own dependencies, such as an `exports` map
+that doesn't list the subpath (`ERR_PACKAGE_PATH_NOT_EXPORTED`) or a broken
+`package.json`, reads as not found there. Check the dependency under
+`--moduleSandbox audit` or `off`, where Node's own error is kept. Code that
+falls back on `MODULE_NOT_FOUND` for an optional dependency works as
+before.
+
+A directory of your own whose `package.json` `"main"` leads outside your
+module's root reads as not found under `enforce`, by any name that reaches
+it, even where a file of the same name sits beside it: where it led
+would otherwise tell your code whether a host file exists. So does one
+whose `"main"` is the module's root itself (`"."` in the root's own
+`package.json`): Node would try the root with each extension, a file
+beside it. Keep `"main"` inside your module, naming a file.
+
 ## Files and paths
 
 Since 8.0.0 a module in worker mode (the default) sees its own file

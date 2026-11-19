@@ -101,11 +101,11 @@ describe('sandbox 05: worker lockdown', function() {
       it(`blocks ${what} and logs it`, async () => {
         const r = await mcpCall(testPort(9608), KEY, TOOL, arg != null ? {what: what, arg: arg} : {what: what});
         assert.strictEqual(r.isError, false, JSON.stringify(r));
-        // (a path outside is invisible under enforce: the file broker's
-        // _findPath answers it missing, so a load of one finds nothing, and
-        // Node's own not-found is what the module sees; B1's loadSource
-        // compiled its source there before)
-        if (what === 'loadSource') assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: 'MODULE_NOT_FOUND'}, JSON.stringify(r));
+        // (a path outside is invisible under enforce: a resolution headed
+        // outside the module's root is the one refusal, found or not, the
+        // third round on #440; B1's loadSource compiled its source there
+        // before)
+        if (what === 'loadSource') assert.deepStrictEqual(toolOutput(r), {outcome: 'blocked', code: 'MODULE_NOT_FOUND'}, JSON.stringify(r));
         else assert.strictEqual(toolOutput(r).outcome, 'blocked', `${what}: ${JSON.stringify(r)}`);
         assert.ok(server.output.includes('module sandbox: sandbox-probe violation'), server.output.slice(-2000));
       });
@@ -115,7 +115,9 @@ describe('sandbox 05: worker lockdown', function() {
       STREAM_WRAP_ROUTES.forEach(([what]) => {
         it(`${what} is not found: this Node has no _stream_wrap`, async () => {
           const r = await mcpCall(testPort(9608), KEY, TOOL, {what: what});
-          assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: 'MODULE_NOT_FOUND'}, JSON.stringify(r));
+          // (no built-in by that name, so a bare name the module can't
+          // resolve: the one refusal under enforce, #440's third round)
+          assert.deepStrictEqual(toolOutput(r), {outcome: 'blocked', code: 'MODULE_NOT_FOUND'}, JSON.stringify(r));
         });
       });
     }
@@ -182,10 +184,46 @@ describe('sandbox 05: worker lockdown', function() {
         ['holdDefineKey', 'Module.prototype.load redefined (the runtime\'s kept)', false],
         ['holdDefineSetter', '_resolveFilename redefined (the runtime\'s kept)', false],
         ['holdHandler', mode === 'audit' ? 'Module._extensions[\'.js\'] replaced (the runtime\'s kept)' : 'Module._extensions[.js] replaced (refused)', true],
-        ['holdExtension', 'Module._extensions[.chprobe] added (refused)', true]]) {
+        ['holdExtension', 'Module._extensions[.chprobe] added (refused)', true],
+        // (PR 3: the locked .node handler, said in both modes; a
+        // Reflect.deleteProperty, said under audit)
+        ['holdNode', 'Module._extensions[.node] replaced (refused)', true],
+        ['holdDeleteReflect', '_resolveFilename removed (the runtime\'s kept)', false]]) {
         const from = server.output.length;
         assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what})), {outcome: 'allowed', code: null}, what);
         if (mode === 'audit' || both) await waitFor(() => server.output.slice(from).includes(`violation require ${line}`), 20000, `${what}'s line`);
+      }
+    });
+    // F4-7: a module's code cache is never run in place of its source under
+    // enforce (V8 checks a cache against its source's length only); under
+    // audit it is reported, and used
+    it(`vm code caches: ${mode === 'enforce' ? 'dropped, so the source runs' : 'used, and reported'}, by every route`, async () => {
+      const from = server.output.length;
+      for (const route of ['script', 'createScript', 'functionOptions', 'runInThisContext', 'subclass', 'protoConstructor', 'compileFunction', 'esm:script', 'esm:createScript']) {
+        const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'vmCache', arg: route}));
+        const ran = route === 'compileFunction' && mode === 'enforce' ? 'NO_CACHE' : (mode === 'enforce' ? 'SOURCE' : 'CACHE');
+        assert.deepStrictEqual(r, {outcome: 'allowed', code: ran}, route);
+      }
+      // (one on Object.prototype is no option of the module's: never taken)
+      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'vmCache', arg: 'inherited'})), {outcome: 'allowed', code: 'SOURCE'}, 'inherited');
+      await waitFor(() => server.output.slice(from).includes(`violation vm cachedData (${mode === 'enforce' ? 'blocked' : 'allowed, audit'})`), 20000, 'the cachedData line');
+    });
+    // (PR 3: defineProperties reads its props once; a key a Proxy shows only
+    // on a second read is never defined, nor the call made to fail on it)
+    it('Object.defineProperties defines what it read once, never a key shown on a second read', async () => {
+      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'holdDefineProps'})), {outcome: 'allowed', code: null});
+    });
+    it('vm: no prototype leads to Node\'s native class; a produce-only script is not marked rejected; inherited options are kept', async () => {
+      // (vmFreeze last: it freezes the worker's vm.Script for good)
+      const from = server.output.length;
+      for (const what of ['vmNative', 'vmProduce', 'vmInherited', 'vmInvalidCache', 'vmShape', 'vmAssign', 'vmFreeze']) {
+        assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what})), {outcome: 'allowed', code: null}, what);
+      }
+      // (the assignment is said under audit, as the loader's statics' are)
+      if (mode === 'audit') {
+        await waitFor(() => server.output.slice(from).includes('violation vm vm.runInThisContext replaced'), 20000, 'the vm assignment line');
+        await waitFor(() => server.output.slice(from).includes('violation vm vm.compileFunction redefined'), 20000, 'the vm redefinition line');
+        await waitFor(() => server.output.slice(from).includes('violation vm vm.runInNewContext removed'), 20000, 'the vm delete line');
       }
     });
     it('createRequire\'s own Module still loads', async () => {
@@ -224,10 +262,9 @@ describe('sandbox 05: worker lockdown', function() {
     it(`loadSource: no source compiled under a countinghouse filename; ${mode === 'enforce' ? 'the path is invisible' : 'the real file, reported'}`, async () => {
       const from = server.output.length;
       const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'loadSource', arg: OUTSIDE_FILE}));
-      // (under enforce a path outside is invisible: the file broker's
-      // _findPath answers it missing, and Node's own not-found is what the
-      // module sees)
-      if (mode === 'enforce') assert.deepStrictEqual(r, {outcome: 'allowed', code: 'MODULE_NOT_FOUND'});
+      // (under enforce a path outside is invisible: the one refusal, found
+      // or not, as for any resolution headed outside the root)
+      if (mode === 'enforce') assert.deepStrictEqual(r, {outcome: 'blocked', code: 'MODULE_NOT_FOUND'});
       else {
         assert.deepStrictEqual(r, {outcome: 'allowed', code: null});
         await waitFor(() => server.output.slice(from).split('\n').some((l) => l.includes('module sandbox: sandbox-probe violation require') && l.includes('cli-options')),
@@ -411,6 +448,27 @@ describe('sandbox 05: worker lockdown', function() {
       assert.strictEqual(guard.call(self, {headers: {location: 'http://127.0.0.1:1/x'}}), false);
       assert.deepStrictEqual(seen, ['127.0.0.1:1']);
       assert.strictEqual(guard.call(self, {headers: {location: '/next'}}), true);
+    });
+  });
+});
+
+// vm's module classes, with --experimental-vm-modules (which a worker
+// inherits from the server's own flags): each takes a code cache by more
+// routes than a view can close, so under enforce they are gone from module
+// code's vm; under audit their use is said (#194's PR 3)
+describe('sandbox 05: vm module classes (--experimental-vm-modules)', function() {
+  this.timeout(120000);
+  ['enforce', 'audit'].forEach((mode) => {
+    it(`${mode}: ${mode === 'enforce' ? 'gone, the key too' : 'there, and their use said'}`, async () => {
+      const port = testPort(9773);
+      const server = await startServer(port, serverArgs(mode), {nodeArgs: ['--experimental-vm-modules']});
+      try {
+        const from = server.output.length;
+        assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'vmModules'})), {outcome: 'allowed', code: mode === 'enforce' ? 'GONE' : 'PRESENT'});
+        if (mode === 'audit') await waitFor(() => server.output.slice(from).includes('violation vm SourceTextModule (--experimental-vm-modules: removed under enforce)'), 20000, 'the vm module line');
+      } finally {
+        stopServer(server);
+      }
     });
   });
 });
