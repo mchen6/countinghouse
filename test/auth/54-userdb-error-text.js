@@ -83,19 +83,54 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
       listUp = true;
       await ask((cb) => p.listDevices('k', cb));
       assert.ok(warned.length === 1 && /answers again \(listDevices\): 3 lookups failed meanwhile/.test(warned[0]), JSON.stringify(warned));
-      // the identity lookup: answered from the index, the provider is not
-      // asked, and nothing is said
-      const identity = require(path.join(LIB, 'identity'));
-      await ask((cb) => identity.resolve('nobody', p, cb));
-      await ask((cb) => identity.resolve('nobody', p, cb));
-      assert.ok(entriesCalls <= 1, `entries asked ${entriesCalls} times`);
-      assert.strictEqual(warned.length, 1, JSON.stringify(warned));
+      assert.strictEqual(entriesCalls, 0);
       // device-manager tells an unsupported backend by the base's function
       assert.strictEqual(p.identityForModule, auth.AuthProvider.prototype.identityForModule);
       assert.ok(p instanceof Object && Object.getPrototypeOf(p) === Object.getPrototypeOf(raw));
+      // a different reason in an outage still open is said too (the medium on
+      // the second round, 2)
+      listUp = false;
+      await ask((cb) => p.listDevices('k', cb));
+      raw.listDevices = (k, cb) => cb(new Error('another reason'));
+      await ask((cb) => p.listDevices('k', cb));
+      await ask((cb) => p.listDevices('k', cb));
+      assert.deepStrictEqual(logged.slice(1), ['view broken at couch.internal.example:5984', 'another reason']);
+      raw.listDevices = (k, cb) => cb(null, {devices: []});
+      await ask((cb) => p.listDevices('k', cb));
     } finally {
       LOG.E = saved.E;
       LOG.W = saved.W;
     }
+  });
+
+  // In a fresh process: identity.resolve keeps module state (its last
+  // refill), so an earlier file's resolve could leave entries unasked.
+  it('identity.resolve: a refill is the provider answering; a cache hit and a refill within the minimum say nothing', () => {
+    const script = `
+      const auth = require(${JSON.stringify(path.join(LIB, 'auth'))});
+      const LOG = require(${JSON.stringify(path.join(LIB, 'logger'))});
+      const warned = [];
+      const logged = [];
+      LOG.W = (w) => warned.push(String(w));
+      LOG.E = (e) => logged.push(String(e && e.message));
+      let entriesCalls = 0;
+      let up = false;
+      const p = auth.guarded({entries: (cb) => { entriesCalls++; return up ? cb(null, []) : cb(new Error('entries down')); }});
+      const identity = require(${JSON.stringify(path.join(LIB, 'identity'))});
+      const resolve = () => new Promise((r) => identity.resolve('nobody', p, (err, found) => r({code: err && err.code, found})));
+      (async () => {
+        const first = await resolve();     // asks the provider: it fails
+        const second = await resolve();    // within the minimum: not asked
+        process.stdout.write('OUT ' + JSON.stringify({first, second, entriesCalls, warned, logged}) + '\\n');
+      })();`;
+    const r = spawnSync(process.execPath, ['-e', script], {cwd: path.join(__dirname, '..', '..'), encoding: 'utf8', timeout: 20000});
+    const line = (r.stdout || '').split('\n').find((l) => l.startsWith('OUT '));
+    assert.ok(line != null, `no output: ${r.stdout} ${r.stderr}`);
+    const o = JSON.parse(line.slice(4));
+    assert.strictEqual(o.first.code, 'SYSTEM_ERROR_USERDB_NA');
+    assert.deepStrictEqual(o.second, {code: null, found: null}, JSON.stringify(o));
+    assert.strictEqual(o.entriesCalls, 1, 'the provider asked once');
+    assert.deepStrictEqual(o.logged, ['entries down']);
+    assert.deepStrictEqual(o.warned, [], 'no recovery said: the provider never answered');
   });
 });
