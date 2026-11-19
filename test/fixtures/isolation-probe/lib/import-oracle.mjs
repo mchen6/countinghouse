@@ -16,6 +16,8 @@ export default async (root) => {
   return [
     same(await tried(file('node-version.js'), 'node-version.js'), await tried(file('no-such-isolation.js'), 'no-such-isolation.js')),
     same(await tried(path.join(root, 'lib', 'node-version.js'), 'node-version.js'), await tried(path.join(root, 'lib', 'no-such-isolation.js'), 'no-such-isolation.js')),
-    same(await tried('json-stringify-safe', 'json-stringify-safe'), await tried('no-such-isolation-pkg', 'no-such-isolation-pkg'))
+    same(await tried('json-stringify-safe', 'json-stringify-safe'), await tried('no-such-isolation-pkg', 'no-such-isolation-pkg')),
+    // (a '#' import whose bare target Node looks up above the root, PR 3)
+    same(await tried('#p/json-stringify-safe', 'json-stringify-safe'), await tried('#p/no-such-isolation-pkg', 'no-such-isolation-pkg'))
   ].join(' ');
 };

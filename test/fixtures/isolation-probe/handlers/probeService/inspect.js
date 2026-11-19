@@ -85,6 +85,12 @@ const STEPS = {
     } else {
       out.push('same');
     }
+    // (PR 3: a '#' import whose bare target Node looks up above the root,
+    // and a lookup path that leaves /app through '..', reaching Node as the
+    // literal host path: a runtime-only package and a missing one alike)
+    out.push(same(() => require('#p/json-stringify-safe'), () => require('#p/no-such-isolation-pkg'), 'json-stringify-safe'));
+    const up = `/app/..${nm.split(path.sep).join('/')}`;
+    out.push(same(() => M._findPath('json-stringify-safe', [up]), () => M._findPath('no-such-isolation-pkg', [up]), 'json-stringify-safe'));
     const like = (dir) => ({length: 1, 0: dir});
     out.push(same(() => M._findPath('sshpk', like(nm)), () => M._findPath('no-such-isolation-pkg', like(nm))));
     // a parent named by a virtual name with backslashes (a separator on
