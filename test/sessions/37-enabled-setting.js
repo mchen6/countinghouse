@@ -364,8 +364,9 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     }
     // (round 5, 8) no "as soon as": ch-local can't read its record now
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {}}));
+    // (and the callers that go with it: the medium review of round 5, 5)
     assert.strictEqual((await t.set(`enabled.${TOOL}`, 'off')).said,
-      `${TOOL} off is written; ch-local can't read its record right now and applies the off when it can.`);
+      `${TOOL} off is written; ch-local can't read its record right now and applies the off when it can, and so does ${CALLER}, which calls it.`);
     const before = fs.readFileSync(file, 'utf8');
     const e = await refused(t.set('enabled.made-up', 'off'), 'SETTING_RECORD_UNREADABLE');
     assert.match(e.message, /can't be read right now/);
