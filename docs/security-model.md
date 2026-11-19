@@ -534,7 +534,11 @@ code roots plus the module root. That closes `module.parent.require`,
 `fs` is used only for the loader's lookups under those roots and for the one
 file being loaded; everything else goes to the broker with the module's
 rights. Under `enforce` the loader's own lookups (`Module._stat`,
-`package.json` reads) answer "missing" outside those roots too.
+`package.json` reads) answer "missing" outside those roots too, Node's own
+walk included: the two are installed through Node's own setters, the only
+way its walk calls them (before, they answered only a module's direct
+calls, and a package's `"main"` leading outside could tell module code
+whether a host file existed).
 
 countinghouse's code roots are its own entries and the package directory of
 each package in its dependency closure, found the way Node finds them, so an

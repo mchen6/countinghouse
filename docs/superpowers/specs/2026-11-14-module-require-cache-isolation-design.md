@@ -857,7 +857,13 @@ after the lockdown, then resolves: the planted path is never used.
    no out-of-root runtime load to serve under B2.
 5. `reachesLib` is on the must-preload list (above).
 6. `_stat` and `_readPackage` are locked by value (a non-writable data
-   property), since a setter would still hook a lock by accessor.
+   property), since a setter would still hook a lock by accessor. (Found
+   later, the _stat PR: Node's walk calls its internal copies of both,
+   which only their setters change: identity locks each as its wrapper's
+   value at install, as before, and under enforce installs the wrapper
+   through the setter at the seal, so the runtime's own loads before it
+   walk natively and every walk after it is judged; before that they
+   answered only module code's direct calls.)
    `_resolveLookupPaths`' wrapper filters for any parent, not only virtual
    ones (identity.js:537).
 7. F4-1's fix 2 builds its parent from own data properties only (a
