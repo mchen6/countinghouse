@@ -199,7 +199,12 @@ if (options.remoteOriginMapArg != null) {
 }
 if (options.remoteCredentials != null || process.argv.some((a) => a === '--remoteCredentials' || a.startsWith('--remoteCredentials='))) {
   try {
-    require('./lib/remote/credentials').configure(options.remoteCredentials);
+    const configuredFile = require('./lib/remote/credentials').configure(options.remoteCredentials);
+    // M6 (#413 rev 3 sections 6.5 and 16, rule 7): ch-local writes version 2;
+    // a runtime with a control channel takes no version 1 file
+    if (options.controlChannel != null && configuredFile.version !== 2) {
+      throw new Error('--remoteCredentials: a version 1 file is not taken with --controlChannel; it is version 2 (ch-local writes it)');
+    }
   } catch (e) {
     console.error(e.message);
     process.exit(2);
