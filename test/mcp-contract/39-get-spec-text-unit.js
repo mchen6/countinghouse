@@ -122,3 +122,59 @@ describe('mcp-contract 39: withoutUnusable\'s copy keeps a "__proto__" key a key
   });
 });
 
+
+// #447's high review, 6: one field table chooses the rule for each declared
+// text field (one line, or a message keeping \n and \t), and the cleaning is
+// lib/module-text.js's alone; tools/list, prompts/list, resources/list, a
+// prompt's messages, get-spec and /device-list read the table, so the lists
+// and the routes cannot drift apart
+describe('mcp-contract 39: one table of declared text fields', () => {
+  const specText = require('../../lib/spec-text');
+  const moduleText = require('../../lib/module-text');
+  const fs = require('fs');
+  const path = require('path');
+
+  it('chooses one line or a message for each field, by kind', () => {
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(specText.TEXT_FIELDS)), {
+      action: {title: 'line', description: 'message'},
+      resource: {title: 'line', description: 'message'},
+      prompt: {title: 'line', description: 'message'},
+      argument: {description: 'message'},
+      question: {message: 'line'},
+      promptMessage: {text: 'message'},
+      device: {modelDescription: 'message', description: 'message'}
+    });
+    assert.ok(Object.isFrozen(specText.TEXT_FIELDS) && Object.values(specText.TEXT_FIELDS).every(Object.isFrozen));
+  });
+
+  it('cleans by module-text\'s line() and message(), nothing of its own', () => {
+    const raw = `a${ZWSP}b\nc\td${RLO}`;
+    for (const [kind, fields] of Object.entries(specText.TEXT_FIELDS)) {
+      for (const [field, rule] of Object.entries(fields)) {
+        assert.strictEqual(specText.cleanText(kind, field, raw), moduleText[rule](raw), `${kind}.${field}`);
+      }
+    }
+    // a device's other free text: one line
+    assert.strictEqual(specText.cleanText('device', 'manufacturer', raw), moduleText.line(raw));
+    assert.throws(() => specText.cleanText('action', 'name', raw), /no declared text field action\.name/);
+    assert.throws(() => specText.cleanText('nothing', 'title', raw), /no declared text field nothing\.title/);
+  });
+
+  it('cleanedFields: the kind\'s string fields present, cleaned; nothing else', () => {
+    assert.deepStrictEqual(specText.cleanedFields('prompt', {name: `n${ZWSP}`, title: `t${ZWSP}\n`, description: `d${RLO}\n`, x: 1}),
+      {title: 't  ', description: 'd \n'});
+    assert.deepStrictEqual(specText.cleanedFields('argument', {name: 'a', title: 'no'}), {});
+  });
+
+  // the lists clean declared text only through the table: no file clean
+  // its own fields by line() or message() (tool-registry's one use is a
+  // check that a description is more than hidden characters, never output)
+  it('tools/list, prompts/list, resources/list and spec-text call no line() or message() of their own', () => {
+    const allowed = {'lib/mcp/tool-registry.js': 1, 'lib/mcp/prompts.js': 0, 'lib/mcp/resources.js': 0, 'lib/spec-text.js': 0};
+    for (const [file, n] of Object.entries(allowed)) {
+      const src = fs.readFileSync(path.join(__dirname, '..', '..', file), 'utf8');
+      const uses = src.match(/\b(clientText|moduleText)\.(line|message)\(/g) || [];
+      assert.strictEqual(uses.length, n, `${file}: ${uses.join(', ')}`);
+    }
+  });
+});
