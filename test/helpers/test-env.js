@@ -162,4 +162,29 @@ function startOn(port, readyMs) {
 // test/helpers/port-guard.js).
 const handedOut = (port) => [...assigned.values()].includes(Number(port));
 
-module.exports = {testPort, handedOut, redisFlag, redisArgs, redisArgsFor, redisUrlFor, redisConnectionFor, startShell, stopAll, startPrivateRedis};
+// Whether the Redis the servers a test starts use answers PING: the
+// signal a step that needs a store takes, never the OS. Only a run that
+// says it has no Redis may go without one: the Windows subset workflow
+// (GITHUB_WORKFLOW, which Actions sets), or CH_TEST_NO_REDIS=1. Anywhere
+// else a Redis that doesn't answer is an error, never a quiet skip.
+// (A Redis needing auth or TLS answers as none: these tests use neither.)
+const NO_REDIS_RUN = process.env.CH_TEST_NO_REDIS === '1' || process.env.GITHUB_WORKFLOW === 'Windows subset';
+const redisAnswers = (timeoutMs = 1500) => new Promise((resolve, reject) => {
+  // (a Redis the run configured, CH_TEST_REDIS_URL, must answer, a no-Redis
+  // run included)
+  const none = (why) => (NO_REDIS_RUN && redisUrl() == null ? resolve(false)
+    : reject(new Error(`no Redis answers PING (${why}); a run without one says so: CH_TEST_NO_REDIS=1, with no CH_TEST_REDIS_URL`)));
+  let c;
+  try {
+    const at = redisConnectionFor(0);
+    c = require('net').connect({host: at.host, port: at.port});
+  } catch (e) { none(e.message); return; }
+  let got = '';
+  const done = (ok, why) => { clearTimeout(timer); c.destroy(); if (ok) resolve(true); else none(why); };
+  const timer = setTimeout(() => done(false, 'no answer in time'), timeoutMs);
+  c.once('connect', () => c.write('PING\r\n'));
+  c.on('data', (b) => { got += String(b); if (got.includes('\r\n')) done(got.startsWith('+PONG'), `answered ${JSON.stringify(got.slice(0, 40))}`); });
+  c.once('error', (e) => done(false, e.code || e.message));
+});
+
+module.exports = {testPort, handedOut, redisFlag, redisArgs, redisArgsFor, redisUrlFor, redisConnectionFor, redisAnswers, startShell, stopAll, startPrivateRedis};
