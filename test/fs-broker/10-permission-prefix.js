@@ -209,6 +209,40 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     assert.ok(!fs.existsSync(path.join(other, 'sub', 'store')), 'made inside the other module first');
   });
 
+  // (a /data or /tmp that IS another module's root: by its place in the
+  // folder, or through a link; the review of 2d84f98b)
+  it('under enforce, a /tmp that is another module\'s root, by its place or through a link, refuses the spawn', async function() {
+    if (process.platform === 'win32') return this.skip();
+    const {createForWorker} = require('../../lib/fs-broker');
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-slot-')));
+    const modules = path.join(base, 'modules');
+    const mod = path.join(base, 'own', 'modules');
+    fs.mkdirSync(mod, {recursive: true});
+    fs.mkdirSync(path.join(modules, 'tmp'), {recursive: true});
+    fs.mkdirSync(path.join(modules, 'bar'), {recursive: true});
+    fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "modules"}');
+    fs.writeFileSync(path.join(modules, 'tmp', 'package.json'), '{"name": "tmp"}');
+    fs.writeFileSync(path.join(modules, 'tmp', 'keep.js'), '');
+    fs.writeFileSync(path.join(modules, 'bar', 'package.json'), '{"name": "bar"}');
+    const tryWith = async (name, modulePathOwn, moduleDataPath) => {
+      try {
+        const fsb = await createForWorker({name, mode: 'enforce', modulePath: modulePathOwn, declared: [],
+          options: {moduleDataPath, modulePath: modules}, report: () => {}});
+        await fsb.bridge.close();
+        return null;
+      } catch (e) { return e.code; }
+    };
+    // (--moduleDataPath the folder's parent, the module named as the folder:
+    // its /tmp is the folder's module "tmp")
+    assert.strictEqual(await tryWith('modules', mod, base), 'MODULE_SANDBOX_REFUSED');
+    assert.ok(fs.existsSync(path.join(modules, 'tmp', 'keep.js')), 'the other module\'s file was emptied');
+    // (an operator's link at /data into another module's root)
+    const store = path.join(base, 'store');
+    fs.mkdirSync(path.join(store, 'foo'), {recursive: true});
+    fs.symlinkSync(path.join(modules, 'bar'), path.join(store, 'foo', 'data'));
+    assert.strictEqual(await tryWith('foo', mod, store), 'MODULE_SANDBOX_REFUSED');
+  });
+
   // (but a --moduleDataPath beside the modules in --modulePath is in no
   // module's code: it spawns)
   it('under enforce, a --moduleDataPath beside the modules in --modulePath spawns', async () => {
