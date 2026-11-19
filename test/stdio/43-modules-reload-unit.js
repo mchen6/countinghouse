@@ -268,7 +268,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
   it('medium 1: a trusted ceiling\'s modules list binds the pack form too', async () => {
     const settingsTool = require('../../lib/settings-tool');
     const {mm, dm} = runtime();
-    settingsTool.ceilingForControl(() => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {packs: null, modules: ['ch-pack-pf']}}));
+    settingsTool.ceilingForControl(() => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {modules: ['ch-pack-pf']}}));
     try {
       const scenario = path.join(root, 'packs', 'pf', '1.0.0', 'node_modules', 'ch-pack-pf');
       await assert.rejects(mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario}, dm), (e) => e.code === 'SETTING_FORBIDDEN_BY_CEILING' && /enabled\.ch-step-x/.test(e.message));

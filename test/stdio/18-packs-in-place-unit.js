@@ -91,7 +91,7 @@ describe('stdio 18: packs in place, server-free', () => {
       settingsTool.resetForTests();
       fs.rmSync(base, {recursive: true, force: true});
     });
-    const trusted = (ceiling) => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: Object.assign({packs: null}, ceiling)});
+    const trusted = (ceiling) => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: Object.assign({}, ceiling)});
 
     it('the pack is the scenario\'s first directory below the root, by real path', () => {
       assert.strictEqual(chLocalPackOf(scenarioOf('ci-failure-triage'), rs), 'ci-failure-triage');
@@ -105,18 +105,6 @@ describe('stdio 18: packs in place, server-free', () => {
       assert.strictEqual(ceilingRefusal(req('x')), null);
       settingsTool.ceilingForControl(() => trusted({}));
       assert.strictEqual(ceilingRefusal(req('x')), null);
-    });
-
-    it('a trusted list: a pack it names loads; one it leaves out is SETTING_FORBIDDEN_BY_CEILING, named as pack.<name>', () => {
-      settingsTool.ceilingForControl(() => trusted({packs: ['ci-failure-triage']}));
-      assert.strictEqual(ceilingRefusal(req('ci-failure-triage')), null);
-      const refused = ceilingRefusal(req('other'));
-      assert.strictEqual(refused.code, 'SETTING_FORBIDDEN_BY_CEILING');
-      assert.match(refused.message, /pack\.other/);
-      // the request's name cannot choose the pack: the path does
-      assert.strictEqual(ceilingRefusal(req('other', '@countinghouse/ch-pack-ci-failure-triage')).code, 'SETTING_FORBIDDEN_BY_CEILING');
-      settingsTool.ceilingForControl(() => trusted({packs: []}));
-      assert.strictEqual(ceilingRefusal(req('ci-failure-triage')).code, 'SETTING_FORBIDDEN_BY_CEILING', 'an empty list allows no pack');
     });
 
     it('a ceiling that cannot be trusted refuses every load: SETTING_CEILING_UNTRUSTED', () => {

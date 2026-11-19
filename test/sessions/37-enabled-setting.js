@@ -258,11 +258,12 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     await refused(t.set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT), 'SETTING_DECLINED_THIS_START');
   });
 
-  it('the ceiling: a module not on its modules list is SETTING_FORBIDDEN_BY_CEILING; one that lists packs only is not trusted for a module; conversation off is the terminal', async () => {
+  it('the ceiling: a module not on its modules list is SETTING_FORBIDDEN_BY_CEILING; one not trusted (one still holding packs, M6) refuses; conversation off is the terminal', async () => {
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {[`enabled.${TOOL}`]: false}}));
-    const trusted = (c) => () => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: Object.assign({forbid: [], conversation: true, packs: null, modules: null}, c)});
+    const trusted = (c) => () => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: Object.assign({forbid: [], conversation: true, modules: null}, c)});
     await refused(tool({ceiling: trusted({modules: [CALLER]})}).set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT), 'SETTING_FORBIDDEN_BY_CEILING');
-    await refused(tool({ceiling: trusted({packs: ['other']})}).set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT), 'SETTING_CEILING_UNTRUSTED');
+    const packsLeft = () => ({state: 'untrusted', file: '/etc/countinghouse/ceiling.json', problem: require('../../lib/settings-ceiling').parse('{"version": 1, "packs": ["other"]}').problem});
+    await refused(tool({ceiling: packsLeft}).set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT), 'SETTING_CEILING_UNTRUSTED');
     await refused(tool({ceiling: trusted({modules: [TOOL], conversation: false})}).set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
     // off is never refused by it
     assert.strictEqual((await tool({ceiling: trusted({modules: []})}).set(`enabled.${CALLER}`, 'off')).new, 'off');

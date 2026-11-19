@@ -196,11 +196,16 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
       assert.match(r.message, /enabled\.@t\/ch-step-s/);
     });
 
-    it('a ceiling that still lists packs and no modules refuses a module-form load (fail closed, the plan review\'s Q2)', () => {
-      settingsTool.ceilingForControl(() => trusted({packs: ['a']}));
+    // M6 (#413 rev 3 section 8): a ceiling that still holds packs is not
+    // trusted at all (lib/settings-ceiling.js), so a module-form load is
+    // refused, saying why
+    it('a ceiling that still holds packs refuses a module-form load (fail closed), saying to list modules', () => {
+      const {parse} = require('../../lib/settings-ceiling');
+      const read = parse('{"version": 1, "packs": ["a"]}');
+      settingsTool.ceilingForControl(() => ({state: 'untrusted', file: '/etc/countinghouse/ceiling.json', problem: read.problem}));
       const r = mip.moduleCeilingRefusal(names);
       assert.strictEqual(r.code, 'SETTING_CEILING_UNTRUSTED');
-      assert.match(r.message, /lists packs, not modules/);
+      assert.match(r.message, /it holds "packs", which is no longer read: list each module under "modules"/);
     });
 
     it('an untrusted ceiling refuses', () => {
