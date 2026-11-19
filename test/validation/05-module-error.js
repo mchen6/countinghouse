@@ -179,6 +179,13 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
       const {moduleText} = require('../../lib/module-text');
       assert.strictEqual(moduleText('a\nb\u0007c\u2028d\u202ee\u2069f'), 'a b c d e f');
       assert.strictEqual(moduleText('abcdef', 3), 'abc');
+      // moduleLine, a notice's and a refused ask's line: marks spaced, runs
+      // made one, every whitespace trimmed, cut without half a pair
+      const {moduleLine} = require('../../lib/module-text');
+      assert.strictEqual(moduleLine('\n not\u200f  confirmed\u00a0', 120), 'not confirmed');
+      assert.strictEqual(moduleLine(`${'x'.repeat(119)}\u{1F600}`, 120), 'x'.repeat(119));
+      assert.strictEqual(moduleLine('\u3000a\u202e\u2066b ', 120), 'a b');
+      assert.strictEqual(moduleLine(null, 10), '');
       assert.strictEqual(moduleText('a\u200eb\u200fc\u061cd'), 'a b c d');
       // the repo's one hidden-character class (conditions-why.json
       // hiddenClass): zero-width, soft hyphen, word joiner, BOM, a variation
