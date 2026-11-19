@@ -58,6 +58,14 @@ const ATTEMPTS = {
     if (Object.getPrototypeOf(vm.Script) !== Function.prototype) throw Object.assign(new Error('reached'), {code: 'REACHED'});
     if (Object.getPrototypeOf(vm.Script.prototype).constructor !== vm.Script) throw Object.assign(new Error('reached'), {code: 'REACHED'});
   },
+  // ... the view freezes like any function, never touching Node's class,
+  // and still constructs; its length is Script's
+  vmFreeze:         () => {
+    const vm = require('vm');
+    Object.freeze(vm.Script);
+    const s = new vm.Script('1;', {filename: 'ch-probe-freeze.js'});
+    if (s.runInThisContext() !== 1 || vm.Script.length < 1 || vm.Script.name !== 'Script') throw Object.assign(new Error('changed'), {code: 'CHANGED'});
+  },
   // ... a script asked only to produce a cache is never marked rejected
   vmProduce:        () => {
     const s = new (require('vm').Script)('1;', {filename: 'ch-probe-produce.js', produceCachedData: true});

@@ -212,7 +212,7 @@ describe('sandbox 05: worker lockdown', function() {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'holdDefineProps'})), {outcome: 'allowed', code: null});
     });
     it('vm: no prototype leads to Node\'s native class; a produce-only script is not marked rejected; inherited options are kept', async () => {
-      for (const what of ['vmNative', 'vmProduce', 'vmInherited']) {
+      for (const what of ['vmNative', 'vmFreeze', 'vmProduce', 'vmInherited']) {
         assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what})), {outcome: 'allowed', code: null}, what);
       }
     });
