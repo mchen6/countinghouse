@@ -621,8 +621,13 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     });
 
     it('a module whose spawn has begun is known to the overlap judgement before its load is confirmed (the high review of #452)', () => {
-      const known = ModuleManager.prototype.knownModuleRoots.call({modules: {}, spawningModules: new Map([['b', path.join(env.dataRoot, 'mods', 'b')]])});
+      const spawning = new Map([['b', path.join(env.dataRoot, 'mods', 'b')]]);
+      const known = ModuleManager.prototype.knownModuleRoots.call({modules: {}, spawningModules: spawning});
       assert.deepStrictEqual(known, [{name: 'b', root: path.join(env.dataRoot, 'mods', 'b')}]);
+      // (and retired once its load is confirmed)
+      const confirmed = {modules: {}, spawningModules: spawning, emit: () => {}, unitLoaded: () => {}};
+      ModuleManager.prototype.onModuleLoad.call(confirmed, 'b', {}, '1.0.0');
+      assert.strictEqual(spawning.has('b'), false);
     });
 
     it('a respawn empties its /tmp: what it held leaves its share and the total; a name in /data keeps those bytes counted', async () => {
