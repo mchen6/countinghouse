@@ -52,6 +52,12 @@ module.exports = {
       return e;
     },
     catalogueCodeInCallback: (input, ctx, callback) => { setImmediate(() => callback(ctx.error('USER_HAS_NO_DEVICE', 'shape probe'), null)); },
+    // A runtime refusal a module passes on stays the runtime's, in both modes
+    // (the high review of #445, 1: single-thread's remote refusals were not
+    // issued, so they read as the module's): a remote the module never
+    // declared, and arguments that cannot cross to the main thread.
+    remoteUndeclaredPassedOn: async (input, ctx) => ctx.call('remote:nowhere/tool', {}),
+    remoteArgsInvalidPassedOn: async (input, ctx) => ctx.call('remote:nowhere/tool', {f: () => 1}),
 
     // Not a module's code (§5.1): a system error's code (it has errno and
     // syscall), and Node's own ERR_ namespace. Both are crashes:

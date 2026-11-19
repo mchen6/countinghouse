@@ -45,6 +45,9 @@ const OUTCOMES = [
   {name: 'module error with a catalogue code set after', action: 'catalogueCodeSetAfter', args: {}},
   {name: 'module error with a catalogue code and a forged origin', action: 'catalogueCodeForgedOrigin', args: {}},
   {name: 'module error with a catalogue code from a callback', action: 'catalogueCodeInCallback', args: {}},
+  // a runtime refusal a module passes on: the runtime's, in both modes
+  {name: 'remote refusal passed on (undeclared)', action: 'remoteUndeclaredPassedOn', args: {}},
+  {name: 'remote refusal passed on (arguments)', action: 'remoteArgsInvalidPassedOn', args: {}},
   {name: 'plain error with a system code', action: 'throwSystemCoded', args: {}},
   {name: 'plain error with a Node code', action: 'throwNodeCoded', args: {}},
   {name: 'plain error with a network code', action: 'throwNetworkCoded', args: {}},

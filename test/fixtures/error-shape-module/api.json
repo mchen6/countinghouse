@@ -305,6 +305,26 @@
             "output": {
               "schema": "/shapeService/catalogueCodeInCallback/output"
             }
+          },
+          {
+            "name": "remoteUndeclaredPassedOn",
+            "description": "error-shape case remoteUndeclaredPassedOn",
+            "input": {
+              "schema": "/shapeService/remoteUndeclaredPassedOn/input"
+            },
+            "output": {
+              "schema": "/shapeService/remoteUndeclaredPassedOn/output"
+            }
+          },
+          {
+            "name": "remoteArgsInvalidPassedOn",
+            "description": "error-shape case remoteArgsInvalidPassedOn",
+            "input": {
+              "schema": "/shapeService/remoteArgsInvalidPassedOn/input"
+            },
+            "output": {
+              "schema": "/shapeService/remoteArgsInvalidPassedOn/output"
+            }
           }
         ]
       }

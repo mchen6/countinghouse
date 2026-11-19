@@ -1296,6 +1296,162 @@
         }
       }
     },
+    "http invoke-action / remote refusal passed on (undeclared)": {
+      "status": 500,
+      "body": {
+        "code": "REMOTE_UNDECLARED",
+        "message": "ctx.call refused: the module declares no such remote in \"countinghouse.remotes\" (package.json)"
+      }
+    },
+    "mcp tools/call / remote refusal passed on (undeclared)": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "ctx.call refused: the module declares no such remote in \"countinghouse.remotes\" (package.json)"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "REMOTE_UNDECLARED"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / remote refusal passed on (undeclared)": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "REMOTE_UNDECLARED: ctx.call refused: the module declares no such remote in \"countinghouse.remotes\" (package.json)"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "ctx.call refused: the module declares no such remote in \"countinghouse.remotes\" (package.json)"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "REMOTE_UNDECLARED"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / remote refusal passed on (arguments)": {
+      "status": 500,
+      "body": {
+        "code": "REMOTE_ARGS_INVALID",
+        "message": "ctx.call refused: a remote call takes the address remote:<name>/<tool> and a plain JSON object of arguments"
+      }
+    },
+    "mcp tools/call / remote refusal passed on (arguments)": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "ctx.call refused: a remote call takes the address remote:<name>/<tool> and a plain JSON object of arguments"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "REMOTE_ARGS_INVALID"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / remote refusal passed on (arguments)": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "REMOTE_ARGS_INVALID: ctx.call refused: a remote call takes the address remote:<name>/<tool> and a plain JSON object of arguments"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "ctx.call refused: a remote call takes the address remote:<name>/<tool> and a plain JSON object of arguments"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "REMOTE_ARGS_INVALID"
+            }
+          }
+        }
+      }
+    },
     "http invoke-action / plain error with a system code": {
       "status": 500,
       "body": {
@@ -2982,6 +3138,58 @@
           ],
           "_meta": {
             "countinghouse/code": "MODULE_CODE_RESERVED"
+          }
+        }
+      }
+    },
+    "http invoke-action / remote refusal passed on (undeclared)": {
+      "status": 500,
+      "body": {
+        "code": "REMOTE_UNDECLARED",
+        "message": "ctx.call refused: the module declares no such remote in \"countinghouse.remotes\" (package.json): error-shape-module declares no remote \"nowhere\""
+      }
+    },
+    "mcp tools/call / remote refusal passed on (undeclared)": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "ctx.call refused: the module declares no such remote in \"countinghouse.remotes\" (package.json): error-shape-module declares no remote \"nowhere\""
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "REMOTE_UNDECLARED"
+          }
+        }
+      }
+    },
+    "http invoke-action / remote refusal passed on (arguments)": {
+      "status": 500,
+      "body": {
+        "code": "REMOTE_ARGS_INVALID",
+        "message": "ctx.call refused: a remote call takes the address remote:<name>/<tool> and a plain JSON object of arguments: the arguments must be a plain JSON object"
+      }
+    },
+    "mcp tools/call / remote refusal passed on (arguments)": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "ctx.call refused: a remote call takes the address remote:<name>/<tool> and a plain JSON object of arguments: the arguments must be a plain JSON object"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "REMOTE_ARGS_INVALID"
           }
         }
       }
