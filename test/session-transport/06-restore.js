@@ -218,6 +218,12 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     // its resume hash shared, refuses the restore
     assert.strictEqual(code(() => createRestore({}).handle(plan({sessions: [unknown, Object.assign({}, good, {session: B})], reset: []}))), 'CONTROL_BAD_RESTORE');
     assert.strictEqual(code(() => createRestore({}).handle(plan({sessions: [unknown, Object.assign({}, good, {resume: 'b'.repeat(64)})], reset: []}))), 'CONTROL_BAD_RESTORE');
+    // a dropped row's stale pack override is no session's to be told of
+    const both = {session: B, resume: 'b'.repeat(64), state: {overrides: [ov({name: 'pack.weather', value: false, version: '1.0.0'})], locks: ['locale'], formsLeft: 3}};
+    const seen = [];
+    createRestore({importTable: (x) => seen.push(x)}).handle(plan({sessions: [both, good], reset: []}));
+    assert.deepStrictEqual(seen[0].packsDropped, []);
+    assert.deepStrictEqual(seen[0].rowsDropped, [{session: B, kinds: ['locale']}]);
     // and any other problem in that row still refuses the whole restore
     assert.strictEqual(code(() => createRestore({}).handle(st({overrides: [], locks: ['locale'], formsLeft: 4}))), 'CONTROL_BAD_RESTORE');
   });
