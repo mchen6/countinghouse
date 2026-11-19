@@ -79,7 +79,12 @@ describe('stdio 13: pack change notices', () => {
     assert.deepStrictEqual(notices.take('m'.repeat(128)), ['long key']);
     // the one module-text rule: a bidi override or isolate is no character
     // a notice carries (#445's third round)
-    notices.add('bidi', 'pay\u202eevil\u2066x');
-    assert.deepStrictEqual(notices.take('bidi'), ['pay evil x']);
+    notices.add('bidi', 'pay\u202eevil\u2066x\u200ey\u200fz\u061cw');
+    assert.deepStrictEqual(notices.take('bidi'), ['pay evil x y z w']);
+    // a key cut at 128: never half a pair, never a trailing space
+    notices.add(`${'k'.repeat(127)}\u{1F600}`, 'pair');
+    assert.deepStrictEqual(notices.take('k'.repeat(127)), ['pair']);
+    notices.add(`${'j'.repeat(127)} b`, 'space');
+    assert.deepStrictEqual(notices.take('j'.repeat(127)), ['space']);
   });
 });
