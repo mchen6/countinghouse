@@ -251,7 +251,12 @@ any module code). Stops:
   it is refused all the same: an assignment to `Module.prototype` (a
   function's own `prototype`, which can't be made an accessor), the
   `delete` operator on a held property, and a redefinition through another
-  realm's `Object.defineProperty` (one a `vm` context gives).
+  realm's `Object.defineProperty` (one a `vm` context gives). Nor, with
+  Node's `--experimental-vm-modules` (a development-only flag, which a
+  worker inherits), does `audit` cover `vm`'s module classes: under
+  `enforce` they are deleted from module code's `vm`, while under `audit`
+  their construction through `vm` is said but other routes to them, and
+  the code caches they take, are not.
   The other routes
   into what the runtime loads are closed by #194: the runtime loads nothing
   after the lockdown (its PR 1), and at the lockdown its modules are sealed
