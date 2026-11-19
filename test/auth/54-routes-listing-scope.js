@@ -16,7 +16,7 @@ const request = require('supertest');
 const waitForReady = require('../helpers/wait-for-ready');
 const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
-const {toolNameFor} = require('../../lib/mcp/tool-name');
+const {toolNameFor, promptNameFor, slugify} = require('../../lib/mcp/tool-name');
 
 const PORT = testPort(9794);
 const url = `http://127.0.0.1:${PORT}`;
@@ -25,7 +25,9 @@ const DIRS = {
   echo: path.join(ROOT, 'pre-installed-packages', 'echo-device-module'),
   transform: path.join(ROOT, 'pre-installed-packages', 'transform-demo'),
   scenario: path.join(ROOT, 'test', 'fixtures', 'asks-through-part'),
-  part: path.join(ROOT, 'test', 'fixtures', 'asks-part')
+  part: path.join(ROOT, 'test', 'fixtures', 'asks-part'),
+  // (prompts and resources: the one module here that declares them)
+  everything: path.join(ROOT, 'test', 'fixtures', 'declares-everything')
 };
 const api = (m) => require(path.join(DIRS[m], 'api.json'));
 const role = (m) => ((require(path.join(DIRS[m], 'package.json')).countinghouse || {}).role || null);
@@ -36,6 +38,8 @@ const toolNames = (m) => Object.entries(api(m).device.serviceList).flatMap(([urn
 
 const WILDCARD_KEY = `wild-${'w'.repeat(24)}`;
 const SCOPED_KEY = `scoped-${'s'.repeat(24)}`;
+// granted the module with prompts and resources, and one other
+const OTHER_KEY = `other-${'o'.repeat(24)}`;
 
 describe('auth 54: get-spec and the schema route answer only what the caller\'s tools/list shows', function() {
   this.timeout(0);
@@ -49,18 +53,21 @@ describe('auth 54: get-spec and the schema route answer only what the caller\'s 
     fs.writeFileSync(auth, JSON.stringify({
       [WILDCARD_KEY]: {userName: 'wild', devices: ['*']},
       [SCOPED_KEY]: {userName: 'scoped', devices: [idOf('echo')]},
+      [OTHER_KEY]: {userName: 'other', devices: [idOf('transform'), idOf('everything')]},
       [`scenario-${'i'.repeat(24)}`]: {userName: 'asks-through-part-identity', devices: ['*'], runsModules: ['asks-through-part']}
     }));
     waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT} --authProvider file --authConfigPath ${auth}`
-      + ` --modulesRoot ${ROOT} --loadModule ${DIRS.echo} --loadModule ${DIRS.transform} --loadModule ${DIRS.scenario} --partDir ${DIRS.part}`,
+      + ` --modulesRoot ${ROOT} --loadModule ${DIRS.echo} --loadModule ${DIRS.transform} --loadModule ${DIRS.scenario} --partDir ${DIRS.part}`
+      + ` --loadModule ${DIRS.everything}`,
     (err) => { if (err) console.log(err); }), done);
   });
 
   after((done) => { fs.rmSync(dir, {recursive: true, force: true}); stopAll(done); });
 
-  const toolsList = (key) => new Promise((resolve, reject) => request(url).post('/mcp').set('Content-Type', 'application/json').set('X-CH-Key', key)
-    .send({jsonrpc: '2.0', id: 1, method: 'tools/list', params: {}})
-    .end((err, res) => (err ? reject(err) : resolve(res.body.result.tools.map((t) => t.name)))));
+  const mcp = (key, method) => new Promise((resolve, reject) => request(url).post('/mcp').set('Content-Type', 'application/json').set('X-CH-Key', key)
+    .send({jsonrpc: '2.0', id: 1, method, params: {}})
+    .end((err, res) => (err ? reject(err) : resolve(res.body.result))));
+  const toolsList = async (key) => (await mcp(key, 'tools/list')).tools.map((t) => t.name);
   const get = (key, p) => new Promise((resolve, reject) => request(url).get(p).set('X-CH-Key', key).end((err, res) => (err ? reject(err) : resolve(res))));
 
   it('the setting is as meant: the scenario, echo-device and transform-demo listed; the part loaded but not listed', async () => {
@@ -112,6 +119,49 @@ describe('auth 54: get-spec and the schema route answer only what the caller\'s 
       assert.ok(['DEVICE_NOT_FOUND', 'USER_HAS_NO_DEVICE'].includes(r.body.code), `${p}: ${JSON.stringify(r.body)}`);
     }
   });
+
+  // #447's high review, 6: one predicate decides every surface that shows a
+  // module, so all seven show exactly the modules expected for each key,
+  // each checked against this one list (not only against each other: seven
+  // wrong the same way would agree). The part is never shown; a key granted
+  // some devices sees those only, its prompts and resources too. (A module
+  // hidden while it goes on or off: sessions 15, in process.)
+  const EXPECTED = {
+    [WILDCARD_KEY]: ['echo', 'everything', 'scenario', 'transform'],
+    [SCOPED_KEY]: ['echo'],
+    [OTHER_KEY]: ['everything', 'transform']
+  };
+  // the modules each surface can show anything of: prompts and resources are
+  // declared by one module here
+  const HAS = {prompts: ['everything'], resources: ['everything']};
+  const modules = Object.keys(DIRS);
+  const ofNames = (names, nameOf) => modules.filter((m) => nameOf(m).some((n) => names.includes(n))).sort();
+  const promptNames = (m) => (api(m).device.promptList || []).map((p) => promptNameFor(role(m), api(m).device.friendlyName, p.name));
+  const slugOf = (m) => slugify(api(m).device.friendlyName);
+  for (const key of [WILDCARD_KEY, SCOPED_KEY, OTHER_KEY]) {
+    it(`${key.split('-')[0]} key: all seven surfaces show exactly the expected modules`, async () => {
+      const expected = EXPECTED[key];
+      const seen = {};
+      seen['tools/list'] = ofNames(await toolsList(key), toolNames);
+      seen['prompts/list'] = ofNames((await mcp(key, 'prompts/list')).prompts.map((p) => p.name), promptNames);
+      const uris = (await mcp(key, 'resources/list')).resources.map((x) => x.uri)
+        .concat((await mcp(key, 'resources/templates/list')).resourceTemplates.map((x) => x.uriTemplate));
+      seen['resources/list'] = modules.filter((m) => uris.some((u) => u.startsWith(`countinghouse://m/${slugOf(m)}/`))).sort();
+      for (const [label, route] of [['get-spec', 'get-spec'], ['schema', 'schema/'], ['package-info', 'package-info']]) {
+        const answered = [];
+        for (const m of modules) if ((await get(key, `/devices/${idOf(m)}/${route}`)).status === 200) answered.push(m);
+        seen[label] = answered.sort();
+      }
+      const names = (await get(key, '/device-list')).body.map((d) => d.device.friendlyName);
+      seen['/device-list'] = modules.filter((m) => names.includes(api(m).device.friendlyName)).sort();
+      const want = {};
+      for (const label of Object.keys(seen)) {
+        const only = label === 'prompts/list' ? HAS.prompts : label === 'resources/list' ? HAS.resources : null;
+        want[label] = only == null ? expected : expected.filter((m) => only.includes(m));
+      }
+      assert.deepStrictEqual(seen, want);
+    });
+  }
 
   it('the unlisted part is refused MODULE_NOT_LISTED by both routes, even to a key granted every device', async () => {
     for (const p of [`/devices/${idOf('part')}/get-spec`, `/devices/${idOf('part')}/schema/`]) {

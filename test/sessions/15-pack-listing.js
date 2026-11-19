@@ -238,4 +238,38 @@ describe('sessions 15: a module going on or off is in no session\'s lists (B3 Ta
     visibility.show(['ch-pack-x', 'ch-step-a']);
     assert.strictEqual(toolRegistry.forCaller(before, null), before, 'none() again: the table itself');
   });
+
+  // #447's high review, 6: one predicate decides every surface that shows a
+  // module (tool-registry listedFor / callerSees). While ch-pack-x is
+  // hidden, tools/list, prompts/list, resources/list and the routes' one
+  // gate (lib/listing-scope.js scopeOf: get-spec, schema, package-info,
+  // /device-list) leave it out alike, each checked against one expected
+  // list; the part is never shown. (Grants across all seven, on a real
+  // server: auth 54.)
+  it('every surface shows exactly the expected modules, hidden or not', async () => {
+    const {scopeOf} = require('../../lib/listing-scope');
+    const MODULES = ['ch-pack-x', 'ch-step-a', 'ch-pack-docs', 'plain'];
+    const deviceOf = {'ch-pack-x': 'd1', 'ch-step-a': 'd2', 'ch-pack-docs': 'd3', plain: 'd4'};
+    const table = toolRegistry.buildToolTargets(ci, {includeUnlisted: true});
+    const moduleOfTool = (n) => ci.deviceManager.deviceMap[table[n].deviceID].hostModuleName;
+    const shown = async () => {
+      const tools = names(await request(ci, A, 'tools/list', {})).filter((n) => table[n] != null);
+      const prompts = pnames(await request(ci, A, 'prompts/list', {}));
+      const uris = (await request(ci, A, 'resources/list', {})).result.resources.map((x) => x.uri)
+        .concat((await request(ci, A, 'resources/templates/list', {})).result.resourceTemplates.map((x) => x.uriTemplate));
+      return {
+        'tools/list': MODULES.filter((m) => tools.some((n) => moduleOfTool(n) === m)),
+        'prompts/list': MODULES.filter((m) => prompts.some((n) => n.includes(`${m.replace(/-/g, '_')}_brief`))),
+        'resources/list': MODULES.filter((m) => uris.some((u) => u.startsWith(`countinghouse://m/${toolRegistry.slugify(m)}/`))),
+        routes: MODULES.filter((m) => scopeOf(ci, deviceOf[m]) === 'listed')
+      };
+    };
+    // (only ch-pack-x declares resources)
+    const expect = (listed) => ({'tools/list': listed, 'prompts/list': listed, 'resources/list': listed.filter((m) => m === 'ch-pack-x'), routes: listed});
+    assert.deepStrictEqual(await shown(), expect(['ch-pack-x', 'ch-pack-docs', 'plain']), 'nothing hidden');
+    hideCi();
+    assert.deepStrictEqual(await shown(), expect(['ch-pack-docs', 'plain']), 'ch-pack-x hidden');
+    visibility.show(['ch-pack-x', 'ch-step-a']);
+    assert.deepStrictEqual(await shown(), expect(['ch-pack-x', 'ch-pack-docs', 'plain']), 'shown again');
+  });
 });
