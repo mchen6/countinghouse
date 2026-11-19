@@ -169,6 +169,12 @@ you have to do. What the sandbox does and does not protect is in
 
 ## What modules will notice
 
+- **Module settings need worker threads.** A module that declares
+  `countinghouse.settings` loads only with worker threads (the default). In
+  single-thread mode (`--no-workerThread`) it is refused at its load and at a
+  reload (`SETTINGS_NEED_WORKER_THREADS`); a module that declares no settings
+  loads as before.
+
 - **Breaking, under the sandbox: Node's loader internals are held.**
   `Module._load` takes only its request, parent and isMain (Node's internal
   fourth argument, which skips the resolve hooks, is dropped). Under

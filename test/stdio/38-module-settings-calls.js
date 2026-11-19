@@ -1,6 +1,6 @@
 'use strict';
 // Module settings at a call, spawned (the module-level configuration design,
-// sections 4.5 and 4.6), worker and single-thread mode:
+// sections 4.5 and 4.6), worker mode (module settings run only with worker threads):
 // - ctx.settings: the declared defaults, then ch-local's settings file
 //   (--settingsFile), frozen, no prototype, an unset setting absent;
 // - a required setting unset: SETTING_REQUIRED before the handler runs, in
@@ -88,7 +88,9 @@ function modules(home) {
   return {weather, needs, hopper, relay, plain, claimer};
 }
 
-for (const [mode, thread] of [['worker mode', '--workerThread'], ['single-thread mode', '--no-workerThread']]) {
+// worker mode only: module settings run only with worker threads (a module
+// that declares them is refused in single-thread mode: module-loading 44)
+for (const [mode, thread] of [['worker mode', '--workerThread']]) {
   describe(`stdio 38: module settings at a call, ${mode}`, function() {
     this.timeout(120000);
     let home = null;

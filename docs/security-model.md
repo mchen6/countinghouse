@@ -657,6 +657,40 @@ the file toward its start value. A lower value than what runs that may not
 be written applies to this start only, and is recorded as that. It is read once
 per process, and again when the file changes.
 
+`moduleSettings` binds the settings modules declare, per
+`"<package>.<setting>"` (the last dot splits them):
+
+```json
+"moduleSettings": {
+  "@acme/weather-tool.shareStats": {"fixed": false},
+  "@acme/weather-tool.units": {"confirm": true},
+  "@acme/repo-helper.defaultRepo": {"conversation": false}
+}
+```
+
+- `{"fixed": <value>}` applies that value whatever `settings.json` says. A
+  value the module's declaration rejects, or a setting it doesn't declare (a
+  typo, or a version that renamed it), refuses the module's load, naming the
+  entry.
+- `{"confirm": true}` and `{"conversation": false}` are rules for a change
+  in conversation. They bind once the settings tool changes module settings
+  (its `module.*` names; until then no conversation can change one): the
+  first needs the user's confirmation, the second allows the terminal only.
+  `"conversation": false` directly under `moduleSettings` makes every module
+  setting terminal-only.
+
+Any other shape fails closed, as any key a reader doesn't know does: an
+older runtime or `ch-local` never reads this key as no restriction. Where
+the ceiling binds (the single-identity profile with a settings file), it is
+read again at each load of a module that declares settings and at each
+`reread`, and watched while the runtime has a control channel: a change
+re-reads every module's settings, so a fixed value binds without `ch-local`.
+A ceiling that cannot be trusted refuses such a load; a supervised restart
+keeps the values the module ran with. A supervised restart the ceiling's
+`fixed` refuses (a value the module rejects, or a setting it doesn't
+declare) is suspended at once with the ceiling's reason, not retried: the
+next load, once the ceiling is updated, proceeds.
+
 It is trusted only when an ordinary user cannot have written it: on Linux and
 macOS the file is not a symbolic link, and it and every directory up to `/`
 (by real path) are owned by root and not writable by group or others; on
@@ -1248,6 +1282,21 @@ directory of each module of its closure:
   start refused is told the same way, with `when: "start"`. Without a
   control channel a suspended module stays suspended and listed until
   `POST /restart-module`.
+- **Settings re-read, never an unload.** `{type: "reread", what:
+  "module-settings"}` reads the `module.*` values of `--settingsFile` again,
+  under the ceiling as it is now, for every loaded module that declares
+  settings (`lib/settings-reread.js`). A module with any value refused (or
+  a `fixed` value its declaration rejects, or a ceiling that cannot be
+  trusted) keeps **all** of its old values; the others apply, each with a
+  new version its next call carries. The reply is `{applied, refused:
+  [{name, code}]}`; each refusal is a notice to the sessions that have the
+  module in view (a part is said as "a part of" its top-level module, and
+  the ceiling's file problem goes to the operator's log only) and, for a
+  value, a `not applied` history line, never the value (the ceiling's, when
+  its fixed value is what refused). A value that already was not applied,
+  unchanged, holds nothing back, and one refused is said once. A setting
+  change never unloads a module: one left with a required setting unset
+  stays loaded, and its calls answer `SETTING_REQUIRED`.
 
 The pack form (`scenario`, `pack`, `global`, a pack's own credentials file)
 is still taken until it is removed, never mixed with the module form in one
@@ -1526,7 +1575,11 @@ and the short list of what the in-process sandbox cannot give.
   modules is kept from them there: a call's `Session`, including the
   shared runtime's session id on it, its call tokens and every other main-
   thread state are in reach. It is for debugging modules
-  ([differences](module-development.md)).
+  ([differences](module-development.md)). Module settings run only with
+  worker threads: there a module that declares settings is refused at its
+  load and at a reload (`SETTINGS_NEED_WORKER_THREADS`), so no settings
+  state, and no ceiling's fixed value, ever has to be kept in the main
+  thread a module shares.
 - **No OS-level isolation.** `worker_threads` share the same process, same
   OS user and same network stack as the main thread. Outside `--hardened`
   the main thread can open any file the OS user can.

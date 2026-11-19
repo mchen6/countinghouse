@@ -608,6 +608,14 @@ A module can declare settings that a user chooses: units, a default
 repository, a page size. Declare them in `package.json`, beside `calls` and
 `permissions`:
 
+> Module settings run only with worker threads (the default). In
+> single-thread mode (`--no-workerThread`) a module that declares settings is
+> not loaded (`SETTINGS_NEED_WORKER_THREADS`: "<package> declares settings,
+> which run only with worker threads (--workerThread); this version was not
+> loaded"), and a reload to a version that declares them is refused, the
+> loaded version serving on. A
+> module that declares none loads in either mode.
+
 ```json
 "countinghouse": {
   "settings": {
@@ -671,8 +679,8 @@ module.exports = async function forecast(input, ctx) {
 ```
 
 - `ctx.settings` holds the values for this call: the defaults, then the
-  user's (or the operator's) values. It is frozen and has no prototype. An
-  unset setting is absent.
+  user's (or the operator's) values, then any value the operator's ceiling
+  fixes. It is frozen and has no prototype. An unset setting is absent.
 - A change applies from the next call: a call in flight keeps the values it
   started with.
 - A task keeps the values of its first run for its life, so an answer to

@@ -1348,6 +1348,15 @@
           },
           "remoteCredentials": "/home/example/.countinghouse/run/start-1/remote-credentials.json"
         }
+      },
+      {
+        "why": "a reread of anything but the module settings",
+        "reason": "name",
+        "message": {
+          "id": 19,
+          "type": "reread",
+          "what": "everything"
+        }
       }
     ]
   },
