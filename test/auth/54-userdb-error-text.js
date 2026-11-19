@@ -18,6 +18,8 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
       // the real lib/auth (its outage log), with a provider that fails
       const authPath = require.resolve(${JSON.stringify(path.join(LIB, 'auth'))});
       const realAuth = require(authPath);
+      let t = 0;
+      realAuth.resetOutagesForTests({now: () => t});
       let up = false;
       const failing = realAuth.guarded({
         authenticate: (appKey, deviceID, serviceID, actionName, cb) => (up ? cb(null, {ok: true, userName: 'u', isAdmin: false})
@@ -35,6 +37,7 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
         const err = await ask();
         await ask();   // the same outage: not logged again
         up = true;
+        t = 20000;     // past the quiet period
         await ask();   // it answers again: said once, with the count
         process.stdout.write('OUT ' + JSON.stringify({code: err && err.code, message: err && err.message, logged, warned}) + '\\n');
       })();`;
@@ -60,6 +63,8 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
     const warned = [];
     LOG.E = (e) => logged.push(String(e && e.message));
     LOG.W = (w) => warned.push(String(w));
+    let t = 0;
+    auth.resetOutagesForTests({now: () => t});
     try {
       let listUp = false;
       let entriesCalls = 0;
@@ -81,6 +86,11 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
       assert.strictEqual(logged.length, 1, JSON.stringify(logged));
       assert.deepStrictEqual(warned, [], 'no recovery said for a kind that never failed');
       listUp = true;
+      // within the quiet period: still open, nothing said (the high review
+      // of #445, 2: a flapping provider is not opened and closed per request)
+      await ask((cb) => p.listDevices('k', cb));
+      assert.deepStrictEqual(warned, []);
+      t += 20000;
       await ask((cb) => p.listDevices('k', cb));
       assert.ok(warned.length === 1 && /answers again \(listDevices\): 3 lookups failed meanwhile/.test(warned[0]), JSON.stringify(warned));
       assert.strictEqual(entriesCalls, 0);
@@ -94,9 +104,23 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
       raw.listDevices = (k, cb) => cb(new Error('another reason'));
       await ask((cb) => p.listDevices('k', cb));
       await ask((cb) => p.listDevices('k', cb));
-      assert.deepStrictEqual(logged.slice(1), ['view broken at couch.internal.example:5984', 'another reason']);
-      raw.listDevices = (k, cb) => cb(null, {devices: []});
+      // and one said before in it is not said again
+      raw.listDevices = (k, cb) => cb(new Error('view broken at couch.internal.example:5984'));
       await ask((cb) => p.listDevices('k', cb));
+      assert.deepStrictEqual(logged.slice(1), ['view broken at couch.internal.example:5984', 'another reason']);
+      // past REASONS_MAX (8) distinct reasons: counted, not said, and the
+      // recovery line says how many
+      for (let i = 0; i < 8; i++) {
+        raw.listDevices = (k, cb) => cb(new Error(`reason ${i}`));
+        await ask((cb) => p.listDevices('k', cb));
+      }
+      assert.strictEqual(logged.length, 1 + 8, JSON.stringify(logged));
+      raw.listDevices = (k, cb) => cb(null, {devices: []});
+      t += 20000;
+      await ask((cb) => p.listDevices('k', cb));
+      assert.match(warned[warned.length - 1], /answers again \(listDevices\): 12 lookups failed meanwhile; 2 with reasons past the first 8, not said/);
+      // a reason as text, whatever it is (the high review of #445, 6 and 8)
+      assert.deepStrictEqual([auth.reasonOf('down'), auth.reasonOf({at: 1}), auth.reasonOf(undefined), auth.reasonOf(new Error(''))], ['down', '{"at":1}', '(none)', '(none)']);
       // a provider that throws is answered the catalogue's words, its text in
       // the log only; a call with no callback is refused, never handed to the
       // provider; a throw from the caller's own callback is its own (the
@@ -131,6 +155,7 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
     } finally {
       LOG.E = saved.E;
       LOG.W = saved.W;
+      auth.resetOutagesForTests();
     }
   });
 

@@ -526,7 +526,7 @@ var denied = deniedResolved();
 identityReady.then(function() { return denied.then(serve); }, function(e) {
   // (the provider's own reason: lib/auth's guard answers its catalogue
   // text and keeps the provider's error as the cause)
-  var why = (e != null && e.cause instanceof Error) ? e.cause.message : (e && e.message);
+  var why = require('./lib/auth').reasonOf((e != null && e.cause !== undefined) ? e.cause : e);
   console.error('identity: the id index could not be built from --authProvider ' + options.authProvider + ': ' + why);
   process.exit(2);
 });
