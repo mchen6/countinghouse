@@ -62,6 +62,7 @@ const LIB = path.join(__dirname, '..', '..', 'lib', 'fs-broker');
     Object.setPrototypeOf(bare, null);
     fsLib.fakeBareMap = bare;
     Object.defineProperty(fsLib, 'fakeNcLater', {value: null, writable: true, configurable: false, enumerable: true});
+    Object.defineProperty(fsLib, 'fakeNcUndef', {value: undefined, writable: true, configurable: false, enumerable: true});
     ctx.fillNcLater = () => { fsLib.fakeNcLater = (p) => read(p, 'utf8'); };
     const ns = {v: 1};
     fsLib.fakeNs = ns;
