@@ -40,5 +40,10 @@ const own = async () => {
   // (by an absolute path too, which Node's ES resolver reads as a URL path)
   let absolute;
   try { absolute = (await import(`${here.pathname}?c`)) !== (await import(`${here.pathname}?d`)) ? 'same' : 'one-instance'; } catch (e) { absolute = `absolute(${e.code})`; }
-  return `${escaped} ${queried} ${absolute}`;
+  // (an encoded separator refused as Node refuses it, by path and by
+  // relative name)
+  const invalid = async (spec) => { try { await import(spec); return 'found'; } catch (e) { return e.code; } };
+  const encoded = [await invalid(`${path.posix.dirname(here.pathname)}/a%2Fb.mjs?x`), await invalid('./a%2Fb.mjs')]
+    .every((c) => c === 'ERR_INVALID_MODULE_SPECIFIER') ? 'same' : 'encoded';
+  return `${escaped} ${queried} ${absolute} ${encoded}`;
 };
