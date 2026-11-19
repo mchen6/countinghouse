@@ -144,6 +144,18 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.deepStrictEqual([reads, tops], [1, 1]);
   });
 
+  // the medium review of round 5, 2 and 8: the caller's line, beside the
+  // off notice, fits the bound with the way back whole
+  it('callsNotice: the caller\'s line, within OWN_NOTICE_MAX, the way back kept', () => {
+    const {OWN_NOTICE_MAX} = require('../../lib/notices');
+    assert.strictEqual(settingsTool.callsNotice(CALLER, TOOL),
+      `${CALLER} unloaded: it calls ${TOOL}, which is turned off for all your sessions (turning ${TOOL} on brings it back).`);
+    const long = (c) => `@${c.repeat(40)}/${c.repeat(172)}`;
+    const t = settingsTool.callsNotice(long('a'), long('b'));
+    assert.ok(t.length <= OWN_NOTICE_MAX, t.length);
+    assert.ok(t.endsWith('on brings it back).'), t.slice(-60));
+  });
+
   // the medium review of round 3, 7: the notice fits its bound whatever the
   // names' length, the ways back always whole
   it('offNotice fits OWN_NOTICE_MAX: fewer callers named as the names grow, the command always whole', () => {
