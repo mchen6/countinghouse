@@ -389,8 +389,9 @@ describe('store 04: the review of B2', function() {
 
 // #150: a process that takes the lock again the moment it releases it
 // starved one waiting with a 10 ms retry past LOCK_WAIT_MS (seen on Windows
-// CI). A waiter announces itself, and the others yield to it, so both
-// finish, every wait inside LOCK_WAIT_MS.
+// CI). A waiter announces itself, and the others yield to it, so once it
+// has announced the other process takes the lock at most once more before
+// the waiter has it (measured in holds, not the wall clock: below).
 describe('store 04: a waiter is not starved (#150)', function() {
   this.timeout(60000);
 
@@ -489,26 +490,26 @@ describe('store 04: a waiter is not starved (#150)', function() {
     }
   });
 
-  // Fairness, measured against the other process's holds, never the wall
-  // clock: a loaded runner stalls both processes alike (CI took 13 s for a
-  // 3 s hammer, and an update that succeeded took 2697 ms with the yield
-  // working), so a wall-clock bound measured the runner. A starved waiter
-  // instead sees the hammer take the lock again and again while it waits.
-  // The hammer logs when each of its holds begins; the waiter logs when
-  // each update asked and when it got the lock (inside fn, so its write's
-  // fsync is not counted). Within LOCK_WAIT_MS of its request -- the span
-  // its announcement asks the others to yield for -- at most 10 holds begin
-  // while it waits. A fair wait sees the holds of one retry interval: when
-  // the hammer's own announcement (made while the waiter held the lock) is
-  // still fresh, the waiter yields to it and takes the lock at its next
-  // retry, 10 ms on, after up to 4 of the hammer's 2 ms holds (seen
-  // locally). With the yield disabled an update waited through 177 and 190.
-  it('two processes hammering one key both finish, and a waiter waits through at most 10 of the other\'s holds', async () => {
-    const {LOCK_WAIT_MS} = require(MOD);
+  // Fairness, measured in the other process's holds, never the wall clock:
+  // a loaded runner stalls both processes alike (CI took 13 s for a 3 s
+  // hammer, and an update that succeeded took 2697 ms with the yield
+  // working), and a late retry timer lets a hammer whose own announcement
+  // the waiter yielded to take the lock freely until the waiter's next
+  // attempt, as designed. What the announcement promises is load-free: once
+  // the waiter has announced (the rename onto .lock.waiting), the other
+  // process begins at most one more hold -- one already past its yield
+  // check -- before the waiter has the lock. The hammer logs when each hold
+  // begins, the waiter when it announced and when it got the lock (inside
+  // fn), on one monotonic timeline; at most 3 holds (slack for the clock's
+  // resolution) may begin in between. With the yield disabled an update
+  // waited through 177 and 190 holds of its whole wait.
+  it('two processes hammering one key both finish, and once a waiter has announced the other takes the lock at most once more', async () => {
     const dir = tmpStore();
     const file = path.join(dir, 'm.json');
     const run = (script) => new Promise((resolve, reject) => {
-      const p = spawn(process.execPath, ['-e', `const {openJsonFile, withStoreLock} = require(${JSON.stringify(MOD)});\n${script}`],
+      const p = spawn(process.execPath, ['-e', `const {openJsonFile, withStoreLock} = require(${JSON.stringify(MOD)});
+        const {performance: perfHooks} = require('perf_hooks');
+        const monotonic = () => perfHooks.timeOrigin + perfHooks.now();\n${script}`],
         {stdio: ['ignore', 'pipe', 'pipe']});
       let out = '';
       let err = '';
@@ -517,25 +518,41 @@ describe('store 04: a waiter is not starved (#150)', function() {
       p.on('exit', (code) => (code === 0 ? resolve(out) : reject(new Error(err || `exit ${code}`))));
     });
     // takes the lock again at once, each time holding it about 2 ms, and
-    // logs when each hold begins
+    // logs when each hold begins; a wait that ends yielding to a stalled
+    // waiter (its announcement still fresh) is counted, not a failure
     const hammer = run(`
       const end = Date.now() + 3000;
       const holds = [];
+      let yielded = 0;
       while (Date.now() < end) {
-        withStoreLock(${JSON.stringify(dir)}, () => { holds.push(Date.now()); const t = Date.now() + 2; while (Date.now() < t) { /* hold */ } });
+        try {
+          withStoreLock(${JSON.stringify(dir)}, () => { holds.push(monotonic()); const t = Date.now() + 2; while (Date.now() < t) { /* hold */ } });
+        } catch (e) {
+          if (!/yielded to a waiting process/.test(e.message)) throw e;
+          yielded++;
+        }
       }
-      process.stdout.write(JSON.stringify(holds));
+      process.stdout.write(JSON.stringify({holds, yielded}));
     `);
-    // counts one key with update(), logging when each asked and got the lock
+    // counts one key with update(), logging when it announced (if it had to)
+    // and when it got the lock
     const waiter = run(`
+      const fs = require('fs');
+      let announced = null;
+      const rename = fs.renameSync;
+      fs.renameSync = function(from, to) {
+        const r = rename.apply(this, arguments);
+        if (String(to).endsWith('.lock.waiting') && announced == null) announced = monotonic();
+        return r;
+      };
       const f = openJsonFile(${JSON.stringify(file)});
       const waits = [];
       const next = () => {
-        const asked = Date.now();
+        announced = null;
         let got = null;
-        f.update('n', (v) => { got = Date.now(); return (v || 0) + 1; }, (err) => {
+        f.update('n', (v) => { got = monotonic(); return (v || 0) + 1; }, (err) => {
           if (err) { process.stderr.write(err.message); process.exit(1); }
-          waits.push({asked, got});
+          waits.push({announced, got});
           if (waits.length < 40) return next();
           f.close();
           process.stdout.write(JSON.stringify(waits));
@@ -543,10 +560,13 @@ describe('store 04: a waiter is not starved (#150)', function() {
       };
       setTimeout(next, 100);
     `);
-    const [holds, waits] = (await Promise.all([hammer, waiter])).map((out) => JSON.parse(out));
+    const [{holds}, waits] = (await Promise.all([hammer, waiter])).map((out) => JSON.parse(out));
     assert.ok(holds.length > 0, 'the hammer never took the lock');
-    const during = waits.map((w) => holds.filter((h) => h > w.asked && h < Math.min(w.got, w.asked + LOCK_WAIT_MS)).length);
-    assert.ok(Math.max(...during) <= 10, `an update waited through ${Math.max(...during)} of the other process's holds (${JSON.stringify(during)})`);
+    // (the two contended: some updates had to announce, so the yield was tested)
+    const contended = waits.filter((w) => w.announced != null);
+    assert.ok(contended.length > 0, `no update had to announce (${holds.length} holds): nothing was tested`);
+    const after = contended.map((w) => holds.filter((h) => h >= w.announced && h < w.got).length);
+    assert.ok(Math.max(...after) <= 3, `once announced, an update waited through ${Math.max(...after)} of the other process's holds (${JSON.stringify(after)})`);
     assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).n, 40);
   });
 });
