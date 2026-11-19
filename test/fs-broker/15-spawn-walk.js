@@ -56,6 +56,31 @@ describe('fs-broker 15: the spawn walk', () => {
     assert.strictEqual(r.moreLinks, 0);
   });
 
+  // (two different files whose file indexes differ only past 2^53: as a
+  // Number they read alike, as Windows' NTFS indexes can; the walk must
+  // tell them apart, or one file's bytes go uncounted)
+  it('tells two files apart whose inode numbers differ only past Number precision', async () => {
+    base = mkdtemp('walk-ino-');
+    const data = path.join(base, 'data');
+    fs.mkdirSync(data);
+    fs.writeFileSync(path.join(data, 'x'), Buffer.alloc(100));
+    fs.writeFileSync(path.join(data, 'y'), Buffer.alloc(10));
+    const real = fs.promises.lstat;
+    const big = {x: (2n ** 60n) + 1n, y: (2n ** 60n) + 2n};
+    fs.promises.lstat = async (p, opts) => {
+      const st = await real(p, opts);
+      const which = path.basename(String(p));
+      if (path.dirname(String(p)) === data && big[which] != null) {
+        Object.defineProperty(st, 'ino', {value: opts != null && opts.bigint === true ? big[which] : Number(big[which]), configurable: true});
+      }
+      return st;
+    };
+    let r;
+    try { r = await walk.measure([[data, '/data']], {maxListed: 10}); } finally { fs.promises.lstat = real; }
+    assert.strictEqual(r.bytes, 110);
+    assert.strictEqual(r.entries, 2);
+  });
+
   it('whollyInside counts a file\'s bytes only when all its links are inside the walked tree (review I1)', async () => {
     base = mkdtemp('walk-');
     const data = path.join(base, 'data');
