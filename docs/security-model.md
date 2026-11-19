@@ -831,9 +831,13 @@ beyond any ceiling, as they are beyond the runtime itself.
 A loosening asked for in conversation could come from a prompt injected
 through a tool's result, not from the user. So `countinghouse_settings`
 never applies one on the model's word. A raised `maxOutputBytes` or
-`requestTimeout`, or a pack turned on, is either confirmed by the user in
-their client's own dialog (an MCP elicitation form) or refused with the
-`ch-local` command the user runs at a terminal. Loosening the sandbox or
+`requestTimeout`, or a module turned on (`enabled.<module>`), is either
+confirmed by the user in their client's own dialog (an MCP elicitation
+form) or refused with the `ch-local` command the user runs at a terminal.
+A module turned on is written to the settings file for every session of
+the user, with the version the dialog named, and ch-local loads it; a
+module turned off is made on request, every session told what went with
+it and the command that turns it back on. Loosening the sandbox or
 turning on automatic upgrades is terminal only.
 
 A dialog is shown only when all of these hold:

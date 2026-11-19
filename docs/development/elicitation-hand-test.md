@@ -1,8 +1,9 @@
 # The elicitation hand test
 
 A loosening asked for in conversation (a raised `maxOutputBytes` or
-`requestTimeout`, a pack turned on) can be confirmed by the user in their
-client's own dialog: an MCP elicitation, answered for this start only. MCP
+`requestTimeout`, answered for this start only; a module turned on,
+`enabled.<module>`, written for every session) can be confirmed by the user
+in their client's own dialog: an MCP elicitation. MCP
 does not promise that a person answers an elicitation, so the runtime shows
 one only to a client on its tested-client list (`lib/elicitation-clients.json`),
 at a version inside a range that passed this test, and only when ch-local
