@@ -187,8 +187,14 @@ const STEPS = {
     // (and an own package with only a nested outside "main" loads)
     const loads = [];
     for (const dir of ['main-in-nested']) { try { loads.push(require(`../../lib/${dir}`)); } catch (e) { loads.push(`threw ${e.code}`); } }
-    const mainSame = answers.every((a) => a === answers[0]) && answers[0] === "MODULE_NOT_FOUND|Cannot find module '../../lib/DIR'" && loads.join(' ') === 'nested' && rootLoad === 'root /app/index.js' && inside === 'not run'
-      ? 'same' : `main(${answers.join(' / ')} / ${loads.join(' ')} / ${rootLoad} / inside ${inside})`;
+    // (Node's own walk calls identity's Module._stat wrapper: a fresh own
+    // file required raises the count; the _stat PR)
+    const before = h.statCalls();
+    let counted;
+    try { counted = require('../../lib/stat-count.js'); } catch (e) { counted = `threw ${e.code}`; }
+    const statWalk = counted === 'counted' && h.statCalls() > before ? 'walked' : `statCalls ${before} -> ${h.statCalls()} (${counted})`;
+    const mainSame = answers.every((a) => a === answers[0]) && answers[0] === "MODULE_NOT_FOUND|Cannot find module '../../lib/DIR'" && loads.join(' ') === 'nested' && rootLoad === 'root /app/index.js' && inside === 'not run' && statWalk === 'walked'
+      ? 'same' : `main(${answers.join(' / ')} / ${loads.join(' ')} / ${rootLoad} / inside ${inside} / ${statWalk})`;
     let empty;
     try { await import(''); empty = 'found'; } catch (e) { empty = `${e.code}|${e.message}`; }
     const emptySame = /^ERR_MODULE_NOT_FOUND\|Cannot find module '' \(countinghouse module sandbox\)$/.test(empty) ? 'same' : `empty(${empty})`;

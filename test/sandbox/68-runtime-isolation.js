@@ -57,6 +57,9 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     fs.rmSync(spaced, {recursive: true, force: true});
     probe = path.join(spaced, 'isolation-probe');
     fs.cpSync(PROBE, probe, {recursive: true});
+    // (a fresh own file, for the count of Node's calls into identity's
+    // Module._stat wrapper; the _stat PR)
+    fs.writeFileSync(path.join(probe, 'lib', 'stat-count.js'), 'module.exports = "counted";\n');
     // (two directories of the module's own whose package.json "main" leads
     // outside its root: to a runtime file, and to a missing one beside it;
     // the review of the third round on #440)
