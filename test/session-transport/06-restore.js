@@ -22,7 +22,7 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     const got = [];
     const r = createRestore({importTable: (t) => got.push(t)});
     assert.deepStrictEqual(r.handle(plan()), {sessions: 1});
-    assert.deepStrictEqual(got, [{sessions: plan().sessions, declines: plan().declines, reset: [], packsDropped: [], kindsMapped: 0, rowsDropped: [], declinesDropped: 0}], 'resume included: the runtime splits it from B\'s state');
+    assert.deepStrictEqual(got, [{sessions: plan().sessions, declines: plan().declines, reset: [], packsDropped: [], kindsMapped: 0, kindsDropped: [], declinesDropped: 0}], 'resume included: the runtime splits it from B\'s state');
     assert.strictEqual(r.done(), true);
   });
 
@@ -204,50 +204,55 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     assert.strictEqual(code(() => createRestore({}).handle(st({overrides: [], locks: ['pack', 'pack'], formsLeft: 3}))), 'CONTROL_BAD_RESTORE');
   });
 
-  it('a row with an unknown kind is dropped alone, and a decline of one; every other row is taken', () => {
+  // #449's high review, round 3, 5: a row naming a kind this runtime has
+  // none of keeps everything else (its known locks, its spent forms: the
+  // session's tightenings); only the unknown kinds go, said once
+  it('a row with an unknown kind keeps the row, less those kinds; a decline of one is dropped; said once', () => {
     const got = [];
     const said = [];
     const r = createRestore({importTable: (t) => got.push(t), log: (m) => said.push(m)});
     const B = 'b'.repeat(32);
-    const unknown = {session: B, resume: 'b'.repeat(64), state: {overrides: [ov()], locks: ['locale'], formsLeft: 3}};
-    const unanswered = {session: 'c'.repeat(32), resume: 'c'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['theme']}};
+    const C = 'c'.repeat(32);
+    const unknown = {session: B, resume: 'b'.repeat(64), state: {overrides: [ov()], locks: ['locale', 'maxOutputBytes'], formsLeft: 1}};
+    const unanswered = {session: C, resume: 'c'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['theme', 'module']}};
     const good = plan().sessions[0];
     const declines = [{kind: 'locale', at: 1}, {kind: 'enabled', at: 2}];
-    assert.deepStrictEqual(r.handle(plan({sessions: [unknown, good, unanswered], declines, reset: [B, ID]})), {sessions: 1});
-    assert.deepStrictEqual(got[0].sessions, [good]);
-    assert.deepStrictEqual(got[0].rowsDropped, [{session: B, kinds: ['locale']}, {session: 'c'.repeat(32), kinds: ['theme']}]);
+    assert.deepStrictEqual(r.handle(plan({sessions: [unknown, good, unanswered], declines, reset: [B, ID]})), {sessions: 3});
+    assert.deepStrictEqual(got[0].sessions.map((x) => x.state), [
+      {overrides: [ov()], locks: ['maxOutputBytes'], formsLeft: 1},
+      good.state,
+      {overrides: [], locks: [], formsLeft: 2, unanswered: ['module']}]);
+    assert.deepStrictEqual(got[0].kindsDropped, [{session: B, kinds: ['locale']}, {session: C, kinds: ['theme']}]);
     assert.deepStrictEqual(got[0].declines, [{kind: 'enabled', at: 2}]);
     assert.strictEqual(got[0].declinesDropped, 1);
-    assert.deepStrictEqual(got[0].reset, [ID], 'reset names only the rows taken');
+    assert.deepStrictEqual(got[0].reset, [B, ID], 'every row is taken, so reset as sent');
     assert.strictEqual(said.length, 1, 'said once');
     assert.ok(/locale/.test(said[0]) && /theme/.test(said[0]), said[0]);
-    // a dropped row still counts for the table's own checks: its id twice, or
-    // its resume hash shared, refuses the restore
-    assert.strictEqual(code(() => createRestore({}).handle(plan({sessions: [unknown, Object.assign({}, good, {session: B})], reset: []}))), 'CONTROL_BAD_RESTORE');
-    assert.strictEqual(code(() => createRestore({}).handle(plan({sessions: [unknown, Object.assign({}, good, {resume: 'b'.repeat(64)})], reset: []}))), 'CONTROL_BAD_RESTORE');
-    // a dropped row's stale pack override is no session's to be told of
+    // a stale pack override in such a row: dropped and told, the row kept
     const both = {session: B, resume: 'b'.repeat(64), state: {overrides: [ov({name: 'pack.weather', value: false, version: '1.0.0'})], locks: ['locale'], formsLeft: 3}};
     const seen = [];
     createRestore({importTable: (x) => seen.push(x)}).handle(plan({sessions: [both, good], reset: []}));
-    assert.deepStrictEqual(seen[0].packsDropped, []);
-    assert.deepStrictEqual(seen[0].rowsDropped, [{session: B, kinds: ['locale']}]);
-    // and any other problem in that row still refuses the whole restore
+    assert.deepStrictEqual(seen[0].packsDropped, [{session: B, names: ['weather']}]);
+    assert.deepStrictEqual(seen[0].sessions[0].state, {overrides: [], locks: [], formsLeft: 3});
+    // any other problem in that row still refuses the whole restore, as does
+    // an unknown kind twice
     assert.strictEqual(code(() => createRestore({}).handle(st({overrides: [], locks: ['locale'], formsLeft: 4}))), 'CONTROL_BAD_RESTORE');
+    assert.strictEqual(code(() => createRestore({}).handle(st({overrides: [], locks: ['locale', 'locale'], formsLeft: 3}))), 'CONTROL_BAD_RESTORE');
   });
 
-  it('the shared vectors\' mapped and rowDropped rows', () => {
+  it('the shared vectors\' mapped and kindsDropped rows', () => {
     const V = require('../../docs/superpowers/specs/shared-runtime-wire/vectors.json').restoreRows;
-    assert.ok(V.mapped.length >= 3 && V.rowDropped.length >= 2);
+    assert.ok(V.mapped.length >= 3 && V.kindsDropped.length >= 2);
     for (const c of V.mapped) {
       const seen = [];
       createRestore({importTable: (t) => seen.push(t)}).handle(plan({sessions: [c.row], reset: []}));
       assert.deepStrictEqual(seen[0].sessions[0].state, c.taken, c.why);
     }
-    for (const c of V.rowDropped) {
+    for (const c of V.kindsDropped) {
       const seen = [];
       createRestore({importTable: (t) => seen.push(t)}).handle(plan({sessions: [c.row], reset: []}));
-      assert.deepStrictEqual(seen[0].sessions, [], c.why);
-      assert.deepStrictEqual(seen[0].rowsDropped, [{session: c.row.session, kinds: c.kinds}], c.why);
+      assert.deepStrictEqual(seen[0].sessions[0].state, c.taken, c.why);
+      assert.deepStrictEqual(seen[0].kindsDropped, [{session: c.row.session, kinds: c.kinds}], c.why);
     }
   });
 
