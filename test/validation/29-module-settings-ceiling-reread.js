@@ -443,6 +443,19 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
 
     const rr = (mm, opts = {}) => reread.reread(mm, {type: 'reread', what: 'module-settings'}, Object.assign({ceiling: () => ({state: 'none'})}, opts));
 
+    // #438's high review, 1: a module going on or off is told to no session
+    // of a shared runtime; under --stdio its one client is told as before
+    it('a module going on or off: under --stdio its change is still said', async () => {
+      const visibility = require('../../lib/module-visibility');
+      const mm = manager();
+      visibility.hide(['w']);
+      try {
+        write({'module.w.units': 'metric', 'module.r.region': 'eu'});
+        await rr(mm);
+        assert.match(notices.take('w').join('\n'), /w's settings changed: units/);
+      } finally { visibility.resetForTests(); }
+    });
+
     it('a refused value is said once (recorded as not applied), and blocks no later change; one removed and written back is new again', async () => {
       const mm = manager();
       write({'module.w.units': 'kelvin', 'module.w.n': 7, 'module.r.region': 'eu'});

@@ -1,10 +1,12 @@
 'use strict';
-// Shared runtime B3, Task 3: tools/list and tools/call read the session.
-// A pack a session doesn't list is not in its tools/list, and a tools/call
-// of one of its tools is answered exactly as a name that was never
-// registered ("unknown tool"), byte for byte. Over a fake interface (as
-// roles 02), with real shared sessions (lib/sessions.js attached to a
-// stand-in registry) and lib/session-packs.js configured with stand-ins.
+// Shared runtime B3, Task 3, as M5a leaves it (module-level configuration,
+// #413 rev 3, sections 5.4 and 5.5): no session has a view of its own. A
+// module going on or off (lib/module-visibility.js) is in no session's
+// tools/list, and a tools/call of one of its tools is answered exactly as a
+// name that was never registered ("unknown tool"), byte for byte, for every
+// session alike. Over a fake interface (as roles 02), with real shared
+// sessions (lib/sessions.js attached to a stand-in registry) and the
+// visibility set configured with a stand-in device map.
 // Redis is pointed at port 1 (nothing can listen there, a private Redis
 // included) before the registry is required.
 const assert = require('assert');
@@ -15,16 +17,16 @@ require('../../lib/logger').createLogger();
 const toolRegistry = require('../../lib/mcp/tool-registry');
 const gateway = require('../../lib/mcp/gateway');
 const sessions = require('../../lib/sessions');
-const sessionPacks = require('../../lib/session-packs');
+const visibility = require('../../lib/module-visibility');
 
-// (each module declares one prompt with no arguments: prompts/list and prompts/get read the session too)
+// (each module declares one prompt with no arguments: prompts/list and prompts/get hide a hidden module's too)
 // (and an action named *_res declares a resource, M7: one static, one a template, so resources/list and
-// resources/templates/list read the session too)
+// resources/templates/list hide a hidden module's too)
 const spec = (friendlyName, actions) => ({device: {friendlyName, serviceList: {'urn:x:serviceID:svc': {actionList: actions.map((a) => Object.assign({name: a, description: `${a} it`},
   /_res$/.test(a) ? {resource: {uriTemplate: 'all', name: `${friendlyName}-all`}} : {}, /_tpl$/.test(a) ? {resource: {uriTemplate: 'logs/{id}', name: `${friendlyName}-logs`}} : {}))}},
   promptList: [{name: `${friendlyName.replace(/-/g, '_')}_brief`, description: 'Briefly.', messages: [{role: 'user', text: 'Be brief.'}]}]}});
 
-// a pack `ci` (its scenario ch-pack-x and its unlisted part ch-step-a), a global pack `docs`, and a plain module no pack owns
+// a scenario ch-pack-x and its unlisted part ch-step-a (`withCi`), a scenario ch-pack-docs, and a plain module
 function fakeInterface({withCi = true} = {}) {
   const devices = {
     d2: {spec: spec('ch-step-a', ['run']), packageInfo: {name: 'ch-step-a', countinghouse: {role: 'part'}}, hostModuleName: 'ch-step-a'},
@@ -39,12 +41,10 @@ function fakeInterface({withCi = true} = {}) {
   }};
 }
 
-describe('sessions 15: tools/list and tools/call read the session (shared runtime B3, Task 3)', () => {
+
+describe('sessions 15: a module going on or off is in no session\'s lists (B3 Task 3, as M5a leaves it)', () => {
   const A = 'a'.repeat(32);
   const B = 'b'.repeat(32);
-  let overrides;
-  let hear;
-  let allowed;       // the ceiling's word on an "on" (the settings store's packOnAllowed), and its key
   let ci;
   let savedDebug;
   const openSession = (reg, id) => {
@@ -58,129 +58,113 @@ describe('sessions 15: tools/list and tools/call read the session (shared runtim
     reg.emit('session', s);
     return s;
   };
-  const override = (id, pack, value) => {
-    if (!overrides.has(id)) overrides.set(id, new Map());
-    if (value === undefined) overrides.get(id).delete(pack); else overrides.get(id).set(pack, value);
-    hear(id);
-  };
   const opts = (id) => ({session: {id, client: {status: 'ok', conditions: 'yes', repo: null}}});
   const request = (ciNow, id, method, params) => new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 7, method, params}, ciNow, null, (err, r) => resolve(r), opts(id)));
   const names = (r) => r.result.tools.map((t) => t.name);
+  const pnames = (r) => r.result.prompts.map((p) => p.name);
+  // the prompt of ch-pack-x, as listed while nothing is hidden
+  const ciPrompt = async () => pnames(await request(ci, A, 'prompts/list', {})).find((n) => /ch_pack_x_brief/.test(n));
 
   beforeEach(() => {
     savedDebug = options.debug;
-    options.debug = true;   // every device granted: the session is what this file looks at
+    options.debug = true;   // every device granted: the visibility set is what this file looks at
     sessions.resetForTests();
-    sessionPacks.resetForTests();
+    visibility.resetForTests();
     const reg = new EventEmitter();
     sessions.attach(reg);
     openSession(reg, A);
     openSession(reg, B);
-    overrides = new Map();
     ci = fakeInterface();
-    sessionPacks.configure({
-      records: () => [{pack: 'ci', modules: ['ch-pack-x', 'ch-step-a']}, {pack: 'docs', modules: ['ch-pack-docs']}],
-      moduleOf: (deviceID) => { const d = ci.deviceManager.deviceMap[deviceID]; return d != null ? d.hostModuleName : null; },
-      overridesOf: (id) => new Map(overrides.get(id) || []),
-      onOverrideChange: (fn) => { hear = fn; },
-      openSessions: () => [A, B],
-      shared: () => sessions.shared(),
-      allowsOn: () => allowed,
-      ceilingKey: () => String(allowed)
-    });
-    allowed = true;
-    sessionPacks.setGlobal('docs', true);
-    override(A, 'ci', true);
+    visibility.configure({moduleOf: (deviceID) => { const d = ci.deviceManager.deviceMap[deviceID]; return d != null ? d.hostModuleName : null; }, isGone: () => false});
   });
-  afterEach(() => { options.debug = savedDebug; sessions.resetForTests(); sessionPacks.resetForTests(); });
+  afterEach(() => { options.debug = savedDebug; sessions.resetForTests(); visibility.resetForTests(); });
 
-  it('A\'s tools/list has the pack\'s tool and B\'s doesn\'t; B\'s is exactly its list with the pack never loaded', async () => {
+  // what a pack-form load of ch-pack-x hides until it completes: the scenario and the part it newly brings in
+  const hideCi = () => visibility.hide(['ch-pack-x', 'ch-step-a']);
+
+  it('every session lists a loaded module: A\'s and B\'s tools/list are the same', async () => {
     const a = await request(ci, A, 'tools/list', {});
     const b = await request(ci, B, 'tools/list', {});
     assert.ok(names(a).includes('ci_failure_triage'), JSON.stringify(names(a)));
-    assert.ok(!names(b).includes('ci_failure_triage'));
-    const never = await request(fakeInterface({withCi: false}), B, 'tools/list', {});
-    assert.strictEqual(JSON.stringify(b), JSON.stringify(never));
+    assert.strictEqual(JSON.stringify(a), JSON.stringify(b));
   });
 
-  it('B\'s tools/call of the pack\'s tool is answered as one with the pack unloaded, byte for byte: unknown tool', async () => {
-    const hidden = await request(ci, B, 'tools/call', {name: 'ci_failure_triage', arguments: {}});
-    const gone = await request(fakeInterface({withCi: false}), B, 'tools/call', {name: 'ci_failure_triage', arguments: {}});
-    assert.match(hidden.error.message, /unknown tool: ci_failure_triage/);
-    assert.strictEqual(JSON.stringify(hidden), JSON.stringify(gone));
+  it('a hidden module is in neither session\'s tools/list; each is exactly its list with the module never loaded', async () => {
+    hideCi();
+    const never = JSON.stringify(await request(fakeInterface({withCi: false}), B, 'tools/list', {}));
+    for (const id of [A, B]) {
+      const r = await request(ci, id, 'tools/list', {});
+      assert.ok(!names(r).includes('ci_failure_triage'), JSON.stringify(names(r)));
+      assert.strictEqual(JSON.stringify(r), never);
+    }
+    visibility.show(['ch-pack-x', 'ch-step-a']);
+    assert.ok(names(await request(ci, B, 'tools/list', {})).includes('ci_failure_triage'), 'listed again once shown');
   });
 
-  it('B calling the pack\'s unlisted part by name gets unknown tool; A gets MODULE_NOT_LISTED as before', async () => {
-    const b = await request(ci, B, 'tools/call', {name: 'ch_step_a_svc_run', arguments: {}});
-    assert.match(b.error.message, /unknown tool: ch_step_a_svc_run/);
-    const a = await request(ci, A, 'tools/call', {name: 'ch_step_a_svc_run', arguments: {}});
-    assert.strictEqual(a.result._meta['countinghouse/code'], 'MODULE_NOT_LISTED');
+  it('a tools/call of a hidden module\'s tool is answered as one with the module unloaded, byte for byte: unknown tool', async () => {
+    hideCi();
+    for (const id of [A, B]) {
+      const hidden = await request(ci, id, 'tools/call', {name: 'ci_failure_triage', arguments: {}});
+      const gone = await request(fakeInterface({withCi: false}), id, 'tools/call', {name: 'ci_failure_triage', arguments: {}});
+      assert.match(hidden.error.message, /unknown tool: ci_failure_triage/);
+      assert.strictEqual(JSON.stringify(hidden), JSON.stringify(gone));
+    }
   });
 
-  it('B\'s legacy task-augmented call of the tool is unknown too, and makes no task', async () => {
+  it('calling a hidden unlisted part by name gets unknown tool; once shown, MODULE_NOT_LISTED as before', async () => {
+    hideCi();
+    const hidden = await request(ci, B, 'tools/call', {name: 'ch_step_a_svc_run', arguments: {}});
+    assert.match(hidden.error.message, /unknown tool: ch_step_a_svc_run/);
+    visibility.show(['ch-pack-x', 'ch-step-a']);
+    const shown = await request(ci, B, 'tools/call', {name: 'ch_step_a_svc_run', arguments: {}});
+    assert.strictEqual(shown.result._meta['countinghouse/code'], 'MODULE_NOT_LISTED');
+  });
+
+  it('a legacy task-augmented call of a hidden module\'s tool is unknown too, and makes no task', async () => {
+    hideCi();
     const b = await request(ci, B, 'tools/call', {name: 'ci_failure_triage', arguments: {}, task: {}});
     assert.match(b.error.message, /unknown tool: ci_failure_triage/);
   });
 
-  it('a global pack B turned off: gone from B\'s list and unknown to B\'s call; A\'s unchanged', async () => {
-    override(B, 'docs', false);
-    assert.ok(!names(await request(ci, B, 'tools/list', {})).includes('docs_search'));
-    assert.match((await request(ci, B, 'tools/call', {name: 'docs_search', arguments: {}})).error.message, /unknown tool: docs_search/);
-    assert.ok(names(await request(ci, A, 'tools/list', {})).includes('docs_search'));
+  // the reviewer's ruling (2026-11-16): a module's prompt surface is hidden as its tools are
+  it('a hidden module\'s prompts are in no session\'s prompts/list; each is exactly its list with the module never loaded', async () => {
+    assert.ok(await ciPrompt(), 'listed while nothing is hidden');
+    hideCi();
+    const never = JSON.stringify(await request(fakeInterface({withCi: false}), B, 'prompts/list', {}));
+    for (const id of [A, B]) {
+      const r = await request(ci, id, 'prompts/list', {});
+      assert.ok(!pnames(r).some((n) => /ch_pack_x_brief|ch_step_a_brief/.test(n)), JSON.stringify(pnames(r)));
+      assert.strictEqual(JSON.stringify(r), never);
+    }
   });
 
-  // the reviewer's ruling (2026-11-16): a pack's prompt surface is hidden as its tools are
-  it('A\'s prompts/list has the pack\'s prompts and B\'s doesn\'t; B\'s is exactly its list with the pack never loaded', async () => {
-    const pnames = (r) => r.result.prompts.map((p) => p.name);
-    const a = await request(ci, A, 'prompts/list', {});
-    const b = await request(ci, B, 'prompts/list', {});
-    assert.ok(pnames(a).some((n) => /ch_pack_x_brief/.test(n)), JSON.stringify(pnames(a)));
-    assert.ok(!pnames(b).some((n) => /ch_pack_x_brief/.test(n)), JSON.stringify(pnames(b)));
-    assert.ok(!pnames(b).some((n) => /ch_step_a_brief/.test(n)), 'nor its part\'s');
-    const never = await request(fakeInterface({withCi: false}), B, 'prompts/list', {});
-    assert.strictEqual(JSON.stringify(b), JSON.stringify(never));
-  });
-
-  it('B\'s prompts/get of the pack\'s prompt is answered as one with the pack unloaded: unknown prompt', async () => {
-    const listed = (await request(ci, A, 'prompts/list', {})).result.prompts.map((p) => p.name).find((n) => /ch_pack_x_brief/.test(n));
+  it('a prompts/get of a hidden module\'s prompt is answered as one with the module unloaded: unknown prompt', async () => {
+    const listed = await ciPrompt();
+    // found while shown (past the lookup; the fake interface has no validators to check its arguments)
+    assert.doesNotMatch(JSON.stringify(await request(ci, A, 'prompts/get', {name: listed})), /unknown prompt/);
+    hideCi();
     const hidden = await request(ci, B, 'prompts/get', {name: listed});
     const gone = await request(fakeInterface({withCi: false}), B, 'prompts/get', {name: listed});
     assert.match(JSON.stringify(hidden), /unknown prompt/);
     assert.strictEqual(JSON.stringify(hidden), JSON.stringify(gone));
-    // A's is found (past the lookup; the fake interface has no validators to check its arguments)
-    const aGets = await request(ci, A, 'prompts/get', {name: listed});
-    assert.doesNotMatch(JSON.stringify(aGets), /unknown prompt/);
   });
 
-  // completion/complete (M11, #332) for a pack's prompt: the same unknown answer (the reviewer's ruling)
-  it('B\'s completion/complete for the pack\'s prompt is answered as one with the pack unloaded: unknown prompt', async () => {
-    const listed = (await request(ci, A, 'prompts/list', {})).result.prompts.map((p) => p.name).find((n) => /ch_pack_x_brief/.test(n));
+  // completion/complete (M11, #332) for a hidden module's prompt: the same unknown answer (the reviewer's ruling)
+  it('a completion/complete for a hidden module\'s prompt is answered as one with the module unloaded: unknown prompt', async () => {
+    const listed = await ciPrompt();
     const params = {ref: {type: 'ref/prompt', name: listed}, argument: {name: 'x', value: ''}};
+    assert.doesNotMatch(JSON.stringify(await request(ci, A, 'completion/complete', params)), /unknown prompt/, 'found while shown');
+    hideCi();
     const hidden = await request(ci, B, 'completion/complete', params);
     const gone = await request(fakeInterface({withCi: false}), B, 'completion/complete', params);
     assert.match(JSON.stringify(hidden), /unknown prompt/);
     assert.strictEqual(JSON.stringify(hidden), JSON.stringify(gone));
-    assert.doesNotMatch(JSON.stringify(await request(ci, A, 'completion/complete', params)), /unknown prompt/, 'A\'s is found');
-  });
-
-  // the reviewer's ruling (4) on #340: while the ceiling can't be trusted, an "on" is off on every surface,
-  // with no event: the view is asked again when the ceiling's word changes
-  it('an "on" the ceiling doesn\'t allow now is off on every surface for that session, and back once it does', async () => {
-    const listed = (await request(ci, A, 'prompts/list', {})).result.prompts.map((p) => p.name).find((n) => /ch_pack_x_brief/.test(n));
-    assert.ok(names(await request(ci, A, 'tools/list', {})).includes('ci_failure_triage'));
-    allowed = false;
-    assert.ok(!names(await request(ci, A, 'tools/list', {})).includes('ci_failure_triage'));
-    assert.match((await request(ci, A, 'tools/call', {name: 'ci_failure_triage', arguments: {}})).error.message, /unknown tool: ci_failure_triage/);
-    assert.match(JSON.stringify(await request(ci, A, 'prompts/get', {name: listed})), /unknown prompt/);
-    assert.match(JSON.stringify(await request(ci, A, 'completion/complete', {ref: {type: 'ref/prompt', name: listed}, argument: {name: 'x', value: ''}})), /unknown prompt/);
-    allowed = true;
-    assert.ok(names(await request(ci, A, 'tools/list', {})).includes('ci_failure_triage'));
   });
 
   // the reviewer's ruling (6) on #340: in shared mode, with no live session, every surface answers as tools/call does
   it('in shared mode a request whose session is not live gets no surface: empty lists, unknown prompt, MODULE_NOT_LISTED', async () => {
     const C = 'c'.repeat(32);   // never opened (as one ended)
-    const listed = (await request(ci, A, 'prompts/list', {})).result.prompts.map((p) => p.name).find((n) => /ch_pack_docs_brief/.test(n));
+    const listed = pnames(await request(ci, A, 'prompts/list', {})).find((n) => /ch_pack_docs_brief/.test(n));
     assert.deepStrictEqual((await request(ci, C, 'tools/list', {})).result.tools, []);
     assert.deepStrictEqual((await request(ci, C, 'prompts/list', {})).result.prompts, []);
     assert.match(JSON.stringify(await request(ci, C, 'prompts/get', {name: listed})), /unknown prompt/);
@@ -193,14 +177,15 @@ describe('sessions 15: tools/list and tools/call read the session (shared runtim
     const plain = (method) => new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 7, method, params: {}}, ci, null, (err, r) => resolve(r)));
     const tools = names(await plain('tools/list'));
     assert.ok(['ci_failure_triage', 'docs_search', 'plain_svc_go'].every((n) => tools.includes(n)), JSON.stringify(tools));
-    const prompts = (await plain('prompts/list')).result.prompts.map((p) => p.name);
+    const prompts = pnames(await plain('prompts/list'));
     assert.ok(prompts.some((n) => /ch_pack_x_brief/.test(n)), JSON.stringify(prompts));
   });
 
-  // the reviewer's #340 review, 6: a page's cursor anchored at a tool B doesn't list is B's invalid cursor,
+  // the reviewer's #340 review, 6: a page's cursor anchored at a hidden tool is an invalid cursor,
   // byte for byte as one anchored at a name that never existed
-  it('a cursor from A\'s tools/list replayed in B\'s is -32602, identical to a cursor at a name never registered', async () => {
+  it('a cursor anchored at a hidden module\'s tool or prompt is -32602, identical to a cursor at a name never registered', async () => {
     const {encodeCursor} = require('../../lib/mcp/pages');
+    hideCi();
     const hiddenAt = await request(ci, B, 'tools/list', {cursor: encodeCursor('tools', 'ci_failure_triage')});
     const neverAt = await request(ci, B, 'tools/list', {cursor: encodeCursor('tools', 'no_such_tool_ever')});
     assert.strictEqual(hiddenAt.error && hiddenAt.error.code, -32602, JSON.stringify(hiddenAt));
@@ -211,23 +196,25 @@ describe('sessions 15: tools/list and tools/call read the session (shared runtim
     assert.strictEqual(JSON.stringify(promptHidden), JSON.stringify(promptNever));
   });
 
-  // M7's resources are on master now: a pack's resources are hidden as its tools and prompts are (#340's TODO)
-  it('A\'s resources/list and templates/list have the pack\'s and B\'s don\'t; B\'s equal its lists with the pack never loaded', async () => {
+  // M7's resources: a hidden module's resources are hidden as its tools and prompts are (#340's TODO)
+  it('a hidden module\'s resources are in no session\'s resources/list or templates/list; each equals its lists with the module never loaded', async () => {
     const uris = (r) => r.result.resources.map((x) => x.uri);
     const tpls = (r) => r.result.resourceTemplates.map((x) => x.uriTemplate);
-    const aList = await request(ci, A, 'resources/list', {});
-    const bList = await request(ci, B, 'resources/list', {});
-    assert.ok(uris(aList).some((u) => /ch_pack_x/.test(u)), JSON.stringify(aList));
-    assert.ok(!uris(bList).some((u) => /ch_pack_x/.test(u)), JSON.stringify(bList));
-    assert.strictEqual(JSON.stringify(bList), JSON.stringify(await request(fakeInterface({withCi: false}), B, 'resources/list', {})));
-    const aT = await request(ci, A, 'resources/templates/list', {});
-    const bT = await request(ci, B, 'resources/templates/list', {});
-    assert.ok(tpls(aT).some((u) => /ch_pack_x/.test(u)), JSON.stringify(aT));
-    assert.strictEqual(JSON.stringify(bT), JSON.stringify(await request(fakeInterface({withCi: false}), B, 'resources/templates/list', {})));
-    // B's read of the pack's resource is the answer a URI never served gets
-    const uri = uris(aList).find((u) => /ch_pack_x/.test(u));
+    const shown = await request(ci, A, 'resources/list', {});
+    assert.ok(uris(shown).some((u) => /ch_pack_x/.test(u)), JSON.stringify(shown));
+    assert.ok(tpls(await request(ci, A, 'resources/templates/list', {})).some((u) => /ch_pack_x/.test(u)));
+    const uri = uris(shown).find((u) => /ch_pack_x/.test(u));
+    hideCi();
+    const never = fakeInterface({withCi: false});
+    for (const id of [A, B]) {
+      const list = await request(ci, id, 'resources/list', {});
+      assert.ok(!uris(list).some((u) => /ch_pack_x/.test(u)), JSON.stringify(list));
+      assert.strictEqual(JSON.stringify(list), JSON.stringify(await request(never, id, 'resources/list', {})));
+      assert.strictEqual(JSON.stringify(await request(ci, id, 'resources/templates/list', {})), JSON.stringify(await request(never, id, 'resources/templates/list', {})));
+    }
+    // a read of the hidden module's resource is the answer a URI never served gets
     const hidden = await request(ci, B, 'resources/read', {uri});
-    const gone = await request(fakeInterface({withCi: false}), B, 'resources/read', {uri});
+    const gone = await request(never, B, 'resources/read', {uri});
     assert.strictEqual(JSON.stringify(hidden), JSON.stringify(gone));
     assert.ok(hidden.error != null, JSON.stringify(hidden));
   });
@@ -240,12 +227,15 @@ describe('sessions 15: tools/list and tools/call read the session (shared runtim
     assert.ok((await request(ci, C, 'resources/read', {uri})).error != null);
   });
 
-  it('the global tool table is untouched: the same frozen object, and the filter hands it back while no session has a pack override', () => {
+  it('the global tool table is untouched: the same frozen object, and the filter hands it back while nothing is hidden', () => {
     const before = toolRegistry.buildToolTargets(ci);
-    assert.strictEqual(toolRegistry.filterTargetsBySession(before, B) === before, false, 'B\'s view is a copy');
-    assert.strictEqual(toolRegistry.buildToolTargets(ci), before);
-    override(A, 'ci', undefined);
-    sessionPacks.setGlobal('ci', true);
     assert.strictEqual(toolRegistry.filterTargetsBySession(before, B), before, 'none(): the table itself');
+    hideCi();
+    const view = toolRegistry.filterTargetsBySession(before, B);
+    assert.strictEqual(view === before, false, 'a copy while a module is hidden');
+    assert.ok(!Object.keys(view).includes('ci_failure_triage'));
+    assert.strictEqual(toolRegistry.buildToolTargets(ci), before);
+    visibility.show(['ch-pack-x', 'ch-step-a']);
+    assert.strictEqual(toolRegistry.filterTargetsBySession(before, B), before, 'none() again: the table itself');
   });
 });

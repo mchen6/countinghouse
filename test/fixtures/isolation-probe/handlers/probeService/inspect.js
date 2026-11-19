@@ -279,7 +279,7 @@ const STEPS = {
   // .arguments, a thenable's, each CallSite's getFunction()), and a
   // Module.wrap set first: none yields a loader (a require, Module._load,
   // or anything with a resolve and a cache)
-  window: async () => {
+  window: async (input) => {
     const found = new Set();
     const loaderLike = (f) => typeof(f) === 'function' && (f === M._load || f === M.prototype.require
       || (typeof(f.resolve) === 'function' && f.cache != null) || f.name === 'require' || f.name === '_load');
@@ -298,6 +298,7 @@ const STEPS = {
       } finally { Error.prepareStackTrace = prepare; }
     };
     const leaked = [];
+    let skipped = false;
     const wrapWas = M.wrap;
     try { M.wrap = (src) => `globalThis.__isolationLeak && globalThis.__isolationLeak(require, module);${wrapWas(src)}`; } catch (e) { /* refused */ }
     globalThis.__isolationLeak = (req, mod) => { if (mod != null && typeof(mod.filename) === 'string' && !insideRoot(mod.filename)) leaked.push(mod.filename); };
@@ -308,14 +309,18 @@ const STEPS = {
     try {
       await new Promise((resolve) => CHUtil.recordUsage('isolation-probe', 'window', 0, () => resolve()));
       await new Promise((resolve) => { try { CHUtil.request({url: 'http://isolation.example.invalid/', timeout: 500}, () => resolve()); } catch (e) { resolve(); } });
-      await new Promise((resolve) => { try { CHUtil.redis.get('isolation-window', () => resolve()); } catch (e) { resolve(); } });
+      // (with no store, as on the Windows subset's runner, the test says so
+      // and the store's part is skipped, saying so: a command that never
+      // answers would hold the step, and the module's wrap with it)
+      if (input.noStore === true) skipped = true;
+      else await new Promise((resolve) => { try { CHUtil.redis.get('isolation-window', () => resolve()); } catch (e) { resolve(); } });
     } finally {
       for (const key of keys) delete Object.prototype[key];
       try { M.wrap = wrapWas; } catch (e) { /* refused */ }
       delete globalThis.__isolationLeak;
     }
     const loaders = [...found].filter((x) => x.startsWith('LOADER'));
-    return `${loaders.length === 0 ? 'no loader' : loaders.join(' ')}, ${leaked.length === 0 ? 'nothing compiled' : `compiled: ${leaked.length}`}`;
+    return `${loaders.length === 0 ? 'no loader' : loaders.join(' ')}, ${leaked.length === 0 ? 'nothing compiled' : `compiled: ${leaked.length}`}${skipped ? ' (store part skipped: no store)' : ''}`;
   },
   // BroadcastChannel: gone under enforce, by either route; under audit it
   // stays (a message crosses to the peer module's worker) and is reported
@@ -420,6 +425,6 @@ module.exports = async (input) => {
   const step = STEPS[input.step];
   if (step == null) return {output: {step: input.step, detail: 'no such step'}};
   let detail;
-  try { detail = String(await step()); } catch (e) { detail = `threw: ${e.code || e.message}`; }
+  try { detail = String(await step(input)); } catch (e) { detail = `threw: ${e.code || e.message}`; }
   return {output: {step: input.step, detail}};
 };

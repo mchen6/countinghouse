@@ -175,7 +175,9 @@ describe('fs-broker 12: virtual identity', function() {
         const audit = toolOutput(await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what, target: t.file}));
         if (where !== 'home') return assert.deepStrictEqual(audit, {outcome: 'refused', code: 'EACCES'});
         assert.strictEqual(audit.outcome, 'read', JSON.stringify(audit));
-        const reported = () => server.output.split('\n').some((l) => l.includes('module sandbox: route-probe file outside') && l.includes(t.file));
+        // (the log is JSON: a Windows path's backslashes are escaped there)
+        const shown = JSON.stringify(t.file).slice(1, -1);
+        const reported = () => server.output.split('\n').some((l) => l.includes('module sandbox: route-probe file outside') && (l.includes(t.file) || l.includes(shown)));
         for (let i = 0; i < 40 && !reported(); i++) await new Promise((r) => setTimeout(r, 50));
         assert.ok(reported(), server.output.slice(-3000));
       } finally {

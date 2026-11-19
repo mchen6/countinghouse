@@ -128,15 +128,23 @@ if (options.maxSessionWorkersInvalid != null) {
     JSON.stringify(String(options.maxSessionWorkersInvalid.value)) + ')');
   process.exit(2);
 }
+// In-place loading (--controlChannel, --modulesRoot, --packsRoot) isn't
+// available under --hardened in this release: the relaunched child would
+// not reach the control channel, and its roots are not granted
+// (lib/hardened-launch.js grants --modulePath and --moduleDataPath), so it
+// would fail at its first read. Refused at the start, every in-place flag
+// given named, a bare or empty one included.
+if (options.hardened === true && Array.isArray(options.inPlaceFlagsGiven) && options.inPlaceFlagsGiven.length > 0) {
+  console.error('--' + options.inPlaceFlagsGiven.join(', --') + ': in-place loading isn\'t available under --hardened in this release');
+  process.exit(2);
+}
 // Packs in place (part 2): the control channel exists only between ch-local
 // start and the runtime it spawned, in the single-identity profile, over an
-// IPC fd. --hardened relaunches this process as a child, which the channel
-// would not reach: refused together, for now.
+// IPC fd.
 if (options.controlChannel != null) {
   var controlRefusal = options.controlChannel !== 'ipc' ? 'takes ipc'
     : options.singleIdentity !== true ? 'is only for the single-identity profile (ch-local start)'
-      : typeof(process.send) !== 'function' ? 'needs an IPC channel from the process that started this one'
-        : options.hardened === true ? 'cannot be used with --hardened yet' : null;
+      : typeof(process.send) !== 'function' ? 'needs an IPC channel from the process that started this one' : null;
   if (controlRefusal != null) {
     console.error('--controlChannel ' + controlRefusal + ' (got ' + JSON.stringify(String(options.controlChannel)) + ')');
     process.exit(2);

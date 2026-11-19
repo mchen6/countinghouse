@@ -70,7 +70,11 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
   });
 
   // log: the order things happen in; failVersion: a version whose spawn fails
-  function runtime({failVersion = null, staleDuringDrain = null, failName = '@t/ch-pack-s'} = {}) {
+  // unloadDuring: {name, when: 'drain' | 'spawn' | 'registration' | 'after'
+  // (once its switch is done) | 'unload' (a restarting one's unload)}: an
+  // operator unload (POST /unload-module: a generation of its own, the module
+  // off the map) in that window of the module's switch
+  function runtime({failVersion = null, staleDuringDrain = null, failName = '@t/ch-pack-s', unloadDuring = null} = {}) {
     const log = [];
     const mm = Object.assign(Object.create(ModuleManager.prototype), {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
       supervisor: null, generations: {}, packsInPlace: null});
@@ -79,18 +83,51 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       const wm = Object.create(WorkerMessage.prototype);
       return Object.assign(wm, {hostModuleName: name, packageInfo: {name, version}, deviceList: {[`d-${name}`]: {}}, msgQueue: {}, modulePath: p});
     };
-    const spawn = (p, name, version, cb) => {
+    const operatorUnload = (name) => { log.push(`operator unload ${name}`); mm.nextGeneration(name); delete mm.modules[name]; };
+    const unloadsIn = (name, when) => unloadDuring != null && unloadDuring.name === name && unloadDuring.when === when && !log.includes(`operator unload ${name}`);
+    // switching: a reload's switch spawning it (loadModuleByWorker), the only
+    // spawn an unloadDuring 'spawn' or 'registration' acts in
+    // (loadModuleFromPath's fifth argument is its options: only the stub's
+    // own loadModuleByWorker passes true)
+    const spawn = (p, name, version, cb, how) => {
+      const switching = how === true;
+      // the unload-then-load branch's load (loadOne: options, not true)
+      const branchLoad = how != null && how !== true && how.generation != null;
       if (version === failVersion && name === failName) return setImmediate(() => cb(Object.assign(new Error('no spawn'), {code: 'LOAD_MODULE_FAIL'})));
       log.push(`held ${name}: ${mm.isHeld(name)}`);
-      mm.modules[name] = instance(name, version, p);
+      // (the branch's load: the operator's unload lands before this load puts
+      // the module in the map, so it finds nothing to unload)
+      if (branchLoad && unloadsIn(name, 'load')) operatorUnload(name);
+      const wm = instance(name, version, p);
+      mm.modules[name] = wm;
       mm.unitLoaded(name);
-      setImmediate(() => cb(null));
-      // its registration, a little later
-      setTimeout(() => { log.push(`registered ${name}@${version}`); mm.unitRegistration(name); }, 30);
+      if (switching && unloadsIn(name, 'spawn')) operatorUnload(name);
+      setImmediate(() => cb(null, wm));
+      // its registration, a little later (its devices from then on)
+      const late = switching && unloadDuring != null && unloadDuring.name === name && unloadDuring.when === 'registration';
+      if (late) wm.deviceList = {};
+      setTimeout(() => {
+        if (late && unloadsIn(name, 'registration')) return operatorUnload(name);
+        if (late) wm.deviceList = {[`d-${name}`]: {}};
+        log.push(`registered ${name}@${version}`);
+        mm.unitRegistration(name);
+        if (switching && unloadsIn(name, 'after')) operatorUnload(name);
+      }, 30);
     };
     mm.loadModuleFromPath = spawn;
-    mm.loadModuleByWorker = (p, name, version, cb) => { delete mm.modules[name]; spawn(p, name, version, cb); };
-    mm.unloadModuleExternal = (name, cb) => { delete mm.modules[name]; cb(null); };
+    // the real one's contract (lib/module-manager.js): a reload's generation,
+    // held through the spawn; one moved meanwhile answers MODULE_LOAD_SUPERSEDED
+    const SUPERSEDED = (name) => Object.assign(new Error(`${name}: superseded`), {code: 'MODULE_LOAD_SUPERSEDED'});
+    mm.loadModuleByWorker = (p, name, version, cb, {generation = null} = {}) => {
+      if (generation != null && mm.generations[name] !== generation) return cb(SUPERSEDED(name));
+      delete mm.modules[name];
+      spawn(p, name, version, (err) => cb(err == null && generation != null && mm.generations[name] !== generation ? SUPERSEDED(name) : err), true);
+    };
+    mm.unloadModuleExternal = (name, cb) => {
+      delete mm.modules[name];
+      if (unloadsIn(name, 'unload')) operatorUnload(name);
+      cb(null);
+    };
     const dm = {
       verificationPass: (only) => log.push(`own pass ${[...only].join(',')}`),
       verifyModules: (names) => log.push(`unit pass ${[...names].sort().join(',')}`),
@@ -98,6 +135,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       // comes in then, as a restart of the old version would
       peerChannelBroker: {openInvokesTo: (old) => {
         if (staleDuringDrain != null && old.hostModuleName === staleDuringDrain) { log.push(`stale ${staleDuringDrain}`); mm.unitRegistration(staleDuringDrain); }
+        if (unloadsIn(old.hostModuleName, 'drain') && mm.modules[old.hostModuleName] === old) operatorUnload(old.hostModuleName);
         return 0;
       }}
     };
@@ -185,7 +223,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     visibility.configure({moduleOf: () => null, isGone: (n) => mm.modules[n] == null});
     const seen = [];
     const spawn = mm.loadModuleFromPath;
-    mm.loadModuleFromPath = (p, name, version, cb) => { if (name === 'ch-step-w') seen.push(visibility.isHidden('ch-step-y')); spawn(p, name, version, cb); };
+    mm.loadModuleFromPath = (p, name, version, cb, opts) => { if (name === 'ch-step-w') seen.push(visibility.isHidden('ch-step-y')); spawn(p, name, version, cb, opts); };
     const scenario = (v) => path.join(root, 'packs', 'pf', v, 'node_modules', 'ch-pack-pf');
     await mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario: scenario('1.0.0')}, dm);
     await mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario('2.0.0')}, dm);
@@ -199,9 +237,9 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     const {mm, dm} = runtime();
     visibility.configure({moduleOf: () => null, isGone: (n) => mm.modules[n] == null});
     const spawn = mm.loadModuleFromPath;
-    mm.loadModuleFromPath = (p, name, version, cb) => {
+    mm.loadModuleFromPath = (p, name, version, cb, opts) => {
       if (name === '@t/ch-step-p') { mm.modules[name] = {packageInfo: {name, version}, deviceList: {}}; return setImmediate(() => cb(new Error('registered, then failed'))); }
-      return spawn(p, name, version, cb);
+      return spawn(p, name, version, cb, opts);
     };
     await assert.rejects(loadBoth(mm, dm, '1.0.0'));
     assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'rolled back');
@@ -251,7 +289,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     mm.unloadModuleExternal = (name, cb) => { if (name === 'ch-step-y') seen.push(visibility.isHidden(name)); unload(name, cb); };
     await mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario: scenario('1.0.0')}, dm);
     const spawn = mm.loadModuleFromPath;
-    mm.loadModuleFromPath = (p, name, version, cb) => (name === 'ch-step-w' ? setImmediate(() => cb(new Error('no spawn'))) : spawn(p, name, version, cb));
+    mm.loadModuleFromPath = (p, name, version, cb, opts) => (name === 'ch-step-w' ? setImmediate(() => cb(new Error('no spawn'))) : spawn(p, name, version, cb, opts));
     await assert.rejects(mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario('2.0.0')}, dm));
     assert.deepStrictEqual(seen, [true], 'hidden when its unload starts');
     visibility.resetForTests();
@@ -375,5 +413,95 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     const fresh = log.indexOf('registered @t/ch-step-p@2.0.0');
     const pass = log.findIndex((l) => l.startsWith('unit pass'));
     assert.ok(stale >= 0 && fresh > stale && pass > fresh, log.join('\n'));
+  });
+
+  // the back-sweep's group 3 and the Reviewer's high review of #441 (3, 4,
+  // 6): the reload's generation is taken before the drain and held through
+  // the spawn and the registration, so an operator action on the module in
+  // any of the three windows stands the switch down, and the rollback never
+  // brings that module back over it
+  // the high review of #442, 1: a module left to a later operator action
+  // makes the reload uncertain (never a plain all-or-none failure), naming it
+  const leftToOperator = (e) => e.code === 'CONTROL_MODULE_UNCERTAIN' && /@t\/ch-step-p was left to a later operator action/.test(e.message);
+
+  for (const when of ['drain', 'spawn', 'registration']) {
+    it(`an operator unload during the switch's ${when} fails the reload, and nothing brings that module back`, async () => {
+      const {mm, dm, log} = runtime({unloadDuring: {name: '@t/ch-step-p', when}});
+      await loadBoth(mm, dm, '1.0.0');
+      log.length = 0;
+      await assert.rejects(reloadTo(mm, dm, '2.0.0'), leftToOperator);
+      const at = log.indexOf('operator unload @t/ch-step-p');
+      assert.ok(at >= 0, log.join('\n'));
+      assert.ok(!log.slice(at + 1).some((l) => /^held @t\/ch-step-p/.test(l)), `no spawn of ch-step-p after the unload:\n${log.join('\n')}`);
+      assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'it stays unloaded');
+      // the unit's record no longer says what runs: a reload of it is refused
+      await assert.rejects(reloadTo(mm, dm, '2.0.0'), (e) => e.code === 'CONTROL_MODULE_UNCERTAIN' && /left to a later operator action; restart your client/.test(e.message));
+    });
+  }
+
+  it('the real loadModuleByWorker holds a reload\'s generation: a moved one is MODULE_LOAD_SUPERSEDED before and after the spawn', async () => {
+    const mm = Object.assign(Object.create(ModuleManager.prototype), {modules: {}, generations: {}, spawnsPending: {}, supervisor: null, endedDevices: {}});
+    const spawned = [];
+    mm.spawnModuleWorker = (p, name, version, settle, current) => spawned.push({settle, current});
+    const load = (gen) => new Promise((resolve) => mm.loadModuleByWorker('/x', 'ch-step-x', '2.0.0', (err) => resolve(err), {generation: gen}));
+    const gen = mm.nextGeneration('ch-step-x');
+    mm.nextGeneration('ch-step-x');   // an unload before the spawn
+    assert.strictEqual((await load(gen)).code, 'MODULE_LOAD_SUPERSEDED');
+    assert.strictEqual(spawned.length, 0, 'no worker spawned');
+    const gen2 = mm.nextGeneration('ch-step-x');
+    const pending = load(gen2);
+    assert.strictEqual(spawned.length, 1);
+    assert.strictEqual(spawned[0].current(), true, 'the spawn holds the reload\'s own generation');
+    mm.nextGeneration('ch-step-x');   // an unload during the spawn
+    assert.strictEqual(spawned[0].current(), false);
+    spawned[0].settle(null);
+    assert.strictEqual((await pending).code, 'MODULE_LOAD_SUPERSEDED');
+  });
+
+  // the medium on the rebuilt #441, 1: an operator action on a module whose
+  // switch had finished is not undone when a later step fails
+  it('an operator unload after a module\'s switch finished, then a later switch fails: the rollback puts the rest back and leaves that module', async () => {
+    const {mm, dm, log} = runtime({failVersion: '2.0.0', unloadDuring: {name: '@t/ch-step-p', when: 'after'}});
+    await loadBoth(mm, dm, '1.0.0');
+    log.length = 0;
+    await assert.rejects(reloadTo(mm, dm, '2.0.0'), leftToOperator);
+    const at = log.indexOf('operator unload @t/ch-step-p');
+    assert.ok(at >= 0, log.join('\n'));
+    assert.ok(!log.slice(at + 1).some((l) => /^held @t\/ch-step-p/.test(l)), `no spawn of ch-step-p after the unload:\n${log.join('\n')}`);
+    assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'it stays unloaded');
+    assert.strictEqual(mm.modules['@t/ch-pack-s'].packageInfo.version, '1.0.0', 'the failed one is put back');
+  });
+
+  // and 2: a switch of a module not held by a live worker (replaceDrainThenSwitch's
+  // other branch: its unload, then its load) holds the reload's generation
+  // too, checked after its unload and after its load (single-thread
+  // loadModuleFromPath takes none: the high review of #442, 3)
+  for (const when of ['unload', 'load']) it(`a switch through the unload-then-load branch that an operator unload during its ${when} outranks stands down`, async () => {
+    const {mm, dm, log} = runtime({unloadDuring: {name: '@t/ch-step-p', when}});
+    await loadBoth(mm, dm, '1.0.0');
+    // in the map, but no worker of its own (that branch's case)
+    mm.modules['@t/ch-step-p'] = {hostModuleName: '@t/ch-step-p', packageInfo: {name: '@t/ch-step-p', version: '1.0.0'}, deviceList: {}};
+    log.length = 0;
+    await assert.rejects(reloadTo(mm, dm, '2.0.0'), leftToOperator);
+    const at = log.indexOf('operator unload @t/ch-step-p');
+    assert.ok(at >= 0, log.join('\n'));
+    assert.ok(!log.slice(at + 1).some((l) => /^held @t\/ch-step-p/.test(l)), `no spawn of ch-step-p after the unload:\n${log.join('\n')}`);
+    // nothing of the reload's left serving over the operator's unload (the
+    // medium on #442's high round, 1 and 3)
+    assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'it stays unloaded');
+  });
+
+  // the medium on #442's high round, 5: the pack form's reload says it too
+  it('a pack-form reload whose switch an operator unload outranks is CONTROL_PACK_UNCERTAIN, and its record refuses a reload after', async () => {
+    const {mm, dm, log} = runtime({unloadDuring: {name: 'ch-pack-pf', when: 'drain'}});
+    const scenario = (v) => path.join(root, 'packs', 'pf', v, 'node_modules', 'ch-pack-pf');
+    await mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario: scenario('1.0.0')}, dm);
+    log.length = 0;
+    await assert.rejects(mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario('2.0.0')}, dm),
+      (e) => e.code === 'CONTROL_PACK_UNCERTAIN' && /ch-pack-pf was left to a later operator action/.test(e.message));
+    assert.ok(log.includes('operator unload ch-pack-pf'), log.join('\n'));
+    assert.strictEqual(mm.modules['ch-pack-pf'], undefined, 'it stays unloaded');
+    await assert.rejects(mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario('2.0.0')}, dm),
+      (e) => e.code === 'CONTROL_MODULE_UNCERTAIN' && /left to a later operator action; restart your client/.test(e.message));
   });
 });

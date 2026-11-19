@@ -14,15 +14,13 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
   const B = 'b'.repeat(32);
   let ceiling;
   let defaults;
-  let packs;
   let live;
   beforeEach(() => {
     settings.resetForTests();
     ceiling = {state: 'none'};
     defaults = {maxOutputBytes: 8 * MiB, requestTimeout: 30000};
-    packs = {};
     live = new Set([A, B]);
-    settings.configure({ceiling: () => ceiling, defaultOf: (name) => defaults[name], globalPack: (name) => (name in packs ? packs[name] : null), isLive: (id) => live.has(id),
+    settings.configure({ceiling: () => ceiling, defaultOf: (name) => defaults[name], isLive: (id) => live.has(id),
       ceilingMemoMs: 0});   // every read asks: the cases change the ceiling between reads
   });
   const loosen = (id, name, value) => settings.set(id, name, value, {loosening: true, over: defaults[name]});
@@ -212,12 +210,12 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
     assert.throws(() => settings.dropLooser('pack.ci', 1), /only a cap/);
   });
 
-  it('names are strings, ids are 32 hex, at most 64 overrides (#268 review 5, 6)', () => {
-    for (const bad of [['pack.ci'], {toString: () => 'pack.ci'}, 7]) assert.throws(() => settings.set(A, bad, true, {version: '1.0.0'}), /named by a string/);
+  // (M5a: a session's overrides name the two caps only, so the 64 bound is no longer reachable from set)
+  it('names are strings, ids are 32 hex; a name that is not a cap is SETTING_UNKNOWN (#268 review 5, 6; M5a)', () => {
+    for (const bad of [['requestTimeout'], {toString: () => 'requestTimeout'}, 7]) assert.throws(() => settings.set(A, bad, 10000), /named by a string/);
     for (const id of ['x', 'A'.repeat(32), 'a'.repeat(31), 'a'.repeat(200)]) assert.throws(() => settings.set(id, 'requestTimeout', 10000), /32-hex id/);
-    for (let i = 0; i < 64; i++) settings.set(A, `pack.p${i}`, false, {version: '1.0.0'});
-    assert.throws(() => settings.set(A, 'pack.p64', false, {version: '1.0.0'}), (e) => e.code === 'SETTING_OUT_OF_BOUNDS');
-    settings.set(A, 'pack.p3', true, {loosening: true, version: '1.0.1'});   // an existing name is still changed
+    for (const name of ['pack.ci', 'pack.p3', 'locale2', 'nope']) assert.throws(() => settings.set(A, name, false, {version: '1.0.0'}), (e) => e.code === 'SETTING_UNKNOWN', name);
+    assert.deepStrictEqual(settings.overridesOf(A), []);
   });
 
   it('onChange hears a set, a clamp and a drop', () => {
@@ -229,21 +227,6 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
     defaults.maxOutputBytes = 4 * MiB;
     settings.dropLooser('maxOutputBytes', 4 * MiB);
     assert.deepStrictEqual(heard, [A, A, A]);
-  });
-
-  // an "on" names the version confirmed, an "off" the one it was off at (B3 Task 9: the state's wire)
-  it('pack overrides: always with their plain version, on or off; an "on" only where the ceiling allows the pack', () => {
-    packs['pack.ci'] = true;
-    for (const v of [undefined, '', 'latest', '^1.2.0', '1.2', '1.2.0 ', 'v1.2.0']) assert.throws(() => settings.set(B, 'pack.docs', true, {loosening: true, version: v}), /plain version/, String(v));
-    assert.throws(() => settings.set(A, 'pack.ci', false), /plain version/);
-    settings.set(A, 'pack.ci', false, {version: '1.2.0'});
-    assert.strictEqual(settings.effective(A, 'pack.ci'), false);
-    assert.strictEqual(settings.effective(B, 'pack.ci'), true);
-    assert.strictEqual(settings.isLoosening(A, 'pack.ci', true), true, 'un-hiding a pack the session turned off is a loosening');
-    packs['pack.ci'] = false;
-    settings.set(B, 'pack.ci', true, {loosening: true, version: '1.2.0'});
-    ceiling = {state: 'trusted', ceiling: {packs: ['other']}};
-    assert.strictEqual(settings.effective(B, 'pack.ci'), false, 'not in the ceiling\'s packs');
   });
 
   it('locale is the terminal\'s; an ended session sets nothing; forget leaves the others', () => {

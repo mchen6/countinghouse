@@ -284,10 +284,10 @@ const out = {
       {why: 'a stored token whose file fails its checks counts as none', input: {env: [], stored: 'refused', ghLogin: true, daemonHolds: 'gh'}, start: 'gh', daemon: 'gh', conditions: null, outcome: 'shares'}
     ]
   },
-  // ch-local's pack messages on the control channel (B3, "For C" in
-  // docs/superpowers/plans/2026-11-16-shared-runtime-b3-session-packs.md):
-  // which pack a load, reload, unload or notice is about, and whether a load
-  // is for everyone. Additive: the other fields are as before. Read by
+  // ch-local's pack messages on the control channel (B3; M5a: no session
+  // view, so global is not read and every session is told): which pack a
+  // load, reload, unload or notice is about. Additive: the other fields are
+  // as before; the pack form goes in M6. Read by
   // ch-local's applier tests and B3 Task 6's; a refused case names its
   // reason by a short token both sides compare.
   packMessages: (() => {
@@ -295,28 +295,28 @@ const out = {
     const at = {name: scenario, scenario: '/home/example/.countinghouse/packs/example/node_modules/@countinghouse/ch-pack-example',
       remoteCredentials: '/home/example/.countinghouse/run/start-1/remote-credentials-example.json'};
     return {
-      rule: 'load and reload carry pack: <n> (the pack\'s own name, as settings spell pack.<n>; name stays the scenario\'s package name) and global: a boolean (true: the settings have the pack on, for everyone; false: only a session\'s load-pack asked). unload carries pack. A notice about a pack carries pack and goes to the sessions that list the pack when it is delivered; one with no pack goes to everyone. set pack.<n> is only ever true (the terminal turning on, for everyone, a pack already loaded for a session); a terminal off is always an unload. In shared mode a load or reload without a boolean global is refused; under --stdio pack and global are not read',
+      rule: 'load, reload and unload in the pack form carry pack: <n> (the pack\'s own name, as settings spell pack.<n>; name stays the scenario\'s package name); global is no longer read (M5a, #413 rev 3 section 5.4: no session has a view of its own, so whatever is loaded is listed to every session) and may be absent. A notice goes once to every open session, with a pack or without. set names no pack: set pack.<n> is refused, any value (a terminal on or off is a load or an unload). In shared mode a pack-form message whose pack is not a string fitting packPattern is refused; under --stdio pack is not read. The pack form goes in M6',
       packPattern: '^[a-z0-9][a-z0-9-]{0,63}$',
       accepted: [
-        {why: 'a load from the settings, for everyone', message: {id: 1, type: 'load', ...at, notice: 'example added 1.0.0', pack: 'example', global: true}},
-        {why: 'a load a session asked for', message: {id: 2, type: 'load', ...at, pack: 'example', global: false}},
+        {why: 'a load from the settings', message: {id: 1, type: 'load', ...at, notice: 'example added 1.0.0', pack: 'example', global: true}},
+        {why: 'a load with global false: global is not read', message: {id: 2, type: 'load', ...at, pack: 'example', global: false}},
         {why: 'a reload', message: {id: 3, type: 'reload', ...at, notice: 'example upgraded 1.0.0 → 1.1.0', pack: 'example', global: true}},
         {why: 'an unload', message: {id: 4, type: 'unload', name: scenario, notice: 'example turned off', pack: 'example'}},
-        {why: 'a notice about a pack', message: {id: 5, type: 'notice', module: null, text: 'example turned on for this session 1.0.0 (confirmed in your client)', pack: 'example'}},
-        {why: 'a notice about no pack: to everyone', message: {id: 6, type: 'notice', module: null, text: 'requestTimeout set to 60 s'}},
-        {why: 'the terminal turning on a pack a session had', message: {id: 7, type: 'set', name: 'pack.example', value: true}}
+        {why: 'a notice about a pack: to every session', message: {id: 5, type: 'notice', module: null, text: 'example turned on 1.0.0', pack: 'example'}},
+        {why: 'a notice about no pack: to every session', message: {id: 6, type: 'notice', module: null, text: 'requestTimeout set to 60 s'}},
+        {why: 'a load with no global: global is not read', message: {id: 11, type: 'load', ...at, pack: 'example'}},
+        {why: 'a load whose global is not a boolean: global is not read', message: {id: 12, type: 'load', ...at, pack: 'example', global: 'true'}},
+        {why: 'a reload with no global: global is not read', message: {id: 13, type: 'reload', ...at, pack: 'example'}}
       ],
       refused: [
-        {why: 'a load with no global', reason: 'global', message: {id: 11, type: 'load', ...at, pack: 'example'}},
-        {why: 'a load whose global is not a boolean', reason: 'global', message: {id: 12, type: 'load', ...at, pack: 'example', global: 'true'}},
-        {why: 'a reload with no global', reason: 'global', message: {id: 13, type: 'reload', ...at, pack: 'example'}},
         {why: 'a load with no pack', reason: 'pack', message: {id: 14, type: 'load', ...at, global: true}},
         {why: 'a pack with an uppercase letter', reason: 'pack', message: {id: 15, type: 'load', ...at, pack: 'Example', global: true}},
         {why: 'a pack with a leading dash', reason: 'pack', message: {id: 16, type: 'reload', ...at, pack: '-example', global: true}},
         {why: 'an unload whose pack is not a string', reason: 'pack', message: {id: 17, type: 'unload', name: scenario, pack: 7}},
         {why: 'a notice whose pack is not a string', reason: 'pack', message: {id: 18, type: 'notice', module: null, text: 'x', pack: null}},
         {why: 'a pack over 64 characters', reason: 'pack', message: {id: 19, type: 'unload', name: scenario, pack: `p${'a'.repeat(64)}`}},
-        {why: 'set pack.<n> false', reason: 'set-false', message: {id: 20, type: 'set', name: 'pack.example', value: false}}
+        {why: 'set pack.<n> true: no pack is set', reason: 'set', message: {id: 7, type: 'set', name: 'pack.example', value: true}},
+        {why: 'set pack.<n> false', reason: 'set', message: {id: 20, type: 'set', name: 'pack.example', value: false}}
       ]
     };
   })(),
@@ -361,7 +361,9 @@ const out = {
         {why: 'a leftover pack field', reason: 'old-field', message: {id: 16, type: 'load', name: scenario, dirs: {[scenario]: dir(scenario, '1.0.0')}, pack: 'example'}},
         {why: 'a leftover global field', reason: 'old-field', message: {id: 17, type: 'reload', names: [scenario], dirs: {[scenario]: dir(scenario, '1.0.0')}, global: true}},
         {why: 'a leftover remoteCredentials field', reason: 'old-field', message: {id: 18, type: 'load', name: scenario, dirs: {[scenario]: dir(scenario, '1.0.0')},
-          remoteCredentials: '/home/example/.countinghouse/run/start-1/remote-credentials.json'}}
+          remoteCredentials: '/home/example/.countinghouse/run/start-1/remote-credentials.json'}},
+        // M2a: reread names only the module settings
+        {why: 'a reread of anything but the module settings', reason: 'name', message: {id: 19, type: 'reread', what: 'everything'}}
       ]
     };
   })(),
@@ -369,12 +371,23 @@ const out = {
   // countinghouse's restore.js, ch-local's session-table.js and B2's export,
   // which all read these cases
   restoreRows: {
-    rule: 'a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 64, one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool\'s bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; pack.<n> (^pack\\.[a-z0-9][a-z0-9-]{0,63}$) has a boolean value, over null and a semver version (required, never null); locks distinct kinds of maxOutputBytes, requestTimeout, pack; formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: "restore", sessions, declines, reset}: reset lists the sessions (each a row\'s) that lost loosenings in a handoff, to be told so',
+    rule: 'a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 2 (one per cap), one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool\'s bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; nothing else is overridden (a pack\'s or a module\'s on/off is never a session\'s own: a well-formed pack.<n> override from before M5a, with a boolean value, over null and a semver version, is dropped from its row, the rest of the row taken and its session told once; any other pack.<n> override refuses the restore); locks distinct kinds of maxOutputBytes, requestTimeout, pack, module (every module.<package>.<setting> is the one kind module); formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: "restore", sessions, declines, reset}: reset lists the sessions (each a row\'s) that lost loosenings in a handoff, to be told so',
     accepted: [
       {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}},
       {session: 'c'.repeat(32), resume: 'd'.repeat(64), state: {overrides: [], locks: ['pack'], formsLeft: 1, unanswered: ['maxOutputBytes', 'requestTimeout']}},
       {session: 'd'.repeat(32), resume: 'c'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: []}},
-      {session: 'b'.repeat(32), resume: 'e'.repeat(64), state: {overrides: [{name: 'requestTimeout', value: 120000, loosening: true, over: 30000, version: null}, {name: 'maxOutputBytes', value: 1048576, loosening: false, over: null, version: null}, {name: 'pack.ci-failure-triage', value: true, loosening: true, over: null, version: '1.2.3'}], locks: ['pack', 'requestTimeout'], formsLeft: 0}}
+      {session: 'b'.repeat(32), resume: 'e'.repeat(64), state: {overrides: [{name: 'requestTimeout', value: 120000, loosening: true, over: 30000, version: null}, {name: 'maxOutputBytes', value: 1048576, loosening: false, over: null, version: null}], locks: ['pack', 'requestTimeout'], formsLeft: 0}},
+      // M2b: the kind module, locked and unanswered
+      {session: 'e'.repeat(32), resume: '1'.repeat(64), state: {overrides: [], locks: ['module'], formsLeft: 3}},
+      {session: 'f'.repeat(32), resume: '2'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['module']}}
+    ],
+    // M5a: a well-formed pack override from before M5a is dropped from its
+    // row (taken: the state as taken), the session told once
+    dropped: [
+      {why: 'a well-formed pack override from before M5a: dropped; the session\'s cap override, locks and forms kept',
+        row: {session: 'e'.repeat(32), resume: 'a'.repeat(64), state: {overrides: [{name: 'maxOutputBytes', value: 2097152, loosening: false, over: null, version: null}, {name: 'pack.weather', value: false, loosening: false, over: null, version: '1.0.0'}], locks: ['requestTimeout'], formsLeft: 2}},
+        taken: {overrides: [{name: 'maxOutputBytes', value: 2097152, loosening: false, over: null, version: null}], locks: ['requestTimeout'], formsLeft: 2},
+        packs: ['weather']}
     ],
     refused: [
       // each with the reason it must be refused for: a substring of restore.js's message
@@ -391,15 +404,38 @@ const out = {
       {why: 'an extra state key', reason: 'not exactly {overrides, locks, formsLeft}', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3, nonce: 'x'}}},
       {why: 'formsLeft 4', reason: 'formsLeft', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 4}}},
       {why: 'a lock twice', reason: 'locks', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['pack', 'pack'], formsLeft: 3}}},
-      {why: 'a pack override with no version', reason: 'version is not a semver', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'pack.one', value: true, loosening: true, over: null, version: null}], locks: [], formsLeft: 3}}},
+      {why: 'a pack override not of the old shape (no version)', reason: 'names no cap', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'pack.weather', value: false, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}},
       {why: 'a cap loosening with no over', reason: 'over does not fit', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'maxOutputBytes', value: 16777216, loosening: true, over: null, version: null}], locks: [], formsLeft: 3}}},
-      {why: 'an unknown override name', reason: 'neither a cap nor pack', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'secret', value: 1, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}},
+      {why: 'an unknown override name', reason: 'names no cap', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'secret', value: 1, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}},
       {why: 'maxOutputBytes under its bound', reason: 'not within', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'maxOutputBytes', value: 1048575, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}},
       {why: 'requestTimeout over its bound', reason: 'not within', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'requestTimeout', value: 120001, loosening: true, over: 30000, version: null}], locks: [], formsLeft: 3}}},
-      {why: 'a pack version that is not a semver', reason: 'version is not a semver', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'pack.one', value: true, loosening: true, over: null, version: 'latest'}], locks: [], formsLeft: 3}}},
       {why: 'a setting overridden twice', reason: 'a setting twice', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'maxOutputBytes', value: 1048576, loosening: false, over: null, version: null}, {name: 'maxOutputBytes', value: 2097152, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}}
     ]
   },
+  // A module setting's value in the history (#413 rev 3 section 4.2): one
+  // shape for the runtime's lines and ch-local's (lib/history-cut.js, and
+  // ch-local's settings history and outside-edits check)
+  historyCut: (() => {
+    const sha = (v) => crypto.createHash('sha256').update(JSON.stringify(v), 'utf8').digest('hex');
+    const of = (why, value) => {
+      const points = Array.from(value);
+      const cut = typeof(value) === 'string' && points.length > 64;
+      return {why, value, written: cut ? points.slice(0, 64).join('') : value, sha256: cut ? sha(value) : null};
+    };
+    const sixtyFour = 'a'.repeat(64);
+    return {
+      rule: 'fields old, new, asked and kept of a module.* history line: a string of more than 64 code points is written as its first 64 code points, with <field>Sha256 beside it, the lowercase hex SHA-256 of the UTF-8 of JSON.stringify(the WHOLE value); any other value, and a string of 64 code points or fewer, is written whole with no Sha256 field. A reader compares a recorded <field>Sha256 with the SHA-256 of JSON.stringify(the value it holds)',
+      cases: [
+        of('65 code points, the last one not ASCII: cut to 64, hashed whole', `${'a'.repeat(63)}é✓`),
+        of('exactly 64 code points: whole, no hash', sixtyFour),
+        of('64 code points of which one is outside the BMP (JS length 65): whole, a surrogate pair never split', `${'b'.repeat(63)}😀`),
+        of('65 code points ending outside the BMP: cut before the pair', `${'c'.repeat(64)}😀`),
+        of('a quote and a backslash: hashed as JSON, escapes and all', `${'"\\'.repeat(40)}`),
+        {why: 'a number: never cut', value: 1234567, written: 1234567, sha256: null},
+        {why: 'a boolean: never cut', value: true, written: true, sha256: null}
+      ]
+    };
+  })(),
   seqRule: 'the shim counts seq from 1 for its whole life; it never restarts on a reconnect or a resume',
   crashAnswer: {
     rule: 'exact apart from the id, which is the request\'s own',
