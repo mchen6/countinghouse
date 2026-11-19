@@ -77,7 +77,13 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     probePkg.imports = Object.assign({}, probePkg.imports, {'#sibclimb': 'sibpkg/../../isolation-probe/lib/bare-target.mjs',
       '#nosibclimb': 'nosuchsib/../../isolation-probe/lib/bare-target.mjs',
       '#builtin': {node: 'node:crypto', default: './lib/bare-target.mjs'}, '#fallback': ['https://x.invalid/a.js', './lib/bare-target.mjs'],
-      '#emptyArr': {node: [], default: './lib/bare-target.mjs'}, '#badFirst': ['./lib/../lib/bare-target.mjs', './lib/bare-target.mjs']});
+      '#emptyArr': {node: [], default: './lib/bare-target.mjs'}, '#badFirst': ['./lib/../lib/bare-target.mjs', './lib/bare-target.mjs'],
+      '#pat/*': './lib/pat/*', '#z': {node: ['https://x.invalid/a.js', {browser: './nope.mjs'}], default: './lib/bare-target.mjs'}});
+    fs.mkdirSync(path.join(probe, 'lib', 'pat'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'lib', 'pat', 'x.mjs'), 'export default "pat";\n');
+    fs.mkdirSync(path.join(probe, 'node_modules', 'dep3'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep3', 'package.json'), JSON.stringify({name: 'dep3', exports: false}));
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep3', 'index.js'), 'module.exports = 3;\n');
     // (a decoy in node_modules/node_modules beside a real dep2)
     fs.mkdirSync(path.join(probe, 'node_modules', 'dep2'), {recursive: true});
     fs.writeFileSync(path.join(probe, 'node_modules', 'dep2', 'package.json'), JSON.stringify({name: 'dep2', exports: {'.': './index.js'}}));
@@ -173,7 +179,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       // (C-bare, Fable's pass on #452, F1 and F2)
       it('a bare name\'s subpath, or a \'#\' mapping to one, never walks above the root: a sibling there and a missing one, one answer; nothing of module code\'s runs in Node\'s step; its own dependency loads', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'bareSubpath'});
-        assert.strictEqual(detail(r), 'same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
       });
       it('whether a runtime package is installed is no answer, by the whole error: a forged parent inside it, findPackageJSON\'s base and climbing specifier, _findPath\'s array-like paths, a primitive parent', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'parentPackage'});

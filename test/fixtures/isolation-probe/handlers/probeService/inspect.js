@@ -182,6 +182,21 @@ const STEPS = {
     // plain Node answers on 22.16, 24 and 26; an invalid segment falls to
     // the array's next entry)
     out.push((await tryImport('#emptyArr')) !== 'found' && (await tryImport('#badFirst')) === 'found' ? 'same' : 'targets');
+    // ("exports" false is none, as Node's reader takes it: a climbing
+    // subpath under it the one refusal)
+    same('exportsFalse', await tryImport('dep3/../../lib/bare-target.mjs'), await tryImport('nosuchdep/../../lib/bare-target.mjs'));
+    // (a pattern with an empty segment loads, as in Node; an array of
+    // invalid targets falls to no other condition)
+    out.push((await tryImport('#pat//x.mjs')) === 'found' && (await tryImport('#z')) !== 'found' ? 'same' : 'patterns');
+    // (a parent named as a countinghouse file is judged from the root: a
+    // runtime package's presence is no answer)
+    const h = handle();
+    const runtimeLib = h != null ? path.join(path.dirname(path.dirname(h.module.filename)), 'lib', 'any.js') : null;
+    const fromRuntime = async (spec) => {
+      try { await require('vm').runInThisContext(`import(${JSON.stringify(spec)})`, {filename: runtimeLib, importModuleDynamically: require('vm').constants.USE_MAIN_CONTEXT_DEFAULT_LOADER}); return 'found'; } catch (e) { return String(e.code); }
+    };
+    same('runtimeParent', await fromRuntime('mocha/../../node_modules/.ch-sb-68 probe/isolation-probe/lib/bare-target.mjs'),
+      await fromRuntime('nosuchpkg/../../node_modules/.ch-sb-68 probe/isolation-probe/lib/bare-target.mjs'));
     // (and the module's own dependency still loads, by name and by subpath)
     out.push((await tryImport('dep')) === 'found' && (await tryImport('dep/index.js')) === 'found' && tryRequire('dep') === 'found' &&
       tryRequire('filedep') === 'found' ? 'same' : 'ownDep');
