@@ -4,7 +4,6 @@
 // settings.lock, and the history appended first.
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const options = require('../../lib/cli-options');
 const settingsTool = require('../../lib/settings-tool');
@@ -19,6 +18,10 @@ const MiB = 1024 * 1024;
 const SC = '@countinghouse/ch-pack-ci-failure-triage';
 const EN = `enabled.${SC}`;
 const core = (a) => ({name: a.name, old: a.old, new: a.new, applies: a.applies});
+
+// this file's temporary trees, under test/.tmp and removed
+// (test/helpers/test-tmp.js forFile); nothing left in os.tmpdir()
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-settings-']);
 
 describe('stdio 14: countinghouse_settings', () => {
   let home;
@@ -38,7 +41,7 @@ describe('stdio 14: countinghouse_settings', () => {
   before(() => { saved = {locale: options.locale, requestTimeout: options.requestTimeout, maxOutputBytes: options.maxOutputBytes}; });
   after(() => Object.assign(options, saved));
   beforeEach(() => {
-    home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-settings-'));
+    home = tmpDirs.mkdtemp('ch-settings-');
     file = path.join(home, 'settings.json');
     // ch-local's record beside it: the installed top-level modules a
     // module's on/off names (M5b: enabled.<module>; no setting is a pack's)
@@ -643,4 +646,5 @@ describe('stdio 14: countinghouse_settings', () => {
     assert.ok(require('../../lib/mcp/tool-name').RESERVED_TOOL_NAMES.includes('countinghouse_settings'));
     assert.strictEqual(callAddress.parseAddress('countinghouse_settings'), null, 'a built-in is no device/service/action address');
   });
+  tmpDirs.hooks();
 });

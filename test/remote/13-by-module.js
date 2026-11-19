@@ -7,7 +7,6 @@
 // file otherwise). Version 1 is unchanged (remote 02, 05).
 const assert = require('assert');
 const fs     = require('fs');
-const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
 const {testPort} = require('../helpers/test-env');
@@ -25,7 +24,7 @@ const SLOT1 = 'COUNTINGHOUSE_CREDENTIAL_1';
 // A copy of the remote probe under another package name, its remote on this
 // file's stand-in, declaring `variable`.
 function probe(name, variable, url) {
-  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-13-')), name);
+  const dir = path.join(tmpDirs.mkdtemp('ch-remote-13-'), name);
   fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'remote-probe'), dir, {recursive: true});
   const pkgPath = path.join(dir, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
@@ -41,11 +40,16 @@ function probe(name, variable, url) {
   return dir;
 }
 const v2file = (modules) => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-13f-')), 'remote-credentials.json');
+  const file = path.join(tmpDirs.mkdtemp('ch-remote-13f-'), 'remote-credentials.json');
   fs.writeFileSync(file, JSON.stringify({version: 2, modules: modules}));
   return file;
 };
 const BOUND = {'remote-bound': {[ORIGIN]: {CH_TEST_REMOTE_TOKEN: SLOT1}}};
+
+// this file's temporary trees, in os.tmpdir() (a module a runtime loads
+// stays outside the runtime's tree) and removed (test/helpers/test-tmp.js
+// forFile); nothing left there
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-13'], {base: require('os').tmpdir()});
 
 describe('remote 13: a version 2 binding, at registration', function() {
   this.timeout(30000);
@@ -132,6 +136,7 @@ describe('remote 13: a version 2 binding, at registration', function() {
       delete process.env[SLOT1];
     }
   });
+  tmpDirs.hooks();
 });
 
 describe('remote 13: a version 2 binding, end to end', function() {
@@ -169,4 +174,5 @@ describe('remote 13: a version 2 binding, end to end', function() {
     assert.ok(!server.output.includes(TOKEN) && !server.output.includes(OTHER));
     assert.ok(server.output.includes(`no credential is bound to remote-copycat for ${ORIGIN}`), server.output.slice(-2000));
   });
+  tmpDirs.hooks();
 });
