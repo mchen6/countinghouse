@@ -365,6 +365,23 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       assert.deepStrictEqual(statesOf(A), [{overrides: [tighten('requestTimeout', 20000)], locks: [], formsLeft: 3}]);
     });
 
+    // #449 (a): the runtime's own path, the daemon's message through
+    // restore.js and the one adapter route-manager hands sessions.importTable
+    it('a daemon\'s restore with a stale pack override: through restore.js and forSessions, that session is told once', async () => {
+      const {validate, forSessions} = require('../../lib/session-transport/restore');
+      const stale = {name: 'pack.weather', value: false, loosening: false, over: null, version: '1.0.0'};
+      const msg = {id: 'd1', type: 'restore', declines: [], reset: [],
+        sessions: [{session: A, resume: 'a'.repeat(64), state: {overrides: [tighten('requestTimeout', 20000), stale], locks: [], formsLeft: 3}},
+          {session: B, resume: 'b'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}}]};
+      sessions.importTable(forSessions(validate(msg)));
+      await resumed(A);
+      await resumed(B);
+      const told = notices.take(null, A);
+      assert.strictEqual(told.filter((t) => /own setting for weather was dropped/.test(t)).length, 1, JSON.stringify(told));
+      assert.deepStrictEqual(notices.take(null, B), []);
+      assert.ok(!forSessions(validate(msg)).sessions.some((r) => 'resume' in r), 'the resume hash is the registry\'s, never B2\'s');
+    });
+
     it('a session that had more than eight packs of its own is told eight of them and how many more', async () => {
       const names = Array.from({length: 10}, (_, i) => `p${i}`);
       sessions.importTable(Object.assign({}, table([row(A)]), {packsDropped: [{session: A, names}]}));
