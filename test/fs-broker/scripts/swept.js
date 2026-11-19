@@ -11,6 +11,12 @@ module.exports = async (fs, root, ctx) => {
   ctx.armLate();
   ctx.fillNull();
   ctx.bumpSpace();
+  ctx.grow();
+  // (module code replacing a global the sweep would read: it reads none)
+  const RealMap = globalThis.Map;
+  globalThis.Map = function NotMap() {};
+  let mapSeen;
+  try { mapSeen = typeof(fs.fakeMap) === 'function' ? outcome(() => fs.fakeMap('/etc/hostname')) : `answered ${typeof(fs.fakeMap)}`; } finally { globalThis.Map = RealMap; }
   let helperSaid = null;
   try { fs.FakeReader.helper('/etc/hostname'); } catch (e) { helperSaid = e.message; }
   const release = ctx.handled.grant.boot([root]);
@@ -54,6 +60,10 @@ module.exports = async (fs, root, ctx) => {
     list: [Array.isArray(fs.fakeList), [...fs.fakeList].length, outcome(() => fs.fakeList[0]('/etc/hostname'))],
     err: [fs.fakeErr instanceof Error, String(fs.fakeErr), outcome(() => fs.fakeErr.hook('/etc/hostname'))],
     underBoot,
+    cycle: outcome(() => fs.fakeCycle.child.parent.run('/etc/hostname')),
+    grown: outcome(() => fs.fakeGrow.open('/etc/hostname')),
+    mapSeen,
+    lazyNew: outcome(() => new fs.fakeLazySync()),
     // (what the worker throws under enforce, lib/lean-worker.js)
     refusal: ctx.handled.grant.swept.refusal,
     swept: ctx.handled.grant.swept != null && typeof(ctx.handled.grant.swept) === 'object' ? ctx.handled.grant.swept : null

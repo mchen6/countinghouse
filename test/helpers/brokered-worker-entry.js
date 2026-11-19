@@ -42,6 +42,15 @@ const LIB = path.join(__dirname, '..', '..', 'lib', 'fs-broker');
     fsLib.fakeData = {a: 1, list: [1, 2]};
     fsLib.fakeList = [(p) => read(p, 'utf8')];
     fsLib.fakeErr = Object.assign(new Error('boom'), {hook: (p) => read(p, 'utf8')});
+    // (a cycle back to an object holding code; data that gains code later;
+    // a Map holding code)
+    const cyc = {run: (p) => read(p, 'utf8')};
+    cyc.child = {parent: cyc};
+    fsLib.fakeCycle = cyc;
+    const grow = {version: 1};
+    fsLib.fakeGrow = grow;
+    ctx.grow = () => { grow.open = (p) => read(p, 'utf8'); };
+    fsLib.fakeMap = new Map([['read', (p) => read(p, 'utf8')]]);
     // (Node's lazy getter: it redefines its own slot on the first read; not
     // enumerable, so no copy of fs reads it before the sweep)
     let lazyLoaded;

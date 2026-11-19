@@ -26,9 +26,9 @@ describe('fs-broker 07: the worker patch', function() {
     assert.deepStrictEqual(r, {method: U, lazy: U, hidden: U, space: U, spaceLive: 2, promise: U, klass: U, noCtor: 'TypeError', noProto: true, nc: 'ran',
       late: U, lateFrozen: true, sym: U, replaced: U, nullFilled: U, staticAfter: U, helperSaid: true, staticGetter: U, nodeLazy: U, staticName: U,
       selfNamed: U, selfNamedName: U, copy: 'ran', asyncOp: U, asyncShape: [true, true, 'function', 'function', 'function', 'string', U],
-      constant: 7, ncConst: 3, data: [1, 2], list: [true, 1, U], err: [true, 'Error: boom', U], underBoot: [U, U],
+      constant: 7, ncConst: 3, data: [1, 2], list: [true, 1, U], err: [true, 'Error: boom', U], underBoot: [U, U], cycle: U, grown: U, mapSeen: U, lazyNew: U,
       swept: {swept: ['fs.fakeAddedSync', 'fs.fakeLazySync', 'fs.fakeHiddenSync', 'fs.fakeSpace', 'fs.FakeBase', 'fs.FakeNamed', 'fs.FakeSelfNamed',
-        'fs.fakeAsyncOp', 'fs.fakeList', 'fs.fakeErr', 'fs.fakeNodeLazySync', 'fs.FakeReader', 'fs.fakeLateSync', 'fs.Symbol(ch.fakeSym)', 'fs.promises.fakeAdded'],
+        'fs.fakeAsyncOp', 'fs.fakeList', 'fs.fakeErr', 'fs.fakeCycle', 'fs.fakeMap', 'fs.fakeNodeLazySync', 'fs.FakeReader', 'fs.fakeLateSync', 'fs.Symbol(ch.fakeSym)', 'fs.promises.fakeAdded'],
       unsweepable: ['fs.fakeFixedSync', 'fs.fakeFixedGetSync', 'fs.fakeNcSync']}});
   });
 
