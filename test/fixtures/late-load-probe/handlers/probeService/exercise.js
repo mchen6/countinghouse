@@ -25,9 +25,12 @@ const STEPS = {
   // CHUtil.request to a declared host: postman-request (preloaded with net)
   request: () => new Promise((resolve) => CHUtil.request({url: URL_DECLARED, timeout: 1000}, (err) => resolve(ended(err)))),
   // CHUtil.redis: redis-api's client, made at boot
-  redis: () => new Promise((resolve) => {
+  // (with no store, as on the Windows subset's runner, the test says so
+  // and the step is skipped, saying so: a command that never answers would
+  // hold it)
+  redis: (ctx, input) => (input.noStore === true ? Promise.resolve('skipped: no store') : new Promise((resolve) => {
     try { CHUtil.redis.get('late-load-probe', (err) => resolve(`called: ${ended(err)}`)); } catch (e) { resolve(`threw: ${e.message}`); }
-  }),
+  })),
   // getHostIp: bind-address
   hostIp: async () => typeof(CHUtil.getHostIp()),
   // loadFile: the module's own file, by the runtime
@@ -165,7 +168,7 @@ const STEPS = {
 module.exports = async (input, ctx) => {
   const step = STEPS[input.step];
   if (step == null) return {output: {step: input.step, done: false}};
-  const result = await step(ctx);
+  const result = await step(ctx, input);
   if (input.step === 'parents') {
     const of = (m) => (m == null ? String(m) : String(m.filename));
     return {output: {step: input.step, done: true, handlerParent: of(result.handler), loadedParent: of(result.loaded)}};

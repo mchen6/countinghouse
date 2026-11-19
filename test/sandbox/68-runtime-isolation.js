@@ -12,7 +12,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
-const {testPort} = require('../helpers/test-env');
+const {testPort, redisAnswers} = require('../helpers/test-env');
+
+// (whether the servers this test starts have a Redis that answers: the
+// Windows subset's runner has none, so a step that needs one is skipped
+// there, saying so)
+let noStore = false;
 
 const KEY = 'aabbcc';
 const PROBE = path.join(ROOT, 'test', 'fixtures', 'isolation-probe');
@@ -26,6 +31,7 @@ const EXPECTED = {
   main: 'no require.main, no mainModule',
   parentSlot: 'handle, no runtime parent',
   statics: 'none replaced',
+  // (its store part skipped, saying so, only when the test found no Redis)
   window: 'no loader, nothing compiled',
   pathCache: 'empty'
 };
@@ -40,7 +46,8 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
   this.timeout(120000);
   let home;
   let policy;
-  before(() => {
+  before(async () => {
+    noStore = !(await redisAnswers());
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sb-68-'));
     policy = path.join(home, 'policy.json');
     fs.writeFileSync(policy, JSON.stringify({modules: {'isolation-probe': {approve: 'as-declared'}}}));
@@ -58,8 +65,8 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     after(() => { stopServer(server); server = null; });
     for (const [step, expected] of Object.entries(EXPECTED)) {
       it(`${step}: ${expected}`, async () => {
-        const r = await mcpCall(testPort(9759), KEY, TOOL, {step});
-        assert.strictEqual(detail(r), expected, JSON.stringify(r).slice(0, 500));
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step, noStore});
+        assert.strictEqual(detail(r), step === 'window' && noStore ? `${expected} (store part skipped: no store)` : expected, JSON.stringify(r).slice(0, 500));
       });
     }
     // P alone and the net: a load with a runtime Module as its parent, by
