@@ -50,14 +50,14 @@ describe('store 09: the redis blob store answers with Redis down or hung', funct
   // client is ready and its commands are sent, and the deadline's timer is
   // what fails them (the high review of #443, 3: a server that answered
   // nothing never made the client ready, so NR_CLOSED failed it instead)
-  async function hungRedis() {
+  async function hungRedis({infoAfterMs = 0} = {}) {
     const sockets = [];
     const server = net.createServer((s) => {
       sockets.push(s);
       s.on('error', () => {});
       s.on('data', (d) => {
         const text = d.toString('latin1').toLowerCase();
-        if (text.includes('\r\ninfo\r\n')) s.write('$21\r\nredis_version:7.0.0\r\n\r\n');
+        if (text.includes('\r\ninfo\r\n')) setTimeout(() => s.write('$21\r\nredis_version:7.0.0\r\n\r\n'), infoAfterMs);
         if (text.includes('\r\nselect\r\n')) s.write('+OK\r\n');
         if (text.includes('\r\nping\r\n')) s.write('+PONG\r\n');
       });
@@ -77,6 +77,20 @@ describe('store 09: the redis blob store answers with Redis down or hung', funct
       const ms = Date.now() - t0;
       assert.ok(ms >= DEADLINE - 20 && ms < DEADLINE + 1500, `answered in ${ms} ms`);
     } finally {
+      await hung.close();
+    }
+  });
+
+  // the medium on #443's high round, 1: node_redis' own ready check is not
+  // the deadline's: a slow INFO still makes the client ready
+  it('a resilient client whose ready check answers later than its command deadline still becomes ready', async () => {
+    const hung = await hungRedis({infoAfterMs: 500});
+    const client = redisResilient.createClient(`redis://127.0.0.1:${hung.port}`, {db: 5}, 50, {commandDeadlineMs: 100}); // run-local: not the shared Redis (a port this test opened)
+    client.on('error', () => {});
+    try {
+      await Promise.race([ready(client), new Promise((resolve, reject) => setTimeout(() => reject(new Error('never ready')), 3000))]);
+    } finally {
+      client.quit(() => {});
       await hung.close();
     }
   });
