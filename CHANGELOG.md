@@ -10,6 +10,23 @@ the auth config.
 
 ## Unreleased
 
+### Removed — the pack form, `--packsRoot`, a ceiling's `packs`, `fallbackEnv`
+
+Module-level configuration's cleanup (#413 rev 3, section 16, rule 7):
+- ch-local's control messages are the module form only. A message carrying
+  `scenario`, `pack`, `global` or `remoteCredentials` is refused, and
+  `--packsRoot` stops the start (exit 2); ch-local passes `--modulesRoot`.
+- The ceiling's `packs` is no longer a key: a ceiling that still holds it is
+  not trusted, saying to list each module under `modules`.
+- A runtime with `--controlChannel` takes only a version 2
+  `--remoteCredentials` file.
+- A remote's `fallbackEnv` is refused: a credential is one variable.
+- The settings tool no longer reads `packs.json`: with no `modules.json`,
+  nothing is installed.
+- Usage records and the report say `scenario` for the call's top-level
+  module (`groupBy: "scenario"`); a record that says `pack` is still read.
+- The catalogue's texts name a module, never a pack.
+
 ### Changed — `--settingsFile` outside the single-identity profile stops the start
 
 - **`--settingsFile` is refused (exit 2) outside the single-identity
