@@ -28,7 +28,9 @@ const STEPS = [
   // the declared host, approved by the policy: past the sandbox, into
   // postman-request (a .invalid name ends in its own error)
   ['request', (d) => /^error: /.test(d)],
-  ['redis', (d) => /^called: /.test(d)],
+  // (no answer is taken only on Windows, whose subset runner has no Redis:
+  // elsewhere a command that never answers fails it)
+  ['redis', (d) => /^called: /.test(d) && (process.platform === 'win32' || !/no store answer/.test(d))],
   ['hostIp', (d) => d === 'string'],
   ['loadFile', (d) => d === 'loaded'],
   // a lib/ file and a node_modules file of countinghouse's: refused
@@ -175,7 +177,7 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       assert.ok(p.structuredContent != null, JSON.stringify(p).slice(0, 800));
       // the module's own anchor, inside its root (/app, as module code sees
       // it; on Windows <V>:\app, #195)
-      const anchor = /^(\/app\/|[A-Z]:\\app\\)\.countinghouse-entry$/;
+      const anchor = process.platform === 'win32' ? /^[A-Z]:\\app\\\.countinghouse-entry$/ : /^\/app\/\.countinghouse-entry$/;
       assert.ok([p.structuredContent.handlerParent, p.structuredContent.loadedParent].every((f) => anchor.test(f)),
         JSON.stringify([p.structuredContent.handlerParent, p.structuredContent.loadedParent]));
       assert.strictEqual(p.structuredContent.handlerParent, p.structuredContent.loadedParent);

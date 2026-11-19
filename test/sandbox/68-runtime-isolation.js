@@ -26,7 +26,9 @@ const EXPECTED = {
   main: 'no require.main, no mainModule',
   parentSlot: 'handle, no runtime parent',
   statics: 'none replaced',
-  window: 'no loader, nothing compiled',
+  // (on Windows, whose subset runner has no Redis, the store's part of the
+  // window goes unanswered, and says so)
+  window: process.platform === 'win32' ? 'no loader, nothing compiled (no store answer)' : 'no loader, nothing compiled',
   pathCache: 'empty'
 };
 

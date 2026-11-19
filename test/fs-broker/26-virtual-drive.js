@@ -4,7 +4,7 @@
 // and leaves every other drive a host path. Server-free.
 const assert = require('assert');
 const virtualDrive = require('../../lib/fs-broker/virtual-drive');
-const {fromWinFor} = require('../../lib/fs-broker/identity');
+const {fromWinFor, fromNamespacedFor} = require('../../lib/fs-broker/identity');
 const {virtualFormFor} = require('../../lib/fs-broker/roots');
 
 describe('fs-broker 26: a module\'s virtual drive on Windows (#195)', () => {
@@ -45,6 +45,16 @@ describe('fs-broker 26: a module\'s virtual drive on Windows (#195)', () => {
     assert.strictEqual(f('z:/app'), '/app');
     for (const other of ['Z:\\apple\\x', 'D:\\app\\x', 'Z:\\data\\x', '/app/x', 'Z:app']) assert.strictEqual(f(other), other);
     assert.strictEqual(fromWinFor(null)('Z:\\app\\x'), 'Z:\\app\\x', 'no drive: unchanged');
+  });
+
+  it('findPackageJSON\'s Windows answer in its plain form: a drive or UNC long path only; a device, volume or drive-relative one stays as it is (refused)', () => {
+    const f = fromNamespacedFor(true);
+    assert.strictEqual(f('\\\\?\\D:\\mods\\x\\package.json'), 'D:\\mods\\x\\package.json');
+    assert.strictEqual(f('\\\\?\\UNC\\server\\share\\package.json'), '\\\\server\\share\\package.json');
+    assert.strictEqual(f('\\\\?\\unc\\server\\share\\package.json'), '\\\\server\\share\\package.json');
+    for (const other of ['\\\\?\\Volume{0f0e}\\pkgs\\package.json', '\\\\?\\GLOBALROOT\\Device\\HarddiskVolume2\\package.json',
+      '\\\\?\\D:package.json', 'D:\\mods\\package.json', '/app/package.json']) assert.strictEqual(f(other), other);
+    assert.strictEqual(fromNamespacedFor(false)('\\\\?\\D:\\x'), '\\\\?\\D:\\x', 'not Windows: unchanged');
   });
 
   it('the broker\'s path form: <V>:\\app is /app, a string or a Buffer; another drive stays a host path', () => {

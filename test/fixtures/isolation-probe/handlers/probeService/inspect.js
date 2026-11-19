@@ -191,6 +191,7 @@ const STEPS = {
       } finally { Error.prepareStackTrace = prepare; }
     };
     const leaked = [];
+    let unanswered = false;
     const wrapWas = M.wrap;
     try { M.wrap = (src) => `globalThis.__isolationLeak && globalThis.__isolationLeak(require, module);${wrapWas(src)}`; } catch (e) { /* refused */ }
     globalThis.__isolationLeak = (req, mod) => { if (mod != null && typeof(mod.filename) === 'string' && !insideRoot(mod.filename)) leaked.push(mod.filename); };
@@ -204,7 +205,7 @@ const STEPS = {
       // (bounded: a store that never answers, as on a runner with no Redis,
       // would hold the step, and the module's wrap with it, past the call)
       await new Promise((resolve) => {
-        const timer = setTimeout(resolve, 3000);
+        const timer = setTimeout(() => { unanswered = true; resolve(); }, 3000);
         try { CHUtil.redis.get('isolation-window', () => { clearTimeout(timer); resolve(); }); } catch (e) { clearTimeout(timer); resolve(); }
       });
     } finally {
@@ -213,7 +214,7 @@ const STEPS = {
       delete globalThis.__isolationLeak;
     }
     const loaders = [...found].filter((x) => x.startsWith('LOADER'));
-    return `${loaders.length === 0 ? 'no loader' : loaders.join(' ')}, ${leaked.length === 0 ? 'nothing compiled' : `compiled: ${leaked.length}`}`;
+    return `${loaders.length === 0 ? 'no loader' : loaders.join(' ')}, ${leaked.length === 0 ? 'nothing compiled' : `compiled: ${leaked.length}`}${unanswered ? ' (no store answer)' : ''}`;
   },
   // BroadcastChannel: gone under enforce, by either route; under audit it
   // stays (a message crosses to the peer module's worker) and is reported

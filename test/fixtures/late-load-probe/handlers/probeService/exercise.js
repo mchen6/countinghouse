@@ -28,7 +28,7 @@ const STEPS = {
   // (the command issued is the path; a store that never answers, as on a
   // runner with no Redis, doesn't hold the step past 3 s)
   redis: () => new Promise((resolve) => {
-    const timer = setTimeout(() => resolve('called: no answer in 3 s'), 3000);
+    const timer = setTimeout(() => resolve('called: no store answer in 3 s'), 3000);
     try {
       CHUtil.redis.get('late-load-probe', (err) => { clearTimeout(timer); resolve(`called: ${ended(err)}`); });
     } catch (e) { clearTimeout(timer); resolve(`threw: ${e.message}`); }
