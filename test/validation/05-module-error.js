@@ -185,6 +185,12 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
       // selector, a tag character, a lone surrogate (the final high review of
       // #445, 1)
       assert.strictEqual(moduleText('a\u200bb\u00adc\u2060d\ufeffe\ufe0ff\u{e0041}g\ud800h'), 'a b c d e f g h');
+      // client-text's rule exactly: an emoji sequence, a joiner within a
+      // word (Persian's ZWNJ) and an RGI flag stay whole (the medium on the
+      // final round, 1)
+      for (const whole of ['\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645', '\u2764\ufe0f', '\u{1f468}\u200d\u{1f469}\u200d\u{1f467}', '\u{1f3f4}\u{e0067}\u{e0062}\u{e0065}\u{e006e}\u{e0067}\u{e007f}']) {
+        assert.strictEqual(moduleText(whole), whole, JSON.stringify(whole));
+      }
       assert.strictEqual(moduleText('ab\ud83d\ude00', 3), 'ab', 'no half of a pair at the cut');
       assert.strictEqual(require('../../lib/schema-safety').declaredText('x\u2067y'), 'x y');
     });
