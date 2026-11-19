@@ -70,7 +70,10 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
   });
 
   // log: the order things happen in; failVersion: a version whose spawn fails
-  function runtime({failVersion = null, staleDuringDrain = null, failName = '@t/ch-pack-s'} = {}) {
+  // unloadDuring: {name, when: 'drain' | 'spawn' | 'registration'}: an
+  // operator unload (POST /unload-module: a generation of its own, the module
+  // off the map) in that window of the module's switch
+  function runtime({failVersion = null, staleDuringDrain = null, failName = '@t/ch-pack-s', unloadDuring = null} = {}) {
     const log = [];
     const mm = Object.assign(Object.create(ModuleManager.prototype), {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
       supervisor: null, generations: {}, packsInPlace: null});
@@ -79,17 +82,37 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       const wm = Object.create(WorkerMessage.prototype);
       return Object.assign(wm, {hostModuleName: name, packageInfo: {name, version}, deviceList: {[`d-${name}`]: {}}, msgQueue: {}, modulePath: p});
     };
-    const spawn = (p, name, version, cb) => {
+    const operatorUnload = (name) => { log.push(`operator unload ${name}`); mm.nextGeneration(name); delete mm.modules[name]; };
+    const unloadsIn = (name, when) => unloadDuring != null && unloadDuring.name === name && unloadDuring.when === when && !log.includes(`operator unload ${name}`);
+    // switching: a reload's switch spawning it (loadModuleByWorker), the only
+    // spawn an unloadDuring 'spawn' or 'registration' acts in
+    const spawn = (p, name, version, cb, switching = false) => {
       if (version === failVersion && name === failName) return setImmediate(() => cb(Object.assign(new Error('no spawn'), {code: 'LOAD_MODULE_FAIL'})));
       log.push(`held ${name}: ${mm.isHeld(name)}`);
-      mm.modules[name] = instance(name, version, p);
+      const wm = instance(name, version, p);
+      mm.modules[name] = wm;
       mm.unitLoaded(name);
+      if (switching && unloadsIn(name, 'spawn')) operatorUnload(name);
       setImmediate(() => cb(null));
-      // its registration, a little later
-      setTimeout(() => { log.push(`registered ${name}@${version}`); mm.unitRegistration(name); }, 30);
+      // its registration, a little later (its devices from then on)
+      const late = switching && unloadDuring != null && unloadDuring.name === name && unloadDuring.when === 'registration';
+      if (late) wm.deviceList = {};
+      setTimeout(() => {
+        if (late && unloadsIn(name, 'registration')) return operatorUnload(name);
+        if (late) wm.deviceList = {[`d-${name}`]: {}};
+        log.push(`registered ${name}@${version}`);
+        mm.unitRegistration(name);
+      }, 30);
     };
     mm.loadModuleFromPath = spawn;
-    mm.loadModuleByWorker = (p, name, version, cb) => { delete mm.modules[name]; spawn(p, name, version, cb); };
+    // the real one's contract (lib/module-manager.js): a reload's generation,
+    // held through the spawn; one moved meanwhile answers MODULE_LOAD_SUPERSEDED
+    const SUPERSEDED = (name) => Object.assign(new Error(`${name}: superseded`), {code: 'MODULE_LOAD_SUPERSEDED'});
+    mm.loadModuleByWorker = (p, name, version, cb, {generation = null} = {}) => {
+      if (generation != null && mm.generations[name] !== generation) return cb(SUPERSEDED(name));
+      delete mm.modules[name];
+      spawn(p, name, version, (err) => cb(err == null && generation != null && mm.generations[name] !== generation ? SUPERSEDED(name) : err), true);
+    };
     mm.unloadModuleExternal = (name, cb) => { delete mm.modules[name]; cb(null); };
     const dm = {
       verificationPass: (only) => log.push(`own pass ${[...only].join(',')}`),
@@ -98,6 +121,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       // comes in then, as a restart of the old version would
       peerChannelBroker: {openInvokesTo: (old) => {
         if (staleDuringDrain != null && old.hostModuleName === staleDuringDrain) { log.push(`stale ${staleDuringDrain}`); mm.unitRegistration(staleDuringDrain); }
+        if (unloadsIn(old.hostModuleName, 'drain') && mm.modules[old.hostModuleName] === old) operatorUnload(old.hostModuleName);
         return 0;
       }}
     };
@@ -375,5 +399,42 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     const fresh = log.indexOf('registered @t/ch-step-p@2.0.0');
     const pass = log.findIndex((l) => l.startsWith('unit pass'));
     assert.ok(stale >= 0 && fresh > stale && pass > fresh, log.join('\n'));
+  });
+
+  // the back-sweep's group 3 and the Reviewer's high review of #441 (3, 4,
+  // 6): the reload's generation is taken before the drain and held through
+  // the spawn and the registration, so an operator action on the module in
+  // any of the three windows stands the switch down, and the rollback never
+  // brings that module back over it
+  for (const when of ['drain', 'spawn', 'registration']) {
+    it(`an operator unload during the switch's ${when} fails the reload, and nothing brings that module back`, async () => {
+      const {mm, dm, log} = runtime({unloadDuring: {name: '@t/ch-step-p', when}});
+      await loadBoth(mm, dm, '1.0.0');
+      log.length = 0;
+      await assert.rejects(reloadTo(mm, dm, '2.0.0'), (e) => /SUPERSEDED/.test(`${e.code} ${e.message}`));
+      const at = log.indexOf('operator unload @t/ch-step-p');
+      assert.ok(at >= 0, log.join('\n'));
+      assert.ok(!log.slice(at + 1).some((l) => /^held @t\/ch-step-p/.test(l)), `no spawn of ch-step-p after the unload:\n${log.join('\n')}`);
+      assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'it stays unloaded');
+    });
+  }
+
+  it('the real loadModuleByWorker holds a reload\'s generation: a moved one is MODULE_LOAD_SUPERSEDED before and after the spawn', async () => {
+    const mm = Object.assign(Object.create(ModuleManager.prototype), {modules: {}, generations: {}, spawnsPending: {}, supervisor: null, endedDevices: {}});
+    const spawned = [];
+    mm.spawnModuleWorker = (p, name, version, settle, current) => spawned.push({settle, current});
+    const load = (gen) => new Promise((resolve) => mm.loadModuleByWorker('/x', 'ch-step-x', '2.0.0', (err) => resolve(err), {generation: gen}));
+    const gen = mm.nextGeneration('ch-step-x');
+    mm.nextGeneration('ch-step-x');   // an unload before the spawn
+    assert.strictEqual((await load(gen)).code, 'MODULE_LOAD_SUPERSEDED');
+    assert.strictEqual(spawned.length, 0, 'no worker spawned');
+    const gen2 = mm.nextGeneration('ch-step-x');
+    const pending = load(gen2);
+    assert.strictEqual(spawned.length, 1);
+    assert.strictEqual(spawned[0].current(), true, 'the spawn holds the reload\'s own generation');
+    mm.nextGeneration('ch-step-x');   // an unload during the spawn
+    assert.strictEqual(spawned[0].current(), false);
+    spawned[0].settle(null);
+    assert.strictEqual((await pending).code, 'MODULE_LOAD_SUPERSEDED');
   });
 });
