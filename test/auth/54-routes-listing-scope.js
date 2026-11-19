@@ -92,6 +92,21 @@ describe('auth 54: get-spec and the schema route answer only what the caller\'s 
     });
   }
 
+  // the high review of #447, 1 and 2: the list and package-info keep to the
+  // same scope, so neither shows what get-spec refuses
+  it('/device-list lists exactly the modules each key\'s tools/list shows; package-info refuses the part', async () => {
+    for (const key of [WILDCARD_KEY, SCOPED_KEY]) {
+      const tools = await toolsList(key);
+      const listed = (await get(key, '/device-list')).body.map((d) => d.device.friendlyName).sort();
+      const shown = Object.keys(DIRS).filter((m) => toolNames(m).some((n) => tools.includes(n))).map((m) => api(m).device.friendlyName).sort();
+      assert.deepStrictEqual(listed, shown, key);
+    }
+    const res = await get(WILDCARD_KEY, `/devices/${idOf('part')}/package-info`);
+    assert.strictEqual(res.body.code, 'MODULE_NOT_LISTED', JSON.stringify(res.body));
+    const echo = await get(WILDCARD_KEY, `/devices/${idOf('echo')}/package-info`);
+    assert.strictEqual(echo.status, 200, JSON.stringify(echo.body));
+  });
+
   it('the unlisted part is refused MODULE_NOT_LISTED by both routes, even to a key granted every device', async () => {
     for (const p of [`/devices/${idOf('part')}/get-spec`, `/devices/${idOf('part')}/schema/`]) {
       const res = await get(WILDCARD_KEY, p);
