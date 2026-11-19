@@ -122,7 +122,7 @@ describe('module-loading 30: the tools/call path builds and fetches once per cha
       f.deviceMap.d2 = {spec: spec('two', ['b']), packageInfo: {name: 'two'}};
       const table = registry.buildToolTargets(f.cdif);
       // what tools/list does for a key that sees d1 only (tool-registry forCaller)
-      const filtered = registry.forCaller(table, new Set(['d1']));
+      const filtered = registry.forCaller(f.cdif, table, new Set(['d1']));
       assert.strictEqual(Reflect.deleteProperty(table, 'two_s_b'), false, 'a filter could cut the shared table down');
       assert.strictEqual(Reflect.set(table, 'x', 1), false);
       assert.deepStrictEqual(Object.keys(registry.buildToolTargets(f.cdif)).sort(), ['one_s_a', 'two_s_b'], 'the next caller lost a tool');

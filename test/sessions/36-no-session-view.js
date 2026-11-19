@@ -49,10 +49,12 @@ describe('sessions 36: no session view (M5a)', () => {
     // (the one predicate takes no session: there is no view to choose,
     // #447's high review, 6)
     assert.strictEqual(registry.callerSees(null, 'dev-b'), true);
-    assert.deepStrictEqual(Object.keys(registry.forCaller({t1: {deviceID: 'dev-a'}, t2: {deviceID: 'dev-b'}}, null)), ['t1', 't2']);
+    // (two loaded modules, each its own device)
+    const loaded = {deviceManager: {deviceMap: {'dev-a': {packageInfo: {name: 'mod-a'}}, 'dev-b': {packageInfo: {name: 'mod-b'}}}}};
+    assert.deepStrictEqual(Object.keys(registry.forCaller(loaded, {t1: {deviceID: 'dev-a'}, t2: {deviceID: 'dev-b'}}, null)), ['t1', 't2']);
     visibility.hide(['mod-a']);
     assert.strictEqual(registry.callerSees(null, 'dev-a'), false, 'hidden from everyone');
-    assert.deepStrictEqual(Object.keys(registry.forCaller({t1: {deviceID: 'dev-a'}, t2: {deviceID: 'dev-b'}}, null)), ['t2']);
+    assert.deepStrictEqual(Object.keys(registry.forCaller(loaded, {t1: {deviceID: 'dev-a'}, t2: {deviceID: 'dev-b'}}, null)), ['t2']);
     for (const old of ['sessionLists', 'filterTargetsBySession', 'filterTargetsByAuth']) assert.strictEqual(registry[old], undefined, old);
   });
 
