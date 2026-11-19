@@ -169,8 +169,12 @@ const STEPS = {
     const mainOut = (fn, dir) => { try { fn(`../../lib/${dir}`); return 'found'; } catch (e) { return `${e.code}|${e.message}`.split(dir).join('DIR'); } };
     const routes = [(r) => require(r), (r) => M._resolveFilename(r, module)];
     const answers = [];
-    for (const fn of routes) for (const dir of ['main-out-a', 'main-out-b', 'main-out-c', 'main-out-d']) answers.push(mainOut(fn, dir));
-    const mainSame = answers.every((a) => a === answers[0]) && answers[0] === "MODULE_NOT_FOUND|Cannot find module '../../lib/DIR'" ? 'same' : `main(${answers.join(' / ')})`;
+    for (const fn of routes) for (const dir of ['main-out-a', 'main-out-b', 'main-out-c', 'main-out-d', 'main-out-e', 'main-out-f']) answers.push(mainOut(fn, dir));
+    // (and the file Node takes before such a directory still loads)
+    let sibling;
+    try { sibling = require('../../lib/main-out-g'); } catch (e) { sibling = `threw ${e.code}`; }
+    const mainSame = answers.every((a) => a === answers[0]) && answers[0] === "MODULE_NOT_FOUND|Cannot find module '../../lib/DIR'" && sibling === 'sibling'
+      ? 'same' : `main(${answers.join(' / ')} / ${sibling})`;
     let empty;
     try { await import(''); empty = 'found'; } catch (e) { empty = `${e.code}|${e.message}`; }
     const emptySame = /^ERR_MODULE_NOT_FOUND\|Cannot find module '' \(countinghouse module sandbox\)$/.test(empty) ? 'same' : `empty(${empty})`;

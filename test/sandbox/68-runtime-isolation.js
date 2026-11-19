@@ -62,6 +62,17 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       fs.writeFileSync(path.join(probe, 'lib', dir, 'package.json'), JSON.stringify({main}));
       if (index) fs.writeFileSync(path.join(probe, 'lib', dir, 'index.js'), 'module.exports = 1;\n');
     }
+    // (e and f: the outside "main" written first and a number after it,
+    // which JSON.parse keeps and Node's own reader may not; g: a directory
+    // with an outside "main" beside a file of its name, which Node takes
+    // first and loads)
+    for (const [dir, target] of [['main-out-e', 'node-version.js'], ['main-out-f', 'no-such-isolation.js'], ['main-out-g', 'node-version.js']]) {
+      fs.mkdirSync(path.join(probe, 'lib', dir));
+      const main = path.relative(path.join(probe, 'lib', dir), path.join(ROOT, 'lib', target)).split(path.sep).join('/');
+      fs.writeFileSync(path.join(probe, 'lib', dir, 'package.json'), `{"main": ${JSON.stringify(main)}, "main": 1}`);
+      fs.writeFileSync(path.join(probe, 'lib', dir, 'index.js'), 'module.exports = 1;\n');
+    }
+    fs.writeFileSync(path.join(probe, 'lib', 'main-out-g.js'), 'module.exports = "sibling";\n');
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sb-68-'));
     policy = path.join(home, 'policy.json');
     fs.writeFileSync(policy, JSON.stringify({modules: {'isolation-probe': {approve: 'as-declared'}}}));

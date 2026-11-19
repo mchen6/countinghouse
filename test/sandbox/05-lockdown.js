@@ -115,7 +115,9 @@ describe('sandbox 05: worker lockdown', function() {
       STREAM_WRAP_ROUTES.forEach(([what]) => {
         it(`${what} is not found: this Node has no _stream_wrap`, async () => {
           const r = await mcpCall(testPort(9608), KEY, TOOL, {what: what});
-          assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: 'MODULE_NOT_FOUND'}, JSON.stringify(r));
+          // (no built-in by that name, so a bare name the module can't
+          // resolve: the one refusal under enforce, #440's third round)
+          assert.deepStrictEqual(toolOutput(r), {outcome: 'blocked', code: 'MODULE_NOT_FOUND'}, JSON.stringify(r));
         });
       });
     }
