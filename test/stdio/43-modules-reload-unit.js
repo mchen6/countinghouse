@@ -418,16 +418,22 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
   // the spawn and the registration, so an operator action on the module in
   // any of the three windows stands the switch down, and the rollback never
   // brings that module back over it
+  // the high review of #442, 1: a module left to a later operator action
+  // makes the reload uncertain (never a plain all-or-none failure), naming it
+  const leftToOperator = (e) => e.code === 'CONTROL_MODULE_UNCERTAIN' && /@t\/ch-step-p was left to a later operator action/.test(e.message);
+
   for (const when of ['drain', 'spawn', 'registration']) {
     it(`an operator unload during the switch's ${when} fails the reload, and nothing brings that module back`, async () => {
       const {mm, dm, log} = runtime({unloadDuring: {name: '@t/ch-step-p', when}});
       await loadBoth(mm, dm, '1.0.0');
       log.length = 0;
-      await assert.rejects(reloadTo(mm, dm, '2.0.0'), (e) => /SUPERSEDED/.test(`${e.code} ${e.message}`));
+      await assert.rejects(reloadTo(mm, dm, '2.0.0'), leftToOperator);
       const at = log.indexOf('operator unload @t/ch-step-p');
       assert.ok(at >= 0, log.join('\n'));
       assert.ok(!log.slice(at + 1).some((l) => /^held @t\/ch-step-p/.test(l)), `no spawn of ch-step-p after the unload:\n${log.join('\n')}`);
       assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'it stays unloaded');
+      // the unit's record no longer says what runs: a reload of it is refused
+      await assert.rejects(reloadTo(mm, dm, '2.0.0'), (e) => e.code === 'CONTROL_MODULE_UNCERTAIN' && /left to a later operator action; restart your client/.test(e.message));
     });
   }
 
@@ -456,7 +462,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     const {mm, dm, log} = runtime({failVersion: '2.0.0', unloadDuring: {name: '@t/ch-step-p', when: 'after'}});
     await loadBoth(mm, dm, '1.0.0');
     log.length = 0;
-    await assert.rejects(reloadTo(mm, dm, '2.0.0'));
+    await assert.rejects(reloadTo(mm, dm, '2.0.0'), leftToOperator);
     const at = log.indexOf('operator unload @t/ch-step-p');
     assert.ok(at >= 0, log.join('\n'));
     assert.ok(!log.slice(at + 1).some((l) => /^held @t\/ch-step-p/.test(l)), `no spawn of ch-step-p after the unload:\n${log.join('\n')}`);
