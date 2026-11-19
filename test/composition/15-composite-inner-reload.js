@@ -67,9 +67,14 @@ const balance = (port) => request(`http://127.0.0.1:${port}`).get('/balance').se
         20000, 'the reloaded inner module to answer');
     });
 
-    it('a callee\'s runtime error code reaches the caller', async () => {
+    // A callee module may not use a code of the runtime's catalogue
+    // (ctx.error('DEVICE_INVOKE_FAIL'), the logger spec, section 12, 1): its
+    // caller is answered the runtime's MODULE_CODE_RESERVED, never the
+    // catalogue code as if the runtime had said it (#445).
+    it('a callee\'s catalogue code reaches the caller as the runtime\'s MODULE_CODE_RESERVED', async () => {
       const r = await mcpCall(variant.port, KEY, 'worker_end_caller_callerservice_callfailcatalogue', {});
-      assert.strictEqual(toolErrorCode(r), 'DEVICE_INVOKE_FAIL', JSON.stringify(r));
+      assert.strictEqual(toolErrorCode(r), 'MODULE_CODE_RESERVED', JSON.stringify(r));
+      assert.match(JSON.stringify(r), /DEVICE_INVOKE_FAIL/, 'it names the code the callee used');
     });
 
     it('a callee\'s own error code reaches the caller too, as the module\'s', async () => {
