@@ -12,6 +12,8 @@ function dirsOf(top) {
   if (path.basename(nm).startsWith('@')) nm = path.dirname(nm);
   const out = {};
   for (const n of fs.readdirSync(nm)) {
+    // (no package's name starts with a dot: .bin, .package-lock.json)
+    if (n.startsWith('.')) continue;
     if (n.startsWith('@')) for (const m of fs.readdirSync(path.join(nm, n))) out[`${n}/${m}`] = path.join(nm, n, m);
     else out[n] = path.join(nm, n);
   }
