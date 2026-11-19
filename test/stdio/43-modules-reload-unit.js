@@ -70,7 +70,8 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
   });
 
   // log: the order things happen in; failVersion: a version whose spawn fails
-  function runtime({failVersion = null, staleDuringDrain = null, failName = '@t/ch-pack-s'} = {}) {
+  // unloadDuringDrain: a module an operator unloads while the reload drains it
+  function runtime({failVersion = null, staleDuringDrain = null, failName = '@t/ch-pack-s', unloadDuringDrain = null} = {}) {
     const log = [];
     const mm = Object.assign(Object.create(ModuleManager.prototype), {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
       supervisor: null, generations: {}, packsInPlace: null});
@@ -98,6 +99,12 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       // comes in then, as a restart of the old version would
       peerChannelBroker: {openInvokesTo: (old) => {
         if (staleDuringDrain != null && old.hostModuleName === staleDuringDrain) { log.push(`stale ${staleDuringDrain}`); mm.unitRegistration(staleDuringDrain); }
+        // an operator's unload (POST /unload-module): its own generation, the module off the map
+        if (unloadDuringDrain != null && old.hostModuleName === unloadDuringDrain && mm.modules[unloadDuringDrain] === old) {
+          log.push(`operator unload ${unloadDuringDrain}`);
+          mm.nextGeneration(unloadDuringDrain);
+          delete mm.modules[unloadDuringDrain];
+        }
         return 0;
       }}
     };
@@ -391,5 +398,18 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     await assert.rejects(mip.replaceDrainThenSwitch(mm, dm, {name: 'ch-step-x', path: '/x', version: '2.0.0'}), (e) => e.code === 'MODULE_LOAD_SUPERSEDED');
     assert.strictEqual(spawned, 0, 'no new worker');
     assert.strictEqual(old.replacing, false, 'the old one is no longer marked replacing');
+  });
+
+  // the medium review of the back-sweep PR, 1: the stand-down is not undone
+  // by the reload's rollback (which used to switch the module back)
+  it('a reload whose switch stands down for an operator unload fails, and its rollback never brings that module back', async () => {
+    const {mm, dm, log} = runtime({unloadDuringDrain: '@t/ch-step-p'});
+    await loadBoth(mm, dm, '1.0.0');
+    log.length = 0;
+    await assert.rejects(reloadTo(mm, dm, '2.0.0'), (e) => /SUPERSEDED/.test(`${e.code} ${e.message}`));
+    const unloadAt = log.indexOf('operator unload @t/ch-step-p');
+    assert.ok(unloadAt >= 0, log.join('\n'));
+    assert.ok(!log.slice(unloadAt).some((l) => /^held @t\/ch-step-p/.test(l)), `no spawn of ch-step-p after the unload:\n${log.join('\n')}`);
+    assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'it stays unloaded');
   });
 });
