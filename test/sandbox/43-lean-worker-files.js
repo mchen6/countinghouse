@@ -42,6 +42,11 @@ const ALLOWED = [
   'lib/chutil-facade.js',
   'lib/worker-message.js',
   'lib/countinghouse-error.js',
+  // the one module-text rule (#445): pure, taken at boot by countinghouse-error;
+  // it requires only its character class, the repo's one hidden-character
+  // class, a data file
+  'lib/module-text.js',
+  'lib/conditions-why.json',
   'lib/error-catalogue.js',
   'lib/cli-options.js',
   // a call's own cap and timeout, held by its token while it runs (#233):
