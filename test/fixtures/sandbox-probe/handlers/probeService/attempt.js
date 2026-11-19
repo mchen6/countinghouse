@@ -71,7 +71,8 @@ const ATTEMPTS = {
   // their use said
   vmModules:        () => {
     const vm = require('vm');
-    if (!('SourceTextModule' in vm) && vm.SourceTextModule === undefined) return;
+    if (!('SourceTextModule' in vm)) throw Object.assign(new Error('gone'), {code: 'GONE'});
+    if (typeof(vm.SourceTextModule) !== 'function') throw Object.assign(new Error('key left'), {code: 'KEY_LEFT'});
     void new vm.SourceTextModule('export default 1;');
     throw Object.assign(new Error('present'), {code: 'PRESENT'});
   },
