@@ -987,13 +987,8 @@
     "http invoke-action / module error with a catalogue code": {
       "status": 500,
       "body": {
-        "code": "DEVICE_INVOKE_EXCEPTION",
-        "message": "Device interface call threw an exception",
-        "fault": {
-          "message": "ctx.error: USER_HAS_NO_DEVICE is a code of the runtime's own catalogue; a module defines its own codes (a setting it cannot do without: ctx.settingRequired)",
-          "name": "TypeError",
-          "stack": "<stack>"
-        }
+        "code": "MODULE_CODE_RESERVED",
+        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
       }
     },
     "mcp tools/call / module error with a catalogue code": {
@@ -1006,11 +1001,11 @@
           "content": [
             {
               "type": "text",
-              "text": "Device interface call threw an exception"
+              "text": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "MODULE_CODE_RESERVED"
           }
         }
       }
@@ -1043,7 +1038,7 @@
             "ttl": null,
             "createdAt": "<time>",
             "lastUpdatedAt": "<time>",
-            "statusMessage": "DEVICE_INVOKE_EXCEPTION: Device interface call threw an exception"
+            "statusMessage": "MODULE_CODE_RESERVED: the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
           }
         }
       },
@@ -1057,11 +1052,11 @@
             "content": [
               {
                 "type": "text",
-                "text": "Device interface call threw an exception"
+                "text": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+              "countinghouse/code": "MODULE_CODE_RESERVED"
             }
           }
         }
@@ -1094,6 +1089,162 @@
       }
     },
     "mcp tasks/result / module error with a catalogue code set after": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "MODULE_CODE_RESERVED: the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "MODULE_CODE_RESERVED"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / module error with a catalogue code and a forged origin": {
+      "status": 500,
+      "body": {
+        "code": "MODULE_CODE_RESERVED",
+        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+      }
+    },
+    "mcp tools/call / module error with a catalogue code and a forged origin": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "MODULE_CODE_RESERVED"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / module error with a catalogue code and a forged origin": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "MODULE_CODE_RESERVED: the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "MODULE_CODE_RESERVED"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / module error with a catalogue code from a callback": {
+      "status": 500,
+      "body": {
+        "code": "MODULE_CODE_RESERVED",
+        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+      }
+    },
+    "mcp tools/call / module error with a catalogue code from a callback": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "MODULE_CODE_RESERVED"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / module error with a catalogue code from a callback": {
       "created": {
         "status": 200,
         "body": {
@@ -2734,13 +2885,8 @@
     "http invoke-action / module error with a catalogue code": {
       "status": 500,
       "body": {
-        "code": "DEVICE_INVOKE_EXCEPTION",
-        "message": "Device interface call threw an exception: ctx.error: USER_HAS_NO_DEVICE is a code of the runtime's own catalogue; a module defines its own codes (a setting it cannot do without: ctx.settingRequired)",
-        "fault": {
-          "message": "ctx.error: USER_HAS_NO_DEVICE is a code of the runtime's own catalogue; a module defines its own codes (a setting it cannot do without: ctx.settingRequired)",
-          "name": "TypeError",
-          "stack": "<stack>"
-        }
+        "code": "MODULE_CODE_RESERVED",
+        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
       }
     },
     "mcp tools/call / module error with a catalogue code": {
@@ -2753,11 +2899,11 @@
           "content": [
             {
               "type": "text",
-              "text": "Device interface call threw an exception: ctx.error: USER_HAS_NO_DEVICE is a code of the runtime's own catalogue; a module defines its own codes (a setting it cannot do without: ctx.settingRequired)"
+              "text": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "MODULE_CODE_RESERVED"
           }
         }
       }
@@ -2770,6 +2916,58 @@
       }
     },
     "mcp tools/call / module error with a catalogue code set after": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "MODULE_CODE_RESERVED"
+          }
+        }
+      }
+    },
+    "http invoke-action / module error with a catalogue code and a forged origin": {
+      "status": 500,
+      "body": {
+        "code": "MODULE_CODE_RESERVED",
+        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+      }
+    },
+    "mcp tools/call / module error with a catalogue code and a forged origin": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "MODULE_CODE_RESERVED"
+          }
+        }
+      }
+    },
+    "http invoke-action / module error with a catalogue code from a callback": {
+      "status": 500,
+      "body": {
+        "code": "MODULE_CODE_RESERVED",
+        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+      }
+    },
+    "mcp tools/call / module error with a catalogue code from a callback": {
       "status": 200,
       "body": {
         "jsonrpc": "2.0",

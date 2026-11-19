@@ -9,11 +9,10 @@
 // 17-auth.json, gives the caller's inner hops an identity (runsModules).
 //
 // - A module defines only its own codes (the logger spec, section 12, 1; the
-//   back-sweep, 11-18): ctx.error refuses a code of the runtime's catalogue
-//   (a TypeError, so the handler's crash, in the runtime's words), and one
-//   set on its error after is MODULE_CODE_RESERVED where the error enters
-//   the runtime, so a callee can't pass a catalogue code off, as the
-//   runtime's or as its own, in any mode.
+//   back-sweep, 11-18): ctx.error with a code of the runtime's catalogue,
+//   and one set on its error after, answer the runtime's
+//   MODULE_CODE_RESERVED, so a callee can't pass a catalogue code off, as
+//   the runtime's or as its own, in any mode.
 // - A code of the module's own crosses whole too (review of #37: hopError
 //   passes a module-origin error through, since its origin already says it
 //   is not the runtime's).
@@ -80,15 +79,13 @@ MODES.forEach((mode) => {
       server.kill('SIGTERM');
     });
 
-    it('ctx.error refuses a catalogue code: the callee\'s handler crashes, answered in the runtime\'s words', (done) => {
+    it('ctx.error with a catalogue code answers the runtime\'s MODULE_CODE_RESERVED, naming it', (done) => {
       probe(mode.port, 'catalogue', (err, out) => {
         if (err) return done(err);
         observed.catalogue[mode.label] = out;
-        assert.strictEqual(out.code, 'DEVICE_INVOKE_EXCEPTION', JSON.stringify(out));
+        assert.strictEqual(out.code, 'MODULE_CODE_RESERVED', JSON.stringify(out));
         assert.strictEqual(out.origin, 'runtime', JSON.stringify(out));
-        // (never the catalogue code as the module's: single-thread mode's
-        // crash message names the rule, which is for the author)
-        assert.notStrictEqual(out.code, 'DEVICE_NOT_FOUND');
+        assert.match(String(out.message), /runtime's own code DEVICE_NOT_FOUND/);
         done();
       });
     });

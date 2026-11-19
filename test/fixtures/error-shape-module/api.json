@@ -285,6 +285,26 @@
             "output": {
               "schema": "/shapeService/catalogueCodeSetAfter/output"
             }
+          },
+          {
+            "name": "catalogueCodeForgedOrigin",
+            "description": "error-shape case catalogueCodeForgedOrigin",
+            "input": {
+              "schema": "/shapeService/catalogueCodeForgedOrigin/input"
+            },
+            "output": {
+              "schema": "/shapeService/catalogueCodeForgedOrigin/output"
+            }
+          },
+          {
+            "name": "catalogueCodeInCallback",
+            "description": "error-shape case catalogueCodeInCallback",
+            "input": {
+              "schema": "/shapeService/catalogueCodeInCallback/input"
+            },
+            "output": {
+              "schema": "/shapeService/catalogueCodeInCallback/output"
+            }
           }
         ]
       }

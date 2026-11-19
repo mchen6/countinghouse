@@ -43,6 +43,8 @@ const OUTCOMES = [
   // 11-18): refused at ctx.error, or MODULE_CODE_RESERVED when set after
   {name: 'module error with a catalogue code', action: 'catalogueCode', args: {}},
   {name: 'module error with a catalogue code set after', action: 'catalogueCodeSetAfter', args: {}},
+  {name: 'module error with a catalogue code and a forged origin', action: 'catalogueCodeForgedOrigin', args: {}},
+  {name: 'module error with a catalogue code from a callback', action: 'catalogueCodeInCallback', args: {}},
   {name: 'plain error with a system code', action: 'throwSystemCoded', args: {}},
   {name: 'plain error with a Node code', action: 'throwNodeCoded', args: {}},
   {name: 'plain error with a network code', action: 'throwNetworkCoded', args: {}},

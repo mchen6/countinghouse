@@ -180,10 +180,11 @@ module.exports = async (input, ctx) => {
 The code is your module's own: an `UPPER_SNAKE_CASE` name for what went
 wrong (`INPUT_REJECTED` for input your schema can't rule out,
 `REPO_TOO_LARGE`, …). The runtime's codes (its error catalogue) are the
-runtime's, and a module never raises them: `ctx.error` with one throws a
-`TypeError` naming the rule (your handler then fails as a crash, and the
-log says why), and an error whose code is set to one afterwards answers
-`MODULE_CODE_RESERVED`. A setting your module cannot do without is
+runtime's, and a module never raises them: `ctx.error` with one returns
+the runtime's `MODULE_CODE_RESERVED` instead (the log says why, once per
+code), and so does an error whose code is set to one afterwards.
+`MODULE_CODE_RESERVED` is the runtime's (`origin: 'runtime'`, kind
+`module`): it says a module broke this rule. A setting your module cannot do without is
 `ctx.settingRequired(name)`, never `ctx.error('SETTING_REQUIRED')`. The caller gets your code and
 the message `CODE: message`, in worker and single-thread mode alike. So
 does a module that calls yours with `ctx.call`: it gets your error whole
