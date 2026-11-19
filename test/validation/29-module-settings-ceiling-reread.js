@@ -255,6 +255,25 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       sameRun(mm.modules.r.settings, r, 'r is not reread');
     });
 
+    it('only, with a settings file that cannot be read: the ceiling goes over that one module alone; the file\'s problem stays said', async () => {
+      const mm = manager();
+      await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
+      const r = mm.modules.r.settings;
+      fs.writeFileSync(options.settingsFile, '{not json');
+      const fixed = {state: 'trusted', file: '/c', ceiling: require('../../lib/settings-ceiling').parse(JSON.stringify({version: 1,
+        moduleSettings: {'w.units': {fixed: 'metric'}, 'r.region': {fixed: 'asia'}}})).ceiling};
+      await assert.rejects(reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => fixed, only: 'w'}), (e) => e.fileProblem === true);
+      assert.strictEqual(mm.modules.w.settings.values.units, 'metric');
+      sameRun(mm.modules.r.settings, r, 'r is not touched');
+      const problem = mm.settingsFileProblem;
+      assert.ok(problem != null);
+      write({'module.w.units': 'imperial', 'module.r.region': 'eu'});
+      await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'}), only: 'w'});
+      assert.strictEqual(mm.settingsFileProblem, problem, 'a reread of one module has not read the file for the others');
+      await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
+      assert.strictEqual(mm.settingsFileProblem, null);
+    });
+
     it('applyNow waits its turn on the control channel\'s chain (never beside ch-local\'s reread or a reload)', async () => {
       const channel = require('../../lib/control-channel');
       const mm = manager();
