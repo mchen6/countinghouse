@@ -31,6 +31,9 @@ describe('sandbox 18: --hardened grant probe', function() {
       [['C:\\X\\ch', 'c:\\x\\ch_data']]);
     // elsewhere case is part of the name
     assert.deepStrictEqual(hardened.grantOverlaps(['--allow-fs-read=/X/ch', '--allow-fs-read=/x/ch_data'], 'linux'), []);
+    // a root's grant names no layout: every grant is inside it
+    assert.deepStrictEqual(hardened.grantOverlaps(['--allow-fs-read=C:\\', '--allow-fs-read=C:\\x\\ch'], 'win32'), []);
+    assert.deepStrictEqual(hardened.grantOverlaps(['--allow-fs-read=/', '--allow-fs-read=/x/ch'], 'linux'), []);
   });
 
   it('allows grants with distinct names, on every Node', () => {

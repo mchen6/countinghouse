@@ -128,30 +128,25 @@ if (options.maxSessionWorkersInvalid != null) {
     JSON.stringify(String(options.maxSessionWorkersInvalid.value)) + ')');
   process.exit(2);
 }
+// In-place loading (--controlChannel, --modulesRoot, --packsRoot) isn't
+// available under --hardened in this release: the relaunched child would
+// not reach the control channel, and its roots are not granted
+// (lib/hardened-launch.js grants --modulePath and --moduleDataPath), so it
+// would fail at its first read. Refused at the start, every in-place flag
+// given named, a bare or empty one included.
+if (options.hardened === true && Array.isArray(options.inPlaceFlagsGiven) && options.inPlaceFlagsGiven.length > 0) {
+  console.error('--' + options.inPlaceFlagsGiven.join(', --') + ': in-place loading isn\'t available under --hardened in this release');
+  process.exit(2);
+}
 // Packs in place (part 2): the control channel exists only between ch-local
 // start and the runtime it spawned, in the single-identity profile, over an
-// IPC fd. --hardened relaunches this process as a child, which the channel
-// would not reach: refused together, for now.
+// IPC fd.
 if (options.controlChannel != null) {
   var controlRefusal = options.controlChannel !== 'ipc' ? 'takes ipc'
     : options.singleIdentity !== true ? 'is only for the single-identity profile (ch-local start)'
-      : typeof(process.send) !== 'function' ? 'needs an IPC channel from the process that started this one'
-        : options.hardened === true ? 'cannot be used with --hardened: in-place loading isn\'t available under --hardened in this release' : null;
+      : typeof(process.send) !== 'function' ? 'needs an IPC channel from the process that started this one' : null;
   if (controlRefusal != null) {
     console.error('--controlChannel ' + controlRefusal + ' (got ' + JSON.stringify(String(options.controlChannel)) + ')');
-    process.exit(2);
-  }
-}
-// In-place loading (--modulesRoot, --packsRoot, the control channel above)
-// isn't available under --hardened in this release: its roots are not
-// granted (lib/hardened-launch.js grants --modulePath and --moduleDataPath),
-// so it would fail at its first read. Refused together, at the start, with
-// the reason (the Reviewer, 11-19; ch-local never starts a runtime with
-// --hardened).
-if (options.hardened === true) {
-  var inPlaceRoots = ['modulesRoot', 'packsRoot'].filter(function(k) { return Array.isArray(options[k]) && options[k].length > 0; });
-  if (inPlaceRoots.length > 0) {
-    console.error('--' + inPlaceRoots.join(' and --') + ': in-place loading isn\'t available under --hardened in this release');
     process.exit(2);
   }
 }
