@@ -35,6 +35,8 @@ function pack(base, scenario, tool, version, icon) {
   return dir;
 }
 
+const {dirsOf} = require('../helpers/module-dirs');
+
 describe('stdio 29: an icon is read and checked at load, and listed from what was read (M2)', function() {
   this.timeout(120000);
   const homes = [];
@@ -58,20 +60,20 @@ describe('stdio 29: an icon is read and checked at load, and listed from what wa
     const packs = path.join(h, 'packs');
     const base = pack(packs, 'ch-pack-base', 'base_tool', '1.0.0', png('base'));
     io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(h, 'store'), '--modulePath', path.join(h, 'modules'),
-      '--moduleDataPath', path.join(h, 'module_data'), '--controlChannel', 'ipc', '--packsRoot', packs, '--loadModule', base], {ipc: true});
-    const one = await io.control({type: 'load', name: 'ch-pack-icon', scenario: pack(packs, 'ch-pack-icon', 'icon_tool', '1.0.0', png('one'))});
+      '--moduleDataPath', path.join(h, 'module_data'), '--controlChannel', 'ipc', '--modulesRoot', packs, '--loadModule', base], {ipc: true});
+    const one = await io.control({type: 'load', name: 'ch-pack-icon', dirs: dirsOf(pack(packs, 'ch-pack-icon', 'icon_tool', '1.0.0', png('one')))});
     assert.strictEqual(one.ok, true, `${JSON.stringify(one)}\n${io.err.slice(-2000)}`);
     const v1 = await listed('icon_tool');
     assert.deepStrictEqual(Object.keys(v1), ['name', 'description', 'inputSchema', 'outputSchema', 'title', 'annotations', 'icons']);
     assert.deepStrictEqual([v1.title, v1.annotations, v1.icons], ['icon_tool 1.0.0', {readOnlyHint: true}, [{src: dataUri(png('one')), mimeType: 'image/png', sizes: ['16x16']}]]);
 
-    const svg = await io.control({type: 'reload', name: 'ch-pack-icon', scenario: pack(packs, 'ch-pack-icon', 'icon_tool', '2.0.0', '<svg xmlns="http://www.w3.org/2000/svg"/>')});
+    const svg = await io.control({type: 'reload', names: ['ch-pack-icon'], dirs: dirsOf(pack(packs, 'ch-pack-icon', 'icon_tool', '2.0.0', '<svg xmlns="http://www.w3.org/2000/svg"/>'))});
     assert.strictEqual(svg.ok, false, JSON.stringify(svg));
     assert.match(JSON.stringify(svg), /icons.*SVG is refused/, JSON.stringify(svg));
     const still = await listed('icon_tool');
     assert.deepStrictEqual([still.title, still.icons[0].src], ['icon_tool 1.0.0', dataUri(png('one'))], 'the loaded version, its icon as it was');
 
-    const three = await io.control({type: 'reload', name: 'ch-pack-icon', scenario: pack(packs, 'ch-pack-icon', 'icon_tool', '3.0.0', png('three'))});
+    const three = await io.control({type: 'reload', names: ['ch-pack-icon'], dirs: dirsOf(pack(packs, 'ch-pack-icon', 'icon_tool', '3.0.0', png('three')))});
     assert.strictEqual(three.ok, true, `${JSON.stringify(three)}\n${io.err.slice(-2000)}`);
     const v3 = await listed('icon_tool');
     assert.deepStrictEqual([v3.title, v3.icons[0].src], ['icon_tool 3.0.0', dataUri(png('three'))]);
@@ -82,8 +84,8 @@ describe('stdio 29: an icon is read and checked at load, and listed from what wa
     const packs = path.join(h, 'packs');
     const base = pack(packs, 'ch-pack-base', 'base_tool', '1.0.0', png('base'));
     io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(h, 'store'), '--modulePath', path.join(h, 'modules'),
-      '--moduleDataPath', path.join(h, 'module_data'), '--controlChannel', 'ipc', '--packsRoot', packs, '--loadModule', base], {ipc: true});
-    const r = await io.control({type: 'load', name: 'ch-pack-gone', scenario: pack(packs, 'ch-pack-gone', 'gone_tool', '1.0.0', null)});
+      '--moduleDataPath', path.join(h, 'module_data'), '--controlChannel', 'ipc', '--modulesRoot', packs, '--loadModule', base], {ipc: true});
+    const r = await io.control({type: 'load', name: 'ch-pack-gone', dirs: dirsOf(pack(packs, 'ch-pack-gone', 'gone_tool', '1.0.0', null))});
     assert.strictEqual(r.ok, false, JSON.stringify(r));
     assert.match(JSON.stringify(r), /icons\/tool\.png.*does not exist/, JSON.stringify(r));
     assert.strictEqual(await listed('gone_tool'), undefined);

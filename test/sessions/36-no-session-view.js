@@ -103,7 +103,7 @@ describe('sessions 36: no session view (M5a)', () => {
     }
   });
 
-  it('module control: a pack\'s notice goes to every open session; set pack.<n> true is no session view\'s (applyControlSet\'s)', async () => {
+  it('module control: a module\'s notice goes to every open session; set pack.<n> true is no session view\'s (applyControlSet\'s)', async () => {
     open(A, B);
     const told = [];
     let applied = null;
@@ -111,7 +111,8 @@ describe('sessions 36: no session view (M5a)', () => {
       shared: () => true, mm: {}, dm: {}, packs: {}, toolsOf: async () => [],
       notices: {add: (module, text, opts) => told.push([module, text, opts && opts.session])},
       applyControlSet: async (msg) => { applied = msg; return {}; }});
-    await control.notice({pack: 'weather', module: 'weather-tool', text: 'hello'});
+    // (no type: the handler's own is what the message is judged as)
+    await control.notice({module: 'weather-tool', text: 'hello'});
     assert.deepStrictEqual(told.map((t) => [t[1], t[2]]).sort(), [['hello', A], ['hello', B]], 'once to each open session');
     await control.set({name: 'pack.weather', value: true});
     assert.deepStrictEqual(applied, {name: 'pack.weather', value: true});

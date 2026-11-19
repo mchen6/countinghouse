@@ -16,7 +16,7 @@ describe('the receipt on a tools/call result', () => {
 
   it('a scenario\'s result gains the receipt in _meta and its sentence, structuredContent unchanged', () => {
     const u = usage();
-    const call = u.beginCall({pack: 'ch-pack-ci-failure-triage', tool: 'ci_failure_triage', caller: 'u_a'});
+    const call = u.beginCall({scenario: 'ch-pack-ci-failure-triage', tool: 'ci_failure_triage', caller: 'u_a'});
     for (let i = 0; i < 3; i++) u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 1000, lines: 100, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     const output = {summary: 'x', coverage: {logsFetched: 3}};
     const r = finishToolCall({usage: u, call, result: result(output), role: 'scenario', tool: 'ci_failure_triage', startedMs: t - 5, now: () => t});
@@ -29,7 +29,7 @@ describe('the receipt on a tools/call result', () => {
 
   it('the Out record counts the module\'s text only, not the sentence', () => {
     const u = usage();
-    const call = u.beginCall({pack: 'p', tool: 't', caller: 'u_a'});
+    const call = u.beginCall({scenario: 'p', tool: 't', caller: 'u_a'});
     const text = JSON.stringify({a: 'line1\nline2'});
     finishToolCall({usage: u, call, result: result({a: 'line1\nline2'}), role: 'scenario', tool: 't', startedMs: t, now: () => t});
     const out = u.records().find((r) => r.server === undefined || r.server === null);
@@ -40,7 +40,7 @@ describe('the receipt on a tools/call result', () => {
   // beside the text, and a record without one is written as before
   it('the Out record counts an image or audio block\'s decoded bytes as inlineBytesOut', () => {
     const u = usage();
-    const call = u.beginCall({pack: null, tool: 't', caller: 'u_a'});
+    const call = u.beginCall({scenario: null, tool: 't', caller: 'u_a'});
     const r = {isError: false, structuredContent: {img: {mimeType: 'image/png', bytes: 5, block: 1}},
       content: [{type: 'text', text: '{"img":{}}'}, {type: 'image', data: Buffer.from('12345').toString('base64'), mimeType: 'image/png'},
         {type: 'audio', data: Buffer.from('ab').toString('base64'), mimeType: 'audio/wav'}]};
@@ -48,7 +48,7 @@ describe('the receipt on a tools/call result', () => {
     const out = u.records().find((x) => x.server === undefined || x.server === null);
     assert.strictEqual(out.inlineBytesOut, 7);
     assert.strictEqual(out.bytesOut, Buffer.byteLength('{"img":{}}'), 'the text alone');
-    const plain = u.beginCall({pack: null, tool: 't', caller: 'u_a'});
+    const plain = u.beginCall({scenario: null, tool: 't', caller: 'u_a'});
     finishToolCall({usage: u, call: plain, result: result({a: 1}), role: 'part', tool: 't', startedMs: t, now: () => t});
     const second = u.records().filter((x) => x.server === undefined || x.server === null)[1];
     assert.ok(!('inlineBytesOut' in second), JSON.stringify(second));
@@ -56,7 +56,7 @@ describe('the receipt on a tools/call result', () => {
 
   it('a scenario\'s receipt carries the inline bytes and its sentence says so', () => {
     const u = usage();
-    const call = u.beginCall({pack: 'p', tool: 't', caller: 'u_a'});
+    const call = u.beginCall({scenario: 'p', tool: 't', caller: 'u_a'});
     u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 1000, lines: 10, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     const r = {isError: false, structuredContent: {img: {mimeType: 'image/png', bytes: 2048, block: 1}},
       content: [{type: 'text', text: '{"img":1}'}, {type: 'image', data: Buffer.alloc(2048).toString('base64'), mimeType: 'image/png'}]};
@@ -69,7 +69,7 @@ describe('the receipt on a tools/call result', () => {
   // model's context), and a resource link's size is linkedBytesOut
   it('M6: an inline resource block counts as inline, a link\'s size as linkedBytesOut, and the sentence says both', () => {
     const u = usage();
-    const call = u.beginCall({pack: 'p', tool: 't', caller: 'u_a'});
+    const call = u.beginCall({scenario: 'p', tool: 't', caller: 'u_a'});
     u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 1000, lines: 10, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     const r = {isError: false, structuredContent: {},
       content: [{type: 'text', text: '{}'},
@@ -85,7 +85,7 @@ describe('the receipt on a tools/call result', () => {
 
   it('a module that is not a scenario gets an Out record and no receipt', () => {
     const u = usage();
-    const call = u.beginCall({pack: null, tool: 'plain_svc_go', caller: 'u_a'});
+    const call = u.beginCall({scenario: null, tool: 'plain_svc_go', caller: 'u_a'});
     const r = finishToolCall({usage: u, call, result: result({ok: true}), role: null, tool: 'plain_svc_go', startedMs: t, now: () => t});
     assert.strictEqual(r.content.length, 1);
     assert.ok(r._meta == null || !('countinghouse/receipt' in r._meta));
@@ -94,7 +94,7 @@ describe('the receipt on a tools/call result', () => {
 
   it('an error result is counted with outcome error, keeps its code, and gets no receipt', () => {
     const u = usage();
-    const call = u.beginCall({pack: 'p', tool: 't', caller: 'u_a'});
+    const call = u.beginCall({scenario: 'p', tool: 't', caller: 'u_a'});
     const err = {isError: true, content: [{type: 'text', text: 'it broke'}], _meta: {'countinghouse/code': 'X'}};
     const r = finishToolCall({usage: u, call, result: err, role: 'scenario', tool: 't', startedMs: t, now: () => t});
     assert.deepStrictEqual(r._meta, {'countinghouse/code': 'X'});

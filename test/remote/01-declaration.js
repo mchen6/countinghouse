@@ -10,7 +10,7 @@ const GITHUB = {
   transport: 'streamable-http',
   url: 'https://api.githubcopilot.com/mcp/',
   headers: {'X-MCP-Toolsets': 'actions,repos'},
-  credential: {env: 'COUNTINGHOUSE_GITHUB_TOKEN', fallbackEnv: 'GITHUB_TOKEN', header: 'Authorization', scheme: 'Bearer'}
+  credential: {env: 'COUNTINGHOUSE_GITHUB_TOKEN', header: 'Authorization', scheme: 'Bearer'}
 };
 const REDIS = {host: '127.0.0.1', port: 6379};
 const pkgWith = (remotes) => ({name: 'm', countinghouse: {role: 'part', remotes: remotes}});
@@ -27,13 +27,19 @@ describe('remote 01: the remotes declaration', () => {
     assert.strictEqual(g.origin, 'https://api.githubcopilot.com');
     assert.strictEqual(g.url.href, 'https://api.githubcopilot.com/mcp/');
     assert.deepStrictEqual(g.headers, {'X-MCP-Toolsets': 'actions,repos'});
-    assert.deepStrictEqual(g.credential, {env: 'COUNTINGHOUSE_GITHUB_TOKEN', fallbackEnv: 'GITHUB_TOKEN',
-      header: 'Authorization', scheme: 'Bearer'});
+    assert.deepStrictEqual(g.credential, {env: 'COUNTINGHOUSE_GITHUB_TOKEN', header: 'Authorization', scheme: 'Bearer'});
+  });
+
+  // M6 (#413 rev 3 section 16, rule 7): a credential is one variable
+  it('a fallbackEnv is refused: it is no longer read', () => {
+    const r = parse(one({credential: {env: 'COUNTINGHOUSE_GITHUB_TOKEN', fallbackEnv: 'GITHUB_TOKEN'}}));
+    assert.deepStrictEqual(r.remotes, []);
+    assert.deepStrictEqual(r.problems, ['countinghouse.remotes[0].credential.fallbackEnv is no longer read: a credential is one variable, named by env']);
   });
 
   it('gives the credential its defaults and allows no credential at all', () => {
     const d = parse(one({credential: {env: 'TOKEN'}})).remotes[0];
-    assert.deepStrictEqual(d.credential, {env: 'TOKEN', fallbackEnv: null, header: 'Authorization', scheme: 'Bearer'});
+    assert.deepStrictEqual(d.credential, {env: 'TOKEN', header: 'Authorization', scheme: 'Bearer'});
     const none = Object.assign({}, GITHUB);
     delete none.credential;
     assert.strictEqual(parse(pkgWith([none])).remotes[0].credential, null);
@@ -45,17 +51,17 @@ describe('remote 01: the remotes declaration', () => {
     const r = parse(pkgWith([short]));
     assert.deepStrictEqual(r.problems, []);
     const g = r.remotes[0];
-    assert.deepStrictEqual(g.credential, {env: 'GITHUB_TOKEN', fallbackEnv: null, header: 'Authorization', scheme: 'Bearer'});
+    assert.deepStrictEqual(g.credential, {env: 'GITHUB_TOKEN', header: 'Authorization', scheme: 'Bearer'});
     assert.strictEqual(g.origin, 'https://api.githubcopilot.com');
     assert.strictEqual(JSON.stringify(g.declared), '{"name":"github","transport":"streamable-http","url":"https://api.githubcopilot.com/mcp/",' +
       '"credential":{"env":"GITHUB_TOKEN","header":"Authorization","scheme":"Bearer"}}');
   });
 
-  it('the expanded form keeps headers and a fallbackEnv when given, and has no credential when none is declared', () => {
+  it('the expanded form keeps headers when given, and has no credential when none is declared', () => {
     const g = parse(pkgWith([GITHUB])).remotes[0];
     assert.deepStrictEqual(g.declared, {name: 'github', transport: 'streamable-http', url: 'https://api.githubcopilot.com/mcp/',
       headers: {'X-MCP-Toolsets': 'actions,repos'},
-      credential: {env: 'COUNTINGHOUSE_GITHUB_TOKEN', fallbackEnv: 'GITHUB_TOKEN', header: 'Authorization', scheme: 'Bearer'}});
+      credential: {env: 'COUNTINGHOUSE_GITHUB_TOKEN', header: 'Authorization', scheme: 'Bearer'}});
     const none = {name: 'open', url: 'https://example.com/mcp'};
     assert.deepStrictEqual(parse(pkgWith([none])).remotes[0].declared, {name: 'open', transport: 'streamable-http', url: 'https://example.com/mcp'});
   });

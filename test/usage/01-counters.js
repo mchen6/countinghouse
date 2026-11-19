@@ -27,7 +27,7 @@ describe('usage: counters, files and the receipt', () => {
 
   it('a scenario call making N server calls gives N In records, one Out record and exact totals', () => {
     const u = usage();
-    const call = u.beginCall({pack: 'ch-pack-ci-failure-triage', tool: 'ci_failure_triage', caller: 'u_local'});
+    const call = u.beginCall({scenario: 'ch-pack-ci-failure-triage', tool: 'ci_failure_triage', caller: 'u_local'});
     u.recordIn(call, {server: 'github', tool: 'actions_list', bytes: 8000, lines: 300, ms: 120, outcome: 'ok', credential: 'COUNTINGHOUSE_GITHUB_TOKEN'});
     u.recordIn(call, {server: 'github', tool: 'get_job_logs', bytes: 4000, lines: 100, ms: 90, outcome: 'ok', credential: 'COUNTINGHOUSE_GITHUB_TOKEN'});
     const receipt = u.recordOut(call, {tool: 'ci_failure_triage', bytes: 1200, lines: 30, ms: 900, outcome: 'ok'});
@@ -36,14 +36,15 @@ describe('usage: counters, files and the receipt', () => {
     assert.strictEqual(records.length, 3);
     assert.deepStrictEqual(records.map((r) => [r.call, r.server || null, r.tool]), [[call, 'github', 'actions_list'], [call, 'github', 'get_job_logs'], [call, null, 'ci_failure_triage']]);
     assert.deepStrictEqual(Object.keys(records[0]).sort(), ['bytesIn', 'call', 'caller', 'credential', 'linesIn', 'ms', 'outcome', 'server', 't', 'tool']);
-    assert.deepStrictEqual(Object.keys(records[2]).sort(), ['bytesOut', 'call', 'caller', 'linesOut', 'ms', 'outcome', 'pack', 't', 'tool']);
-    assert.strictEqual(records[2].pack, 'ch-pack-ci-failure-triage');
+    // (M6, #413 rev 3 section 13.1: the record's pack is its scenario now)
+    assert.deepStrictEqual(Object.keys(records[2]).sort(), ['bytesOut', 'call', 'caller', 'linesOut', 'ms', 'outcome', 'scenario', 't', 'tool']);
+    assert.strictEqual(records[2].scenario, 'ch-pack-ci-failure-triage');
     assert.ok(records.every((r) => r.caller === 'u_local'));
   });
 
   it('every record is appended as it happens to <usageDir>/<day>/<pid>-<startMs>.jsonl', () => {
     const u = usage();
-    const call = u.beginCall({pack: 'p', tool: 't', caller: 'u_1'});
+    const call = u.beginCall({scenario: 'p', tool: 't', caller: 'u_1'});
     u.recordIn(call, {server: 'github', tool: 'x', bytes: 1, lines: 1, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     const file = path.join(dir, day(new Date(Date.parse('2026-11-11T10:00:00Z')).toISOString()), '4242-1794391200000.jsonl');
     assert.strictEqual(fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).length, 1, 'written before the call ends');
@@ -54,7 +55,7 @@ describe('usage: counters, files and the receipt', () => {
 
   it('a record never holds a credential value or content, only names and counts', () => {
     const u = usage();
-    const call = u.beginCall({pack: 'p', tool: 't', caller: 'u_1'});
+    const call = u.beginCall({scenario: 'p', tool: 't', caller: 'u_1'});
     u.recordIn(call, {server: 'github', tool: 'x', bytes: 1, lines: 1, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN', value: 'ghp_secret', text: 'log line'});
     const text = JSON.stringify(u.records());
     assert.ok(!text.includes('ghp_secret') && !text.includes('log line'));
@@ -62,7 +63,7 @@ describe('usage: counters, files and the receipt', () => {
 
   it('without a usageDir nothing is written, and the counters still count', () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => clock++});
-    const call = u.beginCall({pack: 'p', tool: 't', caller: 'u_1'});
+    const call = u.beginCall({scenario: 'p', tool: 't', caller: 'u_1'});
     u.recordIn(call, {server: 'github', tool: 'x', bytes: 5, lines: 1, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     assert.deepStrictEqual(u.totals(call), {calls: 1, linesIn: 1, bytesIn: 5, linesOut: 0, bytesOut: 0, servers: ['github']});
     assert.deepStrictEqual(fs.readdirSync(dir), []);
@@ -86,7 +87,7 @@ describe('usage: counters, files and the receipt', () => {
 
   it('the receipt sentence matches the spec\'s form', () => {
     const u = usage();
-    const call = u.beginCall({pack: 'p', tool: 't', caller: 'u_1'});
+    const call = u.beginCall({scenario: 'p', tool: 't', caller: 'u_1'});
     u.recordIn(call, {server: 'github', tool: 'x', bytes: 3100000, lines: 48210, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     u.recordOut(call, {tool: 't', bytes: 2400, lines: 35, ms: 1, outcome: 'ok'});
     assert.match(u.receiptSentenceOf(call), /^read [\d,]+ lines \([\d.]+ [KM]B\) in \d+ calls? to github; [\d,]+ lines? \([\d.]+ (KB|B)\) reached the model\.$/);

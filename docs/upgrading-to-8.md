@@ -9,6 +9,25 @@ you have to do. What the sandbox does and does not protect is in
 
 ## Before you upgrade
 
+- **If you run ch-local, or write a ceiling or a module's remote: what
+  module-level configuration removed.**
+  - The operator's ceiling (`/etc/countinghouse/ceiling.json`, or
+    `%ProgramData%\countinghouse\ceiling.json`) no longer reads `packs`. A
+    ceiling that still holds it is not trusted, so no module loads, and it
+    says why: "it holds "packs", which is no longer read: list each module
+    under "modules"". Rewrite it with `modules`, naming each module by
+    package name, parts included.
+  - `--packsRoot` is no longer taken (exit 2): ch-local passes
+    `--modulesRoot`, and the pack form of its control messages is gone.
+  - With `--controlChannel`, `--remoteCredentials` must be version 2 (ch-local
+    writes it); a version 1 file stops the start. An operator's runtime
+    without a control channel still takes version 1.
+  - A remote's `credential` is one variable (`env`): a `fallbackEnv` is
+    refused at load.
+  - Usage records name the call's top-level module as `scenario` (records
+    written before say `pack`, and are still read). The usage report groups
+    by `scenario`; `groupBy: "pack"` is no longer taken.
+
 - **Most likely surprise: module outputs are capped, and checked out of a
   module's reach.**
   - `--maxOutputBytes` (default 16 MiB, at most 256 MiB) caps a module's

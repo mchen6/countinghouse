@@ -105,7 +105,8 @@ describe('remote 14: a name a credentials allowance reads is never copied to a w
     }
   });
 
-  it('the names at a spawn are the start\'s and every pack\'s version 1 allowance\'s (lib/module-manager.js)', () => {
+  // (a pack's own version 1 allowance went with the pack form, M6)
+  it('the names at a spawn are the start\'s version 1 allowance\'s (lib/module-manager.js)', () => {
     const credentials = require('../../lib/remote/credentials');
     const mmod = require('../../lib/module-manager');
     const saved = credentials.snapshot();
@@ -113,10 +114,8 @@ describe('remote 14: a name a credentials allowance reads is never copied to a w
     fs.writeFileSync(file, JSON.stringify({'https://api.githubcopilot.com': ['GITHUB_TOKEN']}));
     try {
       credentials.configure(file);
-      mmod.packRemotes.set('some-module', new Map([['some-pack', new Map([['https://api.x.example', new Set(['X_KEY'])]])]]));
-      assert.deepStrictEqual([...mmod.credentialNamesNow()].sort(), ['GITHUB_TOKEN', 'X_KEY']);
+      assert.deepStrictEqual([...mmod.credentialNamesNow()].sort(), ['GITHUB_TOKEN']);
     } finally {
-      mmod.packRemotes.delete('some-module');
       credentials.restore(saved);
     }
   });

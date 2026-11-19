@@ -26,16 +26,16 @@ describe('usage 21: the usage report per session (shared runtime B5, Task 1)', (
   const live = () => {
     let t = NOW - 5000;
     const u = createUsage({usageDir: null, pid: 7, startMs: NOW - 9000, now: () => t++});
-    const a = u.beginCall({pack: 'ch-pack-alpha', module: 'ch-pack-alpha', tool: 'alpha_tool', caller: 'u_me', session: A});
+    const a = u.beginCall({scenario: 'ch-pack-alpha', module: 'ch-pack-alpha', tool: 'alpha_tool', caller: 'u_me', session: A});
     u.recordIn(a, {server: 'alpha-server', module: 'ch-access-alpha', tool: 'alpha_read', bytes: 100, lines: 10, ms: 1, outcome: 'ok', credential: null});
     u.recordOut(a, {tool: 'alpha_tool', bytes: 40, lines: 4, ms: 9, outcome: 'error', code: 'ALPHA_ONLY_CODE'});
-    const b = u.beginCall({pack: 'ch-pack-bravo', module: 'ch-pack-bravo', tool: 'bravo_tool', caller: 'u_me', session: B});
+    const b = u.beginCall({scenario: 'ch-pack-bravo', module: 'ch-pack-bravo', tool: 'bravo_tool', caller: 'u_me', session: B});
     u.recordIn(b, {server: 'bravo-server', module: 'ch-access-bravo', tool: 'bravo_read', bytes: 300, lines: 30, ms: 1, outcome: 'error', credential: null, code: 'BRAVO_ONLY_CODE'});
     // (B's server call with no result yet: its session's all the same)
-    const b2 = u.beginCall({pack: 'ch-pack-bravo', module: 'ch-pack-bravo', tool: 'bravo_tool', caller: 'u_me', session: B});
+    const b2 = u.beginCall({scenario: 'ch-pack-bravo', module: 'ch-pack-bravo', tool: 'bravo_tool', caller: 'u_me', session: B});
     u.recordIn(b2, {server: 'bravo-server', module: 'ch-access-bravo', tool: 'bravo_open', bytes: 5, lines: 1, ms: 1, outcome: 'ok', credential: null});
     u.recordOut(b, {tool: 'bravo_tool', bytes: 60, lines: 6, ms: 9, outcome: 'error', code: 'BRAVO_ONLY_CODE'});
-    const n = u.beginCall({pack: null, module: 'plain', tool: 'nobody_tool', caller: 'u_me'});
+    const n = u.beginCall({scenario: null, module: 'plain', tool: 'nobody_tool', caller: 'u_me'});
     u.recordOut(n, {tool: 'nobody_tool', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
     return u;
   };
@@ -62,7 +62,7 @@ describe('usage 21: the usage report per session (shared runtime B5, Task 1)', (
   const A_NAMES = /alpha|ALPHA_ONLY_CODE/;
 
   it('A\'s report counts A\'s calls only, in memory and in files, and names nothing of B\'s, for every groupBy', async() => {
-    for (const groupBy of ['tool', 'server', 'pack', 'module']) {   // (the day rows, kept-out totals and profiling are in each)
+    for (const groupBy of ['tool', 'server', 'scenario', 'module']) {   // (the day rows, kept-out totals and profiling are in each)
       const out = await run({since: '2026-11-16', groupBy}, {caller: 'u_me', isAdmin: false, session: A});
       const text = JSON.stringify(out);
       assert.ok(!B_NAMES.test(text), `${groupBy}: ${text.slice(0, 600)}`);

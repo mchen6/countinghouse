@@ -327,7 +327,7 @@ describe('mcp-contract 24: prompts (M10)', function() {
     assert.strictEqual(billed, 0, 'not billed');
     const begin = usageSeen.find((x) => x.begin != null);
     const out = usageSeen.find((x) => x.out != null);
-    assert.deepStrictEqual([begin.begin.tool, begin.begin.module, begin.begin.pack, out.out.tool, out.out.outcome], ['prompts/get', 'ch-pack-x', 'ch-pack-x', 'prompts/get', 'ok'],
+    assert.deepStrictEqual([begin.begin.tool, begin.begin.module, begin.begin.scenario, out.out.tool, out.out.outcome], ['prompts/get', 'ch-pack-x', 'ch-pack-x', 'prompts/get', 'ok'],
       'a scenario\'s prompt under its pack, as a tool call');
     usageSeen.length = 0;
     await get(KEY_A, 'notes_summarise', {});

@@ -98,6 +98,8 @@ async function requestLegacy(c, method, params = {}) {
   }
 }
 
+const {dirsOf} = require('../helpers/module-dirs');
+
 describe('session-runtime 01: the runtime on --sessionSocket, spawned', function() {
   this.timeout(120000);
   if (process.platform === 'win32') return; // the named pipe is C2's
@@ -467,11 +469,11 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
   it('takes ch-local\'s control requests: a pack loaded in place is listed to a session', async() => {
     const packs = path.join(home, 'packs');
     const dir = scenario(home, {dir: path.join(packs, 'ch-pack-two', '1.0.0', 'node_modules', 'ch-pack-two'), name: 'ch-pack-two'});
-    r = runtime(home, ['--packsRoot', packs]);
+    r = runtime(home, ['--modulesRoot', packs]);
     const secret = await listening(r);
     const a = await shim.session(r.socket, secret);
     // a shared runtime's pack-form load names its pack (B3 Task 6); its global decides nothing since M5a
-    const reply = await r.control({type: 'load', name: 'ch-pack-two', scenario: dir, pack: 'ch-pack-two', global: true});
+    const reply = await r.control({type: 'load', name: 'ch-pack-two', dirs: dirsOf(dir)});
     assert.strictEqual(reply.ok, true, `${JSON.stringify(reply)}\n${r.err.slice(-1500)}`);
     assert.ok(Array.isArray(reply.tools) && reply.tools.length === 1, JSON.stringify(reply));
     const list = await request(a.c, 'tools/list');
@@ -821,31 +823,31 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.strictEqual(a.c.sock.destroyed, true, 'its connection closed by the runtime');
   });
 
-  it('a pack credential the client chooses that the runtime\'s environment holds the same: shared; another value, or one it lacks: own-runtime (credential)', async() => {
-    // made here, plainly not a real credential
-    const value = `example-${require('crypto').randomBytes(6).toString('hex')}`;
-    // a variable is a pack credential only where an allowance names it
+  // M6 (#413 rev 3 sections 6.5 and 16, rule 7): ch-local writes version 2,
+  // and a runtime with a control channel refuses version 1 at its start
+  it('a version 1 --remoteCredentials file with the control channel stops the start (exit 2), saying version 2', async() => {
     const allowance = path.join(home, 'remote-credentials.json');
-    fs.writeFileSync(allowance, JSON.stringify({'https://example.invalid': ['CH_PACK_VAR_ALPHA', 'CH_PACK_VAR_BETA']}));
-    r = runtime(home, ['--remoteCredentials', allowance], {env: {CH_PACK_VAR_ALPHA: value, CH_PACK_VAR_UNLISTED: value}});
+    fs.writeFileSync(allowance, JSON.stringify({'https://example.invalid': ['CH_PACK_VAR_ALPHA']}));
+    r = runtime(home, ['--remoteCredentials', allowance]);
+    const {code} = await r.exited;
+    assert.strictEqual(code, 2, r.err);
+    assert.match(r.err, /--remoteCredentials: a version 1 file is not taken with --controlChannel; it is version 2 \(ch-local writes it\)/);
+  });
+
+  // under version 2 no name a session's environment could supply is read,
+  // so a credential a client chooses is never the runtime's: its own runtime
+  it('under a version 2 file, a credential the client chooses, whatever its value, gets a runtime of its own (credential)', async() => {
+    const value = `example-${require('crypto').randomBytes(6).toString('hex')}`;
+    const allowance = path.join(home, 'remote-credentials.json');
+    fs.writeFileSync(allowance, JSON.stringify({version: 2, modules: {m: {'https://example.invalid': {CH_PACK_VAR_ALPHA: 'COUNTINGHOUSE_CREDENTIAL_1'}}}}));
+    r = runtime(home, ['--remoteCredentials', allowance], {env: {CH_PACK_VAR_ALPHA: value, COUNTINGHOUSE_CREDENTIAL_1: value}});
     const secret = await listening(r);
     const handshake = require('../../lib/session-transport/handshake');
     const frame = (name, v) => ({status: 'ok', conditions: 'no', repo: null, token: null, credentials: {[name]: handshake.credentialMac(secret, name, v).toString('base64')}});
-    const same = await shim.session(r.socket, secret, frame('CH_PACK_VAR_ALPHA', value));
-    assert.deepStrictEqual(same.settled, {op: 'settled'});
-    const other = await shim.session(r.socket, secret, frame('CH_PACK_VAR_ALPHA', `${value}-other`));
-    assert.deepStrictEqual(other.settled, {op: 'own-runtime', reason: 'credential'});
-    const lacking = await shim.session(r.socket, secret, frame('CH_PACK_VAR_BETA', value));
-    assert.deepStrictEqual(lacking.settled, {op: 'own-runtime', reason: 'credential'});
-    // a variable no allowance names is never hashed, whatever the runtime
-    // holds: its HOME, or one set with the very value, named with it, still
-    // gets a runtime of its own
-    for (const [name, v] of [['HOME', process.env.HOME || ''], ['CH_PACK_VAR_UNLISTED', value]]) {
-      const unlisted = await shim.session(r.socket, secret, frame(name, v));
-      assert.deepStrictEqual(unlisted.settled, {op: 'own-runtime', reason: 'credential'}, name);
+    for (const name of ['CH_PACK_VAR_ALPHA', 'COUNTINGHOUSE_CREDENTIAL_1']) {
+      const same = await shim.session(r.socket, secret, frame(name, value));
+      assert.deepStrictEqual(same.settled, {op: 'own-runtime', reason: 'credential'}, name);
     }
-    assert.ok(!r.err.includes(value) && !r.out.includes(value), 'the value is never printed');
-    same.c.end();
   });
 
   it('two sessions each get their own answers', async() => {

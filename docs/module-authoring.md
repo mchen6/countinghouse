@@ -232,7 +232,7 @@ Two limits, stated rather than enforced:
   cannot inflate anyone else's.
 
 `countinghouse_usage_report`, listed to every key, reports the same counts by
-tool, server, pack or module. A key sees its own calls; an admin sees every
+tool, server, scenario (the top-level module a call was made to) or module. A key sees its own calls; an admin sees every
 caller by opaque id. `since` and `until` set the window (`since: "all"`: from
 the first record; with no `since`, a plain key's window is the last 31 days
 and an admin's is everything). The headline is the period's totals, with the

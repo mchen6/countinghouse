@@ -292,7 +292,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
     assert.deepStrictEqual(r.byServer.map((s) => [s.server, s.serverCalls]), [['github', 1]]);
     assert.strictEqual(r.totals.serverCalls, 1);
     assert.deepStrictEqual(r.byTool.map((x) => x.serverCalls), [1]);
-    assert.deepStrictEqual(r.byPack.map((x) => x.serverCalls), [1]);
+    assert.deepStrictEqual(r.byScenario.map((x) => x.serverCalls), [1]);
     assert.deepStrictEqual(r.processes.map((x) => x.serverCalls), [1]);
     assert.deepStrictEqual(r.replaced.map((x) => x.serverCalls), [1]);
     assert.deepStrictEqual(r.standIn, STAND_IN_SECTION);
@@ -304,7 +304,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
     const Ajv2020 = require('ajv/dist/2020');
     const ajv = new Ajv2020({strict: false});
     const usage = {process: 'p-1', records: usageRecords};
-    for (const groupBy of ['tool', 'pack', 'server', 'module']) {
+    for (const groupBy of ['tool', 'scenario', 'server', 'module']) {
       const r = (await usageReport({groupBy}, {isAdmin: true}, {usage}));
       assert.strictEqual(r.totals.serverCalls, 1, groupBy);
       assert.strictEqual(r.groups.reduce((s, g) => s + g.serverCalls, 0), 1, groupBy);

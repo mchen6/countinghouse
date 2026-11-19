@@ -132,7 +132,7 @@ describe('module roles, scenarios and parts', () => {
     assert.deepStrictEqual(refused.map((r) => [r.name, r.code, r.prompt, r.with]), [
       ['pb', 'PROMPT_NAME_TAKEN', 'review', 'pa'],
       ['pc', 'PROMPT_NAME_TAKEN', 'plain_brief', 'plain'],
-      ['pd', 'PROMPT_NAME_TAKEN', 'held', 'another pack']
+      ['pd', 'PROMPT_NAME_TAKEN', 'held', 'another module']
     ]);
     assert.match(roles.refusedWhy(refused[0]), /pb: its prompt review is already the prompt of pa/);
   });

@@ -128,7 +128,13 @@ if (options.maxSessionWorkersInvalid != null) {
     JSON.stringify(String(options.maxSessionWorkersInvalid.value)) + ')');
   process.exit(2);
 }
-// In-place loading (--controlChannel, --modulesRoot, --packsRoot) isn't
+// --packsRoot went with the pack form (M6, #413 rev 3 section 16, rule 7):
+// ch-local passes --modulesRoot
+if (options.packsRootGiven === true) {
+  console.error('--packsRoot is no longer taken: the pack form is gone; ch-local passes --modulesRoot');
+  process.exit(2);
+}
+// In-place loading (--controlChannel, --modulesRoot) isn't
 // available under --hardened in this release: the relaunched child would
 // not reach the control channel, and its roots are not granted
 // (lib/hardened-launch.js grants --modulePath and --moduleDataPath), so it
@@ -199,7 +205,12 @@ if (options.remoteOriginMapArg != null) {
 }
 if (options.remoteCredentials != null || process.argv.some((a) => a === '--remoteCredentials' || a.startsWith('--remoteCredentials='))) {
   try {
-    require('./lib/remote/credentials').configure(options.remoteCredentials);
+    const configuredFile = require('./lib/remote/credentials').configure(options.remoteCredentials);
+    // M6 (#413 rev 3 sections 6.5 and 16, rule 7): ch-local writes version 2;
+    // a runtime with a control channel takes no version 1 file
+    if (options.controlChannel != null && configuredFile.version !== 2) {
+      throw new Error('--remoteCredentials: a version 1 file is not taken with --controlChannel; it is version 2 (ch-local writes it)');
+    }
   } catch (e) {
     console.error(e.message);
     process.exit(2);

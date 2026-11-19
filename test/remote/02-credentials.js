@@ -6,7 +6,7 @@ const assert = require('assert');
 const fs     = require('fs');
 const path   = require('path');
 const {parseRemotes} = require('../../lib/remote/declaration');
-const {loadAllowance, resolveCredential} = require('../../lib/remote/credentials');
+const {loadFile, resolveCredential} = require('../../lib/remote/credentials');
 const {testPort} = require('../helpers/test-env');
 
 // Synthetic and low-entropy, built here, never a realistic literal.
@@ -19,11 +19,13 @@ const remoteFor = (url, credential) => {
   assert.deepStrictEqual(r.problems, []);
   return r.remotes[0];
 };
-const GH = remoteFor('https://api.githubcopilot.com/mcp/', {env: 'COUNTINGHOUSE_GITHUB_TOKEN', fallbackEnv: 'GITHUB_TOKEN'});
+const GH = remoteFor('https://api.githubcopilot.com/mcp/', {env: 'COUNTINGHOUSE_GITHUB_TOKEN'});
 const allowance = (obj) => {
   const file = path.join(tmpDirs.mkdtemp('ch-remote-02-'), 'remote-credentials.json');
   fs.writeFileSync(file, typeof(obj) === 'string' ? obj : JSON.stringify(obj));
-  return loadAllowance(file);
+  const loaded = loadFile(file);
+  assert.strictEqual(loaded.version, 1);
+  return loaded.origins;
 };
 const ALLOWED = () => allowance({'https://api.githubcopilot.com': ['COUNTINGHOUSE_GITHUB_TOKEN', 'GITHUB_TOKEN']});
 
@@ -38,9 +40,10 @@ describe('remote 02: the credential allowance', () => {
     assert.deepStrictEqual(c, {header: 'Authorization', value: `Bearer ${TOKEN}`, source: 'COUNTINGHOUSE_GITHUB_TOKEN'});
   });
 
-  it('reads fallbackEnv when env is unset or empty', () => {
+  // M6: one variable; another allowed and set is never read in its place
+  it('env unset or empty is unset, whatever else is set', () => {
     for (const env of [{GITHUB_TOKEN: OTHER}, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: OTHER}]) {
-      assert.deepStrictEqual(resolveCredential(GH, env, ALLOWED()), {header: 'Authorization', value: `Bearer ${OTHER}`, source: 'GITHUB_TOKEN'});
+      assert.deepStrictEqual(resolveCredential(GH, env, ALLOWED()), {missing: 'unset', variable: 'COUNTINGHOUSE_GITHUB_TOKEN', origin: 'https://api.githubcopilot.com'});
     }
   });
 
@@ -56,10 +59,10 @@ describe('remote 02: the credential allowance', () => {
     assert.deepStrictEqual(c, {missing: 'not-allowed', variable: 'CH_TEST_REMOTE_TOKEN', origin: `http://127.0.0.1:${testPort(9688)}`});
   });
 
-  it('allows env and fallbackEnv one by one', () => {
-    const onlyFallback = allowance({'https://api.githubcopilot.com': ['GITHUB_TOKEN']});
-    assert.deepStrictEqual(resolveCredential(GH, {COUNTINGHOUSE_GITHUB_TOKEN: TOKEN, GITHUB_TOKEN: OTHER}, onlyFallback),
-      {header: 'Authorization', value: `Bearer ${OTHER}`, source: 'GITHUB_TOKEN'});
+  it('an allowance for another variable only: not allowed', () => {
+    const another = allowance({'https://api.githubcopilot.com': ['GITHUB_TOKEN']});
+    assert.deepStrictEqual(resolveCredential(GH, {COUNTINGHOUSE_GITHUB_TOKEN: TOKEN, GITHUB_TOKEN: OTHER}, another),
+      {missing: 'not-allowed', variable: 'COUNTINGHOUSE_GITHUB_TOKEN', origin: 'https://api.githubcopilot.com'});
   });
 
   it('no allowance means no credential is read', () => {
@@ -81,7 +84,7 @@ describe('remote 02: the credential allowance', () => {
     assert.deepStrictEqual(resolveCredential(r, {GITHUB_TOKEN: TOKEN}, ALLOWED()), {header: 'X-Api-Key', value: TOKEN, source: 'GITHUB_TOKEN'});
   });
 
-  it('loadAllowance refuses what is not the documented shape', () => {
+  it('a version 1 file (loadFile) refuses what is not the documented shape', () => {
     const bad = [
       '[]', '"x"', 'not json',
       {'https://api.githubcopilot.com/mcp': ['A']},     // a path, not an origin
@@ -95,7 +98,7 @@ describe('remote 02: the credential allowance', () => {
     bad.forEach((b) => assert.throws(() => allowance(b), /remoteCredentials/, JSON.stringify(b)));
   });
 
-  it('loadAllowance accepts an http loopback origin, for the tests\' local server', () => {
+  it('a version 1 file accepts an http loopback origin, for the tests\' local server', () => {
     const a = allowance({[`http://127.0.0.1:${testPort(9688)}`]: ['CH_TEST_REMOTE_TOKEN']});
     assert.ok(a.get(`http://127.0.0.1:${testPort(9688)}`).has('CH_TEST_REMOTE_TOKEN'));
   });
@@ -130,12 +133,11 @@ describe('remote 02: version 2, by module', () => {
     assert.strictEqual(load({}).modules.size, 0, 'an empty version 2 file binds nothing');
   });
 
-  it('version 1 still loads as before, through loadFile too', () => {
+  it('version 1 still loads as before, through loadFile', () => {
     const file = v2file(JSON.stringify({[ORIGIN]: ['GITHUB_TOKEN']}));
     const l = credentials.loadFile(file);
     assert.strictEqual(l.version, 1);
     assert.ok(l.origins.get(ORIGIN).has('GITHUB_TOKEN'));
-    assert.ok(loadAllowance(file).get(ORIGIN).has('GITHUB_TOKEN'));
   });
 
   it('refuses any environment name that is not a slot, and every other malformed version 2 file, naming the file and never a value', () => {
@@ -163,10 +165,6 @@ describe('remote 02: version 2, by module', () => {
     const shapes = ['{"version": 2}', '{"version": 2, "modules": []}', '{"version": 3, "modules": {}}', '{"version": 2, "modules": {}, "x": 1}',
       '{"version": "2", "modules": {}}'];
     shapes.forEach((t) => assert.throws(() => credentials.loadFile(v2file(t)), /--remoteCredentials/, t));
-  });
-
-  it('a pack\'s own file (loadAllowance) is version 1 only', () => {
-    assert.throws(() => loadAllowance(v2file(BOUND)), /version 2/);
   });
 
   it('resolves only the module\'s own binding: the bound module sends its slot\'s value, under its declared header', () => {
@@ -202,18 +200,16 @@ describe('remote 02: version 2, by module', () => {
     assert.strictEqual(credentials.resolveModuleCredential(GHV2, env, entryOf(l, 'b'), 'b').value, `Bearer ${OTHER}`);
   });
 
-  it('an empty slot is unset; a fallbackEnv is never read under version 2', () => {
+  it('an empty slot is unset; another variable bound is never read in its place', () => {
     const l = load(BOUND);
     const e = entryOf(l, '@countinghouse/ch-access-github');
     assert.deepStrictEqual(credentials.resolveModuleCredential(GHV2, {[SLOT1]: ''}, e, 'x'),
       {missing: 'unset', variable: 'GITHUB_TOKEN', origin: ORIGIN});
-    const withFallback = remoteFor(`${ORIGIN}/mcp/`, {env: 'GITHUB_TOKEN', fallbackEnv: 'COUNTINGHOUSE_GITHUB_TOKEN'});
     const both = load({m: {[ORIGIN]: {GITHUB_TOKEN: SLOT1, COUNTINGHOUSE_GITHUB_TOKEN: SLOT2}}});
-    assert.deepStrictEqual(credentials.resolveModuleCredential(withFallback, {[SLOT2]: OTHER}, entryOf(both, 'm'), 'm'),
+    assert.deepStrictEqual(credentials.resolveModuleCredential(GHV2, {[SLOT2]: OTHER}, entryOf(both, 'm'), 'm'),
       {missing: 'unset', variable: 'GITHUB_TOKEN', origin: ORIGIN});
-    // only the fallback is bound: still nothing is sent
-    const onlyFallback = load({m: {[ORIGIN]: {COUNTINGHOUSE_GITHUB_TOKEN: SLOT2}}});
-    assert.deepStrictEqual(credentials.resolveModuleCredential(withFallback, {[SLOT2]: OTHER}, entryOf(onlyFallback, 'm'), 'm'),
+    const another = load({m: {[ORIGIN]: {COUNTINGHOUSE_GITHUB_TOKEN: SLOT2}}});
+    assert.deepStrictEqual(credentials.resolveModuleCredential(GHV2, {[SLOT2]: OTHER}, entryOf(another, 'm'), 'm'),
       {missing: 'not-allowed', why: 'new-variable', variable: 'GITHUB_TOKEN', origin: ORIGIN});
   });
 
@@ -266,21 +262,6 @@ describe('remote 02: version 2, by module', () => {
       refused.forEach(([name, obj]) => assert.throws(() => credentials.checkEntry(name, obj), JSON.stringify([name, obj])));
     });
 
-    it('a shared runtime compares a session\'s credential on no name the start adds under version 2 (route-manager credentialVariables)', () => {
-      const {credentialVariables} = require('../../lib/route-manager');
-      const pack = {packsInPlace: new Map([['p', {allowance: new Map([['https://x.example', new Set(['X_KEY'])]])}]])};
-      assert.deepStrictEqual([...credentialVariables(null)], []);
-      assert.deepStrictEqual([...credentialVariables(pack)], [], 'a pack\'s own version 1 file is not used under version 2: it adds no name');
-      // the same pack under a version 1 start still adds its names
-      const v2 = credentials.snapshot();
-      try {
-        credentials.configure(v2file(JSON.stringify({[ORIGIN]: ['GITHUB_TOKEN']})));
-        assert.deepStrictEqual([...credentialVariables(pack)].sort(), ['GITHUB_TOKEN', 'X_KEY']);
-      } finally {
-        credentials.restore(v2);
-      }
-    });
-
     it('a binding of a variable that holds no secret (PATH, HOME, LANG, LC_*, TZ, ...) is refused, naming it; in a later entry too', () => {
       for (const name of ['PATH', 'HOME', 'USER', 'LANG', 'TZ', 'TMPDIR', 'LC_ALL']) {
         assert.throws(() => load({m: {[ORIGIN]: {[name]: SLOT1}}}), (e) => /--remoteCredentials/.test(e.message) && e.message.includes(`${name} is not a credential`), name);
@@ -288,17 +269,16 @@ describe('remote 02: version 2, by module', () => {
       assert.throws(() => credentials.checkEntry('b', {'https://api.b.example': {PATH: SLOT2}}), /PATH is not a credential/);
     });
 
-    it('the names denied to workers under version 2: the slots and every variable name the file binds (#422 high review, 2), no pack\'s version 1 names', () => {
-      assert.deepStrictEqual([...credentials.namesReadFrom([])].sort(), ['B_KEY', SLOT1, SLOT2, 'GITHUB_TOKEN']);
-      assert.deepStrictEqual([...credentials.namesReadFrom([new Map([['https://x.example', new Set(['X_KEY'])]])])].sort(), ['B_KEY', SLOT1, SLOT2, 'GITHUB_TOKEN']);
+    it('the names denied to workers under version 2: the slots and every variable name the file binds (#422 high review, 2)', () => {
+      assert.deepStrictEqual([...credentials.namesReadFrom()].sort(), ['B_KEY', SLOT1, SLOT2, 'GITHUB_TOKEN']);
     });
   });
 
-  it('the names an allowance reads from: under version 1, the start\'s variables and each extra (a pack\'s) allowance\'s', () => {
+  it('the names an allowance reads from: under version 1, the start\'s variables', () => {
     const saved = credentials.snapshot();
     try {
       credentials.configure(v2file(JSON.stringify({[ORIGIN]: ['GITHUB_TOKEN']})));
-      assert.deepStrictEqual([...credentials.namesReadFrom([new Map([['https://x.example', new Set(['X_KEY'])]])])].sort(), ['GITHUB_TOKEN', 'X_KEY']);
+      assert.deepStrictEqual([...credentials.namesReadFrom()].sort(), ['GITHUB_TOKEN']);
     } finally {
       credentials.restore(saved);
     }
@@ -388,7 +368,7 @@ describe('remote 02: countinghouse-validate reads the declaration', () => {
   it('accepts the first pack\'s declaration', async () => {
     const problems = await remotesProblems(withRemotes([{name: 'github', transport: 'streamable-http', url: 'https://api.githubcopilot.com/mcp/',
       headers: {'X-MCP-Toolsets': 'actions,repos'},
-      credential: {env: 'COUNTINGHOUSE_GITHUB_TOKEN', fallbackEnv: 'GITHUB_TOKEN', header: 'Authorization', scheme: 'Bearer'}}]));
+      credential: {env: 'COUNTINGHOUSE_GITHUB_TOKEN', header: 'Authorization', scheme: 'Bearer'}}]));
     assert.deepStrictEqual(problems, []);
   });
   tmpDirs.hooks();

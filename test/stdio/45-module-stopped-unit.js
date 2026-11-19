@@ -34,17 +34,14 @@ function writeModule(dir, {name, version = '1.0.0', role, calls}) {
 describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medium review)', () => {
   const cli = require('../../lib/cli-options');
   const ModuleManager = require('../../lib/module-manager');
-  const mmod = require('../../lib/module-manager');
   let mip = null;
   let root = null;
-  let packs = null;
   before(() => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-45-'));
-    packs = path.join(root, 'packs');
-    const nm = path.join(packs, 'pf', '1.0.0', 'node_modules');
-    writeModule(path.join(nm, 'ch-step-x'), {name: 'ch-step-x', role: 'part'});
-    writeModule(path.join(nm, 'ch-pack-pf'), {name: 'ch-pack-pf', role: 'scenario', calls: ['ch-step-x/svc.run']});
-    cli.setOptions({workerThread: true, packsRoot: [packs], modulesRoot: [path.join(root, 'store')], requestTimeout: 5000});
+    // a unit in the module store (M6: the module form only): a scenario and its part
+    writeModule(path.join(root, 'store', 'ch-step-x', '1.0.0'), {name: 'ch-step-x', role: 'part'});
+    writeModule(path.join(root, 'store', 'ch-pack-pf', '1.0.0'), {name: 'ch-pack-pf', role: 'scenario', calls: ['ch-step-x/svc.run']});
+    cli.setOptions({workerThread: true, modulesRoot: [path.join(root, 'store')], requestTimeout: 5000});
     mip = require('../../lib/modules-in-place');
   });
   after(() => {
@@ -68,16 +65,14 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
     require('../../lib/module-visibility').configure({moduleOf: () => null, isGone: (n) => mm.modules[n] == null});
     return mm;
   }
-  const scenario = () => path.join(packs, 'pf', '1.0.0', 'node_modules', 'ch-pack-pf');
-  const loadPf = (mm) => mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario: scenario(), pack: 'pf'}, {});
+  const pfDirs = () => ({'ch-pack-pf': path.join(root, 'store', 'ch-pack-pf', '1.0.0'), 'ch-step-x': path.join(root, 'store', 'ch-step-x', '1.0.0')});
+  const loadPf = (mm) => mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', dirs: pfDirs()}, {});
 
   // (M5b: no settings state follows an unload: a module's on/off is the file's)
-  it('2, 4: the unit\'s own allowance goes', async () => {
+  it('2, 4: the unit\'s record goes', async () => {
     const mm = runtime();
     await loadPf(mm);
-    mmod.packRemotes.set('ch-step-x', new Map([['ch-pack-pf', new Map([['https://x.example', new Set(['X'])]])]]));
     await mip.selfUnload(mm, 'ch-step-x', 'MODULE_SUSPENDED');
-    assert.strictEqual(mmod.packRemotes.has('ch-step-x'), false, 'the pack\'s allowance went with it');
     assert.strictEqual(mm.packsInPlace.has('ch-pack-pf'), false);
   });
 
@@ -86,7 +81,7 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
     await loadPf(mm);
     await mip.selfUnload(mm, 'ch-step-x', 'MODULE_SUSPENDED');
     assert.strictEqual(mm.packsInPlace.get('ch-pack-pf').uncertain, true);
-    await assert.rejects(mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario(), pack: 'pf'}, {}),
+    await assert.rejects(mip.reloadPack(mm, {type: 'reload', names: ['ch-pack-pf'], dirs: pfDirs()}, {}),
       (e) => e.code === 'CONTROL_MODULE_UNCERTAIN');
   });
 
@@ -137,7 +132,7 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
     await loadPf(mm);
     // a second unit holding the same part, recorded as a start under
     // --modulesRoot records it: no ch-local pack name
-    mm.packsInPlace.set('@t/ch-pack-seeded', {form: 'module', pack: mip.moduleKey('@t/ch-pack-seeded'), modules: new Map([['ch-step-x', {path: '/x', version: '1.0.0', listed: false}]]), tools: new Set(), prompts: new Set(), allowance: null});
+    mm.packsInPlace.set('@t/ch-pack-seeded', {modules: new Map([['ch-step-x', {path: '/x', version: '1.0.0', listed: false}]]), tools: new Set(), prompts: new Set()});
     const told = [];
     const channel = require('../../lib/control-channel');
     const realTell = channel.tell;
@@ -184,17 +179,18 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
       return {type: 'load', name, dirs: {[name]: dir}};
     };
 
-    it('medium 1: a module-form unit is under its module key among the pack records while it loads, never its package name', async () => {
+    it('medium 1: a unit is under its package name while it loads', async () => {
       const mm = runtime();
       const seen = [];
       const load = mm.loadModuleFromPath;
-      mm.loadModuleFromPath = (p, name, version, cb, opts) => { seen.push(...mip.packRecords(mm).map((r) => r.pack)); load(p, name, version, cb, opts); };
+      mm.loadModuleFromPath = (p, name, version, cb, opts) => { seen.push(...(mm.packsLoading || new Map()).keys()); load(p, name, version, cb, opts); };
       await mip.loadPack(mm, moduleForm('ci-failure-triage'), {});
       assert.ok(seen.length > 0);
-      assert.ok(seen.every((k) => k === mip.moduleKey('ci-failure-triage')), JSON.stringify(seen));
+      assert.ok(seen.every((k) => k === 'ci-failure-triage'), JSON.stringify(seen));
     });
 
-    it('medium 3: a names-only reload whose type the message leaves out is checked once, as a reload', async () => {
+    // (its shape is its handler's: lib/module-control.js, #455's high review, 4)
+    it('medium 3: a names-only reload whose type the message leaves out is read as a reload', async () => {
       const mm = runtime();
       await mip.loadPack(mm, moduleForm('@t/ch-pack-r'), {});
       const dirs = {'@t/ch-pack-r': storeDir('@t/ch-pack-r', '1.0.0')};
@@ -202,23 +198,8 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
       assert.strictEqual(mm.modules['@t/ch-pack-r'].packageInfo.version, '1.0.0');
     });
 
-    // (medium 2, a view rebuild that throws, went with the session view in M5a)
-    it('medium 7: a pack-form unit with no pack name is told by its own', async () => {
-      const mm = runtime();
-      await loadPf(mm);
-      mm.packsInPlace.get('ch-pack-pf').pack = null;
-      const told = [];
-      const channel = require('../../lib/control-channel');
-      const realTell = channel.tell;
-      channel.tell = (m) => { told.push(m.name); return true; };
-      try {
-        await mip.selfUnload(mm, 'ch-step-x', 'MODULE_SUSPENDED');
-      } finally {
-        channel.tell = realTell;
-      }
-      assert.deepStrictEqual(told, ['ch-pack-pf']);
-    });
-
+    // (medium 2, a view rebuild that throws, went with the session view in M5a;
+    // medium 7, a pack-form unit with no pack name, with the pack form in M6)
     it('medium 5: a module with no supervisor record at its turn is not given up, and nothing throws on the channel\'s chain', async () => {
       const mm = Object.assign(Object.create(ModuleManager.prototype), {generations: {'ch-step-x': 1},
         supervisor: {records: {}, isCurrent: (n, r) => mm.supervisor.records[n] === r, status: () => null}});

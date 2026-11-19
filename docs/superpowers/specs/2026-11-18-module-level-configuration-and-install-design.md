@@ -570,15 +570,19 @@ names the modules that go with it (section 5.3).
   - It is written to `settings.json` under the lock, history line first,
     naming the session that asked. ch-local's running start or daemon sees
     the change and unloads the module.
-  - It counts against the budget of 32 changes a session may record
-    (`MAX_SESSION_CHANGES`, `lib/settings-tool.js:84`). Past the budget the
-    change is the terminal's, as for any other setting.
-  - The answer to the agent, and the notice every session gets, say what
-    went with it, how to undo it, and that the undo is not the agent's:
+  - It never counts against the budget of changes a session may record
+    (`MAX_SESSION_CHANGES`): a tightening is never refused (as built in
+    #449; only a module turned on counts).
+  - The answer to the asking session says it is written and what goes with
+    it. Every session is told once, by ch-local's unload of the module
+    (`reason: "off"`; a caller's unload carries `reason: "calls"` and the
+    module it went with), on the next result of any tool, in the runtime's
+    own text, which says what went with it and both ways back:
 
     > weather-tool is turned off for all your sessions. trip-planner calls
     > it, so trip-planner is off too. They stay off until weather-tool is
-    > turned on at a terminal: `ch-local settings set enabled.weather-tool on`.
+    > turned on again: here (you'll be asked to confirm) or at a terminal:
+    > `ch-local settings set enabled.weather-tool on`.
 
   - Turning it back on from conversation is a loosening (next item). With
     no tested client, that ends at the terminal.
