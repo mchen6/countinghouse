@@ -54,6 +54,22 @@ function timedCall(tool, capMs) {
   ]);
 }
 const linked = (r) => r != null && r.isError !== true && JSON.stringify(r.content || []).includes('resource_link');
+const uriOf = (r) => ((r.content || []).find((b) => b.type === 'resource_link') || {}).uri;
+// resources/read, as the caller (its JSON-RPC answer whole)
+function readResource(uri) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({jsonrpc: '2.0', id: 1, method: 'resources/read', params: {uri}});
+    const req = require('http').request({host: '127.0.0.1', port: PORT, path: '/mcp', method: 'POST',
+      headers: {'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'X-CH-Key': CALLER, 'Content-Length': Buffer.byteLength(body)}}, (res) => {
+      let out = '';
+      res.on('data', (d) => { out += d; });
+      res.on('end', () => { try { resolve(JSON.parse(out)); } catch (e) { reject(new Error(`not JSON: ${out.slice(0, 300)}`)); } });
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+let storedUri = null;
 
 describe('auth 46: with Redis down a call whose result has a binary value answers, and stores again once Redis is back', function() {
   this.timeout(120000);
@@ -82,6 +98,8 @@ describe('auth 46: with Redis down a call whose result has a binary value answer
   it('stores the value while Redis is up', async () => {
     const c = await timedCall(BINARY, 10000);
     assert.ok(c != null && linked(c.r), JSON.stringify(c).slice(0, 600));
+    storedUri = uriOf(c.r);
+    assert.ok(typeof storedUri === 'string', JSON.stringify(c.r).slice(0, 600));
   });
 
   it(`answers within ${ANSWER_MS} ms once Redis is down: RESULT_STORE_UNAVAILABLE, and a call with no binary value answers as before`, async () => {
@@ -93,6 +111,10 @@ describe('auth 46: with Redis down a call whose result has a binary value answer
     assert.ok(/RESULT_STORE_UNAVAILABLE/.test(JSON.stringify(c)), JSON.stringify(c).slice(0, 600));
     const plain = await timedCall(PLAIN, ANSWER_MS);
     assert.ok(plain != null && plain.r != null && plain.r.isError !== true, JSON.stringify(plain).slice(0, 600));
+    // a stored value's read says the store is unavailable, never "not
+    // found": the URI still holds (the medium on the blob-store PR, 1)
+    const read = await readResource(storedUri);
+    assert.ok(read.error != null && read.error.code === -32603 && read.error.data != null && read.error.data.code === 'RESULT_STORE_UNAVAILABLE', JSON.stringify(read).slice(0, 400));
   });
 
   it('stores again once Redis is back (the client reconnected)', async () => {
@@ -101,5 +123,7 @@ describe('auth 46: with Redis down a call whose result has a binary value answer
     await new Promise((r) => setTimeout(r, 3000));   // longer than the capped reconnect delay
     const c = await timedCall(BINARY, 10000);
     assert.ok(c != null && linked(c.r), JSON.stringify(c).slice(0, 600));
+    const read = await readResource(storedUri);
+    assert.ok(read.result != null && Array.isArray(read.result.contents), JSON.stringify(read).slice(0, 400));
   });
 });
