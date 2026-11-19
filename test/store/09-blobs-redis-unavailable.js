@@ -67,4 +67,63 @@ describe('store 09: the redis blob store answers with Redis down or hung', funct
       assert.ok(!/require\('redis'\)\.createClient\(/.test(body), `${part} makes a plain client`);
     }
   });
+
+  // the medium on the blob-store PR, 2, 3 and 4, with a client this test
+  // drives: what a lost reply may have left, and a remove made while Redis
+  // is down, are removed once the client is ready again; an error Redis
+  // answers (a script error) is never taken for an outage
+  function fakeClient() {
+    const c = new (require('events').EventEmitter)();
+    c.down = false;
+    c.ran = [];
+    c.next = null;   // the next eval's own answer: (cb) => ...
+    c.eval = (...args) => {
+      const cb = args.pop();
+      const isRemove = /drop\(ARGV\[1\], ARGV\[2\]\)/.test(String(args[0]));
+      if (c.down) return setImmediate(cb, Object.assign(new Error('closed'), {code: 'NR_CLOSED'}));
+      if (c.next != null && !isRemove) { const f = c.next; c.next = null; return f(cb); }
+      c.ran.push(isRemove ? `remove ${args[3]}` : 'put');
+      return setImmediate(cb, null, isRemove ? 1 : 'ok');
+    };
+    c.get = (k, cb) => setImmediate(cb, null, null);
+    c.quit = (cb) => cb && cb();
+    return c;
+  }
+  const local = (client) => {
+    const b = blobsRedis.create({client, limits: LIMITS, deadlineMs: DEADLINE});
+    opened.push(b);
+    return b;
+  };
+
+  it('a put whose reply was lost (the connection reset after Redis ran it) is removed once the client is ready again', async () => {
+    const c = fakeClient();
+    const b = local(c);
+    c.next = (cb) => { c.ran.push('put'); c.down = true; setImmediate(cb, Object.assign(new Error('reset'), {code: 'ECONNRESET'})); };
+    await assert.rejects(b.put(item()), (e) => unavailable(e) && e.cause != null && e.cause.code === 'ECONNRESET');
+    assert.deepStrictEqual(c.ran, ['put'], 'nothing reaches a Redis that is down');
+    c.down = false;
+    c.emit('ready');
+    await new Promise((r) => setTimeout(r, 20));
+    assert.strictEqual(c.ran.length, 2, JSON.stringify(c.ran));
+    assert.match(c.ran[1], /^remove [A-Za-z0-9_-]{43}$/);
+  });
+
+  it('a remove made while Redis is down runs once the client is ready again', async () => {
+    const c = fakeClient();
+    const b = local(c);
+    c.down = true;
+    const id = 'b'.repeat(43);
+    await assert.rejects(b.remove(id), unavailable);
+    c.down = false;
+    c.emit('ready');
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepStrictEqual(c.ran, [`remove ${id}`]);
+  });
+
+  it('an error Redis answers (a script error) goes on as it is, never RESULT_STORE_UNAVAILABLE', async () => {
+    const c = fakeClient();
+    const b = local(c);
+    c.next = (cb) => setImmediate(cb, Object.assign(new Error('ERR user_script:1: boom'), {name: 'ReplyError', code: 'ERR'}));
+    await assert.rejects(b.put(item()), (e) => e.code === 'ERR' && /boom/.test(e.message));
+  });
 });
