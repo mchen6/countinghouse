@@ -40,12 +40,24 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
   this.timeout(120000);
   let home;
   let policy;
+  // (the probe loaded from a copy whose root holds a space, so a message
+  // quoting it percent-encoded is checked too; under the repo's
+  // node_modules, so a bare name still walks the same node_modules above
+  // it; the review of #440's second round)
+  const spaced = path.join(ROOT, 'node_modules', '.ch-sb-68 probe');
+  let probe;
   before(() => {
+    fs.rmSync(spaced, {recursive: true, force: true});
+    probe = path.join(spaced, 'isolation-probe');
+    fs.cpSync(PROBE, probe, {recursive: true});
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sb-68-'));
     policy = path.join(home, 'policy.json');
     fs.writeFileSync(policy, JSON.stringify({modules: {'isolation-probe': {approve: 'as-declared'}}}));
   });
-  after(() => fs.rmSync(home, {recursive: true, force: true}));
+  after(() => {
+    fs.rmSync(home, {recursive: true, force: true});
+    fs.rmSync(spaced, {recursive: true, force: true});
+  });
   ['enforce', 'audit'].forEach((mode) => describe(mode, () => {
     let server = null;
     before(async () => {
@@ -53,7 +65,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       // Module: module code reaches none, A)
       // (its declared net approved: postman-request and sshpk warmed, for
       // the bcrypt-pbkdf case)
-      server = await startServer(testPort(9759), ['--testLateLoads', '--modulePolicy', policy, '--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode, '--loadModule', PROBE, '--loadModule', PEER]);
+      server = await startServer(testPort(9759), ['--testLateLoads', '--modulePolicy', policy, '--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode, '--loadModule', probe, '--loadModule', PEER]);
     });
     after(() => { stopServer(server); server = null; });
     for (const [step, expected] of Object.entries(EXPECTED)) {

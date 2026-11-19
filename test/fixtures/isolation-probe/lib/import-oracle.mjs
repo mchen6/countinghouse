@@ -49,7 +49,16 @@ const own = async () => {
       return host.length === 0 ? e.code : `host(${host.join(',')})`;
     }
   };
-  const encoded = [await invalid(`${path.posix.dirname(here.pathname)}/a%2Fb.mjs?x`), await invalid('./a%2Fb.mjs')]
-    .every((c) => c === 'ERR_INVALID_MODULE_SPECIFIER') ? 'same' : 'encoded';
+  // (and a URL with a host, in either case of its scheme; each code as
+  // plain Node gives it, the test's module root holding a space)
+  const dir = path.posix.dirname(here.pathname);
+  const codes = [
+    await invalid(`${dir}/a%2Fb.mjs?x`), await invalid('./a%2Fb.mjs'), await invalid('./a%5Cb.mjs'), await invalid('./a%5cb.mjs'),
+    await invalid(`file://${dir}/a%2Fb.mjs`), await invalid(`FILE://${dir}/a%2Fb.mjs`),
+    await invalid('file://host.invalid/x.mjs'), await invalid('FILE://host.invalid/x.mjs')
+  ];
+  const want = ['ERR_INVALID_MODULE_SPECIFIER', 'ERR_INVALID_MODULE_SPECIFIER', 'ERR_INVALID_MODULE_SPECIFIER', 'ERR_INVALID_MODULE_SPECIFIER',
+    'ERR_INVALID_MODULE_SPECIFIER', 'ERR_INVALID_MODULE_SPECIFIER', 'ERR_INVALID_FILE_URL_HOST', 'ERR_INVALID_FILE_URL_HOST'];
+  const encoded = codes.every((c, i) => c === want[i]) ? 'same' : `encoded(${codes.join(',')})`;
   return `${escaped} ${queried} ${absolute} ${encoded}`;
 };
