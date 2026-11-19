@@ -538,7 +538,7 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
         }
       });
 
-      it('pack operations run one at a time: one arriving while another is under way is refused, and changes nothing', async() => {
+      it('module operations run one at a time: one arriving while another is under way is refused, and changes nothing', async() => {
         const packsInPlace = require('../../lib/modules-in-place');
         const h = crashedPartRuntime();
         await load(h);
