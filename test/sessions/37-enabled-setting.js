@@ -143,6 +143,22 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.deepStrictEqual([reads, tops], [1, 1]);
   });
 
+  // the medium review of round 3, 7: the notice fits its bound whatever the
+  // names' length, the ways back always whole
+  it('offNotice fits OWN_NOTICE_MAX: fewer callers named as the names grow, the command always whole', () => {
+    const {OWN_NOTICE_MAX} = require('../../lib/notices');
+    const pkg = `@${'s'.repeat(40)}/${'p'.repeat(172)}`;   // 214 characters
+    for (const [n, len] of [[8, 50], [3, 200], [12, 214]]) {
+      const callers = Array.from({length: n}, (_, i) => `${String(i).padStart(2, '0')}${'c'.repeat(len - 2)}`);
+      for (const m of [pkg, 'weather-tool']) {
+        const t = settingsTool.offNotice(m, callers);
+        assert.ok(t.length <= OWN_NOTICE_MAX, `${n}x${len} ${m.length}: ${t.length}`);
+        assert.ok(t.endsWith(`\`ch-local settings set enabled.${m} on\`.`), t.slice(-80));
+        assert.match(t, new RegExp(`${n === 1 ? 'calls' : 'call'} it`));
+      }
+    }
+  });
+
   // the medium review of round 3, 5: only a runtime that serves the
   // settings tool tells an unload as its off
   it('storedOff: a module the settings file has off, read only where the settings tool is served', () => {
