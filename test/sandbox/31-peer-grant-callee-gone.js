@@ -51,7 +51,6 @@ function run(scenario) {
     if (scenario === 'replacing') during = () => { callee.replacing = true; callee.hostModuleName = 'ch-step-d'; };
     if (scenario === 'replaced-registered') {
       callee.replacing = true;
-      dm.replacingInPlace = () => true;   // the reload not finished
       during = () => { dm.deviceMap.D = replacement; };
     }
     if (scenario === 'replacing-no-access') {

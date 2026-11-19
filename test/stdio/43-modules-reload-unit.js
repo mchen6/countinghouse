@@ -87,13 +87,19 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     const unloadsIn = (name, when) => unloadDuring != null && unloadDuring.name === name && unloadDuring.when === when && !log.includes(`operator unload ${name}`);
     // switching: a reload's switch spawning it (loadModuleByWorker), the only
     // spawn an unloadDuring 'spawn' or 'registration' acts in
-    const spawn = (p, name, version, cb, switching = false) => {
+    // (loadModuleFromPath's fifth argument is its options: only the stub's
+    // own loadModuleByWorker passes true)
+    const spawn = (p, name, version, cb, how) => {
+      const switching = how === true;
+      // the unload-then-load branch's load (loadOne: options, not true)
+      const branchLoad = how != null && how !== true && how.generation != null;
       if (version === failVersion && name === failName) return setImmediate(() => cb(Object.assign(new Error('no spawn'), {code: 'LOAD_MODULE_FAIL'})));
       log.push(`held ${name}: ${mm.isHeld(name)}`);
       const wm = instance(name, version, p);
       mm.modules[name] = wm;
       mm.unitLoaded(name);
       if (switching && unloadsIn(name, 'spawn')) operatorUnload(name);
+      if (branchLoad && unloadsIn(name, 'load')) operatorUnload(name);
       setImmediate(() => cb(null));
       // its registration, a little later (its devices from then on)
       const late = switching && unloadDuring != null && unloadDuring.name === name && unloadDuring.when === 'registration';
