@@ -113,10 +113,15 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "m"}');
     fs.writeFileSync(path.join(tmpInside, 'keep.js'), 'module.exports = 1;');
     const said = [];
+    let emptied = false;
     const fsb = await createForWorker({name: 'm', mode: 'audit', modulePath: mod, declared: [],
-      options: {moduleDataPath: path.join(mod, 'store'), modulePath: base}, report: (rule, target) => said.push([rule, target])});
+      options: {moduleDataPath: path.join(mod, 'store'), modulePath: base}, report: (rule, target) => said.push([rule, target]),
+      emptyTmp: async () => { emptied = true; }});
     await fsb.bridge.close();
     assert.ok(fs.existsSync(path.join(tmpInside, 'keep.js')), 'the module\'s own file was emptied');
+    // (and a session's emptying, which would give its share back, is never
+    // called: the files are still there, so the share stays counted)
+    assert.strictEqual(emptied, false);
     assert.deepStrictEqual(said.filter(([rule]) => rule === 'overlap').map(([, t]) => t.replace(/ \(.*?\)/, '')).sort(),
       ['the module\'s /data and its own code overlap -- set --moduleDataPath apart from the module',
         'the module\'s /tmp and its own code overlap -- set --moduleDataPath apart from the module']);
@@ -144,6 +149,32 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     } catch (e) { code = e.code; }
     assert.strictEqual(code, 'MODULE_SANDBOX_REFUSED');
     assert.ok(fs.existsSync(path.join(tmpInside, 'keep.js')), 'the other module\'s file was emptied');
+  });
+
+  // (a --loadModule directory is another module's code whole; and a scoped
+  // module in --modulePath, @scope/name, is code too)
+  it('under enforce, a /data in another --loadModule directory, or in a scoped module in --modulePath, refuses the spawn', async () => {
+    const {createForWorker} = require('../../lib/fs-broker');
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-loaded-')));
+    const mod = path.join(base, 'a');
+    const loaded = path.join(base, 'b');
+    const modules = path.join(base, 'modules');
+    fs.mkdirSync(mod, {recursive: true});
+    fs.mkdirSync(path.join(loaded, 'lib'), {recursive: true});
+    fs.mkdirSync(path.join(modules, '@acme', 'b'), {recursive: true});
+    fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "m"}');
+    fs.writeFileSync(path.join(loaded, 'package.json'), '{"name": "b"}');
+    fs.writeFileSync(path.join(modules, '@acme', 'b', 'package.json'), '{"name": "@acme/b"}');
+    const tryWith = async (moduleDataPath) => {
+      try {
+        const fsb = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
+          options: {moduleDataPath, modulePath: modules, localModulePath: [mod, loaded]}, report: () => {}});
+        await fsb.bridge.close();
+        return null;
+      } catch (e) { return e.code; }
+    };
+    assert.strictEqual(await tryWith(path.join(loaded, 'lib')), 'MODULE_SANDBOX_REFUSED');
+    assert.strictEqual(await tryWith(path.join(modules, '@acme', 'b')), 'MODULE_SANDBOX_REFUSED');
   });
 
   // (but a --moduleDataPath beside the modules in --modulePath is in no
