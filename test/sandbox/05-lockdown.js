@@ -211,6 +211,11 @@ describe('sandbox 05: worker lockdown', function() {
     it('Object.defineProperties defines what it read once, never a key shown on a second read', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'holdDefineProps'})), {outcome: 'allowed', code: null});
     });
+    it('vm: no prototype leads to Node\'s native class; a produce-only script is not marked rejected; inherited options are kept', async () => {
+      for (const what of ['vmNative', 'vmProduce', 'vmInherited']) {
+        assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what})), {outcome: 'allowed', code: null}, what);
+      }
+    });
     it('createRequire\'s own Module still loads', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'createRequireOwn'})), {outcome: 'allowed', code: null});
     });

@@ -287,8 +287,8 @@ any module code). Stops:
   | `source-map-support`, `install()` | works | works | works | works |
   | `source-map-support`, `install({hookRequire: true})` | works | works | no hook (reported) | throws |
   | `require-in-the-middle`, a `Hook` | works | works | throws | no hook |
-  | `resolve-from`, from `__dirname` | fails | fails | fails | throws |
-  | `import-fresh`, a relative name | fails | fails | fails | throws |
+  | `resolve-from`, from `__dirname` | fails | fails (works below Node 24.15) | fails (works below Node 24.15) | throws |
+  | `import-fresh`, a relative name | fails | fails (works below Node 24.15) | fails (works below Node 24.15) | throws |
   | `module-alias`, `addAlias` | no alias | no alias | no alias | throws |
 
   Why:

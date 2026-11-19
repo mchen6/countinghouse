@@ -51,6 +51,23 @@ const VM_ROUTES = {
 };
 
 const ATTEMPTS = {
+  // (the medium review of PR 3) no prototype of vm.Script leads to Node's
+  // native class, which takes a cache in its own arguments
+  vmNative:         () => {
+    const vm = require('vm');
+    if (Object.getPrototypeOf(vm.Script) !== Function.prototype) throw Object.assign(new Error('reached'), {code: 'REACHED'});
+    if (Object.getPrototypeOf(vm.Script.prototype).constructor !== vm.Script) throw Object.assign(new Error('reached'), {code: 'REACHED'});
+  },
+  // ... a script asked only to produce a cache is never marked rejected
+  vmProduce:        () => {
+    const s = new (require('vm').Script)('1;', {filename: 'ch-probe-produce.js', produceCachedData: true});
+    if (s.cachedDataRejected === true) throw Object.assign(new Error('marked'), {code: 'MARKED'});
+  },
+  // ... and options from a defaults object keep their filename
+  vmInherited:      () => {
+    const s = new (require('vm').Script)('new Error("x").stack', Object.create({filename: 'ch-probe-defaults.js'}));
+    if (!String(s.runInThisContext()).includes('ch-probe-defaults.js')) throw Object.assign(new Error('lost'), {code: 'LOST'});
+  },
   // what the lockdown holds, as a dependency would try to change it (the
   // review of e0f39de9: under audit each is reported, and none takes)
   holdAssign:       () => {

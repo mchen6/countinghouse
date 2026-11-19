@@ -209,8 +209,11 @@ describe('fs-broker 12: virtual identity', function() {
       const reported = () => server.output.slice(from).split('\n').some((l) => l.includes('module sandbox: route-probe violation require cli-options'));
       for (let i = 0; i < 40 && !reported(); i++) await new Promise((r) => setTimeout(r, 50));
       assert.ok(reported(), server.output.slice(-2000));
+      // (under enforce one refusal for any bare name module code can't
+      // resolve, so whether a lib/ file of that name exists is no answer:
+      // #194's PR 3; reported only for the name that reaches lib/)
       const dir = toolOutput(await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what: 'libName', target: 'routes'}));
-      assert.deepStrictEqual(dir, {outcome: 'refused', code: 'PLAIN'});
+      assert.deepStrictEqual(dir, {outcome: 'refused', code: mode === 'enforce' ? 'TAGGED' : 'PLAIN'});
       assert.ok(!server.output.slice(from).includes('violation require routes'), 'a name that reaches nothing was reported');
     });
   });

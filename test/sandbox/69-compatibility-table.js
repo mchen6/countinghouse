@@ -32,9 +32,14 @@ const LIBRARIES = ['resolve-from', 'import-fresh', 'source-map-support', 'module
 //   process.getBuiltinModule (held); module-alias's alias is never asked in
 //   a worker, whose resolution is the file broker's own (F4-1); under
 //   enforce the reduced `module` has no prototype or statics to replace.
+// (below Node 24.15 the resolve shim, lib/resolve-shim.js, takes
+// Module._resolveFilename through the file broker's hook, which maps the
+// module's virtual parent: there resolve-from and import-fresh work in a
+// worker under off and audit)
+const SHIM = require('../../lib/node-version').NEEDS_RESOLVE_SHIM;
 const TABLE = [
-  ['resolve-from', 'threw MODULE_NOT_FOUND', 'threw MODULE_NOT_FOUND', 'threw MODULE_NOT_FOUND', 'threw TypeError'],
-  ['import-fresh', 'threw MODULE_NOT_FOUND', 'threw MODULE_NOT_FOUND', 'threw MODULE_NOT_FOUND', 'threw TypeError'],
+  ['resolve-from', 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', 'threw TypeError'],
+  ['import-fresh', 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', 'threw TypeError'],
   ['source-map-support', 'works', 'works', 'works', 'works'],
   ['source-map-support hookRequire', 'works', 'works', 'no hook', 'threw TypeError'],
   ['module-alias', 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'threw TypeError'],
