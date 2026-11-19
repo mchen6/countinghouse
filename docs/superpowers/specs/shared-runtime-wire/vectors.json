@@ -1171,6 +1171,17 @@
         }
       },
       {
+        "why": "a notice with a leftover pack field",
+        "reason": "old-field",
+        "message": {
+          "id": 20,
+          "type": "notice",
+          "module": null,
+          "text": "x",
+          "pack": "example"
+        }
+      },
+      {
         "why": "a reread of anything but the module settings",
         "reason": "name",
         "message": {

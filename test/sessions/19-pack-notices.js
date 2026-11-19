@@ -296,6 +296,24 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
     });
   });
 
+  // M6's medium review, 1-3: a message is judged as the handler it reached;
+  // a notice with no module is about none (ch-local sends none so); one
+  // carrying the pack form's fields is refused like any other
+  describe('a message as the handler it reached', () => {
+    it('a notice with no type and no module goes to every session; one with a pack field is refused, nobody told', async() => {
+      await control.notice({text: 'about none'});
+      assert.deepStrictEqual([A, B, C].map((id) => notices.take(null, id)), [['about none'], ['about none'], ['about none']]);
+      await assert.rejects(control.notice({type: 'notice', module: null, text: 'x', pack: 'ci'}), (e) => e.code === 'CONTROL_FAILED' && /no scenario, pack, global or remoteCredentials/.test(e.message));
+      assert.deepStrictEqual([A, B, C].map((id) => notices.take(null, id)), [[], [], []]);
+    });
+
+    it('an unload with no type is judged as an unload, never as a load missing its dirs', async() => {
+      await load('ci');
+      await control.unload({name: SCENARIO('ci'), notice: 'gone'});
+      assert.deepStrictEqual(calls.filter((x) => x[0] === 'unload'), [['unload', SCENARIO('ci')]]);
+    });
+  });
+
   describe('a terminal off is an unload, which tells everyone', () => {
     it('unload of a module: every open session told once, in the message\'s words; with no notice, the tools were turned off', async() => {
       await load('docs');

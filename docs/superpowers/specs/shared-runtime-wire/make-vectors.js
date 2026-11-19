@@ -328,6 +328,8 @@ const out = {
         {why: 'a leftover global field', reason: 'old-field', message: {id: 17, type: 'reload', names: [scenario], dirs: {[scenario]: dir(scenario, '1.0.0')}, global: true}},
         {why: 'a leftover remoteCredentials field', reason: 'old-field', message: {id: 18, type: 'load', name: scenario, dirs: {[scenario]: dir(scenario, '1.0.0')},
           remoteCredentials: '/home/example/.countinghouse/run/start-1/remote-credentials.json'}},
+        // M6: a notice carrying the pack form's fields is refused too
+        {why: 'a notice with a leftover pack field', reason: 'old-field', message: {id: 20, type: 'notice', module: null, text: 'x', pack: 'example'}},
         // M2a: reread names only the module settings
         {why: 'a reread of anything but the module settings', reason: 'name', message: {id: 19, type: 'reread', what: 'everything'}}
       ]
