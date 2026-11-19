@@ -70,7 +70,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step});
         if (mode === 'enforce') assert.match(detail(r), /^(MODULE_NOT_FOUND|ERR_ACCESS_DENIED)$/, JSON.stringify(r).slice(0, 500));
         else assert.strictEqual(detail(r), 'loaded', JSON.stringify(r).slice(0, 500));
-        const line = step === 'noParent' ? /violation require [^\n]*settings-tool\.js/ : /violation require \.\/settings-tool\.js \(a load by the runtime after the lockdown\)/;
+        const line = step === 'noParent' ? /violation require [^\n]*node-version\.js/ : /violation require \.\/node-version\.js \(a load by the runtime after the lockdown\)/;
         assert.ok(await waitFor(server, line), server.output.slice(-1500));
       });
     }
@@ -79,7 +79,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       // (the refusal's own answer, the broker's for a file outside the
       // module's grants: that it is missing, though it is there; 'no handle'
       // or another failure is no refusal)
-      assert.ok(fs.existsSync(path.join(ROOT, 'lib', 'settings-tool.js')));
+      assert.ok(fs.existsSync(path.join(ROOT, 'lib', 'node-version.js')));
       if (mode === 'enforce') assert.strictEqual(detail(r), 'ENOENT', JSON.stringify(r).slice(0, 500));
       else assert.strictEqual(detail(r), 'loaded', JSON.stringify(r).slice(0, 500));
     });

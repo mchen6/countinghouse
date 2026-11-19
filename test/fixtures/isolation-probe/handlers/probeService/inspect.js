@@ -14,15 +14,15 @@ const outcome = (fn) => { try { fn(); return 'loaded'; } catch (e) { return Stri
 const STEPS = {
   // P alone, and the net: a load with one of the runtime's Modules as its
   // parent, by every route module code has, and one with no parent at all
-  netLoad: () => { const h = handle(); return h == null ? 'no handle' : outcome(() => M._load('./settings-tool.js', h.module)); },
-  netRequire: () => { const h = handle(); return h == null ? 'no handle' : outcome(() => h.module.require('./settings-tool.js')); },
+  netLoad: () => { const h = handle(); return h == null ? 'no handle' : outcome(() => M._load('./node-version.js', h.module)); },
+  netRequire: () => { const h = handle(); return h == null ? 'no handle' : outcome(() => h.module.require('./node-version.js')); },
   netModuleLoad: () => {
     const h = handle();
     if (h == null) return 'no handle';
-    const file = path.join(path.dirname(h.module.filename), 'settings-tool.js');
+    const file = path.join(path.dirname(h.module.filename), 'node-version.js');
     return outcome(() => { const m = new M(file, h.module); m.load(file); });
   },
-  noParent: () => { const h = handle(); return h == null ? 'no handle' : outcome(() => M._load(path.join(path.dirname(h.module.filename), 'settings-tool.js'))); },
+  noParent: () => { const h = handle(); return h == null ? 'no handle' : outcome(() => M._load(path.join(path.dirname(h.module.filename), 'node-version.js'))); },
   // the high review of #434, item 2: after the seal every resolution is
   // module code's, a require made for a runtime file by createRequire too:
   // under enforce its 'module' is the reduced one, under audit its watched
@@ -120,13 +120,13 @@ const STEPS = {
     const forged = {__proto__: null, id: path.join(lib, 'logger.js'), filename: path.join(lib, 'logger.js'), paths: M._nodeModulePaths(lib)};
     return [
       code(() => M._resolveFilename('./no-such-isolation-file.js', h.module)),
-      code(() => M._resolveFilename('./settings-tool.js', h.module)),
+      code(() => M._resolveFilename('./node-version.js', h.module)),
       code(() => M._resolveFilename('json-stringify-safe', h.module)),
       code(() => M._resolveFilename('json-stringify-safe', forged)),
       code(() => M.createRequire(path.join(lib, 'logger.js')).resolve('json-stringify-safe')),
       // and the loader's own stat: a runtime file as a missing one
-      `stat:${M._stat(path.join(lib, 'settings-tool.js')) === M._stat(path.join(lib, 'no-such-isolation-file.js'))
-        && M._stat(path.relative(process.cwd(), path.join(lib, 'settings-tool.js'))) === M._stat(path.join(lib, 'no-such-isolation-file.js')) ? 'missing' : 'found'}`
+      `stat:${M._stat(path.join(lib, 'node-version.js')) === M._stat(path.join(lib, 'no-such-isolation-file.js'))
+        && M._stat(path.relative(process.cwd(), path.join(lib, 'node-version.js'))) === M._stat(path.join(lib, 'no-such-isolation-file.js')) ? 'missing' : 'found'}`
     ].join(' ');
   },
   // the exception is sshpk's alone (the reviewer's ruling on #434): module
