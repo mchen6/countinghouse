@@ -47,7 +47,19 @@ const TABLE = [
   ['source-map-support', 'works', 'works', 'works', 'works'],
   ['source-map-support hookRequire', 'works', 'works', 'no hook', 'threw TypeError'],
   ['module-alias', WIN ? 'works' : 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'threw TypeError'],
-  ['require-in-the-middle', 'works', 'works', 'threw TypeError', 'no hook']
+  ['require-in-the-middle', 'works', 'works', 'threw TypeError', 'no hook'],
+  // (a module's own code and the process-wide warning and error switches:
+  // under enforce what Node's walk reads is held, #451)
+  ['emitWarning assigned', 'works', 'works', 'works', 'works'],
+  ['emitWarning = null', 'threw TypeError', 'threw TypeError', 'threw TypeError', 'warnings off'],
+  ['emitWarning redefined', 'works', 'works', 'works', 'threw TypeError'],
+  ['Error.stackTraceLimit redefined', 'works', 'works', 'works', 'threw TypeError'],
+  ['Error.stackTraceLimit assigned', 'works', 'works', 'works', 'works'],
+  ['process.noDeprecation getter', 'works', 'works', 'works', 'threw TypeError'],
+  // (an assignment that doesn't take: silent in sloppy code, a TypeError in
+  // strict code)
+  ['process.env replaced', 'works', 'works', 'works', 'not replaced'],
+  ['process.send set', 'works', 'works', 'works', 'not set']
 ];
 // [the column's name, its start flags]
 const MODES = [['single-thread', ['--no-workerThread']], ['off', ['--workerThread', '--moduleSandbox', 'off']],

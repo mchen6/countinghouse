@@ -806,13 +806,40 @@ that doesn't list the subpath (`ERR_PACKAGE_PATH_NOT_EXPORTED`) or a broken
 falls back on `MODULE_NOT_FOUND` for an optional dependency works as
 before.
 
-A directory of your own whose `package.json` `"main"` leads outside your
-module's root reads as not found under `enforce`, by any name that reaches
-it, even where a file of the same name sits beside it: where it led
-would otherwise tell your code whether a host file exists. So does one
-whose `"main"` is the module's root itself (`"."` in the root's own
-`package.json`): Node would try the root with each extension, a file
-beside it. Keep `"main"` inside your module, naming a file.
+Under `enforce` no `package.json` in your module -- its own, a nested
+one, one in its `node_modules` -- may have a `"main"` that leads outside
+your module's directory or names the directory itself: the load is
+refused ("... 's "main" leads outside the module"), and under `audit` it
+is reported. Node picks a `"main"` past every check the sandbox makes, so
+where it led would otherwise tell your code whether a host file exists.
+Keep `"main"` inside your module, naming a file.
+
+Under `enforce` your module's directory may not hold a link to a
+directory: the load is refused ("holds a directory link at ..."), and
+under `audit` it is reported. Node's ES resolver reads a package's
+`"main"` against a link's own path, past every check the sandbox makes,
+so a linked package could tell your code whether a host file exists. A
+pnpm or workspace layout links packages in: use a flat install (`npm
+install`), or run that module under `audit` or `off`. A link to a file
+(`node_modules/.bin`) is fine.
+
+Under `enforce` Node's warnings about a `"main"` (`DEP0128`, `DEP0151`)
+aren't emitted to your module, and any other warning names your files by
+their `/app/...` paths. `process.emitWarning` can still be assigned, and
+what you assign is what a warning reaches, but it can't be redefined with
+`Object.defineProperty`.
+
+Under `enforce` the process-wide switches Node reads while it resolves are
+held. `process.emitWarning` can be assigned a function, or `null` to turn
+off every warning in your module's worker, Node's own included, but not
+redefined. `Error.stackTraceLimit`,
+`process.noDeprecation`, `process.throwDeprecation` and
+`process.traceDeprecation` can be assigned but not redefined or deleted.
+`process.env` and `process.send` can't be replaced (the keys of
+`process.env` can still be set; `process.send` stays `undefined`, though
+`'send' in process` is `true`, so test for an IPC channel with
+`typeof process.send === 'function'`): in strict code the assignment throws a
+`TypeError`, and otherwise it doesn't take.
 
 ## Files and paths
 

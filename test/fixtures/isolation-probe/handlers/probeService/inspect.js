@@ -163,32 +163,70 @@ const STEPS = {
     // against a missing one)
     const direct = (name) => { try { M._resolveFilename(path.join(root, 'lib', name), module); return 'found'; } catch (e) { return `${e.code}|${e.message}`.split(name).join('NAME'); } };
     const directSame = direct('node-version.js') === direct('no-such-isolation.js') ? 'same' : `direct(${direct('node-version.js')} / ${direct('no-such-isolation.js')})`;
-    // (a directory of its own whose package.json "main" leads outside the
-    // root, to a runtime file against a missing one: by require and by the
-    // direct route, the whole error)
-    const mainOut = (fn, dir) => { try { fn(`../../lib/${dir}`); return 'found'; } catch (e) { return `${e.code}|${e.message}`.split(dir).join('DIR'); } };
-    // (and Module._findPath by a lookup path of its own, /app/lib: false
-    // for each, as nothing found)
-    const viaFindPath = (r) => { const f = M._findPath(r.replace('../../lib/', ''), ['/app/lib']); if (f === false) { const e = new Error(`Cannot find module '${r}'`); e.code = 'MODULE_NOT_FOUND'; throw e; } return f; };
-    const routes = [(r) => require(r), (r) => M._resolveFilename(r, module), viaFindPath];
-    const answers = [];
-    for (const fn of routes) for (const dir of ['main-out-a', 'main-out-b', 'main-out-c', 'main-out-d', 'main-out-e', 'main-out-f', 'main-out-g', 'main-root']) answers.push(mainOut(fn, dir));
-    // (the root itself: its own index, never the file beside it)
+    // (The _stat PR. A package.json "main" leading outside the module root
+    // is refused at load under enforce, sandbox 03: what is left to see at
+    // run time is that Node's own walk is judged, and what it gives module
+    // code.)
+    const unlike = [];
+    const loadOf = (r) => { try { return String(require(r)); } catch (e) { return `threw ${e.code}`; } };
+    // (the root by its virtual name: its own index, never the file beside
+    // the root, which Node tries with each extension first)
+    const byApp = loadOf('/app');
+    if (byApp !== 'root') unlike.push(`app ${byApp}`);
+    // (a warning Node emits on its walk -- an invalid "main" inside the
+    // root, naming nothing -- is not emitted to module code at all; any
+    // other names no host path)
+    const heard = [];
+    const listen = (w) => heard.push(String(w && w.message));
+    process.on('warning', listen);
+    const warnLoad = loadOf('../../lib/main-warn');
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    process.removeListener('warning', listen);
+    const warnedHost = heard.join(' ').match(/(?<=^|[\s"'(])(?:file:\/\/)?\/[^\s'"]+/g) || [];
+    const hostInWarning = warnedHost.filter((p) => !/^(file:\/\/)?\/([A-Za-z]:\/)?app(\/|$)/.test(p));
+    if (hostInWarning.length > 0 || warnLoad !== 'warned' || heard.some((m) => /main/i.test(m))) unlike.push(`warning ${warnLoad} ${heard.length} ${hostInWarning.join(',')}`);
+    // (and module code may still set process.emitWarning: its own call
+    // reaches what it set at once, with the arguments it gave)
+    const emitWas = process.emitWarning;
+    let setHeard = null;
+    try { process.emitWarning = function(w, type) { setHeard = `${w} ${type}`; }; } catch (e) { setHeard = `threw ${e.name}`; }
+    process.emitWarning(`probe ${__filename}`, 'ProbeWarning');
+    process.emitWarning = emitWas;
+    if (setHeard !== `probe ${__filename} ProbeWarning`) unlike.push(`setEmit ${setHeard}`);
+    // (Node's ES resolver, on a target it doesn't find, calls process.send
+    // with its host path when WATCH_REPORT_DEPENDENCIES is set: module code
+    // can set the variable, never process.send, so nothing of its own runs
+    // inside Node's step; Fable's pass on #451, F2)
+    let sent = 'not called';
+    const envWas = process.env.WATCH_REPORT_DEPENDENCIES;
+    process.env.WATCH_REPORT_DEPENDENCIES = '1';
+    try { process.send = (m) => { sent = JSON.stringify(m); }; } catch (e) { /* held */ }
+    try { await import('../../lib/no-such-watch-target.mjs'); } catch (e) { /* missing */ }
+    if (envWas === undefined) delete process.env.WATCH_REPORT_DEPENDENCIES; else process.env.WATCH_REPORT_DEPENDENCIES = envWas;
+    if (sent !== 'not called') unlike.push(`sent ${sent}`);
+    // (the root itself by require: its own index)
     let rootLoad;
-    try { rootLoad = `${require('../..')} ${M._resolveFilename('../..', module).replace(/\\/g, '/').replace(/^[A-Z]:/, '')}`; } catch (e) { rootLoad = `threw ${e.code} ${e.message}`; }
+    try { rootLoad = `${require('../..')}`; } catch (e) { rootLoad = `threw ${e.code} ${e.message}`; }
     // (module code run inside the hook -- a getter on its own module's
     // paths, read while a require resolves -- never runs there: the hook
     // reads own data only; the review of 1ed50454)
     let inside = 'not run';
     const pathsWas = Object.getOwnPropertyDescriptor(module, 'paths');
-    Object.defineProperty(module, 'paths', {configurable: true, get() { try { inside = String(M._findPath('main-out-c', ['/app/lib'])); } catch (e) { inside = `threw ${e.code}`; } return pathsWas.value; }});
+    Object.defineProperty(module, 'paths', {configurable: true, get() { try { inside = String(M._findPath('main-warn', ['/app/lib'])); } catch (e) { inside = `threw ${e.code}`; } return pathsWas.value; }});
     try { require('no-such-isolation-pkg'); } catch (e) { /* refused */ }
     Object.defineProperty(module, 'paths', pathsWas);
-    // (and an own package with only a nested outside "main" loads)
-    const loads = [];
-    for (const dir of ['main-in-nested']) { try { loads.push(require(`../../lib/${dir}`)); } catch (e) { loads.push(`threw ${e.code}`); } }
-    const mainSame = answers.every((a) => a === answers[0]) && answers[0] === "MODULE_NOT_FOUND|Cannot find module '../../lib/DIR'" && loads.join(' ') === 'nested' && rootLoad === 'root /app/index.js' && inside === 'not run'
-      ? 'same' : `main(${answers.join(' / ')} / ${loads.join(' ')} / ${rootLoad} / inside ${inside})`;
+    // (Node's own walk calls identity's Module._stat wrapper: a fresh own
+    // file required raises the count)
+    const before = h.statCalls();
+    let counted;
+    try { counted = require('../../lib/stat-count.js'); } catch (e) { counted = `threw ${e.code}`; }
+    const statWalk = counted === 'counted' && h.statCalls() > before ? 'walked' : `statCalls ${before} -> ${h.statCalls()} (${counted})`;
+    // (and an own package with only a nested outside "main" loads: only a
+    // top-level one is Node's)
+    const nested = loadOf('../../lib/main-in-nested');
+    const mainSame = unlike.length === 0 && nested === 'nested' && rootLoad === 'root' && inside === 'not run' && statWalk === 'walked'
+      ? 'same' : `main(${unlike.join(' | ')} / ${nested} / ${rootLoad} / inside ${inside} / ${statWalk})`;
     let empty;
     try { await import(''); empty = 'found'; } catch (e) { empty = `${e.code}|${e.message}`; }
     const emptySame = /^ERR_MODULE_NOT_FOUND\|Cannot find module '' \(countinghouse module sandbox\)$/.test(empty) ? 'same' : `empty(${empty})`;
