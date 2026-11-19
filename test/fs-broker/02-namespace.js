@@ -93,9 +93,14 @@ describe('fs-broker 02: namespace', () => {
   });
 
   it('refuses a writable declared path over the module\'s own code, either way round (the _stat PR)', async () => {
-    const n = await prepared(Object.assign({}, CFG, {declared: [{path: '/srv/modules/weather/lib', access: 'rw'}, {path: '/srv/modules', access: 'rw'},
-      {path: '/srv/modules/weather/docs', access: 'r'}]}));
+    const declared = [{path: '/srv/modules/weather/lib', access: 'rw'}, {path: '/srv/modules', access: 'rw'}, {path: '/srv/modules/weather/docs', access: 'r'}];
+    // (no protected path in the way: the own-code rule alone)
+    const n = await prepared(Object.assign({}, CFG, {mode: 'enforce', declared, protectedPaths: []}));
     assert.deepStrictEqual(n.refused.filter((r) => /module's own code/.test(r.reason)).map((r) => r.path), ['/srv/modules/weather/lib', '/srv/modules']);
+    // (under audit kept, and listed for the spawn to say)
+    const a = await prepared(Object.assign({}, CFG, {mode: 'audit', declared, protectedPaths: []}));
+    assert.deepStrictEqual(a.refused.filter((r) => /module's own code/.test(r.reason)), []);
+    assert.deepStrictEqual(a.ownCodeWritable, ['/srv/modules/weather/lib', '/srv/modules']);
   });
 
   it('refuses a declared path that overlaps a protected path, either way round', async () => {
