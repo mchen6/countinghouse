@@ -114,6 +114,23 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.strictEqual(second.history, undefined, 'a later page: the paged rows alone');
   });
 
+  // #449's high review, round 3, 6: the list paged over is live; a cursor
+  // is bound to the rows it was cut from, so a list that changed between
+  // pages is said, never a row skipped or repeated
+  it('a cursor from a list that changed since is SETTING_CURSOR_STALE: start again', async () => {
+    const many = Object.fromEntries(Array.from({length: 70}, (_, i) => [`tool-${String(i).padStart(2, '0')}`, {version: '1.0.0', role: null}]));
+    record(many);
+    const t = tool({loadedTops: () => []});
+    const first = await t.get();
+    // one installed before the cursor's place: every row after it moves
+    record(Object.assign({'tool-00a': {version: '1.0.0', role: null}}, many));
+    const e = await refused(t.get({}, {cursor: first.nextCursor}), 'SETTING_CURSOR_STALE');
+    assert.match(e.message, /changed/);
+    // the list as it was: the cursor is good again
+    record(many);
+    assert.strictEqual((await t.get({}, {cursor: first.nextCursor})).settings.length, 70 - 64);
+  });
+
   it('set reads the record and the loaded modules once', async () => {
     let tops = 0;
     let reads = 0;
