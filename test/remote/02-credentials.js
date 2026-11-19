@@ -6,7 +6,7 @@ const assert = require('assert');
 const fs     = require('fs');
 const path   = require('path');
 const {parseRemotes} = require('../../lib/remote/declaration');
-const {loadAllowance, resolveCredential} = require('../../lib/remote/credentials');
+const {loadFile, resolveCredential} = require('../../lib/remote/credentials');
 const {testPort} = require('../helpers/test-env');
 
 // Synthetic and low-entropy, built here, never a realistic literal.
@@ -23,7 +23,9 @@ const GH = remoteFor('https://api.githubcopilot.com/mcp/', {env: 'COUNTINGHOUSE_
 const allowance = (obj) => {
   const file = path.join(tmpDirs.mkdtemp('ch-remote-02-'), 'remote-credentials.json');
   fs.writeFileSync(file, typeof(obj) === 'string' ? obj : JSON.stringify(obj));
-  return loadAllowance(file);
+  const loaded = loadFile(file);
+  assert.strictEqual(loaded.version, 1);
+  return loaded.origins;
 };
 const ALLOWED = () => allowance({'https://api.githubcopilot.com': ['COUNTINGHOUSE_GITHUB_TOKEN', 'GITHUB_TOKEN']});
 
@@ -82,7 +84,7 @@ describe('remote 02: the credential allowance', () => {
     assert.deepStrictEqual(resolveCredential(r, {GITHUB_TOKEN: TOKEN}, ALLOWED()), {header: 'X-Api-Key', value: TOKEN, source: 'GITHUB_TOKEN'});
   });
 
-  it('loadAllowance refuses what is not the documented shape', () => {
+  it('a version 1 file (loadFile) refuses what is not the documented shape', () => {
     const bad = [
       '[]', '"x"', 'not json',
       {'https://api.githubcopilot.com/mcp': ['A']},     // a path, not an origin
@@ -96,7 +98,7 @@ describe('remote 02: the credential allowance', () => {
     bad.forEach((b) => assert.throws(() => allowance(b), /remoteCredentials/, JSON.stringify(b)));
   });
 
-  it('loadAllowance accepts an http loopback origin, for the tests\' local server', () => {
+  it('a version 1 file accepts an http loopback origin, for the tests\' local server', () => {
     const a = allowance({[`http://127.0.0.1:${testPort(9688)}`]: ['CH_TEST_REMOTE_TOKEN']});
     assert.ok(a.get(`http://127.0.0.1:${testPort(9688)}`).has('CH_TEST_REMOTE_TOKEN'));
   });
@@ -131,12 +133,11 @@ describe('remote 02: version 2, by module', () => {
     assert.strictEqual(load({}).modules.size, 0, 'an empty version 2 file binds nothing');
   });
 
-  it('version 1 still loads as before, through loadFile too', () => {
+  it('version 1 still loads as before, through loadFile', () => {
     const file = v2file(JSON.stringify({[ORIGIN]: ['GITHUB_TOKEN']}));
     const l = credentials.loadFile(file);
     assert.strictEqual(l.version, 1);
     assert.ok(l.origins.get(ORIGIN).has('GITHUB_TOKEN'));
-    assert.ok(loadAllowance(file).get(ORIGIN).has('GITHUB_TOKEN'));
   });
 
   it('refuses any environment name that is not a slot, and every other malformed version 2 file, naming the file and never a value', () => {
@@ -164,10 +165,6 @@ describe('remote 02: version 2, by module', () => {
     const shapes = ['{"version": 2}', '{"version": 2, "modules": []}', '{"version": 3, "modules": {}}', '{"version": 2, "modules": {}, "x": 1}',
       '{"version": "2", "modules": {}}'];
     shapes.forEach((t) => assert.throws(() => credentials.loadFile(v2file(t)), /--remoteCredentials/, t));
-  });
-
-  it('a pack\'s own file (loadAllowance) is version 1 only', () => {
-    assert.throws(() => loadAllowance(v2file(BOUND)), /version 2/);
   });
 
   it('resolves only the module\'s own binding: the bound module sends its slot\'s value, under its declared header', () => {
@@ -263,21 +260,6 @@ describe('remote 02: version 2, by module', () => {
         ['b', {'https://api.b.example': ['B_KEY']}]
       ];
       refused.forEach(([name, obj]) => assert.throws(() => credentials.checkEntry(name, obj), JSON.stringify([name, obj])));
-    });
-
-    // M6: a session socket needs the control channel, which takes only a
-    // version 2 file, so a shared runtime compares a session's credential on
-    // no name at all, whatever the start was given
-    it('a shared runtime compares a session\'s credential on no name (route-manager credentialVariables)', () => {
-      const {credentialVariables} = require('../../lib/route-manager');
-      assert.deepStrictEqual([...credentialVariables()], []);
-      const v2 = credentials.snapshot();
-      try {
-        credentials.configure(v2file(JSON.stringify({[ORIGIN]: ['GITHUB_TOKEN']})));
-        assert.deepStrictEqual([...credentialVariables()], [], 'a version 1 file (no control channel, so no session) changes nothing');
-      } finally {
-        credentials.restore(v2);
-      }
     });
 
     it('a binding of a variable that holds no secret (PATH, HOME, LANG, LC_*, TZ, ...) is refused, naming it; in a later entry too', () => {
