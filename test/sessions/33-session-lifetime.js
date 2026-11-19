@@ -620,6 +620,11 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       assert.strictEqual(quota().bytes, before + 1000, 'another quota\'s view: nothing given back here');
     });
 
+    it('a module whose spawn has begun is known to the overlap judgement before its load is confirmed (the high review of #452)', () => {
+      const known = ModuleManager.prototype.knownModuleRoots.call({modules: {}, spawningModules: new Map([['b', path.join(env.dataRoot, 'mods', 'b')]])});
+      assert.deepStrictEqual(known, [{name: 'b', root: path.join(env.dataRoot, 'mods', 'b')}]);
+    });
+
     it('a respawn empties its /tmp: what it held leaves its share and the total; a name in /data keeps those bytes counted', async () => {
       await make(A);
       await make(B);
