@@ -176,11 +176,19 @@ const STEPS = {
     // (the root itself: its own index, never the file beside it)
     let rootLoad;
     try { rootLoad = `${require('../..')} ${M._resolveFilename('../..', module).replace(/\\/g, '/').replace(/^[A-Z]:/, '')}`; } catch (e) { rootLoad = `threw ${e.code} ${e.message}`; }
+    // (module code run inside the hook -- a getter on its own module's
+    // paths, read while a require resolves -- never runs there: the hook
+    // reads own data only; the review of 1ed50454)
+    let inside = 'not run';
+    const pathsWas = Object.getOwnPropertyDescriptor(module, 'paths');
+    Object.defineProperty(module, 'paths', {configurable: true, get() { try { inside = String(M._findPath('main-out-c', ['/app/lib'])); } catch (e) { inside = `threw ${e.code}`; } return pathsWas.value; }});
+    try { require('no-such-isolation-pkg'); } catch (e) { /* refused */ }
+    Object.defineProperty(module, 'paths', pathsWas);
     // (and an own package with only a nested outside "main" loads)
     const loads = [];
     for (const dir of ['main-in-nested']) { try { loads.push(require(`../../lib/${dir}`)); } catch (e) { loads.push(`threw ${e.code}`); } }
-    const mainSame = answers.every((a) => a === answers[0]) && answers[0] === "MODULE_NOT_FOUND|Cannot find module '../../lib/DIR'" && loads.join(' ') === 'nested' && rootLoad === 'root /app/index.js'
-      ? 'same' : `main(${answers.join(' / ')} / ${loads.join(' ')} / ${rootLoad})`;
+    const mainSame = answers.every((a) => a === answers[0]) && answers[0] === "MODULE_NOT_FOUND|Cannot find module '../../lib/DIR'" && loads.join(' ') === 'nested' && rootLoad === 'root /app/index.js' && inside === 'not run'
+      ? 'same' : `main(${answers.join(' / ')} / ${loads.join(' ')} / ${rootLoad} / inside ${inside})`;
     let empty;
     try { await import(''); empty = 'found'; } catch (e) { empty = `${e.code}|${e.message}`; }
     const emptySame = /^ERR_MODULE_NOT_FOUND\|Cannot find module '' \(countinghouse module sandbox\)$/.test(empty) ? 'same' : `empty(${empty})`;
