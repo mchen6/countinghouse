@@ -136,7 +136,8 @@ describe('store 09: the redis blob store answers with Redis down or hung', funct
       const cb = args.pop();
       const isRemove = /drop\(ARGV\[1\], ARGV\[2\]\)/.test(String(args[0]));
       c.sent.push(isRemove ? 'remove' : 'put');
-      if (isRemove && c.hangRemoves) return undefined;
+      // (as the real client with a command deadline answers a hung Redis)
+      if (isRemove && c.hangRemoves) return setTimeout(cb, 50, Object.assign(new Error('Redis did not answer EVAL'), {code: 'REDIS_COMMAND_TIMEOUT'}));
       if (c.down) return setImmediate(cb, Object.assign(new Error('closed'), {code: 'NR_CLOSED'}));
       if (c.next != null && !isRemove) { const f = c.next; c.next = null; return f(cb); }
       c.ran.push(isRemove ? `remove ${args[3]}` : 'put');
@@ -189,14 +190,19 @@ describe('store 09: the redis blob store answers with Redis down or hung', funct
 
   // the high review of #443, 2: a hung Redis never builds up removes: each
   // waiting id is sent once while one is in flight
-  it('a remove that keeps failing on a hung Redis is sent in the background once, not once per failure', async () => {
+  it('a remove that keeps failing on a hung Redis is sent in the background once, not once per failure or per second', async () => {
     const c = fakeClient();
     c.hangRemoves = true;
     const evals = () => c.sent.length;
     const b = local(c);
     const id = 'c'.repeat(43);
     for (let i = 0; i < 3; i++) await assert.rejects(b.remove(id), unavailable);
-    // three bounded attempts, and one background remove in flight
+    await new Promise((r) => setTimeout(r, 2500));
+    // three bounded attempts, and one background remove, however long it fails
     assert.strictEqual(evals(), 4, JSON.stringify(c.sent));
+    // then once per 'ready'
+    c.emit('ready');
+    await new Promise((r) => setTimeout(r, 100));
+    assert.strictEqual(evals(), 5, JSON.stringify(c.sent));
   });
 });
