@@ -284,19 +284,16 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.deepStrictEqual((await tool().get()).settings.filter((r) => r.name.startsWith('enabled.')), [], 'no rows to show');
   });
 
-  // #449's high review, 3: the record before modules.json, the same way
-  it('no modules.json and packs.json unreadable, or not a record: off is still made, on is the terminal\'s', async () => {
+  // M6 (#413 rev 3 section 16, rule 7): packs.json, the record before
+  // modules.json, is no longer read: with no modules.json nothing is
+  // installed, whatever packs.json holds or however unreadable it is
+  it('packs.json is no longer read: with no modules.json, no module has a switch (SETTING_UNKNOWN)', async () => {
     fs.rmSync(path.join(dir, 'modules.json'));
-    for (const text of ['{"packs": ', '[]', '{"packs": 7}']) {
+    for (const text of ['{"packs": ', JSON.stringify({packs: {a: {packages: {[TOOL]: '1.0.0'}}}})]) {
       fs.writeFileSync(path.join(dir, 'packs.json'), text);
-      fs.writeFileSync(file, JSON.stringify({version: 1, values: {}}));
-      assert.strictEqual((await tool().set(`enabled.${TOOL}`, 'off')).new, 'off', text);
-      assert.strictEqual(stored()[`enabled.${TOOL}`], false, text);
-      await refused(tool().set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT), 'SETTING_RECORD_UNREADABLE');
+      await refused(tool().set(`enabled.${TOOL}`, 'off'), 'SETTING_UNKNOWN');
+      assert.deepStrictEqual((await tool().get()).settings.filter((r) => r.name.startsWith('enabled.')), []);
     }
-    // neither record there: nothing installed, so no module to name
-    fs.rmSync(path.join(dir, 'packs.json'));
-    await refused(tool().set(`enabled.${TOOL}`, 'off'), 'SETTING_UNKNOWN');
   });
 
   it('a form answered yes while ch-local\'s record has become unreadable writes nothing, and says why', async () => {
@@ -417,13 +414,7 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.strictEqual((await t.set(`enabled.${TOOL}`, 'off')).new, 'off');
   });
 
-  it('packs.json: a pack\'s scenario stays a top-level module, whatever another pack lists it as; a ~ in a name is a name', async () => {
-    fs.rmSync(path.join(dir, 'modules.json'));
-    fs.writeFileSync(path.join(dir, 'packs.json'), JSON.stringify({packs: {
-      a: {packages: {'@countinghouse/ch-pack-a': '1.0.0'}},
-      b: {packages: {'@countinghouse/ch-pack-b': '1.0.0', '@countinghouse/ch-pack-a': '1.0.0'}}}}));
-    const names = (await tool().get()).settings.filter((r) => r.name.startsWith('enabled.')).map((r) => r.module);
-    assert.deepStrictEqual(names, ['@countinghouse/ch-pack-a', '@countinghouse/ch-pack-b']);
+  it('a ~ in a module\'s name is a name', async () => {
     record({'tilde~tool': {version: '1.0.0', role: null}});
     assert.strictEqual((await tool().set('enabled.tilde~tool', 'off')).new, 'off');
   });
