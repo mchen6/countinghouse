@@ -54,6 +54,20 @@ function unit(home, scenario, part, tool) {
     actions: {[tool]: `module.exports = async (input, ctx) => { const p = await ctx.call('${part}/ownService.run', {}); return {output: {part: p.output.part}}; };\n`}});
 }
 
+// the module form's dirs for a top-level module laid out as ch-local laid
+// out a pack: every module beside it, by its package name (M6)
+const dirsOf = (top) => {
+  let nm = require('path').dirname(top);
+  // (a scoped package: its scope's parent holds the others)
+  if (require('path').basename(nm).startsWith('@')) nm = require('path').dirname(nm);
+  const out = {};
+  for (const n of require('fs').readdirSync(nm)) {
+    if (n.startsWith('@')) for (const m of require('fs').readdirSync(require('path').join(nm, n))) out[`${n}/${m}`] = require('path').join(nm, n, m);
+    else out[n] = require('path').join(nm, n);
+  }
+  return out;
+};
+
 describe('stdio 36: a unit loaded in place answers its hop at once, never CTX_CALL_UNBOUND', function() {
   this.timeout(240000);
   let home = null;
@@ -66,7 +80,9 @@ describe('stdio 36: a unit loaded in place answers its hop at once, never CTX_CA
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-36-'));
     const base = unit(home, 'ch-pack-base', 'ch-step-base', 'tool_base');
     io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
-      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--packsRoot', path.join(home, 'packs'), '--loadModule', base],
+      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--modulesRoot', path.join(home, 'packs'), '--loadModule', base,
+      // (under --modulesRoot the start searches nothing: its part is given)
+      '--partDir', path.join(path.dirname(base), 'ch-step-base')],
     // every pass's verdict for the hopping scenario delivered 3 s late (the
     // test hook): the window a slow runner gave the hop, made wide
     {ipc: true, env: {COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG: '1', COUNTINGHOUSE_TEST_COMPOSITION_DELAY_MS: '3000',
@@ -86,7 +102,7 @@ describe('stdio 36: a unit loaded in place answers its hop at once, never CTX_CA
     const hop = unit(home, 'ch-pack-hop', 'ch-step-own', 'tool_hop');
     const answers = [];
     for (let i = 0; i < ROUNDS; i++) {
-      const r = await io.control({type: 'load', name: 'ch-pack-hop', scenario: hop});
+      const r = await io.control({type: 'load', name: 'ch-pack-hop', dirs: dirsOf(hop)});
       assert.strictEqual(r.ok, true, `round ${i}: ${JSON.stringify(r)}\n${io.err.slice(-2000)}`);
       // as ch-local's acceptance does: once its tool is listed, call it at once
       for (let n = 0; n < 500 && !(await listed()).includes('tool_hop'); n++) await new Promise((res) => setTimeout(res, 10));

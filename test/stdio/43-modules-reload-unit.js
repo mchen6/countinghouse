@@ -54,14 +54,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     writeModule(at('@t/ch-step-b', '1.0.0'), {name: '@t/ch-step-b', version: '1.0.0', role: 'part', calls: ['ch-step-p/svc.run']});
     writeModule(at('@t/ch-pack-s', '3.0.0'), {name: '@t/ch-pack-s', version: '3.0.0', role: 'scenario',
       calls: ['ch-step-a/svc.run', 'ch-step-b/svc.run', 'ch-step-p/svc.run', 'ch-step-k/svc.run']});
-    // the pack form (finding 7): <packs>/<pack>/<version>/node_modules/...
-    const packs = path.join(root, 'packs');
-    const pf = (v, calls) => path.join(packs, 'pf', v, 'node_modules');
-    writeModule(path.join(pf('1.0.0'), 'ch-step-x'), {name: 'ch-step-x', version: '1.0.0', role: 'part'});
-    writeModule(path.join(pf('1.0.0'), 'ch-pack-pf'), {name: 'ch-pack-pf', version: '1.0.0', role: 'scenario', calls: ['ch-step-x/svc.run']});
-    for (const n of ['ch-step-x', 'ch-step-y', 'ch-step-w']) writeModule(path.join(pf('2.0.0'), n), {name: n, version: '1.0.0', role: 'part'});
-    writeModule(path.join(pf('2.0.0'), 'ch-pack-pf'), {name: 'ch-pack-pf', version: '2.0.0', role: 'scenario', calls: ['ch-step-x/svc.run', 'ch-step-y/svc.run', 'ch-step-w/svc.run']});
-    cli.setOptions({workerThread: true, modulesRoot: [store], packsRoot: [packs], requestTimeout: 5000});
+    cli.setOptions({workerThread: true, modulesRoot: [store], requestTimeout: 5000});
     mip = require('../../lib/modules-in-place');
   });
   after(() => {
@@ -175,16 +168,6 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     assert.ok(ownA >= 0 && ownA < switched, 'an addition calling nothing switched is verified at once');
   });
 
-  it('finding 8: a module-form reload of a unit recorded in the pack form is refused', async () => {
-    const {mm, dm} = runtime();
-    await loadBoth(mm, dm, '1.0.0');
-    const rec = mm.packsInPlace.get('@t/ch-pack-s');
-    rec.form = undefined;
-    rec.pack = 'ci';
-    await assert.rejects(reloadTo(mm, dm, '2.0.0'), (e) => e.code === 'CONTROL_FAILED' && /pack form/.test(e.message));
-    assert.strictEqual(mm.packsInPlace.get('@t/ch-pack-s').pack, 'ci');
-  });
-
   describe('finding 3: a load sets the allowance of the modules it brings in only', () => {
     const credentials = require('../../lib/remote/credentials');
     let saved = null;
@@ -215,20 +198,6 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       const e = credentials.moduleEntry('@t/ch-step-k');
       assert.ok(e != null && e.get(ORIGIN).get('K') === 'COUNTINGHOUSE_CREDENTIAL_1', 'the start\'s binding stays for the next load');
     });
-  });
-
-  it('finding 7: a pack-form reload shows each part it adds once that part has loaded, not at the end', async () => {
-    const visibility = require('../../lib/module-visibility');
-    const {mm, dm} = runtime();
-    visibility.configure({moduleOf: () => null, isGone: (n) => mm.modules[n] == null});
-    const seen = [];
-    const spawn = mm.loadModuleFromPath;
-    mm.loadModuleFromPath = (p, name, version, cb, opts) => { if (name === 'ch-step-w') seen.push(visibility.isHidden('ch-step-y')); spawn(p, name, version, cb, opts); };
-    const scenario = (v) => path.join(root, 'packs', 'pf', v, 'node_modules', 'ch-pack-pf');
-    await mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario: scenario('1.0.0')}, dm);
-    await mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario('2.0.0')}, dm);
-    assert.deepStrictEqual(seen, [false], 'y shown before w loads');
-    visibility.resetForTests();
   });
 
   // #427's high review
@@ -263,36 +232,6 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     await assert.rejects(reloadTo(mm, dm, '2.0.0'), (e) => e.code !== 'CONTROL_MODULE_UNCERTAIN');
     assert.ok(log.includes('registered @t/ch-step-p@1.0.0'), log.join('\n'));
     assert.strictEqual(mm.modules['@t/ch-step-p'].packageInfo.version, '1.0.0');
-  });
-
-  it('medium 1: a trusted ceiling\'s modules list binds the pack form too', async () => {
-    const settingsTool = require('../../lib/settings-tool');
-    const {mm, dm} = runtime();
-    settingsTool.ceilingForControl(() => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {modules: ['ch-pack-pf']}}));
-    try {
-      const scenario = path.join(root, 'packs', 'pf', '1.0.0', 'node_modules', 'ch-pack-pf');
-      await assert.rejects(mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario}, dm), (e) => e.code === 'SETTING_FORBIDDEN_BY_CEILING' && /enabled\.ch-step-x/.test(e.message));
-    } finally {
-      settingsTool.ceilingForControl(() => ({state: 'none'}));
-    }
-  });
-
-  it('high 8: the pack form\'s rollback hides an addition before unloading it', async () => {
-    const visibility = require('../../lib/module-visibility');
-    const {mm, dm} = runtime();
-    visibility.configure({moduleOf: () => null, isGone: (n) => mm.modules[n] == null});
-    const scenario = (v) => path.join(root, 'packs', 'pf', v, 'node_modules', 'ch-pack-pf');
-    // 2.0.0's closure switches the scenario, then adds y, then w; w fails,
-    // so the rollback unloads y, which was shown once it loaded
-    const seen = [];
-    const unload = mm.unloadModuleExternal;
-    mm.unloadModuleExternal = (name, cb) => { if (name === 'ch-step-y') seen.push(visibility.isHidden(name)); unload(name, cb); };
-    await mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario: scenario('1.0.0')}, dm);
-    const spawn = mm.loadModuleFromPath;
-    mm.loadModuleFromPath = (p, name, version, cb, opts) => (name === 'ch-step-w' ? setImmediate(() => cb(new Error('no spawn'))) : spawn(p, name, version, cb, opts));
-    await assert.rejects(mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario('2.0.0')}, dm));
-    assert.deepStrictEqual(seen, [true], 'hidden when its unload starts');
-    visibility.resetForTests();
   });
 
   describe('high 7: a reload\'s credentials are authoritative for every module it names', () => {
@@ -376,9 +315,9 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
   it('high 1: a reload\'s notice outside a shared runtime goes under its first name', async () => {
     const notices = require('../../lib/notices');
     notices.resetForTests();
-    const control = require('../../lib/module-control').createPackControl({mm: {}, dm: {}, toolsOf: async () => [], shared: () => false,
+    const control = require('../../lib/module-control').createModuleControl({mm: {}, dm: {}, toolsOf: async () => [], shared: () => false,
       packs: {reloadPack: async () => ({modules: []}), loadPack: async () => ({modules: []}), unloadPack: async () => ({modules: []})}});
-    await control.reload({type: 'reload', names: ['@t/a', '@t/b'], dirs: {}, notice: 'a and b upgraded'});
+    await control.reload({type: 'reload', names: ['@t/a', '@t/b'], dirs: {'@t/a': '/x/a', '@t/b': '/x/b'}, notice: 'a and b upgraded'});
     assert.deepStrictEqual(notices.take('@t/a'), ['a and b upgraded']);
     assert.deepStrictEqual(notices.take('@t/b'), ['a and b upgraded'], 'under each name (medium 10)');
   });
@@ -489,19 +428,5 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     // nothing of the reload's left serving over the operator's unload (the
     // medium on #442's high round, 1 and 3)
     assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'it stays unloaded');
-  });
-
-  // the medium on #442's high round, 5: the pack form's reload says it too
-  it('a pack-form reload whose switch an operator unload outranks is CONTROL_PACK_UNCERTAIN, and its record refuses a reload after', async () => {
-    const {mm, dm, log} = runtime({unloadDuring: {name: 'ch-pack-pf', when: 'drain'}});
-    const scenario = (v) => path.join(root, 'packs', 'pf', v, 'node_modules', 'ch-pack-pf');
-    await mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario: scenario('1.0.0')}, dm);
-    log.length = 0;
-    await assert.rejects(mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario('2.0.0')}, dm),
-      (e) => e.code === 'CONTROL_PACK_UNCERTAIN' && /ch-pack-pf was left to a later operator action/.test(e.message));
-    assert.ok(log.includes('operator unload ch-pack-pf'), log.join('\n'));
-    assert.strictEqual(mm.modules['ch-pack-pf'], undefined, 'it stays unloaded');
-    await assert.rejects(mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario('2.0.0')}, dm),
-      (e) => e.code === 'CONTROL_MODULE_UNCERTAIN' && /left to a later operator action; restart your client/.test(e.message));
   });
 });

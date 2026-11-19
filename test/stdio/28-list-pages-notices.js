@@ -37,6 +37,20 @@ function pack(home, scenario, tools) {
   return writeModule(path.join(home, 'packs', scenario, '1.0.0', 'node_modules', scenario), {name: scenario, role: 'scenario', service: 'packService', actions});
 }
 
+// the module form's dirs for a top-level module laid out as ch-local laid
+// out a pack: every module beside it, by its package name (M6)
+const dirsOf = (top) => {
+  let nm = require('path').dirname(top);
+  // (a scoped package: its scope's parent holds the others)
+  if (require('path').basename(nm).startsWith('@')) nm = require('path').dirname(nm);
+  const out = {};
+  for (const n of require('fs').readdirSync(nm)) {
+    if (n.startsWith('@')) for (const m of require('fs').readdirSync(require('path').join(nm, n))) out[`${n}/${m}`] = require('path').join(nm, n, m);
+    else out[n] = require('path').join(nm, n);
+  }
+  return out;
+};
+
 describe('stdio 28: a change past the first page is still announced (M1)', function() {
   this.timeout(120000);
   const homes = [];
@@ -60,7 +74,7 @@ describe('stdio 28: a change past the first page is still announced (M1)', funct
     homes.push(home);
     const big = pack(home, 'ch-pack-big', Array.from({length: 12}, (_, i) => `big_${String(i).padStart(2, '0')}`));
     io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
-      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--packsRoot', path.join(home, 'packs'),
+      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--modulesRoot', path.join(home, 'packs'),
       '--listPageSize', '10', '--loadModule', big], {ipc: true});
     if (meta == null) {
       const init = await io.request({jsonrpc: '2.0', id: 0, method: 'initialize',
@@ -75,7 +89,7 @@ describe('stdio 28: a change past the first page is still announced (M1)', funct
 
   async function load(home) {
     const two = pack(home, 'ch-pack-two', ['tool_two']);
-    const r = await io.control({type: 'load', name: 'ch-pack-two', scenario: two});
+    const r = await io.control({type: 'load', name: 'ch-pack-two', dirs: dirsOf(two)});
     assert.strictEqual(r.ok, true, `${JSON.stringify(r)}\n${io.err.slice(-2000)}`);
   }
   // the premise, checked after the notice (a client that lists again needs
@@ -104,13 +118,13 @@ describe('stdio 28: a change past the first page is still announced (M1)', funct
     homes.push(home);
     const zero = pack(home, 'ch-pack-zero', ['zero_tool']);
     io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
-      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--packsRoot', path.join(home, 'packs'),
+      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--modulesRoot', path.join(home, 'packs'),
       '--listPageSize', '10', '--loadModule', zero], {ipc: true});
     const init = await io.request({jsonrpc: '2.0', id: 0, method: 'initialize',
       params: {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'stdio-28', version: '1.0.0'}}}, 60000);
     assert.ok(init.result != null, `${JSON.stringify(init)}\n${io.err.slice(-1500)}`);
     for (const [name, tools] of [['ch-pack-a', ['a_1', 'a_2', 'a_3']], ['ch-pack-big', Array.from({length: 12}, (_, i) => `big_${String(i).padStart(2, '0')}`)]]) {
-      const r = await io.control({type: 'load', name, scenario: pack(home, name, tools)});
+      const r = await io.control({type: 'load', name, dirs: dirsOf(pack(home, name, tools))});
       assert.strictEqual(r.ok, true, `${JSON.stringify(r)}\n${io.err.slice(-2000)}`);
     }
     await new Promise((r) => setTimeout(r, 1000));

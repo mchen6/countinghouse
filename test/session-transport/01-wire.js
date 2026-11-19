@@ -150,39 +150,20 @@ describe('sessions 01: the wire (contract 2)', () => {
       }
     });
 
-    // M5a (#413 rev 3 section 5.4): global is not read, and no pack is set
-    it('the pack messages\' vectors are consistent: every accepted pack fits the pattern, global is never required; every refused case names one of the two reasons', () => {
-      const P = V.packMessages;
-      const pattern = new RegExp(P.packPattern);
-      for (const {why, message: m} of P.accepted) {
-        assert.notStrictEqual(m.type, 'set', why);
-        if (m.pack !== undefined) assert.ok(typeof(m.pack) === 'string' && pattern.test(m.pack), why);
-        if (m.type !== 'notice') assert.ok(m.pack !== undefined, why);
-      }
-      // each refused case breaks the rule for its own reason, and only it
-      const problem = (m) => {
-        const packOk = (p) => typeof(p) === 'string' && pattern.test(p);
-        if (m.type === 'set') return (typeof(m.name) === 'string' && m.name.startsWith('pack.')) ? 'set' : null;
-        if (m.type === 'load' || m.type === 'reload' || m.type === 'unload') return packOk(m.pack) ? null : 'pack';
-        if (m.type === 'notice') return (m.pack === undefined || packOk(m.pack)) ? null : 'pack';
-        return null;
-      };
-      for (const {why, message} of P.accepted) assert.strictEqual(problem(message), null, why);
-      for (const {why, reason, message} of P.refused) assert.strictEqual(problem(message), reason, why);
-      assert.deepStrictEqual([...new Set(P.refused.map((r) => r.reason))].sort(), ['pack', 'set']);
-    });
-
-    it('the pack messages\' vectors, by the runtime: a shared runtime takes each accepted message and refuses each refused one', async () => {
-      const P = V.packMessages;
-      const control = require('../../lib/module-control').createModuleControl({
-        shared: () => true, mm: {}, dm: {}, toolsOf: async () => [],
-        packs: {loadPack: async () => ({modules: []}), reloadPack: async () => ({modules: []}), unloadPack: async () => ({modules: []})},
-        notices: {add: () => {}},
-        applyControlSet: async (msg) => { throw Object.assign(new Error(`${msg.name} was not applied`), {code: 'CONTROL_FAILED'}); }});
-      const run = (m) => control[m.type](m);
-      for (const {why, message} of P.accepted) await run(message).catch((e) => assert.fail(`${why}: ${e.message}`));
-      for (const {why, message} of P.refused) {
-        await assert.rejects(run(message), (e) => e.code === 'CONTROL_FAILED', why);
+    // M6 (#413 rev 3 section 16, rule 7): the pack form is gone; a message
+    // in it is refused on any runtime, before anything is read
+    it('the pack form is gone: a pack-form load, reload or unload is refused, shared or not', async () => {
+      for (const shared of [true, false]) {
+        const control = require('../../lib/module-control').createModuleControl({
+          shared: () => shared, mm: {}, dm: {}, toolsOf: async () => [],
+          packs: {loadPack: async () => assert.fail('loaded'), reloadPack: async () => assert.fail('reloaded'), unloadPack: async () => assert.fail('unloaded')},
+          notices: {add: () => {}}});
+        const scenario = '/home/example/.countinghouse/packs/example/node_modules/@countinghouse/ch-pack-example';
+        for (const m of [{type: 'load', name: '@countinghouse/ch-pack-example', scenario, pack: 'example', global: true},
+          {type: 'reload', name: '@countinghouse/ch-pack-example', scenario, pack: 'example'},
+          {type: 'unload', name: '@countinghouse/ch-pack-example', pack: 'example'}]) {
+          await assert.rejects(control[m.type](m), (e) => e.code === 'CONTROL_FAILED', `${m.type}, shared ${shared}`);
+        }
       }
     });
 

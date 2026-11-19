@@ -128,7 +128,13 @@ if (options.maxSessionWorkersInvalid != null) {
     JSON.stringify(String(options.maxSessionWorkersInvalid.value)) + ')');
   process.exit(2);
 }
-// In-place loading (--controlChannel, --modulesRoot, --packsRoot) isn't
+// --packsRoot went with the pack form (M6, #413 rev 3 section 16, rule 7):
+// ch-local passes --modulesRoot
+if (options.packsRootGiven === true) {
+  console.error('--packsRoot is no longer taken: the pack form is gone; ch-local passes --modulesRoot');
+  process.exit(2);
+}
+// In-place loading (--controlChannel, --modulesRoot) isn't
 // available under --hardened in this release: the relaunched child would
 // not reach the control channel, and its roots are not granted
 // (lib/hardened-launch.js grants --modulePath and --moduleDataPath), so it

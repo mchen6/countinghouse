@@ -98,6 +98,20 @@ async function requestLegacy(c, method, params = {}) {
   }
 }
 
+// the module form's dirs for a top-level module laid out as ch-local laid
+// out a pack: every module beside it, by its package name (M6)
+const dirsOf = (top) => {
+  let nm = require('path').dirname(top);
+  // (a scoped package: its scope's parent holds the others)
+  if (require('path').basename(nm).startsWith('@')) nm = require('path').dirname(nm);
+  const out = {};
+  for (const n of require('fs').readdirSync(nm)) {
+    if (n.startsWith('@')) for (const m of require('fs').readdirSync(require('path').join(nm, n))) out[`${n}/${m}`] = require('path').join(nm, n, m);
+    else out[n] = require('path').join(nm, n);
+  }
+  return out;
+};
+
 describe('session-runtime 01: the runtime on --sessionSocket, spawned', function() {
   this.timeout(120000);
   if (process.platform === 'win32') return; // the named pipe is C2's
@@ -467,11 +481,11 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
   it('takes ch-local\'s control requests: a pack loaded in place is listed to a session', async() => {
     const packs = path.join(home, 'packs');
     const dir = scenario(home, {dir: path.join(packs, 'ch-pack-two', '1.0.0', 'node_modules', 'ch-pack-two'), name: 'ch-pack-two'});
-    r = runtime(home, ['--packsRoot', packs]);
+    r = runtime(home, ['--modulesRoot', packs]);
     const secret = await listening(r);
     const a = await shim.session(r.socket, secret);
     // a shared runtime's pack-form load names its pack (B3 Task 6); its global decides nothing since M5a
-    const reply = await r.control({type: 'load', name: 'ch-pack-two', scenario: dir, pack: 'ch-pack-two', global: true});
+    const reply = await r.control({type: 'load', name: 'ch-pack-two', dirs: dirsOf(dir)});
     assert.strictEqual(reply.ok, true, `${JSON.stringify(reply)}\n${r.err.slice(-1500)}`);
     assert.ok(Array.isArray(reply.tools) && reply.tools.length === 1, JSON.stringify(reply));
     const list = await request(a.c, 'tools/list');

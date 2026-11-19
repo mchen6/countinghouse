@@ -260,16 +260,16 @@ describe('remote 02: version 2, by module', () => {
       refused.forEach(([name, obj]) => assert.throws(() => credentials.checkEntry(name, obj), JSON.stringify([name, obj])));
     });
 
-    it('a shared runtime compares a session\'s credential on no name the start adds under version 2 (route-manager credentialVariables)', () => {
+    // M6: a session socket needs the control channel, which takes only a
+    // version 2 file, so a shared runtime compares a session's credential on
+    // no name at all, whatever the start was given
+    it('a shared runtime compares a session\'s credential on no name (route-manager credentialVariables)', () => {
       const {credentialVariables} = require('../../lib/route-manager');
-      const pack = {packsInPlace: new Map([['p', {allowance: new Map([['https://x.example', new Set(['X_KEY'])]])}]])};
-      assert.deepStrictEqual([...credentialVariables(null)], []);
-      assert.deepStrictEqual([...credentialVariables(pack)], [], 'a pack\'s own version 1 file is not used under version 2: it adds no name');
-      // the same pack under a version 1 start still adds its names
+      assert.deepStrictEqual([...credentialVariables()], []);
       const v2 = credentials.snapshot();
       try {
         credentials.configure(v2file(JSON.stringify({[ORIGIN]: ['GITHUB_TOKEN']})));
-        assert.deepStrictEqual([...credentialVariables(pack)].sort(), ['GITHUB_TOKEN', 'X_KEY']);
+        assert.deepStrictEqual([...credentialVariables()], [], 'a version 1 file (no control channel, so no session) changes nothing');
       } finally {
         credentials.restore(v2);
       }

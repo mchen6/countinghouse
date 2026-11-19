@@ -56,7 +56,7 @@ function crashyPack(home) {
   return {root, dir};
 }
 
-function runtime(home, packsRoot) {
+function runtime(home, modulesRoot) {
   const run = path.join(home, 'run', 'daemon');
   fs.mkdirSync(run, {recursive: true});
   fs.chmodSync(path.join(home, 'run'), 0o700);
@@ -64,7 +64,7 @@ function runtime(home, packsRoot) {
   const socket = path.join(run, 's');
   const child = spawn(process.execPath, [FRAMEWORK, '--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'),
     '--modulePath', path.join(home, 'modules'), '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc',
-    '--sessionSocket', socket, '--packsRoot', packsRoot],
+    '--sessionSocket', socket, '--modulesRoot', modulesRoot],
   {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: ''})});
   const r = {child, socket, run, err: ''};
   const replies = new Map();
@@ -97,6 +97,20 @@ async function request(c, method, params = {}) {
 }
 const toolNames = async(c) => ((await request(c, 'tools/list')).result.tools || []).map((t) => t.name);
 
+// the module form's dirs for a top-level module laid out as ch-local laid
+// out a pack: every module beside it, by its package name (M6)
+const dirsOf = (top) => {
+  let nm = require('path').dirname(top);
+  // (a scoped package: its scope's parent holds the others)
+  if (require('path').basename(nm).startsWith('@')) nm = require('path').dirname(nm);
+  const out = {};
+  for (const n of require('fs').readdirSync(nm)) {
+    if (n.startsWith('@')) for (const m of require('fs').readdirSync(require('path').join(nm, n))) out[`${n}/${m}`] = require('path').join(nm, n, m);
+    else out[n] = require('path').join(nm, n);
+  }
+  return out;
+};
+
 describe('session-runtime 08: a pack turned off while its module restarts after a crash stays off for every session (F1-3)', function() {
   this.timeout(120000);
   if (process.platform === 'win32') return;   // the session socket is C2's named pipe there
@@ -121,7 +135,7 @@ describe('session-runtime 08: a pack turned off while its module restarts after 
     assert.ok(s.welcome != null, JSON.stringify(s.refused));
     // loaded, it is every session's (M5a); whether it is listed at a given moment depends on its crashes
     // (a module restarting is listed to no one, F3-5), so nothing is asserted of the listing before the unload
-    const loaded = await r.control({type: 'load', name: NAME, scenario: pack.dir, pack: 'crashy', global: false});
+    const loaded = await r.control({type: 'load', name: NAME, dirs: dirsOf(pack.dir)});
     assert.strictEqual(loaded.ok, true, `${JSON.stringify(loaded)}: ${r.err.slice(-1500)}`);
     // its worker ends on its own, twice; the supervisor will restart it after its second backoff
     const escaped = NAME.replace(/[/@]/g, (x) => `\\${x}`);
@@ -132,7 +146,7 @@ describe('session-runtime 08: a pack turned off while its module restarts after 
     // may come first, and the unload then takes out a loaded module, which no build lists after (on master the
     // unload's own answer took longer than the backoff, the restart registering the module meanwhile)
     const supervisorLines = () => r.err.split('\n').filter((l) => l.includes(`module sandbox: ${NAME} `) && /exited|restarting/.test(l)).map((l) => l.slice(0, 300)).join('\n');
-    const unloaded = await r.control({type: 'unload', name: NAME, pack: 'crashy'});
+    const unloaded = await r.control({type: 'unload', name: NAME});
     assert.strictEqual(unloaded.ok, true, JSON.stringify(unloaded));
     // past the restart's time, and a spawn's
     await tick(backoff + 3000);

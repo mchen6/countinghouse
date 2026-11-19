@@ -41,6 +41,20 @@ function pack(home, scenario, part, tool) {
     actions: {[tool]: `module.exports = async (input, ctx) => { const p = await ctx.call('${part}/stepService.run', {}); return {output: {via: p.output.part}}; };\n`}});
 }
 
+// the module form's dirs for a top-level module laid out as ch-local laid
+// out a pack: every module beside it, by its package name (M6)
+const dirsOf = (top) => {
+  let nm = require('path').dirname(top);
+  // (a scoped package: its scope's parent holds the others)
+  if (require('path').basename(nm).startsWith('@')) nm = require('path').dirname(nm);
+  const out = {};
+  for (const n of require('fs').readdirSync(nm)) {
+    if (n.startsWith('@')) for (const m of require('fs').readdirSync(require('path').join(nm, n))) out[`${n}/${m}`] = require('path').join(nm, n, m);
+    else out[n] = require('path').join(nm, n);
+  }
+  return out;
+};
+
 describe('stdio 42: a module going on or off is hidden (M4 Task 1)', function() {
   this.timeout(120000);
   let io = null;
@@ -52,7 +66,7 @@ describe('stdio 42: a module going on or off is hidden (M4 Task 1)', function() 
   before(async () => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-36-'));
     io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
-      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--packsRoot', path.join(home, 'packs'), '--requestTimeout', '4'],
+      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--modulesRoot', path.join(home, 'packs'), '--requestTimeout', '4'],
     {ipc: true, env: {COUNTINGHOUSE_TEST_LOAD_HOLD_MODULE: 'ch-step-slow', COUNTINGHOUSE_TEST_LOAD_HOLD_MS: '3000',
       COUNTINGHOUSE_TEST_UNLOAD_KEEPS: 'ch-step-kept'}});
     const init = await io.request(INITIALIZE, 30000);
@@ -65,7 +79,7 @@ describe('stdio 42: a module going on or off is hidden (M4 Task 1)', function() 
   });
 
   it('while a part loads, the scenario that registered first is not listed and its tool is not callable; then both are', async () => {
-    const loading = io.control({type: 'load', name: 'ch-pack-slow', scenario: pack(home, 'ch-pack-slow', 'ch-step-slow', 'tool_slow')});
+    const loading = io.control({type: 'load', name: 'ch-pack-slow', dirs: dirsOf(pack(home, 'ch-pack-slow', 'ch-step-slow', 'tool_slow'))});
     // the scenario's own worker is up well before the part's held load ends
     await new Promise((r) => setTimeout(r, 1500));
     assert.ok(!(await listed()).includes('tool_slow'), 'listed while its part was still loading');
@@ -78,7 +92,7 @@ describe('stdio 42: a module going on or off is hidden (M4 Task 1)', function() 
   });
 
   it('a module whose unload leaves it in the module map stays hidden; a load whose closure holds it is refused', async () => {
-    const loaded = await io.control({type: 'load', name: 'ch-pack-kept', scenario: pack(home, 'ch-pack-kept', 'ch-step-kept', 'tool_kept')});
+    const loaded = await io.control({type: 'load', name: 'ch-pack-kept', dirs: dirsOf(pack(home, 'ch-pack-kept', 'ch-step-kept', 'tool_kept'))});
     assert.strictEqual(loaded.ok, true, JSON.stringify(loaded));
     assert.deepStrictEqual(toolOutput((await call('tool_kept')).result), {via: true});
     const gone = await io.control({type: 'unload', name: 'ch-pack-kept'});
@@ -86,7 +100,7 @@ describe('stdio 42: a module going on or off is hidden (M4 Task 1)', function() 
     assert.ok(io.err.includes('module: ch-step-kept is still loaded after its unload; it stays hidden until the runtime ends'), io.err.slice(-1500));
     // the part (still in the map) stays hidden (the hop, peer-channel and
     // job paths' refusal of a hidden module: sessions 35's bridge cases)
-    const again = await io.control({type: 'load', name: 'ch-pack-kept', scenario: path.join(home, 'packs', 'ch-pack-kept', '1.0.0', 'node_modules', 'ch-pack-kept')});
+    const again = await io.control({type: 'load', name: 'ch-pack-kept', dirs: dirsOf(path.join(home, 'packs', 'ch-pack-kept', '1.0.0', 'node_modules', 'ch-pack-kept'))});
     assert.deepStrictEqual([again.ok, again.code], [false, 'CONTROL_FAILED'], JSON.stringify(again));
     assert.ok(/ch-step-kept is still being unloaded; restart your client/.test(again.message), again.message);
   });

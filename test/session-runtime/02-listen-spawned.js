@@ -40,7 +40,7 @@ function runtime(home, packs) {
   const socket = path.join(run, 's');
   const child = spawn(process.execPath, [FRAMEWORK, '--no-workerThread', '--store', 'local', '--storePath', path.join(home, 'store'),
     '--modulePath', path.join(home, 'modules'), '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc',
-    '--packsRoot', packs, '--sessionSocket', socket], {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: ''})});
+    '--modulesRoot', packs, '--sessionSocket', socket], {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: ''})});
   const r = {child, socket, run, err: ''};
   child.stderr.on('data', (d) => { r.err += d; });
   r.exited = new Promise((res) => child.on('exit', res));
@@ -85,6 +85,20 @@ async function listen(c, rd) {
 }
 const changesFor = (rd, id) => rd.notes.filter((n) => n.method === 'notifications/tools/list_changed' && n.params._meta[SUB] === id).length;
 
+// the module form's dirs for a top-level module laid out as ch-local laid
+// out a pack: every module beside it, by its package name (M6)
+const dirsOf = (top) => {
+  let nm = require('path').dirname(top);
+  // (a scoped package: its scope's parent holds the others)
+  if (require('path').basename(nm).startsWith('@')) nm = require('path').dirname(nm);
+  const out = {};
+  for (const n of require('fs').readdirSync(nm)) {
+    if (n.startsWith('@')) for (const m of require('fs').readdirSync(require('path').join(nm, n))) out[`${n}/${m}`] = require('path').join(nm, n, m);
+    else out[n] = require('path').join(nm, n);
+  }
+  return out;
+};
+
 describe('session-runtime 02: discover and listen per session, spawned', function() {
   this.timeout(120000);
   if (process.platform === 'win32') return;
@@ -120,7 +134,7 @@ describe('session-runtime 02: discover and listen per session, spawned', functio
     await tick(200);
     const two = scenario(path.join(packs, 'ch-pack-two', '1.0.0', 'node_modules', 'ch-pack-two'), 'ch-pack-two');
     // a shared runtime's load names its pack and whether it is global (B3 Task 6)
-    const reply = await r.control({type: 'load', name: 'ch-pack-two', scenario: two, pack: 'ch-pack-two', global: true});
+    const reply = await r.control({type: 'load', name: 'ch-pack-two', dirs: dirsOf(two)});
     assert.strictEqual(reply.ok, true, `${JSON.stringify(reply)}\n${r.err.slice(-1500)}`);
     const until = Date.now() + 15000;
     while ((changesFor(ra, la) < 1 || changesFor(rb, lb) < 1) && Date.now() < until) await tick(100);
@@ -134,7 +148,7 @@ describe('session-runtime 02: discover and listen per session, spawned', functio
     a.c.end();
     await tick(300);
     const three = scenario(path.join(packs, 'ch-pack-three', '1.0.0', 'node_modules', 'ch-pack-three'), 'ch-pack-three');
-    const reply3 = await r.control({type: 'load', name: 'ch-pack-three', scenario: three, pack: 'ch-pack-three', global: true});
+    const reply3 = await r.control({type: 'load', name: 'ch-pack-three', dirs: dirsOf(three)});
     assert.strictEqual(reply3.ok, true, `${JSON.stringify(reply3)}\n${r.err.slice(-1500)}`);
     const until2 = Date.now() + 15000;
     while (changesFor(rb, lb) < 2 && Date.now() < until2) await tick(100);

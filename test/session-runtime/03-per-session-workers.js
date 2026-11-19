@@ -13,6 +13,20 @@ const os = require('os');
 const path = require('path');
 const {NAME, RESET, tick, until, perSession, caller, runtime, secretOf, request, texts, outOf, counts, shim} = require('./helpers/per-session');
 
+// the module form's dirs for a top-level module laid out as ch-local laid
+// out a pack: every module beside it, by its package name (M6)
+const dirsOf = (top) => {
+  let nm = require('path').dirname(top);
+  // (a scoped package: its scope's parent holds the others)
+  if (require('path').basename(nm).startsWith('@')) nm = require('path').dirname(nm);
+  const out = {};
+  for (const n of require('fs').readdirSync(nm)) {
+    if (n.startsWith('@')) for (const m of require('fs').readdirSync(require('path').join(nm, n))) out[`${n}/${m}`] = require('path').join(nm, n, m);
+    else out[n] = require('path').join(nm, n);
+  }
+  return out;
+};
+
 describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
   this.timeout(180000);
   if (process.platform === 'win32') return; // the named pipe is C2's
@@ -161,15 +175,16 @@ describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
   });
 
   it('a reload stops every session\'s worker; the next calls run the new code on the files kept', async() => {
-    // a reload in place takes a pack version under --packsRoot, laid out
-    // as ch-local lays it (test/stdio/16)
-    const s = await twoSessions(['--packsRoot', path.join(home, 'packs')]);
+    // a reload in place takes a version under --modulesRoot, laid out as
+    // ch-local laid out a pack (test/stdio/16); the start's module is under
+    // its own root
+    const s = await twoSessions(['--modulesRoot', path.join(home, 'packs'), '--modulesRoot', path.join(home, 'pack')]);
     outOf(await s.call('A', 'touch'));
     outOf(await s.call('B', 'touch'));
     const v2 = perSession(home, {dir: path.join(home, 'packs', NAME, '1.1.0', 'node_modules', NAME), version: '1.1.0',
       edit: (src) => src.replace('return {output: {file: n, store: stored, memory}};', 'return {output: {file: n, store: stored, memory: memory + 1000}};')});
     // on the shared runtime a pack message names its pack, and a reload whether it is global (B3, lib/pack-control.js)
-    const answer = await r.control({type: 'reload', name: NAME, scenario: v2, pack: NAME, global: true});
+    const answer = await r.control({type: 'reload', names: [NAME], dirs: dirsOf(v2)});
     assert.strictEqual(answer.ok, true, JSON.stringify(answer));
     await until(async() => counts(r).ended === 2, 20000);
     assert.deepStrictEqual(outOf(await s.call('A', 'touch')), {file: 2, store: 2, memory: 1001});
@@ -181,7 +196,7 @@ describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
     outOf(await s.call('B', 'touch'));
     const held = s.call('A', 'hold', {ms: 1500});
     await until(async() => counts(r).up === 2, 20000);
-    const answer = await r.control({type: 'unload', name: NAME, pack: NAME});
+    const answer = await r.control({type: 'unload', name: NAME});
     assert.strictEqual(answer.ok, true, JSON.stringify(answer));
     const a = await held;
     assert.ok(a != null && a.result != null, JSON.stringify(a));
@@ -237,14 +252,16 @@ describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
       pkg.countinghouse = Object.assign({}, pkg.countinghouse, {role: 'scenario', state: 'per-session'});
       pkg.countinghouse.remotes[0].url = `http://127.0.0.1:${port}/mcp`;
       fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
+      // version 2, as ch-local writes it (M6: a runtime with a control
+      // channel takes no version 1 file): the variable bound to a slot
       const allowance = path.join(home, 'remote-credentials.json');
-      fs.writeFileSync(allowance, JSON.stringify({[`http://127.0.0.1:${port}`]: ['CH_TEST_REMOTE_TOKEN']}));
-      process.env.CH_TEST_REMOTE_TOKEN = 'per-session-remote-token';
+      fs.writeFileSync(allowance, JSON.stringify({version: 2, modules: {[pkg.name]: {[`http://127.0.0.1:${port}`]: {CH_TEST_REMOTE_TOKEN: 'COUNTINGHOUSE_CREDENTIAL_1'}}}}));
+      process.env.COUNTINGHOUSE_CREDENTIAL_1 = 'per-session-remote-token';
       let s;
       try {
         s = await twoSessions(['--debug', '--remoteCredentials', allowance], [dir], ['calltool']);
       } finally {
-        delete process.env.CH_TEST_REMOTE_TOKEN;
+        delete process.env.COUNTINGHOUSE_CREDENTIAL_1;
       }
       const call = (who, tool) => request(s[who].c, 'tools/call', {name: s.tool('calltool'), arguments: {tool, args: {text: who}}});
       // A's call held at the remote (3 s) while B's first call spawns B's worker
