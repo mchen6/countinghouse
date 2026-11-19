@@ -19,11 +19,16 @@ describe('fs-broker 07: the worker patch', function() {
     const m = await runBrokered(S('swept.js'), {extra: {fakeAdded: true}});
     assert.strictEqual(m.ok, true, JSON.stringify(m));
     const U = 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM';
-    assert.deepStrictEqual(m.r, {method: U, lazy: U, hidden: U, space: U, promise: U, klass: U, nc: 'ran', late: U, sym: U, replaced: U,
-      nullFilled: U, staticAfter: U, staticGetter: U, nodeLazy: U, staticName: U, selfNamed: U, selfNamedName: U, copy: 'ran', asyncOp: U,
-      asyncShape: [true, true, 'function', 'function', 'function', 'string', U], constant: 7,
-      swept: {swept: ['fs.fakeAddedSync', 'fs.fakeLazySync', 'fs.fakeHiddenSync', 'fs.fakeSpace', 'fs.FakeNamed', 'fs.FakeSelfNamed', 'fs.fakeAsyncOp',
-        'fs.fakeNodeLazySync', 'fs.FakeReader', 'fs.fakeLateSync', 'fs.Symbol(ch.fakeSym)', 'fs.promises.fakeAdded'],
+    const r = m.r;
+    assert.match(r.refusal, /cannot guard this Node's fs\.fakeFixedSync, fs\.fakeFixedGetSync, fs\.fakeNcSync .*not starting under enforce -- if it is a constant, add it to PASSTHROUGH in lib\/fs-broker\/patch\.js/);
+    delete r.refusal;
+    delete r.swept.refusal;
+    assert.deepStrictEqual(r, {method: U, lazy: U, hidden: U, space: U, spaceLive: 2, promise: U, klass: U, noCtor: 'TypeError', noProto: true, nc: 'ran',
+      late: U, lateFrozen: true, sym: U, replaced: U, nullFilled: U, staticAfter: U, helperSaid: true, staticGetter: U, nodeLazy: U, staticName: U,
+      selfNamed: U, selfNamedName: U, copy: 'ran', asyncOp: U, asyncShape: [true, true, 'function', 'function', 'function', 'string', U],
+      constant: 7, ncConst: 3, data: [1, 2], list: [true, 1, U], err: [true, 'Error: boom', U], underBoot: [U, U],
+      swept: {swept: ['fs.fakeAddedSync', 'fs.fakeLazySync', 'fs.fakeHiddenSync', 'fs.fakeSpace', 'fs.FakeBase', 'fs.FakeNamed', 'fs.FakeSelfNamed',
+        'fs.fakeAsyncOp', 'fs.fakeList', 'fs.fakeErr', 'fs.fakeNodeLazySync', 'fs.FakeReader', 'fs.fakeLateSync', 'fs.Symbol(ch.fakeSym)', 'fs.promises.fakeAdded'],
       unsweepable: ['fs.fakeFixedSync', 'fs.fakeFixedGetSync', 'fs.fakeNcSync']}});
   });
 
