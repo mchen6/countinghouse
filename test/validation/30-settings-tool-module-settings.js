@@ -376,7 +376,10 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       await tool.set('module.@acme/weather-tool.units', 'metric', 'settings tool', {shared: true, session: 'lines-1'});
       const line = history().find((h) => h.setting === 'module.@acme/weather-tool.units');
       assert.strictEqual(line.session, 'lines-1');
-      assert.match(line.change, /^all sessions/);
+      // the marker in its own field; no change label (a real change, as
+      // ch-local's outside-edits replays one)
+      assert.strictEqual(line.scope, 'every session');
+      assert.strictEqual(line.change, undefined);
       // a reader that is not that session (here the runtime's own) sees it
       const seen = (await tool.get()).history;
       assert.ok(seen.some((h) => h.setting === 'module.@acme/weather-tool.units' && h.new === 'metric'), JSON.stringify(seen));
@@ -397,6 +400,18 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       const done = await tool.set('module.@acme/weather-tool.units', 'metric');
       assert.strictEqual(asked, '@acme/weather-tool', 'only the module whose value changed');
       assert.deepStrictEqual({applies: done.applies, refused: done.refused}, {applies: 'not applied', refused: 'SETTING_INVALID'});
+    });
+
+    it('a write whose rename fails: the "not made" line is every session\'s, as the change it undoes', async () => {
+      const real = fs.renameSync;
+      fs.renameSync = () => { throw Object.assign(new Error('no'), {code: 'EACCES'}); };
+      try {
+        await refused(make().set('module.@acme/weather-tool.units', 'metric', 'settings tool', {shared: true, session: 'rename-1'}), 'SETTINGS_FILE_INVALID');
+      } finally { fs.renameSync = real; }
+      const lines = history().filter((h) => h.setting === 'module.@acme/weather-tool.units');
+      assert.deepStrictEqual(lines.map((h) => [h.change, h.scope, h.session]), [[undefined, 'every session', 'rename-1'], ['not made', 'every session', 'rename-1']]);
+      const seen = (await make().get()).history.filter((h) => h.setting === 'module.@acme/weather-tool.units');
+      assert.strictEqual(seen.length, 2, 'another reader sees both');
     });
 
     it('a lock that comes while the client\'s conditions are asked is still checked: nothing written', async () => {
