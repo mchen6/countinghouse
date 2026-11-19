@@ -14,6 +14,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const {realPath} = require('../helpers/real-path');
 require('../../lib/logger').createLogger();
 
 const SVC = (s) => `urn:countinghouse-test:serviceID:${s}`;
@@ -166,8 +167,8 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
     const link = path.join(store, 'link-to-real');
     fs.symlinkSync(real, link, 'dir');
     const r = mip.checkStartPlan([link], []);
-    assert.deepStrictEqual(r.tops, [fs.realpathSync(real)]);
-    assert.deepStrictEqual(r.partDirs, [fs.realpathSync(real)]);
+    assert.deepStrictEqual(r.tops, [realPath(real)]);
+    assert.deepStrictEqual(r.partDirs, [realPath(real)]);
   });
 
   it('high 3: a start refusal from the scenario expansion is told by package name only', () => {
@@ -197,7 +198,7 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
       const mm = runtime();
       const seen = [];
       const load = mm.loadModuleFromPath;
-      mm.loadModuleFromPath = (p, name, version, cb) => { seen.push(...mip.packRecords(mm).map((r) => r.pack)); load(p, name, version, cb); };
+      mm.loadModuleFromPath = (p, name, version, cb, opts) => { seen.push(...mip.packRecords(mm).map((r) => r.pack)); load(p, name, version, cb, opts); };
       await mip.loadPack(mm, moduleForm('ci-failure-triage'), {});
       assert.ok(seen.length > 0);
       assert.ok(seen.every((k) => k === mip.moduleKey('ci-failure-triage')), JSON.stringify(seen));
