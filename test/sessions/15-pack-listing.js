@@ -308,7 +308,8 @@ describe('sessions 15: a module going on or off is in no session\'s lists (B3 Ta
   it('a tool the caller can\'t see: one grant read, then the unknown tool\'s answer, whatever the reason', async () => {
     const real = toolRegistry.grantsForCall;
     let reads = 0;
-    toolRegistry.grantsForCall = (key, cb) => { reads++; cb(null, new Set(['d3', 'd4'])); };
+    const granted = new Set(['d3', 'd4']);
+    toolRegistry.grantsForCall = (key, identify, cb) => { reads++; cb(null, granted); };
     try {
       const table = toolRegistry.buildToolTargets(ci, {includeUnlisted: true});
       const nameOf = (d) => Object.keys(table).find((n) => table[n].deviceID === d);
