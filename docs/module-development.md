@@ -183,7 +183,10 @@ pass `{kind: 'caller'}` as the fourth argument: the error's `kind` is then
 `'caller'`, and the usage report counts it as `CALLER_ERROR`, the caller's,
 not `MODULE_ERROR`. Only `'caller'` and `'module'` are taken; anything else
 is ignored, and a module never says an error is the runtime's. The answer
-itself is the same either way.
+itself is the same either way. A caller-kind error is not retried in a
+task: the same input fails the same way. When your module calls another
+one, a caller-kind error it gets back is your module's (you were its
+caller); if your caller is at fault, say so with your own `ctx.error`.
 
 The code is your module's own: an `UPPER_SNAKE_CASE` name for what went
 wrong (`INPUT_REJECTED` for input your schema can't rule out,

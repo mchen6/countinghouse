@@ -82,6 +82,15 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     runner.close();
   });
 
+  it('a module\'s caller-kind error is not retried: the same input fails the same way', async () => {
+    const {CountinghouseError} = require('../../lib/countinghouse-error');
+    const {runner, ci} = runnerWith((i, cb) => setImmediate(cb, CountinghouseError.moduleOwn('PROBE_BAD_INPUT', 'no row', null, 'probe', {kind: 'caller'}), null));
+    const {r} = await call(runner, 'addJob', INTERNAL, {name: 'k', attempts: 4}, 'dev', 'svc', 'act', {});
+    assert.ok(await until(async () => (await state(runner, r.id)).state === 'failed'));
+    assert.strictEqual(ci.calls.length, 1, 'run once');
+    runner.close();
+  });
+
   it('records progress', async () => {
     const ref = {};
     const {runner} = runnerWith((i, cb, c, jobID) => { ref.runner.updateJobProgress(jobID, 50); setTimeout(cb, 50, null, {}); });
