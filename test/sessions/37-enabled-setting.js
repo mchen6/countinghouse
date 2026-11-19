@@ -108,9 +108,14 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.strictEqual(stored()['pack.ci-failure-triage'], false, 'an unknown name is kept');
     const line = history().find((l) => l.setting === `enabled.${TOOL}`);
     assert.deepStrictEqual({old: line.old, new: line.new}, {old: true, new: false});
-    const text = `${TOOL} is turned off for all your sessions. ${CALLER} calls it, so ${CALLER} is off too. They stay off until ${TOOL} is turned on at a terminal: \`ch-local settings set enabled.${TOOL} on\`.`;
+    // (#449's high review, 7: the two ways it is really undone)
+    const text = `${TOOL} is turned off for all your sessions. ${CALLER} calls it, so ${CALLER} is off too. They stay off until ${TOOL} is turned on again: here (you'll be asked to confirm) or at a terminal: \`ch-local settings set enabled.${TOOL} on\`.`;
     assert.deepStrictEqual(told, [[TOOL, text]]);
     assert.strictEqual(got.said, text);
+    // a module no loaded module calls
+    assert.strictEqual((await tool().set(`enabled.${CALLER}`, 'off')).said,
+      `${CALLER} is turned off for all your sessions. It stays off until it is turned on again: here (you'll be asked to confirm) or at a terminal: \`ch-local settings set enabled.${CALLER} on\`.`);
+    told.length = 0;
     // the same again changes nothing and records nothing
     const n = history().length;
     assert.strictEqual((await tool().set(`enabled.${TOOL}`, 'off')).new, 'off');
