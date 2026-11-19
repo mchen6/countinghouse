@@ -47,6 +47,6 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
     // once per outage, never a line per request; and when it answers again,
     // how many failed meanwhile (the high review of #445, 6)
     assert.strictEqual(o.logged.length, 1, JSON.stringify(o.logged));
-    assert.ok(o.warned.some((w) => /the auth provider answers again: 2 lookups failed meanwhile/.test(w)), JSON.stringify(o.warned));
+    assert.ok(o.warned.some((w) => /the auth provider answers again \(authenticate\): 2 lookups failed meanwhile/.test(w)), JSON.stringify(o.warned));
   });
 });
