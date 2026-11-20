@@ -41,6 +41,21 @@ describe('single-thread 01: data directories and the fs/os facade', function() {
     assert.strictEqual(where.own, 'fs-probe');
   });
 
+  // A-overlap-rm: single-thread mode empties only a /tmp the runtime made,
+  // or one from before ownership marks that no module it knows overlaps. A
+  // /tmp holding another module's code (one it loads, from there) is never
+  // adopted, so never emptied.
+  it('another module\'s code under fs-probe\'s /tmp from before ownership marks survives the load', async () => {
+    base = mkdtemp('single-');
+    const tmp = path.join(store(), 'fs-probe', 'tmp');
+    const peer = path.join(tmp, 'peer');
+    fs.cpSync(path.join(FIXTURES, 'isolation-peer'), peer, {recursive: true});
+    server = await startServer(PORT, ['--no-workerThread', '--debug', '--debugKey', KEY, '--moduleDataPath', store(),
+      '--loadModule', path.join(FIXTURES, 'fs-probe'), '--loadModule', peer]);
+    assert.ok(fs.existsSync(path.join(peer, 'package.json')), `emptied: ${server.output.slice(-1500)}`);
+    assert.match(server.output, /fs-probe.*tmp was not made by this runtime \(no ownership mark for it\), so it is not emptied/);
+  });
+
   it('results come back virtual; an absolute symlink target is translated; relative paths resolve against /app', async () => {
     server = await start(['fs-probe']);
     const r = out(await mcpCall(PORT, KEY, 'fs_probe_probeservice_fsresults', {}));

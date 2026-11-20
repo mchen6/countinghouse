@@ -862,7 +862,8 @@ is part of a file name; on Windows it is a separator, the same as `/`.
 
 **Write under `/data` or `/tmp`.** Writing next to your code under `/app` is
 refused under `enforce` (`EROFS`). `/data` is for what must survive a
-restart; `/tmp` starts empty each time. On the host they are
+restart; `/tmp` starts empty each time (one the runtime didn't make, an
+operator's say, is never emptied; the operator is told). On the host they are
 `<moduleDataPath>/<your package name>/data` and `.../tmp`; the operator sets
 `--moduleDataPath` (default `$HOME/.countinghouse/module_data`). Unloading,
 restarting and reloading never delete them; an operator's
