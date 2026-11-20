@@ -163,6 +163,23 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.strictEqual(l.launcher, fs.realpathSync.native(h.launcher), 'the real path checked is the one shown');
     });
 
+    // (ch-local's availability, 2026-11-20: the operator's ceiling, and a
+    // calls chain down to a callee not installed at all)
+    it('a ceiling, as a reason or a root; not-installed as a calls entry\'s root only', () => {
+      const h = home();
+      const l = heldBack.parse(doc([{name: 'a', reason: 'ceiling'}, {name: 'b', reason: 'calls', root: 'ceiling', via: 'p'},
+        {name: 'c', reason: 'calls', root: 'not-installed', via: 'ch-access-github'}]), h.settings);
+      assert.deepStrictEqual([...l.modules.values()].map((m) => [m.reason, m.root, m.via]),
+        [['ceiling', null, null], ['calls', 'ceiling', 'p'], ['calls', 'not-installed', 'ch-access-github']]);
+      assert.throws(() => heldBack.parse(doc([{name: 'a', reason: 'not-installed'}]), h.settings), Error, 'not-installed is a root only');
+      // neither is the user's to turn on, nor a credential: the status hint
+      const L = '/home/u/.ch/bin/ch-local.js';
+      const packs = overview.build({version: '1', settingsProfile: true, launcher: L, packs: [
+        pack({name: 'p-a', module: 'a', loaded: false, held: l.modules.get('a')}), pack({name: 'p-b', module: 'b', loaded: false, held: l.modules.get('b')}),
+        pack({name: 'p-c', module: 'c', loaded: false, held: l.modules.get('c')})]}).packs;
+      assert.deepStrictEqual(packs.map((p) => [p.state, p.next]), packs.map(() => ['not loaded', overview.FIXED.notLoaded(L)]));
+    });
+
     it('refuses the whole of anything else: never "all ready"', () => {
       const h = home();
       const outside = path.join(tmp.mkdtemp('ch-mcp-42-'), 'bin');
