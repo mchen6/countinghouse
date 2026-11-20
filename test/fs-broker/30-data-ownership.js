@@ -80,6 +80,13 @@ describe('fs-broker 30: the runtime deletes only directories it made', () => {
     assert.strictEqual(await walk.emptyTmp(m2.tmp, {holder: m2.root, base: store}), false);
     assert.deepStrictEqual(await ownership.removeOwned(m2.root, m2, store), [m2.data, m2.tmp]);
     assert.ok(survived(path.join(m.tmp, 'live')), 'm\'s live /tmp emptied through m2');
+    // said as a link, with no marker advice that couldn't help
+    const said = [];
+    ownership.resetForTests();
+    await walk.emptyTmp(m2.tmp, {holder: m2.root, base: store, say: (t) => said.push(t)});
+    assert.strictEqual(said.length, 1);
+    assert.match(said[0], /is reached through a link \(.*m2\), and the runtime never empties or removes anything through one/);
+    assert.doesNotMatch(said[0], /delete .*countinghouse-owned/);
     // and an @scope that is a link
     const s = await moduleData.ensureDirs(store, '@real/p');
     writeB(path.join(s.tmp, 'live'));
@@ -101,6 +108,32 @@ describe('fs-broker 30: the runtime deletes only directories it made', () => {
     ownership.resetForTests();
     assert.strictEqual(await ownership.birthIsReal(path.join(base, 'no-such-holder'), 'probe-dev'), null, 'a probe that cannot run');
     assert.strictEqual(typeof(await ownership.birthIsReal(d.root, 'probe-dev')), 'boolean', 'not remembered: asked again');
+    // one probe per device at a time: callers share it
+    ownership.resetForTests();
+    assert.strictEqual(ownership.birthIsReal(d.root, 'shared-dev'), ownership.birthIsReal(d.root, 'shared-dev'));
+  });
+
+  // a recorded birth is compared, never dropped (the medium on the high
+  // round, 4): another at the same dev and ino is not owned; one that can't
+  // be read here is kept, checked again
+  it('a recorded birth: another at the same dev and ino is not owned; unreadable here, the directory is kept and checked again', async function() {
+    const d = await moduleData.ensureDirs(path.join(base, 'store'), 'm');
+    const store = path.join(base, 'store');
+    const dev = String(fs.lstatSync(d.tmp, {bigint: true}).dev);
+    if (!(await ownership.birthIsReal(d.root, dev))) return this.skip();   // no real birth times here
+    const marker = path.join(d.root, ownership.MARKER);
+    const doc = JSON.parse(fs.readFileSync(marker, 'utf8'));
+    doc.dirs.tmp.birth = String(BigInt(doc.dirs.tmp.birth) + 1n);
+    fs.writeFileSync(marker, JSON.stringify(doc), {mode: 0o600});
+    assert.strictEqual((await ownership.ownership(d.root, 'tmp', d.tmp, store)).state, 'unmarked', 'same inode, another birth');
+    doc.dirs.tmp.birth = String(BigInt(doc.dirs.tmp.birth) - 1n);
+    fs.writeFileSync(marker, JSON.stringify(doc), {mode: 0o600});
+    assert.strictEqual((await ownership.ownership(d.root, 'tmp', d.tmp, store)).state, 'owned');
+    ownership.setBirthRealForTests(dev, false);
+    assert.strictEqual((await ownership.ownership(d.root, 'tmp', d.tmp, store)).state, 'unknown');
+    const said = [];
+    assert.strictEqual(await walk.emptyTmp(d.tmp, {holder: d.root, base: store, say: (t) => said.push(t)}), false);
+    assert.match(said.join('\n'), /could not be checked now .* it is checked again at the next start/);
   });
 
   it('a marker that is a link, not owner-only, too large or not its shape names nothing', async () => {
