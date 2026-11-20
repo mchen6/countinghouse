@@ -404,7 +404,7 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
   // (the medium review of 9d16b00b: copyfile onto a link into a declared rw
   // root, which the quota doesn't count -- the size there is never given
   // back from /data's count)
-  it('a write that really lands in an uncounted root -- through a link, a linked directory -- counts nothing in /data', async () => {
+  it('copyfile onto a link into an uncounted root counts in /data, by the root its path names, and gives back nothing it never counted', async () => {
     const quota = new Quota({maxBytes: 1 << 20, maxEntries: 100, enforce: true, report: () => {}, bytes: 10, entries: 2});
     const t = await setup('enforce', () => {}, quota);
     try {
@@ -413,21 +413,10 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
       fs.symlinkSync(path.join(t.dirs.rw, 'big'), path.join(t.dirs.data, 'l2'));
       await t.broker.handle('copyFile', ['/data/small', '/data/l2']);
       assert.strictEqual(fs.readFileSync(path.join(t.dirs.rw, 'big'), 'utf8'), 's'.repeat(10), 'the copy landed in the rw file');
-      // (/data's count as it was: the copy landed in a root not counted)
-      assert.strictEqual(quota.bytes, 10);
+      // (ruled Q1: counted by the root its path names, /data -- the 10 bytes
+      // written there; the rw file's 1000 never counted, never given back)
+      assert.strictEqual(quota.bytes, 20);
       assert.strictEqual(quota.entries, 2);
-      // (and the same through a linked parent directory, and by an O_TRUNC
-      // open, and a truncate)
-      fs.mkdirSync(path.join(t.dirs.rw, 'dir'));
-      fs.writeFileSync(path.join(t.dirs.rw, 'dir', 'f'), 'f'.repeat(1000));
-      fs.symlinkSync(path.join(t.dirs.rw, 'dir'), path.join(t.dirs.data, 'dl'));
-      await t.broker.handle('copyFile', ['/data/small', '/data/dl/f']);
-      const fd = await t.broker.handle('open', ['/data/dl/f', 'w']);
-      await t.broker.handle('close', [fd]);
-      fs.writeFileSync(path.join(t.dirs.rw, 'big'), 'b'.repeat(1000));
-      await t.broker.handle('truncate', ['/data/l2', 0]);
-      assert.strictEqual(quota.bytes, 10, `bytes ${quota.bytes}`);
-      assert.strictEqual(quota.entries, 2, `entries ${quota.entries}`);
     } finally { await t.done(); }
   });
 

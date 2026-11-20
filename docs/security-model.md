@@ -1648,6 +1648,9 @@ and the short list of what the in-process sandbox cannot give.
 - **The quota is approximate in the safe direction.** Concurrent writes that
   extend one file can each count the growth, so a module can be refused
   before it is really over.
+  The quota counts by the root a path names; a link a module makes between
+  its own declared roots can move bytes between their counts, never past an
+  uncounted root's existing freedom.
 - **A stuck host operation delays a restart by at most 35 s.** After that
   the next start goes ahead and logs what was still running; a late write
   can land in the fresh `/tmp`, or leave the quota count a little off.
