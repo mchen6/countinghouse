@@ -50,7 +50,10 @@ const TABLE = [
   ['findPackageJSON relative', 'works', 'works', 'works', 'not in module'],
   ['findPackageJSON directory base', 'works', 'works', 'works', 'not in module'],
   ['import-fresh absolute', 'works', 'works', 'works', 'works'],
-  ['resolve-from absolute', 'works', 'works', 'works', 'works'],
+  // (single-thread mode answers host paths, development mode; a worker
+  // never names a host path to module code)
+  ['resolve-from absolute', 'works (host path)', 'works', 'works', 'works'],
+  ['resolve-from absolute, missing', 'threw MODULE_NOT_FOUND, named otherwise', 'threw MODULE_NOT_FOUND, as asked', 'threw MODULE_NOT_FOUND, as asked', 'threw MODULE_NOT_FOUND, as asked'],
   ['_resolveFilename relative', 'works', 'works', 'works', 'works'],
   ['source-map-support', 'works', 'works', 'works', 'works'],
   ['source-map-support hookRequire', 'works', 'works', 'no hook', 'threw TypeError'],

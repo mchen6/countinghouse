@@ -88,9 +88,19 @@ const STEPS = {
     const b = fresh(path.join(__dirname, '..', '..', 'lib', 'counter.js'));
     return a !== b && b() === 1 ? 'works' : 'a cached copy';
   },
+  // (answered by the virtual name in a worker, a host path only in
+  // single-thread mode; and a missing one named as it was asked, never by
+  // a host path)
   'resolve-from absolute': () => {
     const found = require('resolve-from')(__dirname, path.join(__dirname, '..', '..', 'lib', 'target'));
-    return /[\\/]target\.js$/.test(found) ? 'works' : 'answered another file';
+    if (found === path.join(__dirname, '..', '..', 'lib', 'target.js')) return 'works';
+    return /[\\/]target\.js$/.test(found) && !found.startsWith(path.join(__dirname, '..', '..')) ? 'works (host path)' : 'answered another file';
+  },
+  'resolve-from absolute, missing': () => {
+    const asked = path.join(__dirname, 'no-such-compat-file');
+    try { require('resolve-from')(__dirname, asked); return 'found'; } catch (e) {
+      return String(e.message).split('\n')[0].includes(asked) ? `${said(e)}, as asked` : `${said(e)}, named otherwise`;
+    }
   },
   '_resolveFilename relative': () => {
     const file = path.join(__dirname, 'library.js');
