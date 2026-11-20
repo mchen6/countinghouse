@@ -53,9 +53,10 @@ describe('auth 60: countinghouse_overview\'s scope on a hosted runtime (B-firstr
       const tools = (await rpc(key, 'tools/list', {})).result.tools.map((t) => t.name);
       return {echo: tools.some((t) => t.startsWith('echo_device_')), composite: tools.some((t) => t.startsWith('composite_demo_'))};
     };
+    // (each by its package name, echo-device-module, not its api.json friendlyName, echo-device)
     const all = await names(ALL);
-    assert.ok(all.includes('echo-device'), JSON.stringify(all));
-    assert.deepStrictEqual(await names(ECHO_ONLY), ['echo-device']);
+    assert.ok(all.includes('echo-device-module') && !all.includes('echo-device'), JSON.stringify(all));
+    assert.deepStrictEqual(await names(ECHO_ONLY), ['echo-device-module']);
     assert.deepStrictEqual(await listedModules(ECHO_ONLY), {echo: true, composite: false}, 'the same scope as its tools/list');
     const none = await overviewOf(NONE);
     assert.deepStrictEqual(none.structuredContent.packs, []);
@@ -69,4 +70,6 @@ describe('auth 60: countinghouse_overview\'s scope on a hosted runtime (B-firstr
     const tools = (await rpc(ALL, 'tools/list', {})).result.tools.map((t) => t.name);
     for (const p of r.structuredContent.packs) for (const t of p.tools) assert.ok(tools.includes(t), `${t} is not in the caller's tools/list`);
   });
+
+  tmp.hooks();
 });

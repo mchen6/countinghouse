@@ -15,7 +15,10 @@ const {startStdio, withoutRedisNoise, INITIALIZE} = require('../helpers/stdio-cl
 const tmp = require('../helpers/test-tmp');
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const SCENARIO = path.join(ROOT, 'test', 'fixtures', 'usage-scenario');
+// (a scenario whose package, @acme-test/overview-scenario, is not its
+// friendlyName: the record and the list name packages)
+const SCENARIO = path.join(ROOT, 'test', 'fixtures', 'overview-scenario');
+const PKG = '@acme-test/overview-scenario';
 
 describe('stdio 49: countinghouse_overview, spawned (B-firstrun)', function() {
   this.timeout(60000);
@@ -25,9 +28,9 @@ describe('stdio 49: countinghouse_overview, spawned (B-firstrun)', function() {
   afterEach(async () => { if (io != null) await io.stop(); io = null; tmp.remove(home); });
 
   const record = () => fs.writeFileSync(path.join(home, 'modules.json'), JSON.stringify({
-    modules: {'usage-scenario': {version: '1.0.0', role: 'scenario'}, 'ch-cred-mod': {version: '1.0.0', role: 'scenario'},
+    modules: {[PKG]: {version: '1.0.0', role: 'scenario'}, 'ch-cred-mod': {version: '1.0.0', role: 'scenario'},
       'ch-off-mod': {version: '1.0.0', role: 'scenario'}, 'ch-other-mod': {version: '1.0.0', role: 'scenario'}},
-    packs: {'pack-usage': {modules: {'usage-scenario': '1.0.0'}}, 'pack-cred': {modules: {'ch-cred-mod': '1.0.0'}},
+    packs: {'pack-usage': {modules: {[PKG]: '1.0.0'}}, 'pack-cred': {modules: {'ch-cred-mod': '1.0.0'}},
       'pack-off': {modules: {'ch-off-mod': '1.0.0'}}, 'pack-other': {modules: {'ch-other-mod': '1.0.0'}}}}));
   const launcher = () => {
     fs.mkdirSync(path.join(home, 'bin'), {recursive: true});
@@ -59,6 +62,9 @@ describe('stdio 49: countinghouse_overview, spawned (B-firstrun)', function() {
     assert.ok(got.result != null && got.result.isError === false, `${JSON.stringify(got)} ${withoutRedisNoise(io.err)}`);
     const by = Object.fromEntries(got.result.structuredContent.packs.map((p) => [p.name, p]));
     assert.strictEqual(by['pack-usage'].state, 'ready');
+    assert.strictEqual(by['pack-usage'].module, PKG);
+    assert.strictEqual(by['pack-usage'].description, 'A scenario for the overview test: its package is @acme-test/overview-scenario.');
+    assert.deepStrictEqual(Object.keys(by).sort(), ['pack-cred', 'pack-off', 'pack-other', 'pack-usage'], 'no module twice: a running pack is not named again by its friendlyName');
     assert.deepStrictEqual(by['pack-usage'].tools.slice().sort(), ['usage_probe', 'usage_reserved'], JSON.stringify(by['pack-usage']));
     assert.deepStrictEqual([by['pack-cred'].state, by['pack-cred'].next], ['not loaded', `In your own terminal run \`node "${L}" credentials add ch-cred-mod\`.`]);
     assert.deepStrictEqual([by['pack-off'].state, by['pack-off'].next], ['off', undefined]);
@@ -91,10 +97,14 @@ describe('stdio 49: countinghouse_overview, spawned (B-firstrun)', function() {
     assert.ok(none.result.content[0].text.includes('No packs are installed.'), none.result.content[0].text);
   });
 
-  it('--heldBackFile without --settingsFile is refused at the start (exit 2), never ignored', () => {
-    const run = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--stdio',
-      '--heldBackFile', path.join(home, 'held-back.json')], {encoding: 'utf8', timeout: 30000, input: ''});
-    assert.strictEqual(run.status, 2, run.stderr);
-    assert.match(run.stderr, /--heldBackFile is only with --settingsFile/);
+  it('--heldBackFile without --settingsFile, or given twice, is refused at the start (exit 2), never ignored', () => {
+    const start = (extra) => spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--stdio',
+      ...extra], {encoding: 'utf8', timeout: 30000, input: ''});
+    const alone = start(['--heldBackFile', path.join(home, 'held-back.json')]);
+    assert.strictEqual(alone.status, 2, alone.stderr);
+    assert.match(alone.stderr, /--heldBackFile is only with --settingsFile/);
+    const twice = start(['--settingsFile', path.join(home, 'settings.json'), '--heldBackFile', path.join(home, 'a.json'), '--heldBackFile', path.join(home, 'b.json')]);
+    assert.strictEqual(twice.status, 2, twice.stderr);
+    assert.match(twice.stderr, /--heldBackFile needs a path/);
   });
 });

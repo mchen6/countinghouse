@@ -140,6 +140,9 @@
         "omitted": {
           "type": "integer"
         },
+        "notice": {
+          "type": "string"
+        },
         "scenarios": {
           "type": "string"
         }

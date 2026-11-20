@@ -17,6 +17,7 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
   describe('the fixed sentences', () => {
     it('word for word, as business passed them', () => {
       const F = overview.FIXED;
+      assert.strictEqual(F.recordUnreadable(null), 'The list of installed packs could not be read: run `ch-local status` in your own terminal.');
       assert.strictEqual(F.none, 'No packs are installed.');
       assert.strictEqual(F.omitted(3), '3 more packs not shown.');
       assert.strictEqual(F.omitted(1), '1 more pack not shown.');
@@ -107,7 +108,7 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
         {launcher: h.launcher}), h.settings);
       assert.deepStrictEqual([...l.modules.entries()], [['@acme/a', {reason: 'credential', root: null, via: null}],
         ['b', {reason: 'calls', root: 'credential', via: 'ch-access-github'}], ['c', {reason: 'off', root: null, via: null}]]);
-      assert.strictEqual(l.launcher, h.launcher);
+      assert.strictEqual(l.launcher, fs.realpathSync.native(h.launcher), 'the real path checked is the one shown');
     });
 
     it('refuses the whole of anything else: never "all ready"', () => {
@@ -118,6 +119,10 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       const linked = path.join(h.dir, 'bin', 'linked');
       fs.mkdirSync(linked);
       fs.symlinkSync(path.join(outside, 'ch-local.js'), path.join(linked, 'ch-local.js'));
+      // (a home whose path a shell would expand, really there, so only the
+      // characters refuse it)
+      fs.mkdirSync(path.join(h.dir, '$(x)', 'bin'), {recursive: true});
+      fs.writeFileSync(path.join(h.dir, '$(x)', 'bin', 'ch-local.js'), '// a launcher under a $(...) directory');
       for (const [label, text] of [
         ['not JSON', '{'], ['another version', JSON.stringify({v: 2, modules: []})],
         ['a name twice', doc([{name: 'a', reason: 'off'}, {name: 'a', reason: 'pin'}])],
@@ -131,21 +136,34 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
         ['a relative launcher', doc([], {launcher: 'bin/ch-local.js'})],
         ['another script', doc([], {launcher: path.join(h.dir, 'bin', 'other.js')})],
         ['a launcher outside the home', doc([], {launcher: path.join(outside, 'ch-local.js')})],
-        ['a launcher linked out of the home', doc([], {launcher: path.join(linked, 'ch-local.js')})]]) {
+        ['a launcher linked out of the home', doc([], {launcher: path.join(linked, 'ch-local.js')})],
+        ['a launcher a shell would expand', doc([], {launcher: path.join(h.dir, '$(x)', 'bin', 'ch-local.js')})]]) {
         assert.throws(() => heldBack.parse(text, h.settings), Error, label);
       }
     });
 
-    it('read from --heldBackFile, beside --settingsFile only; one that cannot be read is empty, and reread says so', () => {
+    describe('read from --heldBackFile', () => {
       const options = require('../../lib/cli-options');
-      const kept = {heldBackFile: options.heldBackFile, settingsFile: options.settingsFile};
-      const h = home();
-      const file = path.join(h.dir, 'held-back.json');
       const LOG = require('../../lib/logger');
-      const realW = LOG.W;
-      LOG.W = () => undefined;
-      try {
+      let kept = null;
+      let realW = null;
+      let h = null;
+      let file = null;
+      before(() => {
+        kept = {heldBackFile: options.heldBackFile, settingsFile: options.settingsFile};
+        realW = LOG.W;
+        LOG.W = () => undefined;
+        h = home();
+        file = path.join(h.dir, 'held-back.json');
         Object.assign(options, {settingsFile: h.settings, heldBackFile: file});
+      });
+      after(() => {
+        LOG.W = realW;
+        Object.assign(options, kept);
+        heldBack.resetForTests();
+      });
+
+      it('beside --settingsFile only; one that cannot be read is empty, and reread says so', () => {
         fs.writeFileSync(file, doc([{name: 'a', reason: 'credential'}]));
         heldBack.resetForTests();
         assert.deepStrictEqual([...heldBack.list().modules.keys()], ['a']);
@@ -155,13 +173,28 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
         fs.writeFileSync(file, doc([{name: 'b', reason: 'off'}]));
         assert.deepStrictEqual(heldBack.reread(), {});
         assert.deepStrictEqual([...heldBack.list().modules.keys()], ['b']);
-        Object.assign(options, {heldBackFile: null});
-        assert.throws(() => heldBack.reread(), (e) => e.code === 'CONTROL_FAILED');
-      } finally {
-        LOG.W = realW;
-        Object.assign(options, kept);
-        heldBack.resetForTests();
-      }
+        const was = options.heldBackFile;
+        options.heldBackFile = null;
+        try { assert.throws(() => heldBack.reread(), (e) => e.code === 'CONTROL_FAILED'); } finally { options.heldBackFile = was; }
+      });
+    });
+  });
+
+  // (the medium on B-firstrun, 2) each pack's own scenario, by the record's rule
+  describe('the install record (settings-tool installedPacks)', () => {
+    it('each pack gets its own scenario, never another pack\'s; one that cannot be read is said apart from none', () => {
+      const settingsTool = require('../../lib/settings-tool');
+      const dir = tmp.mkdtemp('ch-mcp-42-');
+      fs.writeFileSync(path.join(dir, 'modules.json'), JSON.stringify({
+        modules: {'ch-access-github': {version: '1.0.0', role: 'part'}, 'ch-ci-triage': {version: '1.0.0', role: 'scenario'}},
+        packs: {'pack-a': {modules: {'ch-access-github': '1.0.0', 'ch-ci-triage': '1.0.0'}}, 'pack-b': {modules: {'ch-access-github': '1.0.0'}}}}));
+      assert.deepStrictEqual(settingsTool.installedPacks(dir), [{pack: 'pack-a', scenario: 'ch-ci-triage'}, {pack: 'pack-b', scenario: 'ch-access-github'}]);
+      assert.strictEqual(settingsTool.installedPacks(tmp.mkdtemp('ch-mcp-42-')), null, 'no record');
+      fs.writeFileSync(path.join(dir, 'modules.json'), '{');
+      assert.strictEqual(settingsTool.installedPacks(dir), settingsTool.UNREADABLE);
+      const said = overview.build({version: '1', settingsProfile: true, packs: [], recordUnreadable: true});
+      assert.strictEqual(said.data.notice, overview.FIXED.recordUnreadable(null));
+      assert.ok(!said.text.includes(overview.FIXED.none), 'an unreadable record is never "nothing installed"');
     });
   });
 
