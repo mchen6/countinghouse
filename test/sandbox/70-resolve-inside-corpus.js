@@ -267,6 +267,20 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
     assert.strictEqual(r.resolve(`lm${i}`, path.join(root, 'index.js'), () => true).refuse, true);
   });
 
+  // (a package.json read that fails -- the stat said a file -- is none for
+  // now, asked again, never kept as none, even where misses are kept)
+  it('a package.json read that failed is asked again, not kept as none', () => {
+    let fail = true;
+    const r = createResolver({root, insideRoot: (p) => p === root || p.startsWith(`${root}${path.sep}`),
+      stat: (p) => { try { return fs.statSync(p).isDirectory() ? 1 : 0; } catch (e) { return -2; } },
+      readText: (p) => { if (fail && p.endsWith(`lm0${path.sep}package.json`)) return null; try { return fs.readFileSync(p, 'utf8'); } catch (e) { return null; } },
+      isBuiltin: Module.isBuiltin, keepMisses: () => true});
+    const parent = path.join(root, 'index.js');
+    assert.strictEqual(r.resolve('lm0', parent, () => true).refuse, true, 'refused while its read fails');
+    fail = false;
+    assert.ok(typeof(r.resolve('lm0', parent, () => true).url) === 'string', 'resolved once it reads');
+  });
+
   for (const [label, conditions] of CONDITIONS) {
     it(`every case answers as Node does, conditions ${label}`, () => {
       const node = nodeAnswers(conditions);

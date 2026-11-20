@@ -156,7 +156,12 @@ needs worker mode; without it the mode is `off`. countinghouse 8 needs Node
 22.16 or later. Below 24.15 a compatibility shim routes `require.resolve`
 through the sandbox's hooks (`lib/resolve-shim.js`); multi-tenant hosting of
 third-party modules should run 24.15 or later, where Node's own hook covers
-it.
+it. Below 24.15 the hooks, and a `#` name a `require` resolves under
+`enforce`, see Node's default CommonJS conditions (`require`, `node`,
+`node-addons`, `module-sync`): a process run with `--conditions`,
+`--no-addons` or `--no-experimental-require-module` resolves an
+`"imports"` entry keyed on those as the default list picks it, still inside
+the module's root.
 
 | | `off` | `audit` (default) | `enforce` |
 |---|---|---|---|
