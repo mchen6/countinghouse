@@ -17,7 +17,10 @@ const {redisUrlFor} = require('../helpers/test-env');
 const options = require('../../lib/cli-options');
 // set again before this file's tests: a folder run requires every file first
 const OPTIONS = {redisUrl: redisUrlFor(), debug: true, listPageSize: 250};
-options.setOptions(OPTIONS);
+// (set in the describe's before(), the process's put back in its after():
+// never at load, which every file of a folder run would see -- B-loadopts)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
+let keptOptions = null;
 require('../../lib/logger').createLogger();
 const gateway = require('../../lib/mcp/gateway');
 const icons = require('../../lib/declared-icons');
@@ -50,7 +53,8 @@ const action = (name, extra = {}) => Object.assign({name, description: `${name} 
 
 describe('mcp-contract 22: tool metadata on tools/list (M2)', function() {
   this.timeout(30000);
-  before(() => options.setOptions(OPTIONS));
+  before(() => { keptOptions = optionsNow(); options.setOptions(OPTIONS); });
+  after(() => { restoreOptions(keptOptions); });
 
   describe('the icons a load keeps (declared-icons inline)', () => {
     it('reads each declared file once, as {mimeType, data, src}', () => {

@@ -30,7 +30,10 @@ fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']},
 const options = require('../../lib/cli-options');
 // set again before this file's tests: a folder run requires every file first
 const OPTIONS = {redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10, workerThread: true};
-options.setOptions(OPTIONS);
+// (set in the describe's before(), the process's put back in its after():
+// never at load, which every file of a folder run would see -- B-loadopts)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
+let keptOptions = null;
 require('../../lib/logger').createLogger();
 const gateway = require('../../lib/mcp/gateway');
 const {encodeLegacyTool} = require('../../lib/metering/provider');
@@ -143,6 +146,7 @@ describe('mcp-contract 26: module resources (M7)', function() {
   const warnings = [];
   let warnReal = null;
   before(() => {
+    keptOptions = optionsNow();
     options.setOptions(OPTIONS);
     const LOG = require('../../lib/logger');
     warnReal = LOG.W;
@@ -163,6 +167,7 @@ describe('mcp-contract 26: module resources (M7)', function() {
     if (provider != null) Object.assign(provider, real);
     if (usageReal != null) Object.assign(require('../../lib/usage/runtime').usage(), usageReal);
     fs.rmSync(home, {recursive: true, force: true});
+    restoreOptions(keptOptions);
   });
 
   for (const modern of [false, true]) {

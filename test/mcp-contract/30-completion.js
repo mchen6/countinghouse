@@ -25,7 +25,10 @@ fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']},
 const options = require('../../lib/cli-options');
 // set again before this file's tests: a folder run requires every file first
 const OPTIONS = {redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10};
-options.setOptions(OPTIONS);
+// (set in the describe's before(), the process's put back in its after():
+// never at load, which every file of a folder run would see -- B-loadopts)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
+let keptOptions = null;
 require('../../lib/logger').createLogger();
 const gateway = require('../../lib/mcp/gateway');
 const moduleSpec = require('../../lib/module-spec');
@@ -112,6 +115,7 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
   beforeEach(() => gateway.resetCompletionFloor());
   after(() => gateway.resetCompletionFloor());
   before(async () => {
+    keptOptions = optionsNow();
     options.setOptions(OPTIONS);
     const FileAuthProvider = require('../../lib/auth/file-provider');
     const own = new FileAuthProvider({configPath: AUTH});
@@ -125,6 +129,7 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
     require('../../lib/validator-pool').closeShared();
     if (provider != null) Object.assign(provider, real);
     fs.rmSync(home, {recursive: true, force: true});
+    restoreOptions(keptOptions);
   });
   afterEach(() => { limited = false; });
 
