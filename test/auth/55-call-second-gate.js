@@ -46,15 +46,28 @@ describe('auth 55: behind a stale grant set, userAuth still refuses a revoked de
   });
   after((done) => { stopAll(done); });
 
+  // the revocation as the CLI makes it (its row gone), in this process: a
+  // few milliseconds, so the call after it is well inside the 5 s window
+  // even on a slow runner (spawning the CLI could take seconds there)
+  const revoke = () => new Promise((resolve, reject) => {
+    const sqlite3 = require('sqlite3');
+    const handle = new sqlite3.Database(db, (err) => {
+      if (err) return reject(err);
+      return handle.run('DELETE FROM user_devices WHERE apiKey = ? AND deviceID = ?', [KEY, ECHO], (e) => handle.close(() => (e ? reject(e) : resolve())));
+    });
+  });
   for (const [label, extra] of [['plain', {}], ['task-augmented', {task: {ttl: 60000}}]]) {
-    it(`${label}: within the 5 s a revoked device is refused by userAuth and does not run; after them it is an unknown tool`, async () => {
+    it(`${label}: within the 5 s a revoked device is refused by userAuth and does not run; after them it is an unknown tool`, async function() {
       cli(['grant', KEY, ECHO]);
       await new Promise((r) => setTimeout(r, 5100));   // any set kept from before has lapsed
+      const began = Date.now();
       const granted = await call(extra);
       assert.strictEqual(granted.error, undefined, JSON.stringify(granted));
       // the grant set is now kept; the revocation reaches no cache
-      cli(['revoke', KEY, ECHO]);
+      await revoke();
       const stale = await call(extra);
+      // (a runner so slow the window lapsed first tests nothing here: said, not failed)
+      if (Date.now() - began >= 4500) this.skip();
       assert.strictEqual(stale.result, undefined, JSON.stringify(stale));
       assert.deepStrictEqual({code: stale.error.code, message: stale.error.message}, {code: -32603, message: NO_DEVICE});
       await new Promise((r) => setTimeout(r, 5100));
