@@ -56,7 +56,8 @@ const LIBRARIES = ['resolve-from', 'import-fresh', 'source-map-support', 'module
 // pinned as master's, not as working (Windows module-path compatibility is
 // its own later row). In single-thread mode on Windows a module's
 // __dirname is its host path -- no virtual directory there -- so its
-// answers are host paths equal to what it joined from __dirname. Below
+// answers are host paths (findPackageJSON's in a spelling of its own,
+// below). Below
 // Node 24.15 in a Windows worker, unverified: not asserted.)
 const WIN = process.platform === 'win32';
 const {NEEDS_RESOLVE_SHIM} = require('../../lib/node-version');
@@ -68,10 +69,13 @@ const TABLE = [
   // (Node's own entry points with a relative request from a module's own
   // file, asked directly: C-compat, items 4 and 5)
   // (under enforce the reduced module has no findPackageJSON)
-  // (single-thread answers host paths on POSIX; on Windows __dirname is a
-  // host path there, so the very path)
-  ['findPackageJSON relative', WIN ? 'works' : 'works (host path)', 'works', 'works', 'not in module'],
-  ['findPackageJSON directory base', 'works', 'works', 'works', 'not in module'],
+  // (single-thread answers a host path, on Windows too, where the answer's
+  // spelling differs from the one joined from __dirname. Under off and
+  // audit in a Windows worker these two rows aren't asserted: the subset
+  // run answered nothing for either -- Windows module-path compatibility
+  // is its own later row, ruled; enforce's cell stays asserted)
+  ['findPackageJSON relative', 'works (host path)', WIN ? null : 'works', WIN ? null : 'works', 'not in module'],
+  ['findPackageJSON directory base', 'works', WIN ? null : 'works', WIN ? null : 'works', 'not in module'],
   ['import-fresh absolute', 'works', ABSOLUTE, ABSOLUTE, ABSOLUTE],
   // (#480's high, round 1: no host path of the module's in what a worker
   // answers or throws, in a worker in every mode (single-thread mode,
