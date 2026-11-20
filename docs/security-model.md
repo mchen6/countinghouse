@@ -1452,8 +1452,72 @@ fails if it is removed:
 | Progress | 4 a second and 240 per call | mcp-contract 10 (progress) |
 | Cancellation | a request of the caller's own connection or session only; an unknown id ignored; no answer and no error text | mcp-contract 18, 19 |
 | Every read, get, completion and task method | the per-key rate limit, once the key resolves and before any lookup | auth 15, mcp-contract 24, 26, 30, 09 |
-| `tools/call` | the per-key rate limit (and `--globalRateLimit`) on the call's run, after its one answer for a tool the caller can't see is decided; the key's resolution and grant read before it are not limited, as no limiter exists for a key that does not resolve (registered after the first release) | auth 15 (a built-in), mcp-contract 37 (a task); auth 54 the order |
+| `tools/call` | the per-key rate limit (and `--globalRateLimit`) on the call's run, after its one answer for a tool the caller can't see is decided; a key that does not resolve is limited per address before its resolution (below) | auth 15 (a built-in), mcp-contract 37 (a task); auth 54 the order |
+| A key that does not resolve | `--unauthRateLimit` (30) lookups per client address (IPv6 by its /64) per minute, counted per lookup (a batch's each) and while in flight, kept unless the key resolved; ten times that per wider prefix (IPv6 /48, IPv4 /24), a hundred times that across the process, all three always; only the request's own lookups, while it is answered and of a key it carried; then 429 `UNAUTH_RATE_LIMITED` with `Retry-After`, before any auth lookup, the same answer whatever the key and whatever is named (within a request already under way: that error, no lookup; on `/mcp` -32000 with the code in data); 10,000 addresses kept, the least recently counted out first | auth 59 |
 | The grant sets `tools/call` is answered by | a known key's only, kept by a digest of the key; at most 5 s old, refreshed by every list's read, all cleared by an auth reload; 1024 keys, the one written longest ago out first; a failed read never kept | mcp-contract 40, auth 54 |
+
+**Requests whose key doesn't resolve.** Without a limit, a loop of requests
+with made-up keys cost one auth-provider lookup each, and nothing slowed it:
+the per-key and global limits only begin once a key resolves. Now every
+HTTP request carries its client's address (the socket's, or, behind a proxy
+named with `--trustProxy`, the client `X-Forwarded-For` names; every
+spelling of one address -- case, the IPv4-mapped forms, brackets, a port, a
+zone -- is one client) to the one place a key is looked up (`/device-list`
+resolves its key there too). Each lookup takes a place in the address's
+budget while it is in flight, so requests sent at once cannot all pass
+before any is counted, and keeps it unless the key resolved (a known key,
+with the device or without it); anything else counts, a provider's failure
+or a code the runtime doesn't know included. Past `--unauthRateLimit` a
+minute, that address is answered 429 before anything is done for it, and a
+lookup a request under way would make (the next message of a legacy batch)
+is not made; every route answers it alike (429, `Retry-After`, the code; on
+`/mcp` the JSON-RPC error -32000 with the code in its data).
+
+Only the request's own lookups count against its address: those it makes
+until its answer is sent -- or, when the connection closes first (a client
+that drops it mid-batch), for one more minute -- of a key it carried, or
+with no key when the route read none. A job a request queues runs outside
+it. A module's worker or a
+validator started while a request is served is started outside it, and a
+change notice's re-listing for another subscriber is another key's; neither
+is counted against, or refused for, the request that happened to start it.
+
+Three limits apply to every lookup at once, with no switch between them:
+the address (an IPv6 /64, an IPv4 address) at `--unauthRateLimit`; its
+wider prefix (an IPv6 /48, an IPv4 /24) at ten times that; and the process
+at a hundred times that. A spray over many addresses of one network is held
+by the prefix limit, and a spray over many networks by the process limit, so
+however many addresses a client cycles through, and however the table of
+windows (10,000 of each, kept for memory only) pushes old ones out, the
+lookups it costs stay bounded. A key that resolved in the last ten minutes
+passes all three. The accepted cost: under a spray wide enough to fill the
+process limit, a client whose key has not resolved in the last ten minutes
+-- a new one, or every one after a restart -- waits until it ebbs.
+
+`--trustProxy` belongs only behind a proxy you control: otherwise
+`X-Forwarded-For` is the client's to forge, and each forged value would get
+its own budget. A hop count is right only when it is the real number of
+proxies (one more, and the client's own entry is believed); more than 10
+hops is refused, and so is any list whose ranges together cover more than
+an IPv4 /8 or an IPv6 /32 of public addresses, however spelled (an
+IPv4-mapped form, several narrower ranges). The private ranges, by
+Express's names (`loopback`, `linklocal`, `uniquelocal`) or as ranges inside
+them (`10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`), are not counted: no client
+on the internet has a socket address in them.
+
+A key that resolved in the last ten minutes, from any address (its digest
+is kept, never the key), still passes, so a user behind a shared address is
+not shut out by another's bad requests, and it is still looked up as any
+key is; a key refused since (revoked) leaves the set at once, though not
+for a provider that failed to answer. A valid key not resolved in the last
+ten minutes is counted like any other while its lookup is in flight, so
+more than the budget's worth of its requests at once from one address, or
+its first request from an address others have put over budget, waits too.
+API keys are
+high-entropy: this bounds the provider's load, it is not brute-force
+protection, and it is not what keeps a key from being guessed. In memory,
+per process: several runtimes each allow their own budget. `--stdio` and
+`--sessionSocket` are local and authenticated, and are not limited.
 
 A module resource read takes its token from the call path, after the
 listing lookup that finds its action: a probe of a URI that reads nothing

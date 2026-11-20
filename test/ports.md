@@ -23,6 +23,7 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9770–9779 | C (2026-11-17) |
 | 9790–9799 | B (2026-11-14) |
 | 9800–9809 | A: kind caller, usage 24 (2026-11-19) |
+| 9820–9829 | B (2026-11-20) |
 | 10840–10849 | C: run-local with CH_TEST_PORT_BASE=10840, its servers and its private Redis (10849) (2026-11-16) |
 
 ## By file
@@ -70,6 +71,7 @@ one) as well as the ports it binds.
 | `test/auth/57-server-id.js` | none (in-process) |
 | `test/auth/58-pre8-device-grants.js` | 9675, 9676 |
 | `test/auth/58-pre8-device-grants.js` | 9675, 9676, 9677 |
+| `test/auth/59-unauth-limit.js` | 9822, 9823, 9824, 9825 |
 | `test/benchmark/test001.js` | 9527 |
 | `test/benchmark/test002.js` | 9527 |
 | `test/composition/02-ctx-call.js` | 9556–9557, 9560 |
