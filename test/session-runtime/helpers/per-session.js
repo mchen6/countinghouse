@@ -129,4 +129,15 @@ function outOf(res) {
 const counts = (r) => ({up: (r.log().match(/a session's worker is up/g) || []).length, ended: (r.log().match(/a session's worker ended/g) || []).length});
 
 
-module.exports = {ROOT, FIXTURE, NAME, RESET, tick, until, perSession, caller, runtime, secretOf, request, texts, outOf, counts, shim};
+// The runtime's own 'listening' tell (after its start's checks), not its
+// socket file and secret: a first connect raced those (ECONNREFUSED), the
+// flake seen four times on 11-17. r: a spawner's record that keeps what the
+// runtime tells unasked (r.told) and its exit code (r.code). -> its secret
+// once it listens; null if it exited first or never said so (the caller
+// fails then, with the runtime's own output, never a connect refused)
+const listening = async(r) => {
+  await until(async() => (r.told.some((m) => m.type === 'listening') && secretOf(r) != null) || r.code !== undefined);
+  return r.code === undefined && r.told.some((m) => m.type === 'listening') ? secretOf(r) : null;
+};
+
+module.exports = {ROOT, FIXTURE, NAME, RESET, tick, until, perSession, caller, runtime, secretOf, request, texts, outOf, counts, shim, listening};

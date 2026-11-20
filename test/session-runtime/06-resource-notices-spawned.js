@@ -14,6 +14,8 @@ const path = require('path');
 const {spawn} = require('child_process');
 const handshake = require('../../lib/session-transport/handshake');
 const shim = require('../session-transport/helpers/shim');
+// (one copy: the runtime's listening tell, null if it exited first)
+const {listening} = require('./helpers/per-session');
 
 const ROOT = path.join(__dirname, '..', '..');
 const FRAMEWORK = path.join(ROOT, 'framework.js');
@@ -56,20 +58,22 @@ function runtime(home, args) {
     '--sessionSocket', socket, '--settingsFile', path.join(home, 'settings.json'), ...args],
   {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: '',
     NODE_OPTIONS: `--require ${path.join(__dirname, '..', 'fixtures', 'session-elicitation-preload.js')}`})});
-  const r = {child, socket, run, err: ''};
+  const r = {child, socket, run, err: '', told: []};
   const replies = new Map();
   let nextControl = 1;
   r.control = (msg) => new Promise((resolve) => { const id = nextControl++; replies.set(id, resolve); child.send(Object.assign({}, msg, {id})); });
   child.on('message', (m) => {
     if (m == null) return undefined;
     if (m.type === 'ready') child.send({id: 'restore-1', type: 'restore', sessions: [], declines: [], reset: []});
+    // (what the runtime tells unasked: its 'listening', among others)
+    if (m.id === undefined && m.type !== 'ready') r.told.push(m);
     const f = replies.get(m.id);
     if (f != null) { replies.delete(m.id); return f(m); }
     return undefined;
   });
   child.stderr.on('data', (d) => { r.err += d; });
   child.stdout.on('data', (d) => { r.err += d; });
-  r.exited = new Promise((res) => child.on('exit', (code, signal) => res({code, signal})));
+  r.exited = new Promise((res) => child.on('exit', (code, signal) => { r.code = code; res({code, signal}); }));
   child.on('error', () => {});
   return r;
 }
@@ -121,7 +125,7 @@ describe('session-runtime 06: resources/updated reaches only the sessions whose 
     fs.rmSync(home, {recursive: true, force: true});
   });
   const open = async() => {
-    await until(async() => fs.existsSync(r.socket) && secretOf(r) != null);
+    assert.ok(await listening(r) != null, `the runtime is not listening (exit ${r.code}): ${(r.err || '').slice(-1500)}`);
     try { return session((await shim.session(r.socket, secretOf(r))).c); } catch (e) { throw new Error(`${e.message}\n${r.err.slice(-2000)}`); }
   };
   const tools = async(s) => {
