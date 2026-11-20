@@ -335,7 +335,9 @@ describe('module-loading 24: the validator pool', function() {
     it('in a shared runtime, session A\'s inputs stalling 3 times throttle session A on the module; session B of the same caller is not throttled', async () => {
       const sessions = require('../../lib/sessions');
       const p = newPool();
-      sessions.attach(new (require('events'))());
+      // (shared mode alone: attach would wire hooks no reset undoes, for the
+      // files after this one in the folder's process)
+      sessions.sharedForTests(true);
       try {
         const A = sessions.validationCallerOf('u_local', 's-a');
         const B = sessions.validationCallerOf('u_local', 's-b');
@@ -350,8 +352,12 @@ describe('module-loading 24: the validator pool', function() {
         await blocked(p, A, m);
         assert.strictEqual(codeOf(await checkFrom(p, m, [1], A)), 'VALIDATION_CALLER_THROTTLED', 'session A');
         assert.strictEqual(await checkFrom(p, m, [1], B), null, 'session B, the same caller');
+        // its end takes its entries with it (sessions.close: forgetSession)
+        p.forgetSession('s-a');
+        assert.ok(![...p.callerStalls.keys(), ...p.callerBlocked.keys(), ...p.callerStalledAt.keys()].some((k) => k.startsWith(A)), 'session A\'s entries gone');
+        assert.strictEqual(await checkFrom(p, m, [1], A), null, 'session A\'s key is free again');
       } finally {
-        sessions.resetForTests();
+        sessions.sharedForTests(false);
         p.close();
       }
     });
@@ -364,17 +370,25 @@ describe('module-loading 24: the validator pool', function() {
       assert.strictEqual(sessions.validationCallerOf(null, 's-a'), null);
     });
 
-    // (a static pin: the two places a validation's caller is taken -- every
-    // call, hop and job run through sendCounted, and prompts/get's arguments
-    // -- take it through validationCallerOf with the call's session)
-    it('every validation\'s caller is keyed through validationCallerOf with its session: sendCounted and prompts/get', () => {
+    // (a static pin: the places a validation's caller is taken -- every
+    // call, routed hop and job run through sendCounted, each with its own
+    // session; a direct peer-channel hop; prompts/get's arguments -- take it
+    // through validationCallerOf with the call's session)
+    it('every validation\'s caller is keyed through validationCallerOf with its session: sendCounted (its three sends), the peer hop, prompts/get', () => {
       const fs = require('fs');
       const path = require('path');
-      const dm = fs.readFileSync(path.join(__dirname, '..', '..', 'lib', 'device-manager.js'), 'utf8');
+      const lib = (...p) => fs.readFileSync(path.join(__dirname, '..', '..', 'lib', ...p), 'utf8');
+      const dm = lib('device-manager.js');
       assert.match(dm, /const caller = \(message != null && typeof\(message\.caller\) === 'string'\) \? sessionsLib\(\)\.validationCallerOf\(message\.caller, session\) : null;/);
-      const gw = fs.readFileSync(path.join(__dirname, '..', '..', 'lib', 'mcp', 'gateway.js'), 'utf8');
-      assert.match(gw, /promptsLib\.checkArguments\(entry, args, sessionsLib\(\)\.validationCallerOf\(caller, sessionIdOf\(opts\)\)\)/);
+      assert.strictEqual((dm.match(/\bsendCounted\(/g) || []).length, 4, 'its definition and three sends');
+      // each send's session: the hop's token's, the job run's, the call's
+      for (const tail of [/\}, tokenEntry\.session, this\.deadline, settingsDM\);/, /\}, runSession, \(timeoutMs != null\)/, /\}, this\.sessionId, this\.deadline, settingsDM\);/]) assert.match(dm, tail);
+      assert.match(lib('peer-channel-broker.js'), /const caller = sessionsLib\(\)\.validationCallerOf\(deviceManagerLib\(\)\.hopCallerOf\(entry\.callerWM, tokenEntry\.billingKey\), tokenEntry\.session\);/);
+      const gw = lib('mcp', 'gateway.js');
+      assert.match(gw, /promptsLib\.checkArguments\(entry, args, sessionsLib\(\)\.validationCallerOf\(caller, session\)\)/);
       assert.strictEqual((gw.match(/checkArguments\(/g) || []).length, 1, 'one prompts/get check');
+      // nothing else hands the pool a caller
+      for (const f of ['module-spec.js', 'mcp/prompts.js']) assert.ok(!/callerIdOf\(|hopCallerOf\(/.test(lib(...f.split('/'))), f);
     });
 
     // the review of #321: a prompts/get's arguments are an input like a
