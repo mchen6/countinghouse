@@ -16,7 +16,7 @@ const path = require('path');
 const request = require('supertest');
 const {Queue} = require('bullmq');
 const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
-const {testPort, redisConnectionFor} = require('../helpers/test-env');
+const {testPort, redisConnectionFor, redisUrlFor} = require('../helpers/test-env');
 const {prefixFor} = require('../helpers/job-queue');
 const {deviceIDForName} = require('../../lib/call-address');
 const tmp = require('../helpers/test-tmp').forFile(['ch-auth-56-']);
@@ -32,6 +32,10 @@ const RUNTIMES = {
 // seeded here at least)
 const LEGACY_SAID = /job queue: (\d+) jobs? and \d+ schedulers? under the old shared prefix \{cdifJob\} were not moved to this server's queue, and (?:at least )?(\d+) job histor(?:y|ies) under the old jobinfo:<name> keys are not read/g;
 const LEGACY_HISTORY = `jobinfo:legacy-56-${process.pid}`;
+const LEGACY_NONE = 'countinghouse:legacy-jobs-none';
+const PORT_C = testPort(9674);
+// the store's job clients (lib/store.js jobClients) on a Redis of the test's
+const clientsOn = (redisUrl) => require('../../lib/store').createStore({store: 'redis', redisUrl}).jobClients;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 describe('auth 56: each runtime\'s job queue is its own (B-j1)', function() {
@@ -46,6 +50,8 @@ describe('auth 56: each runtime\'s job queue is its own (B-j1)', function() {
     legacyJob = await legacy.add(`legacy-56-${process.pid}`, {left: true});
     kv = new (require('ioredis'))(redisConnectionFor(5));
     await kv.lpush(LEGACY_HISTORY, JSON.stringify({job: {name: 'legacy-56'}, state: 'completed'}));
+    // (a start before this file that found nothing left its flag: this one looks)
+    await kv.del(LEGACY_NONE);
     for (const r of Object.values(RUNTIMES)) {
       const dir = tmp.mkdtemp('ch-auth-56-');
       const auth = path.join(dir, 'auth.json');
@@ -110,6 +116,19 @@ describe('auth 56: each runtime\'s job queue is its own (B-j1)', function() {
     }
   });
 
+  it('a start with a copied .server-id, while the server it was copied from runs, is refused (exit 2), naming the fix (round 2, 3)', async () => {
+    const dir = tmp.mkdtemp('ch-auth-56-');
+    const auth = path.join(dir, 'auth.json');
+    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'k', devices: ['*']}}));
+    const dataDir = path.join(dir, 'store');
+    fs.mkdirSync(dataDir, {recursive: true, mode: 0o700});
+    fs.writeFileSync(path.join(dataDir, '.server-id'), fs.readFileSync(path.join(RUNTIMES.a.dataDir, '.server-id')), {mode: 0o600});
+    const c = await startServer(PORT_C, ['--workerThread', '--authProvider', 'file', '--authConfigPath', auth,
+      '--moduleDataPath', dataDir, '--loadModule', RUNTIMES.b.module], {expectExit: true});
+    assert.strictEqual(c.exitCode, 2, c.output.slice(-2000));
+    assert.match(c.output, /another server is using this data directory's server id \(.*\.server-id\): .* pid \d+ \(since .*\) holds its claim on Redis; give each server its own --moduleDataPath/);
+  });
+
   it('a job left under the old shared prefix, and an unscoped history, are said once by each start, and left where they are', async () => {
     // (said once its counts are read, after the start: waited for)
     const once = new RegExp(LEGACY_SAID.source);
@@ -142,7 +161,58 @@ describe('auth 56: the old prefix\'s count, when Redis does not answer', functio
     const net = require('net');
     const port = await new Promise((resolve) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); }); });
     const JobControl = require('../../lib/job-control');
-    assert.strictEqual(await JobControl.countLegacy({host: '127.0.0.1', port, db: 11}), false);
+    assert.strictEqual(await JobControl.countLegacy(clientsOn(`redis://127.0.0.1:${port}`)), false);
     assert.ok(said.some((m) => /could not be counted .*; none of it is moved or read/.test(m)), JSON.stringify(said));
+  });
+});
+
+// The claim itself (lib/server-claim.js), on this file's Redis.
+describe('auth 56: one live runtime per server id (round 2, 3)', function() {
+  this.timeout(30000);
+  const os = require('os');
+  const {claim, keyFor} = require('../../lib/server-claim');
+  let kv = null;
+  const prefix = `{chj-${crypto.randomBytes(8).toString('hex')}}`;
+  before(() => { kv = new (require('ioredis'))(redisConnectionFor(11)); });
+  after(async () => { if (kv != null) { await kv.del(keyFor(prefix)).catch(() => {}); kv.disconnect(); } });
+
+  it('a claim left by a process of this host that is gone is taken over', async () => {
+    const dead = require('child_process').spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], {encoding: 'utf8'});
+    const pid = Number(dead.stdout);
+    await kv.set(keyFor(prefix), JSON.stringify({host: os.hostname(), pid, nonce: 'gone', since: 'then'}), 'PX', 30000);
+    const c = claim(clientsOn(redisUrlFor()), prefix, {onRefused: () => assert.fail('refused')});
+    await c.held;
+    assert.strictEqual(JSON.parse(await kv.get(keyFor(prefix))).pid, process.pid);
+    await c.stop();
+    assert.strictEqual(await kv.get(keyFor(prefix)), null, 'released at stop');
+  });
+
+  it('one held by a live holder elsewhere refuses, naming it', async () => {
+    const other = {host: `elsewhere-${process.pid}`, pid: 1, nonce: 'live', since: 'now'};
+    await kv.set(keyFor(prefix), JSON.stringify(other), 'PX', 30000);
+    const refused = await new Promise((resolve) => { claim(clientsOn(redisUrlFor()), prefix, {onRefused: resolve}); });
+    assert.deepStrictEqual(refused, other);
+    assert.deepStrictEqual(JSON.parse(await kv.get(keyFor(prefix))), other, 'left as it was');
+  });
+
+  it('a count that found nothing before is not made again: the flag in the kv stops the look', async () => {
+    const LOG = require('../../lib/logger');
+    const saved = {W: LOG.W, E: LOG.E};
+    const said = [];
+    Object.assign(LOG, {W: (m) => said.push(String(m)), E: () => {}});
+    const kv5 = new (require('ioredis'))(redisConnectionFor(5));
+    const legacy = new Queue('job-queue', {prefix: '{cdifJob}', connection: redisConnectionFor(11)});
+    const job = await legacy.add(`legacy-56f-${process.pid}`, {left: true});
+    try {
+      await kv5.set(LEGACY_NONE, 'set by this test');
+      assert.strictEqual(await require('../../lib/job-control').countLegacy(clientsOn(redisUrlFor())), true);
+      assert.deepStrictEqual(said, []);
+    } finally {
+      Object.assign(LOG, saved);
+      await kv5.del(LEGACY_NONE);
+      kv5.disconnect();
+      await job.remove().catch(() => {});
+      await legacy.close();
+    }
   });
 });
