@@ -26,8 +26,9 @@ data directory, or a directory copied with its `.server-id`) is refused,
 exit 2, saying so, before it serves; one whose holder has ended, or stops
 renewing for a heartbeat, is taken over. A `--stdio` runtime is one
 session: its queue is its process's own (`{chj-<server id>-<8 hex>}`), and
-it makes no claim, so several on one data directory run side by side. Its job history is its own too, under
-`jobinfo:{chj-<server id>}:<name>`. Jobs and schedulers left under
+it makes no claim, so several on one data directory run side by side, and
+keeps no job history (nothing could read it). A server's job history is its
+own too, under `jobinfo:{chj-<server id>}:<name>`. Jobs and schedulers left under
 `{cdifJob}`, and the history kept under the old unscoped `jobinfo:<name>`
 keys, are not moved or read: a start counts them read-only, says how many in
 one line, once, and leaves them. Old job history is not carried over.

@@ -691,7 +691,8 @@ says how to write a module for this.
   `{cdifJob}`, are not moved: the start logs how many, once, and leaves them;
   re-create any you still want once no older runtime serves that prefix.
 - **Old job history is not carried over.** A job's history is now the
-  server's own (`jobinfo:{chj-<server id>}:<name>`); the lists 7.x kept under
+  server's own (`jobinfo:{chj-<server id>}:<name>`; a `--stdio` runtime
+  without `--port` keeps none); the lists 7.x kept under
   `jobinfo:<name>` are not read (the start's line counts them). Purge them as
   below once no older runtime uses them.
 - **The module registry is opt-in: `--moduleRegistry`.** A start with no
@@ -848,7 +849,7 @@ examples show the shape.
   URI-encoded module name), and new records name their owner by the caller id, but the old
   lists stay until removed:
   `redis-cli -n 5 --scan --pattern 'jobinfo:*' | grep -v '^jobinfo:{chj-' | while IFS= read -r k; do redis-cli -n 5 del "$k"; done`
-  (8.0's own lists, `jobinfo:{chj-<server id>}:<name>`, are kept; a 7.x
+  (8.0's own lists, `jobinfo:{chj-...}:<name>`, are kept; a 7.x
   job's history is gone).
 - A module still reads files and environment outside its namespace under
   `--moduleSandbox audit` and `off` (the always-denied set aside), so keys

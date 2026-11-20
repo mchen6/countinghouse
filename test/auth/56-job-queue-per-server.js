@@ -315,13 +315,17 @@ describe('auth 56: two --stdio runtimes on one data directory and one Redis', fu
       assert.doesNotMatch(io.err, /another server is using/);
     }
     // two queues, the server id's and each process's suffix
-    const id = fs.readFileSync(path.join(home, 'module_data', '.server-id'), 'utf8');
+    const id = require('../../lib/server-id').read({moduleDataPath: path.join(home, 'module_data')});
+    assert.match(String(id), /^[0-9a-f]{16}$/);
     const kv11 = new (require('ioredis'))(redisConnectionFor(11));
     try {
       const keys = await kv11.keys(`{chj-${id}-*}:job-queue:*`);
       const suffixes = new Set(keys.map((k) => k.slice(`{chj-${id}-`.length, `{chj-${id}-`.length + 8)));
       assert.strictEqual(suffixes.size, 2, JSON.stringify([...suffixes]));
       assert.deepStrictEqual(await kv11.keys(`chj-claim:{chj-${id}*`), [], 'no claim made');
+      // and no job history: nothing a later process could read
+      const kv5 = new (require('ioredis'))(redisConnectionFor(5));
+      try { assert.deepStrictEqual(await kv5.keys(`jobinfo:{chj-${id}*`), []); } finally { kv5.disconnect(); }
     } finally {
       kv11.disconnect();
     }
