@@ -95,6 +95,13 @@ describe('stdio 49: countinghouse_overview, spawned (B-firstrun)', function() {
     assert.strictEqual(reply.ok, true, JSON.stringify(reply));
     const again = (await call(4)).result.structuredContent.packs.find((p) => p.name === 'pack-cred');
     assert.strictEqual(again.next, `Not loaded: run \`node "${L}" status\` in your own terminal to see why.`);
+    // (#490's high round 2, 1) a reread carrying anything beside id, type
+    // and what is refused live, as the shared vectors say, and reads nothing
+    writeHeld(held, JSON.stringify({v: 1, modules: [{name: 'ch-cred-mod', reason: 'credential'}], launcher: L}));
+    const extra = await io.control({type: 'reread', what: 'held-back', file: '/etc/passwd'});
+    assert.deepStrictEqual([extra.ok, extra.code], [false, 'CONTROL_FAILED'], JSON.stringify(extra));
+    const still = (await call(6)).result.structuredContent.packs.find((p) => p.name === 'pack-cred');
+    assert.strictEqual(still.next, `Not loaded: run \`node "${L}" status\` in your own terminal to see why.`, 'the file not read again');
     // one that cannot be read: refused, and the list empty (never "all ready")
     writeHeld(held, '{');
     const bad = await io.control({type: 'reread', what: 'held-back'});

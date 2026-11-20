@@ -114,7 +114,17 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       // neighbours nor the ones after it
       const big = pack({name: 'ch-big', module: 'ch-big', tools: Array.from({length: overview.MAX_TOOLS}, (_, i) => `t_${'x'.repeat(240)}_${i}`)});
       const after = overview.build({version: '1', packs: [pack({name: 'ch-a', module: 'ch-a'}), big, pack({name: 'ch-b', module: 'ch-b'})]});
-      assert.deepStrictEqual([after.packs.map((p) => p.name), after.omitted], [['ch-a', 'ch-b'], 1]);
+      // (round 2, 5) shrunk before it is left out: its words dropped, its
+      // tools cut to MIN_TOOLS and counted
+      assert.deepStrictEqual([after.packs.map((p) => p.name), after.omitted], [['ch-a', 'ch-big', 'ch-b'], undefined]);
+      const kept = after.packs[1];
+      assert.deepStrictEqual([kept.tools.length, kept.toolsOmitted, kept.byTheModule], [overview.MIN_TOOLS, overview.MAX_TOOLS - overview.MIN_TOOLS, undefined]);
+      // its words dropped first, when that is enough
+      const wordy = pack({name: 'ch-wordy', module: 'ch-wordy', description: '"\\'.repeat(150), examples: Array.from({length: 4}, () => '"\\'.repeat(50))});
+      const filler = Array.from({length: 7}, (_, i) => pack({name: `f${i}`, module: `f${i}`, description: 'x'.repeat(290)}));
+      const tight = overview.build({version: '1', packs: [...filler, wordy]});
+      const w = tight.packs.find((p) => p.name === 'ch-wordy');
+      assert.ok(w != null && w.byTheModule === undefined && w.tools.length === 1, JSON.stringify(tight.packs.map((p) => p.name)));
     });
 
     it('the answer is what its output schema says', () => {
@@ -158,7 +168,10 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
     // (the high review of #490, 3) in-process: the device's own moduleName,
     // the device manager's record of it null
     it('an in-process module, by its device\'s own module name', () => {
-      const dm = {getAllDeviceSpecs: () => ({'d-here': spec('here')}), deviceMap: {'d-here': {moduleName: 'ch-here'}}, moduleOfDevice: () => null};
+      // (the device manager's own moduleOfDevice: #490's high round 2, 6)
+      const dm = Object.assign(Object.create(require('../../lib/device-manager').prototype),
+        {getAllDeviceSpecs: () => ({'d-here': spec('here')}), deviceMap: {'d-here': {moduleName: 'ch-here'}}, moduleManager: null});
+      assert.strictEqual(dm.moduleOfDevice('d-here'), 'ch-here');
       const got = gather(dm);
       assert.deepStrictEqual(got.packs.map((p) => [p.name, p.state, p.tools]), [['ch-here', 'ready', ['here_run']]]);
       assert.strictEqual(got.notice, undefined);
@@ -261,7 +274,7 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.ok(ok('C:\\Users\\o\'brien\\.countinghouse\\bin\\ch-local.js', 'win32'), 'a single quote, on Windows too');
       assert.ok(ok('/home/you/.countinghouse/bin/ch-local.js', 'linux') && ok('/home/o\'brien/.ch/bin/ch-local.js', 'darwin'));
       assert.ok(!ok('/home/you\\x/bin/ch-local.js', 'linux'), 'a backslash is a shell escape off Windows');
-      for (const c of ['$', '%', '!', '^', '"', '`', '\n', '\r', '\u0000', '\u007f']) {
+      for (const c of ['$', '%', '!', '^', '"', '`', '\n', '\r', '\u0000', '\u007f', '\u2018', '\u2019', '\u201c', '\u201d', '\u201f']) {
         for (const platform of ['win32', 'linux']) assert.ok(!ok(`C:\\Users\\a${c}b\\bin\\ch-local.js`, platform), `${JSON.stringify(c)} on ${platform}`);
       }
     });
@@ -295,43 +308,85 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
         heldBack.resetForTests();
       });
 
-      it('beside --settingsFile only; one that cannot be read is empty, and reread says so', () => {
+      const RR = {type: 'reread', what: 'held-back'};
+      const failed = (e) => e.code === 'CONTROL_FAILED';
+
+      it('beside --settingsFile only; one that cannot be read is empty, and reread says so', async () => {
         fs.writeFileSync(file, doc([{name: 'a', reason: 'credential'}]), {mode: 0o600});
         heldBack.resetForTests();
-        assert.deepStrictEqual([...heldBack.list().modules.keys()], ['a']);
+        assert.deepStrictEqual([...(await heldBack.ready()).modules.keys()], ['a']);
         fs.writeFileSync(file, '{');
-        assert.throws(() => heldBack.reread(), (e) => e.code === 'CONTROL_FAILED');
+        await assert.rejects(heldBack.reread(RR), failed);
         assert.strictEqual(heldBack.list().modules.size, 0, 'a file that cannot be read: no module held back (never "all ready")');
         fs.writeFileSync(file, doc([{name: 'b', reason: 'off'}]));
-        assert.deepStrictEqual(heldBack.reread(), {});
+        assert.deepStrictEqual(await heldBack.reread(RR), {});
         assert.deepStrictEqual([...heldBack.list().modules.keys()], ['b']);
         const was = options.heldBackFile;
         options.heldBackFile = null;
-        try { assert.throws(() => heldBack.reread(), (e) => e.code === 'CONTROL_FAILED'); } finally { options.heldBackFile = was; }
+        try { await assert.rejects(heldBack.reread(RR), failed); } finally { options.heldBackFile = was; }
+      });
+
+      // (#490's high round 2, 1) the shared vectors' shape, on this path too
+      it('a reread with a field beside id, type and what is refused, the list as it was', async () => {
+        fs.writeFileSync(file, doc([{name: 'a', reason: 'credential'}]));
+        assert.deepStrictEqual(await heldBack.reread(Object.assign({id: 4}, RR)), {});
+        fs.writeFileSync(file, doc([{name: 'b', reason: 'off'}]));
+        await assert.rejects(heldBack.reread(Object.assign({}, RR, {file: '/etc/passwd'})), failed);
+        await assert.rejects(heldBack.reread({type: 'reread', what: 'everything'}), failed);
+        assert.deepStrictEqual([...heldBack.list().modules.keys()], ['a'], 'not read again');
+      });
+
+      // (#490's high round 2, 3) on Windows the ACL is read ahead off the
+      // main thread: until that read completes, the list is the previous one,
+      // and the overview waits for it (ready)
+      it('a read in flight keeps the previous list until it completes; ready() waits for it', async () => {
+        let release = null;
+        let hold = false;
+        const seen = [];
+        heldBack.resetForTests({aclAheadFn: (f) => { seen.push(f); return hold ? new Promise((r) => { release = r; }) : Promise.resolve(); }});
+        try {
+          fs.writeFileSync(file, doc([{name: 'a', reason: 'credential'}]));
+          heldBack.start();
+          assert.strictEqual(heldBack.list().modules.size, 0, 'nothing before the first read completes (never "all ready")');
+          assert.deepStrictEqual([...(await heldBack.ready()).modules.keys()], ['a']);
+          hold = true;
+          fs.writeFileSync(file, doc([{name: 'b', reason: 'off'}]));
+          const again = heldBack.reread(RR);
+          const waited = heldBack.ready();
+          await new Promise((r) => setImmediate(r));
+          assert.ok(release != null, 'the ACL read ahead was asked');
+          assert.deepStrictEqual([...heldBack.list().modules.keys()], ['a'], 'the previous list meanwhile');
+          release();
+          assert.deepStrictEqual(await again, {});
+          assert.deepStrictEqual([...(await waited).modules.keys()], ['b']);
+          assert.deepStrictEqual(seen, [file, file]);
+        } finally {
+          heldBack.resetForTests();
+        }
       });
 
       // (the high review of #490, 2) judged as ch-local's other private
       // files are: a regular file under one name, this user's alone
-      it('a file others can read, a link or a second name: not used (empty), and reread says so', function() {
+      it('a file others can read, a link or a second name: not used (empty), and reread says so', async function() {
         if (process.platform === 'win32') this.skip();   // (the ACL rule: private-file's own tests)
         const good = doc([{name: 'a', reason: 'credential'}]);
         fs.writeFileSync(file, good, {mode: 0o600});
         fs.chmodSync(file, 0o600);
-        assert.deepStrictEqual(heldBack.reread(), {});
+        assert.deepStrictEqual(await heldBack.reread(RR), {});
         fs.chmodSync(file, 0o644);
-        assert.throws(() => heldBack.reread(), (e) => e.code === 'CONTROL_FAILED', 'group and others can read it');
+        await assert.rejects(heldBack.reread(RR), failed, 'group and others can read it');
         assert.strictEqual(heldBack.list().modules.size, 0);
         fs.chmodSync(file, 0o600);
         const second = path.join(h.dir, 'second-name.json');
         fs.linkSync(file, second);
-        try { assert.throws(() => heldBack.reread(), (e) => e.code === 'CONTROL_FAILED', 'a second name'); } finally { fs.unlinkSync(second); }
+        try { await assert.rejects(heldBack.reread(RR), failed, 'a second name'); } finally { fs.unlinkSync(second); }
         const real = path.join(h.dir, 'real.json');
         fs.renameSync(file, real);
         fs.symlinkSync(real, file);
         try {
-          assert.throws(() => heldBack.reread(), (e) => e.code === 'CONTROL_FAILED', 'a link');
+          await assert.rejects(heldBack.reread(RR), failed, 'a link');
         } finally { fs.unlinkSync(file); fs.renameSync(real, file); }
-        assert.deepStrictEqual(heldBack.reread(), {});
+        assert.deepStrictEqual(await heldBack.reread(RR), {});
         assert.deepStrictEqual([...heldBack.list().modules.keys()], ['a']);
       });
     });

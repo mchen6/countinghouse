@@ -453,7 +453,11 @@ describe('mcp-contract 26: module resources (M7)', function() {
   const BUILTINS = [
     {name: 'countinghouse_check_balance', key: KEY_A, nothing: () => [spent, balances]},
     {name: 'countinghouse_usage_report', key: KEY_A, nothing: () => [spent]},
-    {name: 'countinghouse_overview', key: KEY_A, nothing: () => [spent]},
+    // (the overview's key, grants and who are the gate's, read just before:
+    // no read of its own (#490's high round 2, 7), so its rate-limit unit is
+    // spent at once, as a call that is not billed still counts, and the read
+    // held is its listing's; past it, it runs and bills nothing)
+    {name: 'countinghouse_overview', key: KEY_A, nothing: () => [invoked, billed]},
     {name: 'countinghouse_reload_auth', key: KEY_ADMIN, authoring: true, nothing: () => [reloads]},
     {name: 'countinghouse_load_module', key: KEY_ADMIN, authoring: true, args: {path: '/nowhere', name: 'x'}, nothing: () => [loads]},
     {name: 'countinghouse_settings', key: KEY_A, single: true, args: {action: 'set', name: 'requestTimeout', value: '20s'}, nothing: () => [settingsWrites()]}
