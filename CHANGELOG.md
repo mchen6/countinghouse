@@ -10,6 +10,14 @@ the auth config.
 
 ## Unreleased
 
+### Changed — the usage report counts a cancelled call apart: `profile.cancelled`
+
+A call cancelled while it ran (M19) was counted among the report's errors.
+It is no error: `countinghouse_usage_report` (and `countinghouse-usage`)
+now count such calls in `profile.cancelled`, and leave them, and the
+server calls the cancel aborted (`CALL_TOKEN_INVALID`), out of
+`profile.errors`. A task cancelled with `tasks/cancel` while its run ran
+is such a call: its run's record says `cancelled`, whatever the run's end.
 ### Changed — `tools/call` answers a tool outside the key's grants as an unknown tool
 
 A known key's `tools/call` of a tool outside its grants (an unlisted part's

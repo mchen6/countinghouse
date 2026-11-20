@@ -530,6 +530,11 @@
               "type": "integer",
               "minimum": 0
             },
+            "cancelled": {
+              "title": "calls cancelled while they ran (M19): counted once each, by call; no error",
+              "type": "integer",
+              "minimum": 0
+            },
             "serverCallsPerCall": {
               "type": "object",
               "properties": {
@@ -585,6 +590,7 @@
             "serverCallMs",
             "errors",
             "asked",
+            "cancelled",
             "serverCallsPerCall"
           ],
           "additionalProperties": false
