@@ -38,15 +38,13 @@ const call = (ci, name) => new Promise((resolve) => gateway.handle({jsonrpc: '2.
 const codeOf = (r) => r.result && r.result._meta && r.result._meta['countinghouse/code'];
 
 describe('listing: roles, bare names, MODULE_NOT_LISTED, the single-identity profile', () => {
-  let keptOptions = null;
-  before(() => { keptOptions = optionsNow(); options.setOptions({redisUrl: 'redis://127.0.0.1:9749'}); });
-  after(() => { restoreOptions(keptOptions); });
   // (--debug: every device granted, and a caller with no key resolved, so
   // what is looked at is the listing; since #458 tools/call refuses an
-  // unresolvable caller before any name, auth 54 and mcp-contract 40's)
-  let savedDebug;
-  before(() => { savedDebug = options.debug; options.debug = true; });
-  after(() => { options.debug = savedDebug; });
+  // unresolvable caller before any name, auth 54 and mcp-contract 40's).
+  // Every option, debug too, put back by the one restore, last.
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); options.setOptions({redisUrl: 'redis://127.0.0.1:9749'}); options.debug = true; });
+  after(() => { restoreOptions(keptOptions); });
   afterEach(() => { options.singleIdentity = false; });
 
   it('unlisted parts are not tools; a scenario is listed under its bare action name; others keep the long form', () => {
