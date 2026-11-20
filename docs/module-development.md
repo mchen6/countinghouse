@@ -842,6 +842,40 @@ conditions Node brought with the first `require` in your module's worker
 there would it use Node's default list. A plain `require` always uses its
 own, as on 24.15 and later.
 
+### Libraries that work with module paths, or hook module loading
+
+- `resolve-from`, `import-fresh` and the like, which resolve from your
+  module's own `__dirname`: on Linux and macOS they work in every mode,
+  single-thread included -- your module's directory is `/app/...`, and it
+  reaches Node's resolver in its host form, inside your module only. On
+  Windows they work in single-thread mode, where your module's `__dirname`
+  is its host path (no virtual directory there); in a worker they don't
+  yet.
+- Node's own `Module._resolveFilename` called with a relative request, and
+  `module.findPackageJSON`, from one of your files: work in every mode, on
+  Windows workers too. Under `enforce` the `module` your code gets has no
+  `findPackageJSON`. Give `findPackageJSON` your paths as strings (pass
+  `url.href` for a `URL`): under `off` and `audit`, and in single-thread
+  mode, a `URL` object is handed to Node unmapped. Under `off` and
+  `audit`, a direct call made from your module's own paths -- a parent or
+  base built from `__filename` or `__dirname`, as `resolve-from` and
+  `import-fresh` build one (`/app/...`, or `<V>:\app\...` on Windows) --
+  answers only inside your module: anything it would find outside is not
+  found, and any error it raises is a plain not-found (`MODULE_NOT_FOUND`,
+  or `undefined` from `findPackageJSON`) naming the request as you gave
+  it. A plain `require` keeps Node's own error kinds there.
+- `Module._resolveFilename` called directly with an absolute `/app/...`
+  request (`importFresh(path.join(__dirname, 'x'))`, say) isn't mapped in a
+  worker on Node 24.15 and later: pass a relative request, or require it
+  normally (below Node 24.15 it is, on Linux and macOS). In single-thread
+  mode it is found: on Linux and macOS mapped through your module's
+  directory; on Windows `__dirname` is a host path to begin with.
+- `require-in-the-middle` (APM agents' module hooks): throws at
+  `new Hook()` under `audit` and `enforce`; a module can't hook the
+  runtime's module loading.
+- `module-alias`: no alias takes in a worker (it does in single-thread
+  mode); use relative requires.
+
 Under `enforce` your module's directory may not hold a link to a
 directory: the load is refused ("holds a directory link at ..."), and
 under `audit` it is reported. Node's ES resolver reads a package's
@@ -950,9 +984,16 @@ checks, quota or link rules. The differences from worker mode:
 - Stack frames, `module.filename`, `require.cache` keys and `require.resolve`
   results are host paths, and so is `import.meta.dirname` in ES modules.
 - Paths given to anything other than `fs`, `fs/promises`, `os` and
-  `CHUtil.loadFile` are not translated.
-- `createRequire` with a virtual (`/app`) path fails with `MODULE_NOT_FOUND`;
-  use `require`, or `createRequire(import.meta.url)` in ES modules.
+  `CHUtil.loadFile` are not translated, except that on Linux and macOS a
+  `/app` path your module resolves from (`createRequire`, `require.resolve`'s
+  parent, an absolute request, a `module.findPackageJSON` base) is mapped
+  through your module's own directory, each answer a host path. On Windows
+  single-thread mode gives your module no virtual directory: its
+  `__dirname` is its host path, and Node resolves from it as it is.
+- countinghouse itself, or its module path, installed under a real `/app`
+  (a container's working directory, say) isn't supported in single-thread
+  mode: the real paths there can't be told apart from your module's
+  `/app`. Use worker mode there.
 - A module can require countinghouse's own dependencies through `NODE_PATH`.
 
 Upgrading a module or a deployment from 7.x: see
