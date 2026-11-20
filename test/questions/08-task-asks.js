@@ -243,6 +243,9 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     try {
       await assert.rejects(taskAsks.forRun(t, {asks: true, asking: true, owner: 'owner-r', shownAs: 'm', rerun: true}), /store down/);
       await assert.rejects(taskAsks.asked(t, asking(), {owner: 'owner-r', session: null, ofAsker}), /store down/);
+      // (a task that can never ask -- not asking, or questions off -- reads
+      // nothing: the store's failure never fails it; #487's high, round 2)
+      assert.deepStrictEqual(await taskAsks.forRun(t, {asks: false, asking: false, owner: 'owner-r', shownAs: 'm'}), {state: null});
     } finally {
       taskAsks.configure({kv: () => kv});
     }
@@ -478,8 +481,8 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     // hook's, and the asked hook's own when it answers {asked}, as the
     // gateway's closes the call when it writes the question: exactlyOnce
     // asserts each call opened was closed once; ruled M1)
-    const harness = (api, {timeout, answers, okAt, before = null, holdMs = () => 60000}) => {
-      const log = {started: [], ended: [], completed: [], at: [], passes: 0, settled: 0, closes: {}};
+    const harness = (api, {timeout, answers, okAt, before = null, holdMs = () => 60000, authorize = null, askedMs = 0, startThrowsAt = null, attempts}) => {
+      const log = {started: [], ended: [], completed: [], at: [], passes: 0, settled: 0, closes: {}, reruns: [], sessions: []};
       const closed = (c) => { log.closes[c] = (log.closes[c] || 0) + 1; };
       const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
         invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
@@ -489,10 +492,18 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
           // (a worker told its run ended answers nothing more)
           return setTimeout(() => { if (typeof(cancelled) !== 'function' || !cancelled()) callback(new CountinghouseError('ASK_PENDING')); }, 100);
         }};
-      api.authorizeRun = () => Promise.resolve();
+      let k = 0;
+      api.authorizeRun = () => { k += 1; return authorize != null ? authorize(k) : Promise.resolve(); };
       api.initJobProcess(ci);
-      api.setStartHook(() => { log.started.push(log.started.length + 1); log.at.push(Date.now()); return {usageCall: log.started.length}; });
-      api.setEndHook((data, run, outcome) => { closed(run.extra.usageCall); log.ended.push([run.extra.usageCall, outcome]); });
+      let s = 0;
+      api.setStartHook((data, session) => {
+        s += 1;
+        log.sessions.push(session == null ? null : 'session');
+        if (s === startThrowsAt) throw new Error('start hook broken');
+        log.started.push(log.started.length + 1); log.at.push(Date.now()); return {usageCall: log.started.length};
+      });
+      // (a pass whose start hook threw has no call: its close is of none)
+      api.setEndHook((data, run, outcome) => { if (run.extra != null) closed(run.extra.usageCall); log.ended.push([run.extra != null ? run.extra.usageCall : null, outcome]); });
       api.setCompletionHook((data, results, run) => {
         if (run.extra != null) closed(run.extra.usageCall);
         log.completed.push([run.extra != null ? run.extra.usageCall : null, run.error != null ? String(run.error.message).split(':')[0] : 'ok', Date.now()]);
@@ -501,17 +512,19 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       let n = 0;
       let b = 0;
       api.setAskHooks({
-        before: (data, taskId, run) => { b += 1; return Promise.resolve(before != null ? before(b, run) : {state: moduleAsk.newState({askable: true, shownAs: 'm'})}); },
+        before: (data, taskId, run) => { b += 1; log.reruns.push(run.rerun); return Promise.resolve(before != null ? before(b, run) : {state: moduleAsk.newState({askable: true, shownAs: 'm'})}); },
         asked: (data, taskId, state, run) => {
           n += 1;
           const r = answers(n);
-          if (r != null && r.asked != null) closed(run.extra.usageCall);
-          return Promise.resolve(r);
+          return new Promise((resolve) => setTimeout(resolve, askedMs)).then(() => {
+            if (r != null && r.asked != null) closed(run.extra.usageCall);
+            return r;
+          });
         },
         settled: () => { log.settled += 1; return Promise.resolve(); },
         holdMs
       });
-      return new Promise((resolve) => api.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: id(), era: 'modern', asks: true, timeout}, 'd', 's', 'a', {}, (err) => resolve({err, log})));
+      return new Promise((resolve) => api.addJob({appKey: 'k', session: SESSION}, Object.assign({name: 'n', taskId: id(), era: 'modern', asks: true, timeout}, attempts != null ? {attempts} : {}), 'd', 's', 'a', {}, (err) => resolve({err, log})));
     };
     const until = async (check, ms = 10000) => {
       for (const end = Date.now() + ms; Date.now() < end;) { if (await check()) return true; await new Promise((r) => setTimeout(r, 20)); }
@@ -587,6 +600,101 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
         assert.ifError(err);
         assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
         assert.deepStrictEqual([log.passes, log.ended, log.completed[0][0], log.completed[0][1]], [1, [[1, 'unavailable']], 2, 'store down'], JSON.stringify(log));
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
+    // (#487's high, round 2: one chain deadline, armed across the asked
+    // write and the steps before a pass is dispatched, in both runners)
+    it(`${label}: an asked write slower than the run's limit fails it JOB_TIMEOUT at the limit, never completed past it`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 300, askedMs: 1200, answers: () => ({rerun: true})});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.strictEqual(log.completed[0][1], 'JOB_TIMEOUT', JSON.stringify(log));
+        assert.ok(log.completed[0][2] - log.at[0] < 900, `failed ${log.completed[0][2] - log.at[0]} ms after the first pass`);
+        await new Promise((r) => setTimeout(r, 1400));
+        assert.strictEqual(log.passes, 1, JSON.stringify(log));
+        // (failed for good: its question, whatever the hook wrote, settled --
+        // once, after the hook's late write)
+        assert.strictEqual(log.settled, 1, `its question settled once: ${JSON.stringify(log)}`);
+      } finally { done(api); }
+    });
+    it(`${label}: a before slower than the run's limit, between two passes, fails it JOB_TIMEOUT and dispatches nothing more`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 400, answers: () => ({rerun: true}),
+          before: (b) => (b === 1 ? {state: moduleAsk.newState({askable: true, shownAs: 'm'})}
+            : new Promise((r) => setTimeout(r, 1200, {state: moduleAsk.newState({askable: true, shownAs: 'm'})})))});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.strictEqual(log.completed[0][1], 'JOB_TIMEOUT', JSON.stringify(log));
+        assert.ok(log.completed[0][2] - log.at[0] < 1000, `failed ${log.completed[0][2] - log.at[0]} ms after the first pass`);
+        await new Promise((r) => setTimeout(r, 1400));
+        assert.deepStrictEqual([log.passes, log.completed.length], [1, 1], JSON.stringify(log));
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
+    // (#487's high, round 2: the owner checked again before every pass of a
+    // run started again, in both runners; a refusal there fails the run with
+    // a call of its own)
+    it(`${label}: a pass of a run started again checks its owner again; a refusal fails the run with a call of its own`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true}),
+          authorize: (k) => (k === 1 ? Promise.resolve() : Promise.reject(Object.assign(new Error('REFUSED: the grant is gone'), {final: true, retry: false})))});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        await new Promise((r) => setTimeout(r, 300));
+        assert.deepStrictEqual([log.passes, log.completed.map(([c, o]) => [c, o])], [1, [[2, 'REFUSED']]], JSON.stringify(log));
+        exactlyOnce(log);
+        // (the refusal's call has the run's session, as its first pass's)
+        assert.deepStrictEqual(log.sessions, ['session', 'session'], JSON.stringify(log));
+      } finally { done(api); }
+    });
+    it(`${label}: a refusal that is no Error, on a run started again, fails it with its text`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true}),
+          authorize: (k) => (k === 1 ? Promise.resolve() : Promise.reject('REFUSED: plain text'))});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.deepStrictEqual(log.completed.map(([c, o]) => [c, o]), [[2, 'REFUSED']], JSON.stringify(log));
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
+    it(`${label}: the first pass's before is no run started again, whatever the owner check answers`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, okAt: 1, answers: () => ({rerun: true}), authorize: () => Promise.resolve(true)});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.deepStrictEqual(log.reruns, [false], JSON.stringify(log));
+      } finally { done(api); }
+    });
+    // (#487's high, round 2: a read that fails is retried as the job's
+    // attempts allow, a failure like any other)
+    it(`${label}: a before that fails is retried as the job's attempts allow`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, okAt: 1, attempts: 2, answers: () => ({rerun: true}),
+          before: (b) => (b === 1 ? Promise.reject(new Error('store down')) : {state: moduleAsk.newState({askable: true, shownAs: 'm'})})});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 2), JSON.stringify(log));
+        assert.deepStrictEqual(log.completed.map(([c, o]) => [c, o]), [[1, 'store down'], [2, 'ok']], JSON.stringify(log));
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
+    // (#487's high, round 2: a pass whose start hook throws has no call, never
+    // the last pass's, closed already)
+    it(`${label}: a pass whose start hook throws closes no earlier pass's call again`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, okAt: 3, startThrowsAt: 2, answers: () => ({rerun: true})});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        await new Promise((r) => setTimeout(r, 200));
+        assert.deepStrictEqual([log.started, log.completed[0][1]], [[1, 2], 'ok'], JSON.stringify(log));
         exactlyOnce(log);
       } finally { done(api); }
     });
