@@ -128,9 +128,14 @@ describe('subscriptions/listen (#231)', () => {
     const KEY = 'listen-test-key';
     let saved;
     before((done) => {
-      saved = {debug: options.debug, debugKey: options.debugKey};
+      // (no job runner: workerThread off, as these cases expect, whatever an
+      // earlier file's setOptions left -- since 8.0.0 it is on unless turned
+      // off, and a folder run loads every file, and runs each one's top-level
+      // setOptions, before any test: B-golden09)
+      saved = {debug: options.debug, debugKey: options.debugKey, workerThread: options.workerThread};
       options.debug = true;
       options.debugKey = KEY;
+      options.workerThread = false;
       tools = [{name: 'a'}];
       hub = createHub({listTools: async() => tools, settleMs: 5});
       const app = express();
@@ -141,6 +146,7 @@ describe('subscriptions/listen (#231)', () => {
     after((done) => {
       options.debug = saved.debug;
       options.debugKey = saved.debugKey;
+      options.workerThread = saved.workerThread;
       hub.endAll();
       server.close(() => done());
     });
