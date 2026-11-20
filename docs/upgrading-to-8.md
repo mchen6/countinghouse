@@ -670,7 +670,16 @@ says how to write a module for this.
   is every start on a data directory that does not persist (a container
   with no volume for it), even with the secret given in
   `COUNTINGHOUSE_IDENTITY_SECRET`: keep `--moduleDataPath` (`--storePath`
-  in the single-identity profile) on storage that outlives a restart. Jobs
+  in the single-identity profile) on storage that outlives a restart.
+  One live runtime per server id on a Redis: a start whose id another live
+  runtime holds (two runtimes on one data directory, or a directory or
+  image copied with its `.server-id`) is refused, exit 2, naming the
+  holder; give each server its own data directory, or remove `.server-id`
+  from the copy. (ch-local's runtimes share a data directory with
+  `--store local`, which has no Redis queue and makes no claim.) The start
+  that finds nothing left under the old prefix and keys records that in
+  Redis (`countinghouse:legacy-jobs-none`, db 5), and later starts no longer
+  look. Jobs
   and schedulers queued before the upgrade, under the old shared
   `{cdifJob}`, are not moved: the start logs how many, once, and leaves them;
   re-create any you still want once no older runtime serves that prefix.
