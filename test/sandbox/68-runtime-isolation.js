@@ -242,7 +242,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
         // deep self-reference finds the one above it)
         assert.deepStrictEqual(plainControl, [path.join(spaced, 'isolation-probe.js'), path.join(spaced, 'isolation-probe.js')]);
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'cjsJudged'});
-        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
       });
       // (each layer past the judged _stat, alone: removing any one fails
       // this; POSIX, where a test makes a link without privileges)

@@ -166,6 +166,20 @@ const STEPS = {
     refusedPair('urlishResolve', o(() => require.resolve('a:b/../../lib/stat-count.js'), 'a:b'), o(() => require.resolve('nosuchdep/../../lib/stat-count.js'), 'nosuchdep'));
     out.push(o(() => M._resolveFilename('..foo/../../../lib/stat-count.js', module), 'x') === 'found' ? 'same' : `dotdotDirect(${o(() => M._resolveFilename('..foo/../../../lib/stat-count.js', module), 'x').slice(0, 200)})`);
     refusedPair('urlishDirect', o(() => M._resolveFilename('a:b/../../lib/stat-count.js', module), 'a:b'), o(() => M._resolveFilename('nosuchdep/../../lib/stat-count.js', module), 'nosuchdep'));
+    // (#465's Fable pass, F1: a request that is no string -- a String
+    // object, an object with its own toString -- is refused by a direct
+    // Module._resolveFilename and answers nothing from findPackageJSON,
+    // after the seal, with nothing of module code's run to make it one)
+    {
+      let ran = 0;
+      const tricky = {toString() { ran++; return '#p/sshpk/package.json'; }};
+      const codeOf = (fn) => { try { fn(); return 'found'; } catch (e) { return String(e.code); } };
+      const direct = [codeOf(() => M._resolveFilename(new String('#p/sshpk/package.json'), module)), codeOf(() => M._resolveFilename(tricky, module))];
+      const findOf = (fn) => { try { return String(fn()); } catch (e) { return String(e.code); } };
+      const finds = typeof(M.findPackageJSON) === 'function' ? [findOf(() => M.findPackageJSON(new String('sshpk'), __filename)), findOf(() => M.findPackageJSON(tricky, __filename)),
+        findOf(() => M.findPackageJSON('sshpk', {toString() { ran++; return __filename; }}))] : ['undefined', 'undefined', 'undefined'];
+      out.push(direct.every((c) => c === 'ERR_INVALID_ARG_TYPE') && finds.every((f) => f === 'undefined') && ran === 0 ? 'same' : `nonString(${direct.join(',')} ${finds.join(',')} ran ${ran})`);
+    }
     // (a bare name with a ':' URL parsing rejects -- bare to Node -- above
     // the root against a missing one, by import, findPackageJSON and
     // require; POSIX, where a file name can hold one)
