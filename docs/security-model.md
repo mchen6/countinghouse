@@ -1624,8 +1624,15 @@ and the short list of what the in-process sandbox cannot give.
   under `enforce` before the open (reported as `link-dangling`): opening it
   would follow it wherever it leads, outside the namespace, or to a file a
   host process points it at in between, before anything could judge that.
-  Under `audit` it is reported and opened as before. A module that wants a
-  file there writes the target, or makes its link again.
+  Under `audit` it is reported, and a creating write through it refused (no
+  write under `audit` leaves the module's own area); a read finds nothing,
+  as before. A module that wants a file there writes the target, or makes
+  its link again. Where the broker saw no link at a name -- nothing there,
+  or a plain file -- the open passes `O_NOFOLLOW`, so a link a host process
+  puts there in between is never followed: the open fails, nothing is
+  created, and it is reported as `link-appeared`. Windows has no
+  `O_NOFOLLOW`: there the checks after the open stand alone, refusing the
+  descriptor, and a file such an open created where the link led can stay.
 - **Host paths leak in one place.** For a CommonJS file imported directly by
   an ES module, Node 24 gives `__filename` and stack frames the host path.
 - **Descriptor and handle adoption is refused only under `enforce`.**

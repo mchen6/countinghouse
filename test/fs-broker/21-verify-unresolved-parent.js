@@ -243,13 +243,97 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
     } finally { await t.done(); }
   });
 
-  it('audit reports an open of a link to nothing and opens it as before', async () => {
+  // (#466's second high round: the kernel never follows a leaf link that
+  // checkHost didn't see -- O_NOFOLLOW wherever it saw no link there -- so
+  // nothing is made outside: (a) a link planted where it saw nothing,
+  // through the EEXIST fallback; (b) a plain file swapped for a link before
+  // an append; refused as link-appeared. POSIX, where O_NOFOLLOW is.)
+  it('a link that appears where checkHost saw no link makes nothing outside: the kernel never follows it', async function() {
+    if (fs.constants.O_NOFOLLOW === undefined) return this.skip();
+    for (const [name, flags, plain] of [['appeared', 'w', false], ['swapped', 'a', true]]) {
+      const t = await setup('enforce', (syscall, host, dirs) => {
+        if (syscall === 'open' && path.basename(host) === name) {
+          if (plain) fs.unlinkSync(host);
+          fs.symlinkSync(path.join(dirs.outside, `made-${name}`), host);
+        }
+      });
+      try {
+        if (plain) fs.writeFileSync(path.join(t.dirs.data, name), 'plain');
+        await assert.rejects(t.broker.handle('open', [`/data/${name}`, flags]), enoent(`/data/${name}`), name);
+        assert.strictEqual(fs.existsSync(path.join(t.dirs.outside, `made-${name}`)), false, `${name}: nothing made outside`);
+        assert.ok(t.reports.includes(`link-appeared /data/${name}`), `${name}: ${t.reports.join(', ')}`);
+      } finally { await t.done(); }
+    }
+  });
+
+  // (#466's second high round, 3: a denied file landing at the name in the
+  // race -- a hard link to it, same dev and ino -- is refused by the
+  // opened file's own identity)
+  it('a hard link to a denied file, made at the name after the check, is refused', async () => {
+    const t = await setup('enforce', (syscall, host, dirs) => {
+      if (syscall === 'open' && path.basename(host) === 'hard') fs.linkSync(path.join(dirs.data, 'denied-secret'), host);
+    }, null, ['denied-secret']);
+    try {
+      await assert.rejects(t.broker.handle('open', ['/data/hard', 'r']), (e) => e.code === 'EACCES' || e.code === 'ENOENT');
+      assert.ok(t.reports.includes('denied /data/hard'), t.reports.join(', '));
+      assert.strictEqual(t.broker.fds.size, 0);
+    } finally { await t.done(); }
+  });
+
+  // (#466's second high round, 4: under audit no write leaves the module's
+  // own area, so a creating write through a link to nothing is refused
+  // too, reported; a read is unaffected)
+  it('audit refuses a creating write through a link to nothing, and reports it', async () => {
+    const t = await setup('audit', () => {});
+    try {
+      fs.symlinkSync(path.join(t.dirs.outside, 'audit-made'), path.join(t.dirs.data, 'dangling-audit'));
+      await assert.rejects(t.broker.handle('open', ['/data/dangling-audit', 'w']), (e) => e.code === 'ENOENT' || e.code === 'EACCES');
+      assert.strictEqual(fs.existsSync(path.join(t.dirs.outside, 'audit-made')), false);
+      assert.ok(t.reports.includes('link-dangling ENOENT /data/dangling-audit'), t.reports.join(', '));
+      await assert.rejects(t.broker.handle('open', ['/data/dangling-audit', 'r']), (e) => e.code === 'ENOENT');
+    } finally { await t.done(); }
+  });
+
+  // (#466's second high round, 5: a refused copy settles its quota from
+  // what it left, as open does: its destination's new entry given back
+  // when removed, kept counted when it stays -- here its removal made to
+  // fail, as off Linux)
+  it('a refused copy keeps its destination\'s entry counted when the file stays, and gives it back when removed', async function() {
+    if (process.platform !== 'linux') return this.skip();
+    for (const removable of [true, false]) {
+      const quota = new Quota({maxBytes: 1 << 20, maxEntries: 100, enforce: true, report: () => {}});
+      const t = await setup('enforce', (syscall, host, dirs) => {
+        if (syscall === 'copyfile' && path.basename(path.dirname(host)) === 'late') fs.symlinkSync(dirs.outside, path.dirname(host));
+      }, quota);
+      const realUnlink = fs.promises.unlink;
+      if (!removable) fs.promises.unlink = async() => { throw Object.assign(new Error('kept'), {code: 'EPERM'}); };
+      try {
+        fs.writeFileSync(path.join(t.dirs.data, 'src'), 'payload');
+        await assert.rejects(t.broker.handle('copyFile', ['/data/src', '/data/late/out']), enoent('/data/late/out'));
+        assert.strictEqual(fs.existsSync(path.join(t.dirs.outside, 'out')), !removable);
+        assert.strictEqual(quota.entries, removable ? 0 : 1, `removable ${removable}`);
+      } finally { fs.promises.unlink = realUnlink; await t.done(); }
+    }
+  });
+
+  // (#466's second high round, 6: an open that completes after closeAll
+  // closes its descriptor and answers EIO, never registered)
+  it('an open completing after closeAll is closed and answers EIO', async () => {
+    const t = await setup('enforce', (syscall, host) => {
+      if (syscall === 'open' && path.basename(host) === 'late-close') t.broker.closeAll();
+    });
+    try {
+      fs.writeFileSync(path.join(t.dirs.data, 'late-close'), 'x');
+      await assert.rejects(t.broker.handle('open', ['/data/late-close', 'r']), (e) => e.code === 'EIO');
+      assert.strictEqual(t.broker.fds.size, 0);
+    } finally { await t.done(); }
+  });
+
+  it('audit reports a read of a link to nothing, which finds nothing, as before', async () => {
     const t = await setup('audit', () => {});
     try {
       fs.symlinkSync('made-inside', path.join(t.dirs.data, 'dangling-in'));
-      const fd = await t.broker.handle('open', ['/data/dangling-in', 'w']);
-      await t.broker.handle('close', [fd]);
-      assert.ok(fs.existsSync(path.join(t.dirs.data, 'made-inside')));
+      await assert.rejects(t.broker.handle('open', ['/data/dangling-in', 'r']), (e) => e.code === 'ENOENT');
       assert.ok(t.reports.includes('link-dangling ENOENT /data/dangling-in'), t.reports.join(', '));
     } finally { await t.done(); }
   });

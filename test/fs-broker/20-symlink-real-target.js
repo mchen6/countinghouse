@@ -81,16 +81,16 @@ describe('fs-broker 20: a symlink is decided by its real target, and takes no ".
         // names is created there it leads inside, to that)
         assert.strictEqual(fs.readlinkSync(path.join(t.dirs.data, 'b', 'l3')), 'missing/later', mode);
         await t.broker.handle('mkdir', ['/data/b/missing']);
-        // (written through the dangling link itself: under enforce refused,
-        // a link to nothing being followed nowhere it was judged (ruled D1);
-        // under audit, reported, and off, it makes its target, as before)
-        if (mode === 'enforce') {
+        // (written through the dangling link itself: under enforce and audit
+        // refused, a link to nothing being followed nowhere it was judged
+        // (ruled D1; under audit no write leaves the module's own area), and
+        // reported; off, it makes its target, as before)
+        if (mode !== 'off') {
           await assert.rejects(t.broker.handle('writeFile', ['/data/b/l3', 'later']), (e) => e.code === 'ENOENT', mode);
           assert.ok(t.reports.includes('link-dangling ENOENT /data/b/l3'), `${mode}: ${t.reports.join(', ')}`);
           await t.broker.handle('writeFile', ['/data/b/missing/later', 'later']);
         } else {
           await t.broker.handle('writeFile', ['/data/b/l3', 'later']);
-          if (mode === 'audit') assert.ok(t.reports.includes('link-dangling ENOENT /data/b/l3'), `${mode}: ${t.reports.join(', ')}`);
         }
         assert.strictEqual(fs.readFileSync(path.join(t.dirs.data, 'b', 'l3'), 'utf8'), 'later', mode);
         assert.strictEqual(fs.realpathSync(path.join(t.dirs.data, 'b', 'l3')), path.join(fs.realpathSync(t.dirs.data), 'b', 'missing', 'later'), mode);
