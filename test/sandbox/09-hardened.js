@@ -6,6 +6,7 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 const {CAPTURE_SOURCE} = require('../helpers/lockdown-worker');
 const {startStandIn} = require('../helpers/lazy-net-stand-in');
@@ -61,10 +62,10 @@ module.exports = async (input) => {
 
 async function startFdProbe(root) {
   fs.writeFileSync(path.join(root, 'sandbox-probe', 'handlers', 'probeService', 'attempt.js'), FD_ATTEMPT);
-  return startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
+  return startServer(testPort(9614), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
     '--modulePath', root, '--loadModule', path.join(root, 'sandbox-probe')]);
 }
-const fdAttempt = async (form) => toolOutput(await mcpCall(9614, KEY, 'sandbox_probe_probeservice_attempt', {what: 'socket', arg: form}));
+const fdAttempt = async (form) => toolOutput(await mcpCall(testPort(9614), KEY, 'sandbox_probe_probeservice_attempt', {what: 'socket', arg: form}));
 
 describe('sandbox 09: --hardened', function() {
   this.timeout(90000);
@@ -73,46 +74,99 @@ describe('sandbox 09: --hardened', function() {
   beforeEach(() => { root = moduleRoot(); });
   afterEach(() => { stopServer(server); server = null; fs.rmSync(root, {recursive: true, force: true}); });
 
+  // (the test's probe hands module code the runtime's modules: never with
+  // --hardened, the reviewer's ruling on #434)
+  it('refuses --testLateLoads with --hardened, before anything starts', () => {
+    const {spawnSync} = require('child_process');
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--port', String(testPort(9614)), '--hardened', '--testLateLoads', '--workerThread',
+      '--modulePath', root], {cwd: ROOT, encoding: 'utf8', timeout: 30000});
+    assert.strictEqual(r.status, 2, `${r.stdout}\n${r.stderr}`);
+    assert.match(r.stderr, /--testLateLoads is a test-only probe: it cannot be used with --hardened/);
+  });
+
+  // in-place loading isn't available under --hardened in this release: its
+  // roots are not granted, so it is refused at the start with that reason,
+  // never half-supported
+  // (a bare or empty flag too: refused by its being given, never its value;
+  // and the control channel, in the same message)
+  for (const flags of [['--modulesRoot', 'm'], ['--modulesRoot'], ['--modulesRoot', 'm', '--controlChannel', 'ipc'], ['--controlChannel', 'ipc']]) {
+    it(`refuses ${flags.filter((f) => f.startsWith('--')).join(' and ')}${flags.length === 1 || flags[1] === '' ? ' (bare or empty)' : ''} with --hardened, before anything starts`, () => {
+      const {spawnSync} = require('child_process');
+      const r = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--port', String(testPort(9614)), '--hardened', '--workerThread',
+        '--modulePath', root].concat(flags.map((f) => (f.startsWith('--') || f === '' || f === 'ipc' ? f : path.join(root, f)))), {cwd: ROOT, encoding: 'utf8', timeout: 30000});
+      assert.strictEqual(r.status, 2, `${r.stdout}\n${r.stderr}`);
+      assert.match(r.stderr, /in-place loading isn't available under --hardened in this release/);
+      for (const f of flags.filter((x) => x.startsWith('--'))) assert.ok(r.stderr.includes(f), r.stderr);
+    });
+  }
+  // M6 (#413 rev 3 section 16, rule 7): --packsRoot went with the pack
+  // form; given at all (a bare or empty one too), with --hardened or not,
+  // the start stops, naming what ch-local passes now
+  for (const flags of [['--packsRoot', 'p'], ['--packsRoot', ''], ['--hardened', '--packsRoot', 'p']]) {
+    it(`refuses ${flags.join(' ')} before anything starts: no longer taken`, () => {
+      const {spawnSync} = require('child_process');
+      const r = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--port', String(testPort(9614)), '--workerThread',
+        '--modulePath', root].concat(flags.map((f) => (f === 'p' ? path.join(root, f) : f))), {cwd: ROOT, encoding: 'utf8', timeout: 30000});
+      assert.strictEqual(r.status, 2, `${r.stdout}\n${r.stderr}`);
+      assert.match(r.stderr, /--packsRoot is no longer taken: the pack form is gone; ch-local passes --modulesRoot/);
+    });
+  }
+
   it('runs under the permission model and blocks /proc/self/environ and /proc/self/mem', async () => {
-    server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened',
+    server = await startServer(testPort(9614), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened',
       '--modulePath', root, '--loadModule', path.join(root, 'sandbox-probe')]);
     assert.ok(server.output.includes('module sandbox: hardened -- running under --permission'), server.output.slice(-2000));
     for (const file of ['/proc/self/environ', '/proc/self/mem']) {
-      const r = await mcpCall(9614, KEY, 'sandbox_probe_probeservice_attempt', {what: 'read', arg: file});
+      const r = await mcpCall(testPort(9614), KEY, 'sandbox_probe_probeservice_attempt', {what: 'read', arg: file});
       assert.strictEqual(toolOutput(r).outcome, 'blocked', `${file}: ${JSON.stringify(r)}`);
     }
   });
 
+  // (a first spawn, its data directory not made yet under a --moduleDataPath
+  // not made yet either: the overlap check never resolves above the grant
+  // root; the high review of #452)
+  it('a first spawn under a --moduleDataPath not made yet', async () => {
+    // (in --modulePath, beside the modules: in no module's code)
+    const store = path.join(root, 'fresh', 'nested', 'store');
+    server = await startServer(testPort(9614), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
+      '--modulePath', root, '--moduleDataPath', store, '--loadModule', path.join(root, 'sandbox-probe')]);
+    // (the module ran: the broker answers the host file as missing)
+    const r = await mcpCall(testPort(9614), KEY, 'sandbox_probe_probeservice_attempt', {what: 'read', arg: '/proc/self/environ'});
+    assert.strictEqual(r.isError, false, `${JSON.stringify(r)} ${server.output.slice(-2000)}`);
+    assert.strictEqual(toolOutput(r).code, 'ENOENT', JSON.stringify(r));
+    assert.ok(fs.existsSync(path.join(store, 'sandbox-probe')), server.output.slice(-2000));
+  });
+
   it('refuses a module outside --modulePath', async () => {
-    server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--authoringTools',
+    server = await startServer(testPort(9614), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--authoringTools',
       '--modulePath', root]);
-    const r = await mcpCall(9614, KEY, 'countinghouse_load_module',
+    const r = await mcpCall(testPort(9614), KEY, 'countinghouse_load_module',
       {path: path.join(ROOT, 'test', 'fixtures', 'handler-map-convention'), name: 'handler-map-convention', version: '1.0.0'});
     assert.strictEqual(toolErrorCode(r), 'MODULE_PATH_OUTSIDE_ROOT', JSON.stringify(r));
   });
 
   it('refuses a module outside --modulePath on restart, reload, and through a symlink', async () => {
-    server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--authoringTools',
+    server = await startServer(testPort(9614), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--authoringTools',
       '--modulePath', root, '--loadModule', path.join(root, 'sandbox-probe')]);
     const outside = path.join(ROOT, 'test', 'fixtures', 'sandbox-probe');
     fs.symlinkSync(outside, path.join(root, 'linked-probe'));
-    const restart = await post(9614, KEY, '/restart-module', {path: outside, name: 'sandbox-probe', version: '1.0.0'});
+    const restart = await post(testPort(9614), KEY, '/restart-module', {path: outside, name: 'sandbox-probe', version: '1.0.0'});
     assert.ok(JSON.stringify(restart.body).includes('MODULE_PATH_OUTSIDE_ROOT'), JSON.stringify(restart));
-    const reload = await post(9614, KEY, '/reload-module', {path: outside});
+    const reload = await post(testPort(9614), KEY, '/reload-module', {path: outside});
     assert.ok(JSON.stringify(reload.body).includes('MODULE_PATH_OUTSIDE_ROOT'), JSON.stringify(reload));
-    const linked = await mcpCall(9614, KEY, 'countinghouse_load_module',
+    const linked = await mcpCall(testPort(9614), KEY, 'countinghouse_load_module',
       {path: path.join(root, 'linked-probe'), name: 'sandbox-probe', version: '1.0.0'});
     assert.strictEqual(toolErrorCode(linked), 'MODULE_PATH_OUTSIDE_ROOT', JSON.stringify(linked));
     // The running module was left alone by all three.
-    const r = await mcpCall(9614, KEY, 'sandbox_probe_probeservice_env', {});
+    const r = await mcpCall(testPort(9614), KEY, 'sandbox_probe_probeservice_env', {});
     assert.strictEqual(r.isError, false, JSON.stringify(r));
   });
 
   // Review Focus 5.
   it('accepts a relative --loadModule path that resolves inside --modulePath', async () => {
-    server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened',
+    server = await startServer(testPort(9614), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened',
       '--modulePath', root, '--loadModule', path.relative(ROOT, path.join(root, 'sandbox-probe'))]);
-    const r = await mcpCall(9614, KEY, 'sandbox_probe_probeservice_env', {});
+    const r = await mcpCall(testPort(9614), KEY, 'sandbox_probe_probeservice_env', {});
     assert.strictEqual(r.isError, false, JSON.stringify(r));
   });
 
@@ -122,7 +176,7 @@ describe('sandbox 09: --hardened', function() {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-hardened-cwd-'));
     try {
       for (const run of ['first', 'second']) {
-        server = await startServer(9614, ['--workerThread', '--hardened', '--modulePath', root], {cwd: cwd});
+        server = await startServer(testPort(9614), ['--workerThread', '--hardened', '--modulePath', root], {cwd: cwd});
         assert.ok(fs.existsSync(path.join(cwd, 'auth.json')), `${run} run: ${server.output.slice(-2000)}`);
         stopServer(server);
         server = null;
@@ -132,22 +186,27 @@ describe('sandbox 09: --hardened', function() {
     }
   });
 
-  // CHUtil's HTTP library loads on first use (lib/lazy-require.js),
-  // so its files are read after the permission model is live, not in the
-  // worker's boot (reviewer, 2026-11-12). The fixture declares 127.0.0.1 and a
-  // policy approves it; the stand-in is an ephemeral loopback server.
-  it('the first CHUtil.request works under --hardened, loading its library only then', async () => {
+  // CHUtil's HTTP library, for a module that declares net, loads at the
+  // worker's set-options, before the lockdown (#194's PR 1, ruling (b); see
+  // test/sandbox/40): its files are read under the permission model too. The
+  // fixture declares 127.0.0.1 and a policy approves it; the stand-in is an
+  // ephemeral loopback server.
+  it('CHUtil.request works under --hardened, its library loaded before module code', async () => {
     fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'lazy-net-probe'), path.join(root, 'lazy-net-probe'), {recursive: true});
     const policy = path.join(root, 'policy.json');
     fs.writeFileSync(policy, JSON.stringify({modules: {'lazy-net-probe': {approve: 'as-declared'}}}));
     const standIn = await startStandIn();
     try {
-      server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
+      server = await startServer(testPort(9614), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
         '--modulePolicy', policy, '--modulePath', root, '--loadModule', path.join(root, 'lazy-net-probe')]);
-      const probe = async (args) => toolOutput(await mcpCall(9614, KEY, 'lazy_net_probe_netservice_probe', args));
+      const probe = async (args) => toolOutput(await mcpCall(testPort(9614), KEY, 'lazy_net_probe_netservice_probe', args));
+      // (module code no longer sees the runtime's files, #194's PR 2, and
+      // the test's probe is refused under --hardened: that the request is
+      // answered, under enforce, where a load after the lockdown is refused
+      // by the net, is what shows the library loaded before module code)
       assert.deepStrictEqual((await probe({what: 'loaded'})).loaded, {request: false});
       const r = await probe({what: 'request', url: `${standIn.base}/`});
-      assert.deepStrictEqual([r.outcome, r.status, r.body, r.loaded], ['ok', 200, 'ok', {request: true}], JSON.stringify(r));
+      assert.deepStrictEqual([r.outcome, r.status, r.body], ['ok', 200, 'ok'], JSON.stringify(r));
     } finally {
       await standIn.close();
     }
@@ -161,11 +220,11 @@ describe('sandbox 09: --hardened', function() {
     fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'fs-probe'), path.join(root, 'fs-probe'), {recursive: true});
     const data = `${fs.realpathSync(ROOT)}_data-${process.pid}`;
     try {
-      server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened',
+      server = await startServer(testPort(9614), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened',
         '--modulePath', root, '--moduleDataPath', data, '--loadModule', path.join(root, 'fs-probe')]);
-      const w = await mcpCall(9614, KEY, 'fs_probe_probeservice_write', {path: '/data/x', content: 'hardened'});
+      const w = await mcpCall(testPort(9614), KEY, 'fs_probe_probeservice_write', {path: '/data/x', content: 'hardened'});
       assert.deepStrictEqual(toolOutput(w), {ok: true, code: null}, JSON.stringify(w));
-      const r = await mcpCall(9614, KEY, 'fs_probe_probeservice_read', {path: '/data/x'});
+      const r = await mcpCall(testPort(9614), KEY, 'fs_probe_probeservice_read', {path: '/data/x'});
       assert.deepStrictEqual(toolOutput(r), {content: 'hardened', code: null});
       assert.strictEqual(fs.readFileSync(path.join(data, 'fs-probe', 'data', 'x'), 'utf8'), 'hardened');
     } finally {
@@ -180,16 +239,16 @@ describe('sandbox 09: --hardened', function() {
     fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'fs-probe'), path.join(root, 'fs-probe'), {recursive: true});
     const data = `${fs.realpathSync(ROOT)}_data-${process.pid}`;
     try {
-      server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
+      server = await startServer(testPort(9614), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
         '--modulePath', root, '--moduleDataPath', data, '--loadModule', path.join(root, 'fs-probe')]);
-      await mcpCall(9614, KEY, 'fs_probe_probeservice_write', {path: '/data/x', content: 'kept'});
-      const restarted = await post(9614, KEY, '/restart-module', {name: 'fs-probe'});
+      await mcpCall(testPort(9614), KEY, 'fs_probe_probeservice_write', {path: '/data/x', content: 'kept'});
+      const restarted = await post(testPort(9614), KEY, '/restart-module', {name: 'fs-probe'});
       assert.strictEqual(restarted.status, 200, JSON.stringify(restarted.body));
       await waitFor(async () => {
-        const r = await mcpCall(9614, KEY, 'fs_probe_probeservice_read', {path: '/data/x'});
+        const r = await mcpCall(testPort(9614), KEY, 'fs_probe_probeservice_read', {path: '/data/x'});
         return r.isError === false && toolOutput(r).content === 'kept';
       }, 15000, 'read after restart');
-      const where = await mcpCall(9614, KEY, 'fs_probe_probeservice_where', {});
+      const where = await mcpCall(testPort(9614), KEY, 'fs_probe_probeservice_where', {});
       assert.strictEqual(toolOutput(where).dirname, '/app/handlers/probeService', JSON.stringify(where));
     } finally {
       fs.rmSync(data, {recursive: true, force: true});
@@ -197,7 +256,7 @@ describe('sandbox 09: --hardened', function() {
   });
 
   it('needs --workerThread', async () => {
-    server = await startServer(9614, ['--no-workerThread', '--debug', '--hardened', '--modulePath', root], {expectExit: true});
+    server = await startServer(testPort(9614), ['--no-workerThread', '--debug', '--hardened', '--modulePath', root], {expectExit: true});
     assert.strictEqual(server.exitCode, 2);
     assert.ok(server.output.includes('--hardened needs --workerThread'), server.output);
   });

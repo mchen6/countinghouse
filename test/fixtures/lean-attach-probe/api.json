@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "lean-attach-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Lean worker step 3: module code attaching countinghouse-util itself.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:attachService": {
+        "actionList": [
+          {
+            "name": "attach",
+            "description": "Reaches countinghouse-util through chutil-facade's module object, attaches it, and tries a request through it.",
+            "input": {
+              "schema": "/attachService/attach/input"
+            },
+            "output": {
+              "schema": "/attachService/attach/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

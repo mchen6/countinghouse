@@ -11,8 +11,9 @@ const fs      = require('fs');
 const path    = require('path');
 const http    = require('http');
 const spawn   = require('child_process').spawn;
+const {testPort} = require('../helpers/test-env');
 
-const PORT     = 9530;
+const PORT     = testPort(9530);
 const ROOT     = path.join(__dirname, '..', '..');
 const PKG_DIR  = path.join(ROOT, 'pre-installed-packages');
 const OUT      = process.argv[2] || path.join(__dirname, 'tools-list.golden.json');

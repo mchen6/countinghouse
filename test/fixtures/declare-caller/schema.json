@@ -19,7 +19,9 @@
               "seeComposition",
               "loadSecondCode",
               "calleeHolds",
-              "forgedCtxHop"
+              "forgedCtxHop",
+              "seeCaller",
+              "asRefused"
             ]
           },
           "as": {

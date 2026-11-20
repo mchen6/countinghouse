@@ -2,6 +2,7 @@ const assert = require('assert');
 const vm = require('vm');
 const facade = require('../../lib/single-thread-facade');
 const {toolOutput} = require('../helpers/tool-result');
+const {testPort} = require('../helpers/test-env');
 
 const run = (src) => {
   const fn = vm.runInThisContext(`(function (exports, require, module, __filename, __dirname) {${src}\n})`);
@@ -63,14 +64,14 @@ describe('single-thread 02: identity in a running server', function() {
   afterEach(() => { stopServer(server); server = null; if (base) fs.rmSync(base, {recursive: true, force: true}); base = null; });
   const start = (modules) => {
     base = mkdtemp('single-id-');
-    return startServer(9636, ['--no-workerThread', '--debug', '--debugKey', 'k', '--moduleDataPath', path.join(base, 'store')]
+    return startServer(testPort(9636), ['--no-workerThread', '--debug', '--debugKey', 'k', '--moduleDataPath', path.join(base, 'store')]
       .concat(...modules.map((m) => ['--loadModule', path.join(FIXTURES, m)])));
   };
 
   it('two modules each see their own /app, and read their own package.json through __dirname', async () => {
     server = await start(['fs-probe', 'fs-probe-twin']);
-    const ra = await mcpCall(9636, 'k', 'fs_probe_probeservice_where', {});
-    const rb = await mcpCall(9636, 'k', 'fs_probe_twin_probeservice_where', {});
+    const ra = await mcpCall(testPort(9636), 'k', 'fs_probe_probeservice_where', {});
+    const rb = await mcpCall(testPort(9636), 'k', 'fs_probe_twin_probeservice_where', {});
     assert.ok(ra.isError === false && toolOutput(ra) && rb.isError === false && toolOutput(rb), JSON.stringify([ra, rb]).slice(0, 1500));
     const a = out(ra);
     const b = out(rb);
@@ -83,13 +84,13 @@ describe('single-thread 02: identity in a running server', function() {
 
   it('CHUtil.loadFile finds its caller even when the module rewrites stack traces (review I3)', async () => {
     server = await start(['stack-rewriter']);
-    assert.deepStrictEqual(out(await mcpCall(9636, 'k', 'stack_rewriter_probeservice_where', {})), {dirname: '/app/lib'});
+    assert.deepStrictEqual(out(await mcpCall(testPort(9636), 'k', 'stack_rewriter_probeservice_where', {})), {dirname: '/app/lib'});
   });
 
   it('the test helper rejects an unknown tool, so a mistyped name cannot pass silently (review)', async () => {
     server = await start(['fs-probe']);
-    await assert.rejects(mcpCall(9636, 'k', 'fs_probe_probeservice_noSuchAction', {}), /unknown tool/);
-    const allowed = await mcpCall(9636, 'k', 'fs_probe_probeservice_noSuchAction', {}, {allowUnknownTool: true});
+    await assert.rejects(mcpCall(testPort(9636), 'k', 'fs_probe_probeservice_noSuchAction', {}), /unknown tool/);
+    const allowed = await mcpCall(testPort(9636), 'k', 'fs_probe_probeservice_noSuchAction', {}, {allowUnknownTool: true});
     assert.ok(/unknown tool/.test(JSON.stringify(allowed)), JSON.stringify(allowed));
   });
 });

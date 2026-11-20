@@ -1,0 +1,15 @@
+{
+  "name": "hop-input-caller",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "countinghouse": {
+    "calls": [
+      "hop-input-callee/sinkService.sink",
+      "hop-input-callee/sinkService.count",
+      "hop-input-callee/sinkService.big",
+      "hop-input-callee/sinkService.bad",
+      "hop-input-callee/sinkService.slow",
+      "hop-input-callee/sinkService.forge"
+    ]
+  }
+}

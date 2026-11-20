@@ -28,7 +28,7 @@ const request = require('supertest');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
 const {toolOutput} = require('../helpers/tool-result');
 const {deviceIDForName} = require('../../lib/call-address');
-const {testPort} = require('../helpers/test-env');
+const {testPort, redisConnectionFor} = require('../helpers/test-env');
 
 const hex = () => crypto.randomBytes(6).toString('hex');
 const VIA   = 'token_forge_forgeservice_viacall';
@@ -148,14 +148,15 @@ PATHS.forEach((hopPath) => {
     // gets the access error (composition 16's oracle rule). Composition 16's
     // "a client built now sees the same for an unloaded device as for one
     // never hosted" changes with this, for the granted identity.
+    // The prober's hops authorize as its binding (R2-1 Task 5: no `as`),
+    // which is granted worker-end; an identity without the grant is
+    // composition 16's, with the prober bound to it.
     it('(g) a client built after the unload: the identity granted the device gets MODULE_UNLOADED through the device query', async () => {
-      const observe = async (as) => JSON.parse((await mcpCall(hopPath.port, KEYS.admin, 'hop_prober_probeservice_observe', {as: as, deviceID: WORKER_END})).content[0].text);
-      await waitFor(async () => (await observe(KEYS.admin)).code == null, 20000, 'the prober to reach worker-end');
+      const observe = async () => JSON.parse((await mcpCall(hopPath.port, KEYS.admin, 'hop_prober_probeservice_observe', {deviceID: WORKER_END})).content[0].text);
+      await waitFor(async () => (await observe()).code == null, 20000, 'the prober to reach worker-end');
       assert.strictEqual((await post(hopPath.port, KEYS.admin, '/unload-module', {name: 'worker-end'})).status, 200);
-      const granted = await observe(KEYS.granted);
-      const ungranted = await observe(KEYS.ungranted);
+      const granted = await observe();
       assert.strictEqual(granted.code, 'MODULE_UNLOADED', JSON.stringify(granted));
-      assert.strictEqual(ungranted.code, 'USER_HAS_NO_DEVICE', JSON.stringify(ungranted));
     });
   });
 });
@@ -278,10 +279,10 @@ describe('composition 18: the caller\'s timeout, the worker\'s timer, and the me
     assert.strictEqual(before - await balance(), 1, 'more than the run was billed');
   });
 
-  it('(#138-2b) a worker reads the request timer in milliseconds, as the main thread gave it', async () => {
-    server = await start(['--requestTimeout', '2', '--directPeerChannels']);
+  it('(#138-2b, #112) a worker reads the request timer and the job durations in milliseconds, as the main thread gave them', async () => {
+    server = await start(['--requestTimeout', '2', '--jobTimeout', '120', '--jobResultTtl', '60', '--directPeerChannels']);
     const out = await via({marker: 'probe', probe: 'requestTimeout'});
-    assert.deepStrictEqual([out.requestTimeout, out.requestTimeoutMs], [2000, 2000], JSON.stringify(out));
+    assert.deepStrictEqual([out.requestTimeout, out.jobTimeout, out.jobResultTtl], [2000, 120000, 60000], JSON.stringify(out));
   });
 
   // The caller worker spends its message budget first, so the hop's own
@@ -339,9 +340,8 @@ describe('composition 18: jobs, by their owner\'s identity', function() {
     write(true);
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath, '--mcpToolCallCost', '1',
       '--moduleDataPath', path.join(base, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'job-snoop')]);
-    // The server's Redis: CH_TEST_REDIS_URL's when set (test/helpers/test-env.js).
-    const redis = (process.env.CH_TEST_REDIS_URL != null && process.env.CH_TEST_REDIS_URL !== '') ? new globalThis.URL(process.env.CH_TEST_REDIS_URL) : null;
-    queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: {db: 11, host: redis != null ? redis.hostname : '127.0.0.1', port: redis != null ? Number(redis.port) : 6379}});
+    // the server's Redis (test/helpers/test-env.js)
+    queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: redisConnectionFor(11)});
   });
   after(async () => {
     for (const s of await queue.getJobSchedulers(0, -1)) if (String(s.key || s.id).includes(NAME)) await queue.removeJobScheduler(s.key || s.id);
@@ -411,16 +411,23 @@ describe('composition 18: jobs, by their owner\'s identity', function() {
 // unit (lib/peer-channel-broker.js; the reviewer's additions of 2026-11-09,
 // and the ruling of 2026-11-13: authorize before serve, bill on success):
 //   - handleAnnouncement(data, fromWM): the caller worker's {channel,
-//     invokeId, token} for one peer invoke, where `channel` is the broker's
-//     pair key `${callerWorkerId}:${calleeWorkerId}`;
+//     invokeId, token, deviceID, serviceID, actionName, epoch, inputBytes}
+//     for one peer invoke, where `channel` is the broker's pair key
+//     `${callerWorkerId}:${calleeWorkerId}`; the target and the bytes are the
+//     caller's, held by the main thread (lean worker step 4, the review of
+//     #202); a refusal goes to fromWM.sendPeerAnnounceRefusedToChild;
 //   - handleMeteringRequest(data, msgID, calleeWM), before the handler, with
-//     data {channel, invokeId, deviceID, serviceID, actionName}: answered
-//     through calleeWM.sendPeerMeteringReplyToChild({msgID, errMsg, errCode,
-//     token}); a refusal has errCode CALL_TOKEN_INVALID and means "do not
-//     serve"; a match carries the callee's own token and bills nothing yet;
-//   - handleBillRequest({token}, msgID, calleeWM), after the handler
-//     succeeded: bills the announced call's caller, once; a token it does
-//     not know is refused;
+//     data {channel, invokeId} (any target the callee adds is ignored):
+//     answered through calleeWM.sendPeerMeteringReplyToChild({msgID, errMsg,
+//     errCode, token, target, inputBytes}); a refusal has errCode
+//     CALL_TOKEN_INVALID and means "do not serve"; a match carries the
+//     callee's own token and the announced target, and bills nothing yet;
+//   - handleBillRequest({token, outputBytes}, msgID, calleeWM), after the
+//     handler succeeded: bills the announced call's caller, once, and
+//     delivers the result to the caller (callerWM.sendPeerResultToChild); a
+//     token it does not know is refused, to the callee and to the caller;
+//   - the module-spec checks are stubbed here (a spec that passes); sandbox
+//     49 runs them for real;
 //   - PEER_ANNOUNCE_WAIT_MS = 1000; 64 held requests per channel at most;
 //   - options.peerChannelAuthLookupTimeoutMs bounds one re-check lookup;
 //   - the balance deduction's deadline is about 500 ms.
@@ -429,7 +436,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
   const cli = require('../../lib/cli-options');
   const CHUtil = require('../../lib/countinghouse-util');
   const LOG = require('../../lib/logger');
-  require('../../lib/logger').createLogger(false);
+  require('../../lib/logger').createLogger();
   const tokens = () => require('../../lib/call-tokens');
   const ENTRY = (workerId) => ({billingKey: `alice-key-${hex()}`, identityKey: `forge-internal-${hex()}`, module: 'token-forge', workerId: workerId, deviceID: 'd-callee'});
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -516,12 +523,21 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
   });
 
   describe('the broker: announce and match', () => {
-    let broker = null, caller = null, callee = null, billed = null, savedCi = null;
-    const wm = (workerId) => ({workerId: workerId, ended: null, replies: [], sendPeerMeteringReplyToChild(m) { this.replies.push(m); }});
+    let broker = null, caller = null, callee = null, billed = null, savedCi = null, savedSpec = null;
+    const moduleSpec = require('../../lib/module-spec');
+    const {serialize, toArrayBuffer, decode} = require('../../lib/serialized-result');
+    const bytes = (v) => toArrayBuffer(serialize(v));
+    const wm = (workerId) => ({workerId: workerId, ended: null, replies: [], refusals: [], results: [], moduleSpec: {},
+      sendPeerMeteringReplyToChild(m) { this.replies.push(m); },
+      sendPeerAnnounceRefusedToChild(m) { this.refusals.push(m); },
+      sendPeerResultToChild(m) { this.results.push(m); }});
     const pair = () => `${caller.workerId}:${callee.workerId}`;
-    const meter = (invokeId, msgID) => broker.handleMeteringRequest({channel: pair(), invokeId: invokeId, deviceID: 'd-callee', serviceID: 'svc', actionName: 'bump'}, msgID, callee);
-    const announce = (invokeId, token, from) => broker.handleAnnouncement({channel: pair(), invokeId: invokeId, token: token}, from || caller);
-    const bill = (token, msgID) => broker.handleBillRequest({token: token}, msgID, callee);
+    const EPOCH = 'e1';
+    const TARGET = {deviceID: 'd-callee', serviceID: 'svc', actionName: 'bump'};
+    const meter = (invokeId, msgID) => broker.handleMeteringRequest({channel: pair(), invokeId: invokeId}, msgID, callee);
+    const announce = (invokeId, token, from, target) => broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: invokeId, token: token, epoch: EPOCH,
+      inputBytes: bytes({input: {}})}, target || TARGET), from || caller);
+    const bill = (token, msgID) => broker.handleBillRequest({token: token, outputBytes: bytes({output: {ok: true}})}, msgID, callee);
     const replyTo = (msgID) => callee.replies.find((r) => r.msgID === msgID);
     const refused = (r) => r != null && r.errCode === 'CALL_TOKEN_INVALID';
     const served = (msgID) => { const r = replyTo(msgID); return r != null && !refused(r) && typeof(r.token) === 'string'; };
@@ -537,10 +553,15 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       // the calling module (its token's device, d-callee in ENTRY) declared
       // bump on the devices these cases invoke (R2-1 Task 4)
       caller.bindings = {'d-callee': {identity: null, module: 'token-forge', targets: new Set(['d-callee|svc|bump', 'd-other|svc|bump'])}};
-      broker = new PeerChannelBroker({deviceMap: {}});
+      broker = new PeerChannelBroker({deviceMap: {'d-callee': callee}});
       broker.channelRegistry[pair()] = {callerWM: caller, calleeWM: callee, grants: {}};
+      // a spec held for every worker here, which passes what it is given
+      // (the stalls, refusals and caps of the real checks: sandbox 49)
+      savedSpec = {checkInput: moduleSpec.checkInput, validateSerialized: moduleSpec.validateSerialized};
+      moduleSpec.checkInput = (own, deviceID, serviceID, actionName) => (own == null ? null : {key: 'k', serviceID: serviceID, actionName: actionName});
+      moduleSpec.validateSerialized = (checked, which, buffer) => Promise.resolve({refused: null, buffer: buffer});
     });
-    afterEach(() => { CHUtil.ci = savedCi; });
+    afterEach(() => { CHUtil.ci = savedCi; Object.assign(moduleSpec, savedSpec); });
 
     it('a metering request matched by its announcement is served with the callee\'s own token; the bill request then bills the token\'s caller, once', async () => {
       const e = ENTRY(caller.workerId);
@@ -790,13 +811,460 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
 
     // Task 4's review: the main thread checks the invoke's action against the
     // caller's declarations at the match too, not only the callee worker.
-    it('(T4-review) a metering request for an action the caller did not declare is refused CTX_CALL_UNDECLARED', async () => {
-      announce(30, tokens().issue(ENTRY(caller.workerId)));
-      broker.handleMeteringRequest({channel: pair(), invokeId: 30, deviceID: 'd-callee', serviceID: 'svc', actionName: 'tick'}, 'm30', callee);
-      await sleep(50);
-      const r = replyTo('m30');
-      assert.ok(r != null && r.errCode === 'CTX_CALL_UNDECLARED' && typeof(r.token) !== 'string', JSON.stringify(r));
+    it('(T4-review) an announcement for an action the caller did not declare is refused CTX_CALL_UNDECLARED, and nothing matches it', async () => {
+      announce(30, tokens().issue(ENTRY(caller.workerId)), caller, {deviceID: 'd-callee', serviceID: 'svc', actionName: 'tick'});
+      assert.deepStrictEqual(caller.refusals.map((r) => [r.invokeId, r.errCode, r.epoch]), [[30, 'CTX_CALL_UNDECLARED', EPOCH]]);
+      meter(30, 'm30');
+      await sleep(1100);
+      assert.ok(refused(replyTo('m30')), JSON.stringify(replyTo('m30')));
       assert.strictEqual(broker.unbilled.size, 0);
+    });
+
+    // The review of #202 (1): the target is the caller's statement, checked
+    // when it is announced; the callee's spec must be held, or nothing runs.
+    it('(#202-1) an announcement naming its target in other than strings, or a device the channel\'s callee does not host, is refused; nothing is held', () => {
+      announce(40, tokens().issue(ENTRY(caller.workerId)), caller, {deviceID: ['d-callee'], serviceID: 'svc', actionName: 'bump'});
+      // declared, but hosted by no worker, then by a worker not this channel's callee
+      announce(41, tokens().issue(ENTRY(caller.workerId)), caller, {deviceID: 'd-other', serviceID: 'svc', actionName: 'bump'});
+      broker.dm.deviceMap['d-other'] = wm(15);
+      announce(42, tokens().issue(ENTRY(caller.workerId)), caller, {deviceID: 'd-other', serviceID: 'svc', actionName: 'bump'});
+      // undeclared: refused by the declarations first, as on the routed path
+      announce(43, tokens().issue(ENTRY(caller.workerId)), caller, {deviceID: 'd-elsewhere', serviceID: 'svc', actionName: 'bump'});
+      assert.deepStrictEqual(caller.refusals.map((r) => [r.invokeId, r.errCode]),
+        [[40, 'DEVICE_INVOKE_EXCEPTION'], [41, 'PEER_NOT_GRANTED'], [42, 'PEER_NOT_GRANTED'], [43, 'CTX_CALL_UNDECLARED']]);
+      assert.strictEqual(broker.announced.size, 0);
+      assert.strictEqual(broker.announcedBytes, 0);
+    });
+
+    it('(#202-1) a callee whose spec the main thread does not hold is refused: no token, nothing run, nothing billed', async () => {
+      callee.moduleSpec = null;
+      announce(49, tokens().issue(ENTRY(caller.workerId)));
+      meter(49, 'm49');
+      await sleep(50);
+      const r = replyTo('m49');
+      assert.ok(r != null && r.errCode === 'DEVICE_INVOKE_EXCEPTION' && typeof(r.token) !== 'string', JSON.stringify(r));
+      assert.strictEqual(broker.unbilled.size, 0);
+      assert.deepStrictEqual(billed, []);
+    });
+
+    // (2): the callee cannot restate the action, nor swap the input bytes.
+    it('(#202-2) the match hands the callee the caller\'s target and bytes; a target or bytes in its request are ignored', async () => {
+      const seen = [];
+      moduleSpec.checkInput = (own, deviceID, serviceID, actionName) => { seen.push(`${deviceID}|${serviceID}|${actionName}`); return {key: 'k', serviceID, actionName}; };
+      const e = ENTRY(caller.workerId);
+      broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 44, token: tokens().issue(e), epoch: EPOCH, inputBytes: bytes({input: {v: 'caller'}})}, TARGET), caller);
+      broker.handleMeteringRequest({channel: pair(), invokeId: 44, deviceID: 'd-callee', serviceID: 'svc', actionName: 'loose', inputBytes: bytes({input: {v: 'callee'}})}, 'm44', callee);
+      await sleep(50);
+      const r = replyTo('m44');
+      assert.ok(served('m44'), JSON.stringify(r));
+      assert.deepStrictEqual(r.target, TARGET);
+      assert.deepStrictEqual(decode(r.inputBytes), {input: {v: 'caller'}});
+      assert.deepStrictEqual(seen, ['d-callee|svc|bump'], 'checked against the callee\'s target');
+      bill(r.token, 'b44');
+      await sleep(50);
+      assert.deepStrictEqual(billed, [e.billingKey]);
+    });
+
+    // (3): what the match's awaits may have changed is checked again.
+    it('(#202-3) a channel revoked, or the deadline passed, while the input is checked: no token, nothing billed', async () => {
+      moduleSpec.validateSerialized = (checked, which, buffer) => new Promise((resolve) => setTimeout(() => resolve({refused: null, buffer: buffer}), 80));
+      announce(45, tokens().issue(ENTRY(caller.workerId)));
+      meter(45, 'm45');
+      await sleep(20);
+      const entry = broker.channelRegistry[pair()];
+      delete broker.channelRegistry[pair()];
+      await sleep(120);
+      assert.ok(refused(replyTo('m45')), `served after its channel went: ${JSON.stringify(replyTo('m45'))}`);
+      broker.channelRegistry[pair()] = entry;
+
+      cli.setOptions({workerThread: true, mcpToolCallCost: 1, requestTimeout: 0.06});
+      announce(46, tokens().issue(ENTRY(caller.workerId)));
+      meter(46, 'm46');
+      await sleep(150);
+      const r = replyTo('m46');
+      assert.ok(r != null && r.errCode === 'PEER_CHANNEL_TIMEOUT' && typeof(r.token) !== 'string', JSON.stringify(r));
+      assert.strictEqual(broker.unbilled.size, 0);
+      assert.deepStrictEqual(billed, []);
+    });
+
+    it('(#202-3) the result is delivered to the caller with the grant\'s epoch', async () => {
+      announce(47, tokens().issue(ENTRY(caller.workerId)));
+      meter(47, 'm47');
+      await sleep(50);
+      bill(replyTo('m47').token, 'b47');
+      await sleep(50);
+      assert.deepStrictEqual(caller.results.map((m) => [m.invokeId, m.epoch, decode(m.dataBuffer)]), [[47, EPOCH, {output: {ok: true}}]]);
+    });
+
+    // (4), as round 3 has it: a bill the broker cannot match names no grant
+    // of the caller's it can trust, so only the callee is answered; the
+    // caller's own timer frees the slot (sandbox 49).
+    it('(#202-4) a bill the broker cannot match is refused to the callee; the caller is not told (it could be another grant\'s id)', async () => {
+      announce(48, tokens().issue(ENTRY(caller.workerId)));
+      broker.handleBillRequest({token: `made-up-${hex()}`, channel: pair(), invokeId: 48, outputBytes: bytes({output: 1})}, 'b48', callee);
+      assert.ok(refused(replyTo('b48')), JSON.stringify(replyTo('b48')));
+      assert.deepStrictEqual(caller.results, []);
+    });
+
+    // Round 3 (1): the held input bytes are bounded per caller worker, so one
+    // caller's unmatched announcements never refuse another's; a caller's
+    // announcements whose call has ended are released before it is refused.
+    it('(#202-r3-1) one caller over its share of held bytes is refused RATE_LIMITED; another caller is not; an ended call\'s bytes are released', () => {
+      cli.setOptions({workerThread: true, mcpToolCallCost: 1, maxOutputBytes: 4 * 1024 * 1024});
+      const big = () => bytes({input: {s: 'x'.repeat(4 * 1024 * 1024 - 64)}});
+      const t = [];
+      for (let i = 0; i < 5; i++) {
+        t.push(tokens().issue(ENTRY(caller.workerId)));
+        broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 60 + i, token: t[i], epoch: EPOCH, inputBytes: big()}, TARGET), caller);
+      }
+      assert.deepStrictEqual(caller.refusals.map((r) => [r.invokeId, r.errCode]), [[64, 'RATE_LIMITED']], 'the share is 16 MiB: four held, the fifth refused');
+      // another caller worker, on its own channel to the same callee
+      const other = wm(17);
+      other.bindings = caller.bindings;
+      broker.channelRegistry[`${other.workerId}:${callee.workerId}`] = {callerWM: other, calleeWM: callee, grants: {}};
+      broker.handleAnnouncement(Object.assign({channel: `${other.workerId}:${callee.workerId}`, invokeId: 1, token: tokens().issue(ENTRY(other.workerId)),
+        epoch: EPOCH, inputBytes: big()}, TARGET), other);
+      assert.deepStrictEqual(other.refusals, [], 'another caller was refused by the first one\'s bytes');
+      // the first caller's calls end: their bytes go when it next announces
+      t.forEach((x) => tokens().drop(x));
+      broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 70, token: tokens().issue(ENTRY(caller.workerId)), epoch: EPOCH, inputBytes: big()}, TARGET), caller);
+      assert.strictEqual(caller.refusals.length, 1, 'an ended call\'s bytes were still held');
+    });
+
+    // Round 3's review: a held invoke past its deadline is released when its
+    // caller next needs the room, not only at the 60 s sweep, so it cannot
+    // lock the caller out of its own share meanwhile.
+    it('(#202-r3-1) a caller whose held invokes passed their deadline holds a new one at once, before any sweep', async () => {
+      cli.setOptions({workerThread: true, mcpToolCallCost: 1, maxOutputBytes: 4 * 1024 * 1024});
+      const big = () => bytes({input: {s: 'x'.repeat(4 * 1024 * 1024 - 64)}});
+      for (let i = 0; i < 4; i++) {
+        broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 80 + i, token: tokens().issue(ENTRY(caller.workerId)), epoch: EPOCH,
+          inputBytes: big(), timeLeftMs: 30}, TARGET), caller);
+      }
+      assert.deepStrictEqual(caller.refusals, [], 'four fill the 16 MiB share');
+      await sleep(60);   // past their deadline; their tokens still live, and no sweep has run
+      broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 84, token: tokens().issue(ENTRY(caller.workerId)), epoch: EPOCH,
+        inputBytes: big()}, TARGET), caller);
+      assert.deepStrictEqual(caller.refusals, [], 'the caller was locked out of its own share by invokes past their deadline');
+      assert.ok(broker.announced.has(`${pair()}/84`));
+    });
+
+    // The reviewer's finding after #283: the total is 128 MiB (at a cap of
+    // 16 MiB, four callers at their 32 MiB share fill it; here, at 4 MiB,
+    // eight at 16 MiB). When it was full, only the announcing caller's own
+    // ended hops were released: every other caller's ended or expired ones
+    // stayed counted until the 60 s sweep, and everyone's direct hops were
+    // refused meanwhile.
+    describe('(#283 follow-up) the total held by every caller', () => {
+      const MIB4 = 4 * 1024 * 1024;
+      let one;
+      let others;
+      let held;
+      // eight other caller workers, each with its share (four 4 MiB hops) held: the 128 MiB total
+      const fill = (extra = {}) => {
+        cli.setOptions({workerThread: true, mcpToolCallCost: 1, maxOutputBytes: MIB4});
+        // one buffer for them all: the broker holds a reference and counts its length
+        one = bytes({input: {s: 'x'.repeat(MIB4 - 64)}});
+        others = [];
+        held = [];
+        for (let w = 0; w < 8; w++) {
+          const other = wm(40 + w);
+          other.bindings = caller.bindings;
+          const channel = `${other.workerId}:${callee.workerId}`;
+          broker.channelRegistry[channel] = {callerWM: other, calleeWM: callee, grants: {}};
+          others.push(other);
+          for (let i = 0; i < 4; i++) {
+            const token = tokens().issue(ENTRY(other.workerId));
+            held.push(token);
+            broker.handleAnnouncement(Object.assign({channel, invokeId: 100 + i, token, epoch: EPOCH, inputBytes: one}, extra, TARGET), other);
+          }
+        }
+        assert.deepStrictEqual(others.flatMap((o) => o.refusals), [], 'each within its own share');
+        assert.strictEqual(broker.announcedBytes, 8 * 4 * one.byteLength);
+      };
+      const newcomer = (invokeId) => broker.handleAnnouncement(Object.assign({channel: pair(), invokeId, token: tokens().issue(ENTRY(caller.workerId)),
+        epoch: EPOCH, inputBytes: one}, TARGET), caller);
+
+      it('full of live hops: a newcomer is refused RATE_LIMITED, and nothing another caller holds is released', () => {
+        fill();
+        newcomer(200);
+        assert.deepStrictEqual(caller.refusals.map((r) => [r.invokeId, r.errCode]), [[200, 'RATE_LIMITED']]);
+        assert.strictEqual(broker.announced.size, 32, 'every live hop still held');
+      });
+
+      it('full of hops whose calls have ended: they are released for the newcomer, before any sweep', () => {
+        fill();
+        held.forEach((token) => tokens().drop(token));
+        newcomer(201);
+        assert.deepStrictEqual(caller.refusals, [], 'refused by other callers\' ended hops');
+        assert.ok(broker.announced.has(`${pair()}/201`));
+        assert.strictEqual(broker.announced.size, 1, 'the ended ones are gone');
+        assert.strictEqual(broker.announcedBytes, one.byteLength);
+      });
+
+      it('full of hops past their deadline: released for the newcomer too', async () => {
+        fill({timeLeftMs: 30});
+        await sleep(60);   // their tokens still live, and no sweep has run
+        newcomer(202);
+        assert.deepStrictEqual(caller.refusals, []);
+        assert.strictEqual(broker.announced.size, 1);
+      });
+
+      // The walk is over every held hop, so a caller refused over and over
+      // buys at most one in 100 ms -- for itself. Another caller's first
+      // refusal walks at once: one caller's attempts never make the others
+      // wait for hops that have ended meanwhile. On the broker's own
+      // monotonic clock, set here.
+      it('a caller refused over and over walks every held hop at most once in 100 ms; another caller is not held back by it', () => {
+        fill();
+        let clock = 5000;
+        broker.monotonicMs = () => clock;
+        let walks = 0;
+        const releaseEnded = broker.releaseEnded.bind(broker);
+        broker.releaseEnded = (workerId) => { if (workerId == null) walks += 1; return releaseEnded(workerId); };
+        for (let i = 0; i < 5; i++) newcomer(210 + i);
+        assert.strictEqual(caller.refusals.length, 5);
+        assert.strictEqual(walks, 1, 'the first of the five');
+        clock += 99;
+        newcomer(215);
+        assert.strictEqual(walks, 1, 'still inside its 100 ms');
+        // every held hop's call ends now; the refused caller is inside its
+        // window, but another caller's hop walks, and is held
+        held.forEach((token) => tokens().drop(token));
+        const late = wm(60);
+        late.bindings = caller.bindings;
+        const channel = `${late.workerId}:${callee.workerId}`;
+        broker.channelRegistry[channel] = {callerWM: late, calleeWM: callee, grants: {}};
+        broker.handleAnnouncement(Object.assign({channel, invokeId: 1, token: tokens().issue(ENTRY(late.workerId)), epoch: EPOCH, inputBytes: one}, TARGET), late);
+        assert.deepStrictEqual(late.refusals, [], 'held back by another caller\'s refused attempts');
+        assert.strictEqual(walks, 2);
+        // and the first caller's own window passes
+        clock += 2;
+        newcomer(216);
+        assert.strictEqual(caller.refusals.length, 6, 'the six before; this one is held');
+      });
+
+      it('a caller over its own share AND the total walks the held hops once, not twice', () => {
+        fill();
+        let scans = 0;
+        const releaseEnded = broker.releaseEnded.bind(broker);
+        broker.releaseEnded = (workerId) => { scans += 1; return releaseEnded(workerId); };
+        // one of the eight, already at its share, announces again
+        const first = others[0];
+        broker.handleAnnouncement(Object.assign({channel: `${first.workerId}:${callee.workerId}`, invokeId: 150, token: tokens().issue(ENTRY(first.workerId)),
+          epoch: EPOCH, inputBytes: one}, TARGET), first);
+        assert.strictEqual(first.refusals.length, 1);
+        assert.strictEqual(scans, 1);
+      });
+
+      it('only what has ended goes: with half ended, the live half stays and the newcomer is held', () => {
+        fill();
+        held.slice(0, 16).forEach((token) => tokens().drop(token));
+        newcomer(203);
+        assert.deepStrictEqual(caller.refusals, []);
+        assert.strictEqual(broker.announced.size, 17, 'sixteen live and the newcomer');
+      });
+    });
+
+    // The reviewer's follow-up to #288: the count of held hops (4096) had no
+    // share per caller, as the bytes have. One caller holding 4096 small
+    // live hops kept every other caller refused until its deadlines passed.
+    describe('(#288 follow-up) the count held by one caller', () => {
+      // a sixteenth of the 4096: honest use is 16 hops in flight a channel, so
+      // sixteen channels' worth, and sixteen caller workers to fill the count
+      const SHARE = 256;
+      let small;
+      const hop = (w, channel, invokeId, token) => broker.handleAnnouncement(Object.assign({channel, invokeId, token, epoch: EPOCH, inputBytes: small}, TARGET), w);
+      const another = (id) => {
+        const other = wm(id);
+        other.bindings = caller.bindings;
+        broker.channelRegistry[`${other.workerId}:${callee.workerId}`] = {callerWM: other, calleeWM: callee, grants: {}};
+        return other;
+      };
+      beforeEach(() => {
+        cli.setOptions({workerThread: true, mcpToolCallCost: 1});
+        // one buffer for them all: the broker holds a reference and counts its length
+        small = bytes({input: {v: 1}});
+      });
+
+      it('a caller at its share (a sixteenth of the count) is refused RATE_LIMITED; another caller is not; its own ended hops make room', () => {
+        let at = 5000;
+        broker.monotonicMs = () => at;
+        const token = tokens().issue(ENTRY(caller.workerId));
+        for (let i = 0; i < SHARE; i++) hop(caller, pair(), 1000 + i, token);
+        assert.deepStrictEqual(caller.refusals, [], '256 small hops are within its share');
+        const walked = [];
+        const releaseEnded = broker.releaseEnded.bind(broker);
+        broker.releaseEnded = (workerId) => { walked.push(workerId); return releaseEnded(workerId); };
+        hop(caller, pair(), 3000, token);
+        assert.deepStrictEqual(caller.refusals.map((r) => [r.invokeId, r.errCode]), [[3000, 'RATE_LIMITED']]);
+        assert.strictEqual(broker.announced.size, SHARE, 'nothing live was released');
+        assert.deepStrictEqual(walked, [caller.workerId], 'over its own share it has its own hops looked at, not every caller\'s');
+        // another caller worker, on its own channel: not refused by the first one's count
+        const other = another(17);
+        hop(other, `${other.workerId}:${callee.workerId}`, 1, tokens().issue(ENTRY(other.workerId)));
+        assert.deepStrictEqual(other.refusals, []);
+        // the first caller's call ends: its hops go when it next announces,
+        // before any sweep (a caller at its count share is walked for at
+        // most once in 100 ms while nothing of its own has ended: below)
+        tokens().drop(token);
+        at += 100;
+        hop(caller, pair(), 3001, tokens().issue(ENTRY(caller.workerId)));
+        assert.strictEqual(caller.refusals.length, 1, 'refused by its own ended hops');
+        assert.strictEqual(broker.announced.size, 2, 'the other caller\'s and the new one');
+        // and nothing is kept for a caller that holds nothing
+        for (const key of [...broker.announced.keys()]) broker.forgetAnnounced(key);
+        assert.strictEqual(broker.announcedCountByWorker.size, 0);
+      });
+
+      it('the share is the caller worker\'s, over all its channels: half on each of two, and the next is refused on either', () => {
+        broker.channelRegistry.second = {callerWM: caller, calleeWM: callee, grants: {}};
+        const token = tokens().issue(ENTRY(caller.workerId));
+        for (let i = 0; i < SHARE / 2; i++) { hop(caller, pair(), 1000 + i, token); hop(caller, 'second', 1000 + i, token); }
+        assert.deepStrictEqual(caller.refusals, []);
+        hop(caller, 'second', 4000, token);
+        hop(caller, pair(), 4001, token);
+        assert.deepStrictEqual(caller.refusals.map((r) => [r.channel, r.errCode]), [['second', 'RATE_LIMITED'], [pair(), 'RATE_LIMITED']]);
+      });
+
+      // my /code-review: a caller parked at its count share (256 small live
+      // hops are enough) made the broker walk every held hop at each further
+      // announcement, at the message rate. A walk that released nothing is
+      // not repeated for that caller within 100 ms.
+      it('a caller at its count share whose walk released nothing is not walked for again within 100 ms; a walk that released something is', () => {
+        let at = 5000;
+        broker.monotonicMs = () => at;
+        const token = tokens().issue(ENTRY(caller.workerId));
+        for (let i = 0; i < SHARE; i++) hop(caller, pair(), 1000 + i, token);
+        let walks = 0;
+        const releaseEnded = broker.releaseEnded.bind(broker);
+        broker.releaseEnded = (workerId) => { walks += 1; return releaseEnded(workerId); };
+        for (let i = 0; i < 5; i++) hop(caller, pair(), 3000 + i, token);
+        assert.strictEqual(caller.refusals.length, 5, 'each refused');
+        assert.strictEqual(walks, 1, 'one walk for the five');
+        at += 99;
+        hop(caller, pair(), 3005, token);
+        assert.strictEqual(walks, 1);
+        at += 1;
+        hop(caller, pair(), 3006, token);
+        assert.strictEqual(walks, 2, 'again once 100 ms have passed');
+        // its call ends inside the next window: refused until the window passes, then all are released and it is held
+        tokens().drop(token);
+        const fresh = tokens().issue(ENTRY(caller.workerId));
+        at += 100;
+        hop(caller, pair(), 3007, fresh);
+        assert.strictEqual(walks, 3);
+        assert.ok(broker.announced.has(`${pair()}/3007`), 'held: the walk released its ended hops');
+        assert.strictEqual(broker.announced.size, 1);
+        // that walk released something, so the caller is not held off: at its share again, the next walk runs at once
+        for (let i = 0; i < SHARE - 1; i++) hop(caller, pair(), 6000 + i, fresh);
+        hop(caller, pair(), 8000, fresh);
+        assert.strictEqual(walks, 4, 'no wait after a walk that released hops');
+        // another caller's walks are its own
+        const other = another(18);
+        const theirs = tokens().issue(ENTRY(other.workerId));
+        for (let i = 0; i < SHARE; i++) hop(other, `${other.workerId}:${callee.workerId}`, 1 + i, theirs);
+        hop(other, `${other.workerId}:${callee.workerId}`, 5000, theirs);
+        assert.strictEqual(walks, 5);
+      });
+
+      it('one caller can no longer fill the count: with its share held live, fifteen more callers each hold theirs', () => {
+        const callers = [caller].concat(Array.from({length: 15}, (x, i) => another(41 + i)));
+        for (const w of callers) {
+          const token = tokens().issue(ENTRY(w.workerId));
+          const channel = w === caller ? pair() : `${w.workerId}:${callee.workerId}`;
+          for (let i = 0; i < SHARE; i++) hop(w, channel, 5000 + i, token);
+        }
+        assert.deepStrictEqual(callers.flatMap((w) => w.refusals), [], 'each within its own share');
+        assert.strictEqual(broker.announced.size, 4096);
+        // the total still bounds them all: a seventeenth caller is refused while all are live
+        const last = another(60);
+        hop(last, `${last.workerId}:${callee.workerId}`, 1, tokens().issue(ENTRY(last.workerId)));
+        assert.deepStrictEqual(last.refusals.map((r) => r.errCode), ['RATE_LIMITED']);
+      });
+
+      it('the count per caller is given back as its hops leave: one announced again under its id, one forgotten', () => {
+        const token = tokens().issue(ENTRY(caller.workerId));
+        for (let i = 0; i < SHARE; i++) hop(caller, pair(), 7000 + i, token);
+        // one is announced again under its id (the earlier one is dropped), and one is forgotten
+        hop(caller, pair(), 7000, token);
+        assert.deepStrictEqual(caller.refusals, [], 'a hop announced again does not count twice');
+        broker.forgetAnnounced(`${pair()}/7001`);
+        hop(caller, pair(), 9000, token);
+        assert.deepStrictEqual(caller.refusals, [], 'the room of the one forgotten');
+        hop(caller, pair(), 9001, token);
+        assert.strictEqual(caller.refusals.length, 1);
+      });
+    });
+
+    // #205 merged with #202: a reload's drain counts every invoke the callee
+    // still owes under step 4's accounting, the one whose input is being
+    // checked included; a channel to a module being replaced is denied
+    // before anything is held, so the denial releases nothing.
+    it('(#205 x #202) the drain counts announced, checking and matched invokes; a MODULE_RELOADING denial holds and releases nothing', async () => {
+      let release = null;
+      moduleSpec.validateSerialized = (checked, which, buffer) => new Promise((resolve) => { release = () => resolve({refused: null, buffer: buffer}); });
+      announce(90, tokens().issue(ENTRY(caller.workerId)));
+      assert.strictEqual(broker.openInvokesTo(callee), 1, 'an announced invoke');
+      meter(90, 'm90');
+      await sleep(20);
+      assert.strictEqual(broker.announced.size, 0);
+      assert.strictEqual(broker.openInvokesTo(callee), 1, 'an invoke whose input is being checked was not counted');
+      release();
+      await sleep(20);
+      assert.ok(served('m90'));
+      assert.strictEqual(broker.openInvokesTo(callee), 1, 'a matched, unbilled invoke');
+      bill(replyTo('m90').token, 'b90');
+      await sleep(50);
+      assert.strictEqual(broker.openInvokesTo(callee), 0);
+      // a channel request to a module being replaced: denied, nothing held.
+      // The broker asks whether the callee is being replaced only after the
+      // access check (#442: before it, a caller without access learnt the
+      // device is hosted), so the request's identity is one the auth
+      // provider accepts here.
+      const denied = [];
+      const requester = {workerId: 18, sendPeerChannelDenyToChild: (m) => denied.push(m), bindings: caller.bindings};
+      const provider = require('../../lib/auth').getAuthProvider();
+      const savedAuthenticate = provider.authenticate;
+      provider.authenticate = (appKey, deviceID, serviceID, actionName, cb) => cb(null, {ok: true, userName: 'drain-probe', isAdmin: false});
+      callee.replacing = true;
+      try {
+        const before = [broker.announcedBytes, broker.announcedByWorker.size, broker.announced.size];
+        broker.handleRequest({targetDeviceID: 'd-callee', appKey: 'k', token: tokens().issue(ENTRY(18))}, requester);
+        await sleep(20);
+        assert.deepStrictEqual(denied.map((m) => m.errCode), ['MODULE_RELOADING']);
+        assert.deepStrictEqual([broker.announcedBytes, broker.announcedByWorker.size, broker.announced.size], before);
+      } finally {
+        provider.authenticate = savedAuthenticate;
+        callee.replacing = false;
+      }
+    });
+
+    // Round 3 (3, 4): an invoke's id is an integer in range, on the
+    // announcement and on the match; the id delivered is the announced one.
+    it('(#202-r3-3/4) an id that is not an integer in range is not held, and a match by one is refused; the announced id is delivered', async () => {
+      broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: '71', token: tokens().issue(ENTRY(caller.workerId)), epoch: EPOCH, inputBytes: bytes({input: {}})}, TARGET), caller);
+      broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 2 ** 31, token: tokens().issue(ENTRY(caller.workerId)), epoch: EPOCH, inputBytes: bytes({input: {}})}, TARGET), caller);
+      assert.strictEqual(broker.announced.size, 0);
+      announce(72, tokens().issue(ENTRY(caller.workerId)));
+      broker.handleMeteringRequest({channel: pair(), invokeId: '72'}, 'm72s', callee);
+      assert.ok(refused(replyTo('m72s')), 'a string id matched');
+      meter(72, 'm72');
+      await sleep(50);
+      bill(replyTo('m72').token, 'b72');
+      await sleep(50);
+      assert.deepStrictEqual(caller.results.map((m) => m.invokeId), [72]);
+    });
+
+    // The nit: main's deadline is the caller's, from the time its timer had left when it sent.
+    it('(#202-r3) main\'s deadline is no later than the caller\'s timer, as it said at send (timeLeftMs)', async () => {
+      broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 73, token: tokens().issue(ENTRY(caller.workerId)), epoch: EPOCH,
+        inputBytes: bytes({input: {}}), timeLeftMs: 40}, TARGET), caller);
+      await sleep(80);
+      meter(73, 'm73');
+      await sleep(50);
+      const r = replyTo('m73');
+      assert.ok(r != null && r.errCode === 'PEER_CHANNEL_TIMEOUT' && typeof(r.token) !== 'string', JSON.stringify(r));
     });
 
     // #141 N1: the announcement's time is the deadline's start, and a module
@@ -859,7 +1327,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       wmMain.worker = {postMessage: (m) => posted.push(m)};
       wmMain.messageRate = 1;
       wmMain.rateTokens = 0;
-      wmMain.rateRefillAt = Date.now() + 60000;   // no refill during the test
+      wmMain.rateRefillAt = require('perf_hooks').performance.now() + 60000;   // no refill during the test (the bucket's own, monotonic clock)
       wmMain.on('peer-bill-request', (m) => emitted.push(m.data.token));
       wmMain.unbilledTokens = new Set(['live']);
       wmMain.onWorkerMessage({id: 1, category: 'child', command: 'peer-bill-request', data: {token: 'forgotten'}});
@@ -882,6 +1350,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       announce(1000, first);
       meter(1000, 'm1000');
       for (let i = 1; i < cap; i++) { announce(1000 + i, tokens().issue(e)); meter(1000 + i, `m${1000 + i}`); }
+      await sleep(100);
       assert.ok(served('m1000') && served(`m${1000 + cap - 1}`), 'the matches under the cap were not served');
       announce(1000 + cap, tokens().issue(e));
       meter(1000 + cap, 'm-over');
@@ -904,8 +1373,10 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       // a second channel is not bounded by the first's
       const other = wm(14);
       broker.channelRegistry[`${caller.workerId}:${other.workerId}`] = {callerWM: caller, calleeWM: other, grants: {}};
-      broker.handleAnnouncement({channel: `${caller.workerId}:${other.workerId}`, invokeId: 1, token: tokens().issue(e)}, caller);
-      broker.handleMeteringRequest({channel: `${caller.workerId}:${other.workerId}`, invokeId: 1, deviceID: 'd-other', serviceID: 'svc', actionName: 'bump'}, 'm-other', other);
+      broker.dm.deviceMap['d-other'] = other;
+      broker.handleAnnouncement({channel: `${caller.workerId}:${other.workerId}`, invokeId: 1, token: tokens().issue(e), epoch: EPOCH,
+        deviceID: 'd-other', serviceID: 'svc', actionName: 'bump', inputBytes: bytes({input: {}})}, caller);
+      broker.handleMeteringRequest({channel: `${caller.workerId}:${other.workerId}`, invokeId: 1}, 'm-other', other);
       await sleep(50);
       const r = other.replies.find((x) => x.msgID === 'm-other');
       assert.ok(r != null && !refused(r) && typeof(r.token) === 'string', `the other channel was refused: ${JSON.stringify(r)}`);
@@ -959,15 +1430,172 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     });
   });
 
+  // The review of #163 (5), as re-checked: device IDs by ownership. A worker
+  // may not announce an ID another module's api.json declares, nor one
+  // another module owns now or owned before; any other ID is owned by the
+  // first module that announces it (a module that makes its devices in
+  // code, test/fixtures/dynamic-discovery-module, still loads).
+  it('(#163-5) device IDs by ownership: another module\'s declared or owned ID is refused; a new one is the first announcer\'s', () => {
+    const EventEmitter = require('events');
+    const DeviceManager = require('../../lib/device-manager');
+    const wm = (name, id) => Object.assign(new EventEmitter(), {hostModuleName: name, hostModulePath: `/mods/${name}`, deviceList: {}, workerId: id});
+    const wmM = wm('M', 73);
+    const wmN = wm('N', 74);
+    const self = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {}, notifyDeviceLoad: {}, allDevicesLoaded: true,
+      moduleManager: {modules: {M: wmM, N: wmN}, endedStateForDevice: () => null, clearEndedDevice: () => {},
+        pinnedDeviceIDs: {T: new Set(['dev-T']), M: new Set(['dev-M']), N: null}}});
+    DeviceManager.prototype.onWorkerLoaded.call(self, wmM);
+    DeviceManager.prototype.onWorkerLoaded.call(self, wmN);
+    // since lean worker step 3 a worker announces nothing: the main thread
+    // registers the device its own copy of the module's spec names
+    // (registerFromSpec), so each registration here carries one, and the
+    // ownership rule alone decides
+    const announce = (w, name, id) => {
+      const spec = {device: {friendlyName: id}};
+      w.moduleSpec = {deviceID: id, spec: spec, specText: JSON.stringify(spec), modulePath: null};
+      DeviceManager.prototype.registerFromSpec.call(self, w);
+    };
+    announce(wmM, 'M', 'dev-T');
+    assert.strictEqual(self.deviceMap['dev-T'], undefined, 'M took a device T declares');
+    announce(wmM, 'M', 'dev-dyn');
+    assert.strictEqual(self.deviceMap['dev-dyn'], wmM, 'a new device was not its first announcer\'s');
+    delete self.deviceMap['dev-dyn'];   // M's device goes (an unload)
+    announce(wmN, 'N', 'dev-dyn');
+    assert.strictEqual(self.deviceMap['dev-dyn'], undefined, 'N took a device M owned before');
+    announce(wmM, 'M', 'dev-dyn');
+    assert.strictEqual(self.deviceMap['dev-dyn'], wmM, 'its owner could not announce it again');
+    announce(wmM, 'M', 'dev-M');
+    assert.strictEqual(self.deviceMap['dev-M'], wmM);
+  });
+
+  // #153's review (2): a device ID is a worker's statement. While module T
+  // reloads, its device's ended entry names T; another module announcing
+  // T's device ID then must not take it (and so T's hops and tools).
+  describe('registration of an announced device', () => {
+    it('(#153-2) a device whose ended entry names another module is not registered to this one; its own module re-registers it', () => {
+      const EventEmitter = require('events');
+      const DeviceManager = require('../../lib/device-manager');
+      const ended = {'dev-T': {code: 'MODULE_RELOADING', name: 'T'}};
+      const wm = (name) => Object.assign(new EventEmitter(), {hostModuleName: name, hostModulePath: `/mods/${name}`, deviceList: {}, workerId: name === 'T' ? 71 : 72});
+      const wmT = wm('T');
+      const wmM = wm('M');
+      const self = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {}, notifyDeviceLoad: {}, allDevicesLoaded: true,
+        moduleManager: {modules: {T: wmT, M: wmM}, endedStateForDevice: (id) => ended[id] || null, clearEndedDevice: (id) => { delete ended[id]; }}});
+      DeviceManager.prototype.onWorkerLoaded.call(self, wmM);
+      DeviceManager.prototype.onWorkerLoaded.call(self, wmT);
+      // registered from each worker's main-side spec (registerFromSpec, lean
+      // worker step 3), so the ended entry alone decides; a worker states no
+      // module name at all now
+      const announce = (w) => {
+        const spec = {device: {friendlyName: 'T'}};
+        w.moduleSpec = {deviceID: 'dev-T', spec: spec, specText: JSON.stringify(spec), modulePath: null};
+        DeviceManager.prototype.registerFromSpec.call(self, w);
+      };
+      announce(wmM);
+      assert.strictEqual(self.deviceMap['dev-T'], undefined, 'M took T\'s device while T reloads');
+      announce(wmM);   // a second try changes nothing: the worker states no name
+      assert.strictEqual(self.deviceMap['dev-T'], undefined, 'M took T\'s device by stating T\'s name');
+      announce(wmT);
+      assert.strictEqual(self.deviceMap['dev-T'], wmT);
+    });
+  });
+
+  // The review of #163 (2): job history (jobinfo:<name>, other tenants'
+  // inputs, results and owners) lives in the kv a module's ctx.redis
+  // reaches; a module's command on a runtime key is refused, read or write.
+  describe('a module\'s ctx.redis and the runtime\'s own keys', () => {
+    // Under #164's namespace (every key a module names is stored under
+    // m:<module>:), a module naming the runtime's job history (jobinfo:<name>)
+    // reaches only its own key of that name: the runtime's list is never read
+    // or written. (#163's refusal of jobinfo keys is dropped as redundant.)
+    it('(#163-2) a command naming a jobinfo key reaches only the module\'s own namespaced key, never the runtime\'s list', async () => {
+      const EventEmitter = require('events');
+      const DeviceManager = require('../../lib/device-manager');
+      const redisAPI = require('../../lib/redis-api');
+      const saved = {client: redisAPI.client, isCommand: redisAPI.isCommand};
+      const ran = [];
+      redisAPI.client = new Proxy({}, {get: (t, op) => (data, cb) => { ran.push([op, data]); cb(null, 'ok'); }});
+      // the allowed set init() fills
+      redisAPI.isCommand = (op) => redisAPI.ALLOWED_COMMANDS.includes(op);
+      try {
+        const wm = Object.assign(new EventEmitter(), {hostModuleName: 'm', deviceList: {}, workerId: 81});
+        const replies = [];
+        wm.sendRedisCommandReplyToChild = (m) => replies.push(m);
+        const self = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {}, notifyDeviceLoad: {}, allDevicesLoaded: true, moduleManager: null});
+        DeviceManager.prototype.onWorkerLoaded.call(self, wm);
+        const send = (op, data) => wm.emit('rediscommand', {id: replies.length + ran.length + 1, data: {op, data}}, wm);
+        send('lrange', ['jobinfo:report', 0, -1]);
+        send('lpush', ['jobinfo:report', '{}']);
+        send('del', ['mine', 'jobinfo:report']);
+        send('mget', ['a', 'jobinfo:x']);
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.strictEqual(replies.length, 4, JSON.stringify(replies));
+        assert.ok(replies.every((r) => r.errMsg == null), JSON.stringify(replies));
+        assert.deepStrictEqual(ran, [
+          ['lrange', ['m:m:jobinfo:report', 0, -1]],
+          ['lpush', ['m:m:jobinfo:report', '{}']],
+          ['del', ['m:m:mine', 'm:m:jobinfo:report']],
+          ['mget', ['m:m:a', 'm:m:jobinfo:x']]
+        ]);
+        const keys = ran.flatMap(([, data]) => data.filter((k) => typeof(k) === 'string'));
+        assert.ok(!keys.some((k) => k.startsWith('jobinfo:')), `a runtime key reached the store: ${JSON.stringify(keys)}`);
+      } finally {
+        redisAPI.client = saved.client;
+        redisAPI.isCommand = saved.isCommand;
+      }
+    });
+  });
+
+  describe('a job history record\'s owner', () => {
+    it('(#163-2) is the caller\'s opaque id, never the key or a hash of it; the owner still reads the record', (done) => {
+      const identity = require('../../lib/identity');
+      if (!identity.ready()) {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-18-hist-'));
+        identity.initSync({moduleDataPath: dir});
+      }
+      const common = require('../../lib/job-control-common');
+      const redisAPI = require('../../lib/redis-api');
+      const saved = redisAPI.client;
+      const list = [];
+      redisAPI.client = {lpush: (k, v) => list.unshift(v), ltrim: () => {}, lrange: (k, a, b, cb) => cb(null, list.slice())};
+      const KEY = `hist-key-${hex()}`;
+      try {
+        common.saveJobInfo({id: '1', name: 'report', data: {apiKey: KEY, input: {}}, opts: {}, progress: 0}, 'completed');
+        const record = JSON.parse(list[0]);
+        assert.strictEqual(record.job.data.owner, identity.idForKey(KEY), JSON.stringify(record.job.data));
+        assert.ok(!JSON.stringify(record).includes(KEY), 'the key is in the record');
+        common.getJobHistory({appKey: KEY}, 'report', (err, rows) => {
+          try {
+            assert.strictEqual(err, null, String(err));
+            assert.strictEqual(rows.length, 1, JSON.stringify(rows));
+            done();
+          } catch (e) { done(e); }
+        });
+      } catch (e) {
+        done(e);
+      } finally {
+        redisAPI.client = saved;
+      }
+    });
+  });
+
   // The binding a worker's proxy keeps for its calling device (ENTRY's
   // 'd-callee'), declaring calls on these devices.
   const DECLARING = (...devices) => ({'d-callee': {identity: 'i', module: 'token-forge', targets: new Set(devices.map((d) => `${d}|svc|act`))}});
+  // user-auth answering yes to every identity, for the query cases that
+  // are about something else than the access check
+  const allowAll = (fn) => async () => {
+    const authPath = require.resolve('../../lib/user-auth');
+    const saved = require.cache[authPath];
+    require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: (a, b, c, d, e, f, g, cb) => cb(null, {})};
+    try { return await fn(); } finally { if (saved != null) require.cache[authPath] = saved; else delete require.cache[authPath]; }
+  };
 
   describe('the device query', () => {
     // R2-1 Task 5 (#148, 2): the query answers a spec only for a device the
     // calling module declared calls on; any other device, present or not, is
     // refused as its hop would be, and before the verdict it is not ready.
-    it('(#148) answers a spec only for a declared device: anything else CTX_CALL_UNDECLARED, present or not; before the verdict CTX_CALL_NOT_READY', async () => {
+    it('(#148) answers a spec only for a declared device: anything else CTX_CALL_UNDECLARED, present or not; before the verdict CTX_CALL_NOT_READY', allowAll(async () => {
       const DeviceManager = require('../../lib/device-manager');
       cli.setOptions({workerThread: true, peerChannelAuthLookupTimeoutMs: 200});
       try {
@@ -985,6 +1613,68 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         assert.deepStrictEqual(replies.map((r) => [r.msgID, r.spec != null, r.errCode]).sort(),
           [['q1', true, undefined], ['q2', false, 'CTX_CALL_UNDECLARED'], ['q3', false, 'CTX_CALL_UNDECLARED'], ['q4', false, 'CTX_CALL_NOT_READY']], JSON.stringify(replies));
       } finally {
+        cli.setOptions({workerThread: false});
+      }
+    }));
+
+    // #153's review (5): a present declared device gets the access check at
+    // query time too: an identity without a grant gets the access error,
+    // never the spec.
+    it('(#153-5) a present declared device: the spec only to an identity granted it, the access error otherwise', async () => {
+      const DeviceManager = require('../../lib/device-manager');
+      const authPath = require.resolve('../../lib/user-auth');
+      const savedAuth = require.cache[authPath];
+      const {CountinghouseError} = require('../../lib/countinghouse-error');
+      require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,
+        exports: (a, b, deviceID, key, c, d, e, cb) => cb(key === 'denied-identity' ? new CountinghouseError('USER_HAS_NO_DEVICE') : null, {})};
+      try {
+        cli.setOptions({workerThread: true, peerChannelAuthLookupTimeoutMs: 200});
+        const replies = [];
+        const wm = {workerId: 37, sendDeviceQueryReplyToChild: (m) => replies.push(m), bindings: DECLARING('d-declared')};
+        const present = {allDevicesLoaded: true, ensureDeviceState: (d, cb) => cb(null, {deviceList: {[d]: {device: {friendlyName: d}}}}),
+          missingDeviceErrorForHop: () => new Error('not reached'), notifyDeviceLoad: {}};
+        DeviceManager.prototype.queryDeviceForChild.call(present, 'd-declared', 'q1', wm, {token: tokens().issue(Object.assign(ENTRY(37), {identityKey: 'granted-identity'}))});
+        DeviceManager.prototype.queryDeviceForChild.call(present, 'd-declared', 'q2', wm, {token: tokens().issue(Object.assign(ENTRY(37), {identityKey: 'denied-identity'}))});
+        await sleep(100);
+        assert.deepStrictEqual(replies.map((r) => [r.msgID, r.spec != null, r.errCode]).sort(),
+          [['q1', true, undefined], ['q2', false, 'USER_HAS_NO_DEVICE']], JSON.stringify(replies));
+      } finally {
+        if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
+        cli.setOptions({workerThread: false});
+      }
+    });
+
+    // the review of 5b: a query held while discovery runs gets the same
+    // access check when its device comes online
+    it('(5b-review) a query held during discovery: the spec only to an identity granted the device once it is online', async () => {
+      const EventEmitter = require('events');
+      const DeviceManager = require('../../lib/device-manager');
+      const authPath = require.resolve('../../lib/user-auth');
+      const savedAuth = require.cache[authPath];
+      const {CountinghouseError} = require('../../lib/countinghouse-error');
+      require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,
+        exports: (a, b, deviceID, key, c, d, e, cb) => cb(key === 'denied-identity' ? new CountinghouseError('USER_HAS_NO_DEVICE') : null, {})};
+      try {
+        cli.setOptions({workerThread: true, peerChannelAuthLookupTimeoutMs: 200});
+        const replies = [];
+        const asker = {workerId: 38, sendDeviceQueryReplyToChild: (m) => replies.push(m), bindings: DECLARING('d-late')};
+        const self = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {}, notifyDeviceLoad: {}, allDevicesLoaded: false,
+          ensureDeviceState: (d, cb) => cb(new Error('missing'), null), missingDeviceErrorForHop: () => new Error('not reached'),
+          moduleManager: {modules: {late: null}, endedStateForDevice: () => null, clearEndedDevice: () => {}}});
+        DeviceManager.prototype.queryDeviceForChild.call(self, 'd-late', 'q1', asker, {token: tokens().issue(Object.assign(ENTRY(38), {identityKey: 'granted-identity'}))});
+        DeviceManager.prototype.queryDeviceForChild.call(self, 'd-late', 'q2', asker, {token: tokens().issue(Object.assign(ENTRY(38), {identityKey: 'denied-identity'}))});
+        assert.deepStrictEqual(replies, [], 'answered before the device came online');
+        const host = Object.assign(new EventEmitter(), {hostModuleName: 'late', hostModulePath: '/mods/late', deviceList: {}, workerId: 39});
+        self.moduleManager.modules.late = host;
+        DeviceManager.prototype.onWorkerLoaded.call(self, host);
+        const lateSpec = {device: {friendlyName: 'late'}};
+        host.moduleSpec = {deviceID: 'd-late', spec: lateSpec, specText: JSON.stringify(lateSpec), modulePath: null};
+        DeviceManager.prototype.registerFromSpec.call(self, host);
+        await sleep(100);
+        assert.deepStrictEqual(replies.map((r) => [r.msgID, r.spec != null, r.errCode]).sort(),
+          [['q1', true, undefined], ['q2', false, 'USER_HAS_NO_DEVICE']], JSON.stringify(replies));
+      } finally {
+        if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
         cli.setOptions({workerThread: false});
       }
     });
@@ -1018,7 +1708,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
   // and fails closed without it: a worker message with no token, or
   // another worker's, is answered with nothing, device present or not.
   describe('the device query without a token', () => {
-    it('(#138-5b) is refused CALL_TOKEN_INVALID, the device present or not', async () => {
+    it('(#138-5b) is refused CALL_TOKEN_INVALID, the device present or not', allowAll(async () => {
       const DeviceManager = require('../../lib/device-manager');
       cli.setOptions({workerThread: true, peerChannelAuthLookupTimeoutMs: 200});
       try {
@@ -1039,7 +1729,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       } finally {
         cli.setOptions({workerThread: false});
       }
-    });
+    }));
   });
 
   // #141 N1: a bill refused as late (PEER_CHANNEL_TIMEOUT) or unmatched
@@ -1065,8 +1755,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const sent = [];
       const failed = [];
       const dm = {pendingPeerInvokes: {}, peerChannels: {}, peerDeviceWorkerMap: {}, workerMessage: {sendPeerChannelRequestToParent: (m) => sent.push(m)},
-        flushPendingPeerInvokes: DeviceManager.prototype.flushPendingPeerInvokes};
-      const invoke = (token) => DeviceManager.prototype.invokeActionViaPeerChannel.call(dm, 'k', 'k', 'd-callee', 'svc', 'bump', {input: {}, token: token}, (e) => failed.push(e != null ? e.code : null));
+        flushPendingPeerInvokes: DeviceManager.prototype.flushPendingPeerInvokes, requestPeerChannel: DeviceManager.prototype.requestPeerChannel};
+      const invoke = (token) => DeviceManager.prototype.invokeActionViaPeerChannel.call(dm, 'd-callee', 'svc', 'bump', {input: {}, token: token}, (e) => failed.push(e != null ? e.code : null));
       invoke('t-dead');
       invoke('t-live');
       invoke('t-live-2');
@@ -1100,7 +1790,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const replies = [];
       const caller = {workerId: 61, sendActionInvokeReplyToChild: (m) => replies.push(m)};
       const token = tokens().issue(Object.assign(ENTRY(61), {deviceID: 'd-early'}));
-      DeviceManager.prototype.sendInvokeActionMessageToWorker.call({deviceMap: {}}, 'k', 'k', 'd2', 'svc', 'act', {}, 'm1', caller, token);
+      // the real prototype: M4a's hop wait asks replacingInPlace, false with no module manager
+      DeviceManager.prototype.sendInvokeActionMessageToWorker.call(Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {}}), 'k', 'k', 'd2', 'svc', 'act', {}, 'm1', caller, token);
       assert.strictEqual(replies[0].errCode, 'CTX_CALL_NOT_READY', JSON.stringify(replies));
     });
   });

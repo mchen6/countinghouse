@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "not-json-output-module",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "actions that return a Buffer, a typed array or a DataView where JSON belongs, beside clean and badly encoded base64",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:svc": {
+        "actionList": [
+          {"name": "returnsBuffer", "description": "Returns a Buffer in a field declared base64, instead of its base64 string.",
+           "input": {"schema": "/svc/any/input"}, "output": {"schema": "/svc/returnsBuffer/output"}},
+          {"name": "returnsNestedView", "description": "Returns a Uint8Array inside an array item.",
+           "input": {"schema": "/svc/any/input"}, "output": {"schema": "/svc/returnsNestedView/output"}},
+          {"name": "returnsUntypedView", "description": "Returns a DataView in a field its schema leaves untyped.",
+           "input": {"schema": "/svc/any/input"}, "output": {"schema": "/svc/returnsUntypedView/output"}},
+          {"name": "returnsBase64", "description": "Returns canonical base64 in a field declared base64: the control case.",
+           "input": {"schema": "/svc/any/input"}, "output": {"schema": "/svc/returnsBuffer/output"}},
+          {"name": "returnsBadBase64", "description": "Returns base64 with a pad bit set in a field declared base64.",
+           "input": {"schema": "/svc/any/input"}, "output": {"schema": "/svc/returnsBuffer/output"}}
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "prompts": {
+    "pick": {"type": "object", "properties": {"colour": {"type": "string", "enum": ["red", "green"]}}, "required": ["colour"]}
+  },
+  "pickService": {
+    "readItem": {
+      "input": {"type": "object", "properties": {"id": {"type": "string", "enum": ["i1", "i2"]}}, "required": ["id"]},
+      "output": {"type": "object"}
+    },
+    "completeColour": {
+      "input": {"type": "object", "properties": {"argument": {"type": "string"}, "value": {"type": "string"}, "context": {"type": "object"}}, "required": ["argument", "value"]},
+      "output": {"type": "object", "properties": {"values": {"type": "array", "items": {"type": "string"}}}, "required": ["values"]}
+    },
+    "completeId": {
+      "input": {"type": "object", "properties": {"argument": {"type": "string"}, "value": {"type": "string"}, "context": {"type": "object"}}, "required": ["argument", "value"]},
+      "output": {"type": "object", "properties": {"values": {"type": "array", "items": {"type": "string"}}}, "required": ["values"]}
+    },
+    "lastLate": {
+      "input": {"type": "object"},
+      "output": {"type": "object"}
+    }
+  }
+}

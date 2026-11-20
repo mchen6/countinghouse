@@ -36,6 +36,24 @@ constraint, and encoding it is most of the value they came for.
   an LLM reads to decide whether to call it, and an action with no description
   is skipped entirely when `tools/list` is built.
 
+## If it must ask the user: ask first, act after
+
+An action may declare questions (`api.json`'s `questions`) and ask one with
+`ctx.ask(name, values)`. The handler does not wait: with no answer it ends
+(`ASK_PENDING`), and the client's retry runs it again from the top. So put
+every `ctx.ask` **before** anything the handler cannot do twice:
+
+- every `ctx.call` before the ask runs again on the retry and is **billed
+  again**;
+- a message sent, a record written or a payment made before the ask
+  **happens twice**, and has happened once even if the user declines.
+
+Never catch `ASK_PENDING` (from your own ask, or a part's through
+`ctx.call`): let it pass. Catch `ASK_UNAVAILABLE` to fall back when there is
+no one to ask. Keep a question's values the same on every run, and never
+treat an answer as proof of a person. Validate cannot check any of this;
+say it to the user when you show the split.
+
 ## Show the split before writing files
 
 Present the proposed device, services, actions and — most importantly — what
@@ -56,6 +74,11 @@ my-module/
     └── greetService/      # service SHORT name (after ":serviceID:")
         └── hello.js       # one file per action
 ```
+
+That is the only format: no `index.js`, no `device.js`, no `"main"` in
+`package.json`. A main entry without `handlers/` is refused
+(`MODULE_LAYOUT_UNSUPPORTED`); shared code goes in a plain file the handlers
+require.
 
 A handler is `async (input, ctx)`; `input` is already validated.
 
@@ -93,20 +116,22 @@ check from a shell (exit 0 clean, 1 problems, 2 unusable path).
 
 The authoring tools need the runtime started with `--authoringTools` and an
 admin key. If they are missing from `tools/list`, that is why. Keep the
-default worker mode: a module whose main entry crashes or calls
-`process.exit()` during `countinghouse_load_module` is a reported failure in
-worker mode, but takes the whole runtime down under `--no-workerThread`.
+default worker mode: a module whose handler file crashes or calls
+`process.exit()` while being required by `countinghouse_load_module` is a
+reported failure in worker mode, but takes the whole runtime down under
+`--no-workerThread`.
 
 ## When it does not appear in tools/list
 
 `docs/module-development.md` has the full checklist. The five that account for
 almost everything:
 
-1. `MODULE_NOT_DISCOVERABLE` — `package.json` `main` points at the wrong file.
+1. `MODULE_LAYOUT_UNSUPPORTED` — a main entry (`"main"` or `index.js`) and no
+   `handlers/`: the retired format; the error names the file.
 2. `DEVICE_SPEC_VALIDATION_FAIL` — `api.json` fails the meta-schema; the error
    names the instance path.
-3. `MODULE_NO_DEVICE_ONLINE` — a dynamic-discovery module that never emitted
-   `deviceonline`.
-4. `LOAD_MODULE_FAIL` — the module threw while loading.
+3. `MODULE_NO_DEVICE_ONLINE` — the device assembled from `api.json` failed;
+   the message quotes the earlier error.
+4. `LOAD_MODULE_FAIL` — a handler file threw while being required.
 5. Loaded but absent — an action with no `description` is skipped, and
    `tools/list` is filtered per apiKey.

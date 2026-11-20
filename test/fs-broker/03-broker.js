@@ -36,6 +36,8 @@ function gate() {
 
 const tick = () => new Promise((r) => setTimeout(r, 30));
 
+const WIN = process.platform === 'win32';
+
 describe('fs-broker 03: broker operations', function() {
   this.timeout(10000);
 
@@ -82,15 +84,15 @@ describe('fs-broker 03: broker operations', function() {
     } finally { await t.done(); }
   });
 
-  it('enforce: /app is read-only (EROFS); audit allows and reports it', async () => {
+  it('enforce: /app is read-only (EROFS); audit refuses it too (EACCES) and records the denial', async () => {
     const e = await setup('enforce');
     try {
       await assert.rejects(e.broker.handle('open', ['/app/index.js', 'w']), (err) => err.code === 'EROFS' && err.path === '/app/index.js');
     } finally { await e.done(); }
     const a = await setup('audit');
     try {
-      await a.broker.handle('close', [await a.broker.handle('open', ['/app/new.js', 'w'])]);
-      assert.ok(a.reports.includes('readonly /app/new.js'), a.reports.join('\n'));
+      await assert.rejects(a.broker.handle('open', ['/app/new.js', 'w']), (err) => err.code === 'EACCES' && err.path === '/app/new.js');
+      assert.ok(a.reports.includes('denied /app/new.js'), a.reports.join('\n'));
     } finally { await a.done(); }
   });
 
@@ -175,7 +177,8 @@ describe('fs-broker 03: broker operations', function() {
     }
   });
 
-  it('chmod strips setuid, setgid and sticky bits', async () => {
+  // Windows has no setuid, setgid or sticky bit to strip (chmod sets only the read-only attribute).
+  (WIN ? it.skip : it)('chmod strips setuid, setgid and sticky bits', async () => {
     const t = await setup('off');
     try {
       fs.writeFileSync(path.join(t.dirs.data, 'f'), 'x');
@@ -207,7 +210,7 @@ describe('fs-broker 03: broker operations', function() {
 
   it('verify after open: a file swapped for a symlink between check and open is refused under enforce', async () => {
     const t = await setup('enforce', {hooks: {afterCheck: (syscall, host) => {
-      if (syscall === 'open' && host.endsWith('/swap')) {
+      if (syscall === 'open' && host.replace(/\\/g, '/').endsWith('/swap')) {
         fs.rmSync(host);
         fs.symlinkSync(path.join(path.dirname(path.dirname(host)), 'outside', 'secret'), host);
       }
@@ -220,7 +223,7 @@ describe('fs-broker 03: broker operations', function() {
 
   it('verify after open: a create whose parent is swapped toward a read-only root is refused under enforce', async () => {
     const t = await setup('enforce', {hooks: {afterCheck: (syscall, host) => {
-      if (syscall === 'open' && host.endsWith('/sub/new')) {
+      if (syscall === 'open' && host.replace(/\\/g, '/').endsWith('/sub/new')) {
         const sub = path.dirname(host);
         fs.rmSync(sub, {recursive: true});
         fs.symlinkSync(path.join(path.dirname(path.dirname(sub)), 'ro'), sub);
@@ -254,8 +257,10 @@ describe('fs-broker 03: broker operations', function() {
       const names = await t.broker.handle('readdir', ['/', {}]);
       assert.ok(['app', 'data', 'tmp'].every((n) => names.includes(n)), names.join(','));
       assert.strictEqual((await t.broker.handle('stat', ['/'])).fields.mode & 0o170000, 0o040000);
-      // the parent of the declared ro root is a synthesised ancestor: not writable
-      await assert.rejects(t.broker.handle('utimes', [t.base, 0, 0]), (e) => e.code === 'EROFS');
+      // the parent of the declared ro root is a synthesised ancestor: not
+      // writable. (On Windows a declared root, a drive path, is outside the
+      // namespace; "/" is the synthesised ancestor there.)
+      await assert.rejects(t.broker.handle('utimes', [WIN ? '/' : t.base, 0, 0]), (e) => e.code === 'EROFS');
       // a new name beside the roots is outside the namespace
       await assert.rejects(t.broker.handle('mkdir', ['/new', {}]), (e) => e.code === 'ENOENT');
     } finally { await t.done(); }
@@ -272,7 +277,7 @@ describe('fs-broker 03: broker operations', function() {
 
   it('a mutation waits for a read that holds the lock (deterministic)', async () => {
     const g = gate();
-    const t = await setup('enforce', {hooks: {afterCheck: (syscall, host) => (syscall === 'stat' && host.endsWith('/f') ? g.wait() : null)}});
+    const t = await setup('enforce', {hooks: {afterCheck: (syscall, host) => (syscall === 'stat' && host.replace(/\\/g, '/').endsWith('/f') ? g.wait() : null)}});
     try {
       fs.writeFileSync(path.join(t.dirs.data, 'f'), 'x');
       const stat = t.broker.handle('stat', ['/data/f']);

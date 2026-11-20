@@ -11,9 +11,10 @@ const path   = require('path');
 const request = require('supertest');
 const {Queue} = require('bullmq');
 const {ROOT, startServer, stopServer, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort, redisConnectionFor} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
-const PORT    = 9643;
+const PORT    = testPort(9643);
 const URL     = `http://127.0.0.1:${PORT}`;
 const KEY     = `late-completion-${process.pid}`;
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'worker-end');
@@ -38,7 +39,7 @@ describe('sandbox 32: a job\'s late answer, after its timeout', function() {
     server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread', '--mcpToolCallCost', '1', '--loadModule', FIXTURE]);
     await waitFor(async () => (await post(PORT, KEY, `/devices/${DEVICE}/invoke-action`, {serviceID: SERVICE, actionName: 'ping', input: {}})).status === 200,
       20000, 'worker-end to answer');
-    queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: {db: 11, host: '127.0.0.1', port: 6379}});
+    queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: redisConnectionFor(11)});
   });
   after(async () => {
     await queue.close();
@@ -50,7 +51,7 @@ describe('sandbox 32: a job\'s late answer, after its timeout', function() {
     const added = await addLate({timeout: 2000, attempts: 1}, {ms: 6000});
     assert.strictEqual(added.status, 200, JSON.stringify(added.body));
     const job = await failed(added.body.id);
-    assert.match(job.job.failedReason, /timed out after 2000 milliseconds/);
+    assert.match(job.job.failedReason, /^JOB_TIMEOUT: The job did not finish within its timeout \(2 s\), so it failed/);
     await sleep(6500);   // the handler has answered by now
     assert.strictEqual(await balance(), before, 'the late answer was billed');
     const raw = await queue.getJob(added.body.id);

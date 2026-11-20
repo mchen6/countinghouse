@@ -1,0 +1,4 @@
+{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "#/", "type": "object",
+  "probeService": {"leave": {
+    "input": {"type": "object", "properties": {"how": {"type": "string", "enum": ["early", "mid", "nothing"]}}, "required": ["how"]},
+    "output": {"type": "object", "properties": {"how": {"type": "string"}, "detail": {"type": "string"}}}}}}

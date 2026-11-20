@@ -116,12 +116,101 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
   // too (step 1 (e)).
   describe('fromModule: a plain Error with a code', () => {
     const plain = (code, extra) => Object.assign(new Error('why'), {code: code}, extra || {});
-    it('is the module\'s error when its code looks like one', () => {
-      for (const code of ['REPO_TOO_LARGE', 'ABC', 'X2_Y', 'DEVICE_OFFLINE']) {
+    it('is the module\'s error when its code looks like one, and not a catalogue code', () => {
+      for (const code of ['REPO_TOO_LARGE', 'ABC', 'X2_Y', 'SHAPE_OFFLINE']) {
         const e = CountinghouseError.fromModule(plain(code));
         assert.ok(e instanceof CountinghouseError, code);
         assert.deepStrictEqual([e.code, e.message, e.origin, e.kind], [code, `${code}: why`, 'module', 'module'], code);
       }
+    });
+    // a module defines only its own codes (the back-sweep, 11-18): one of the
+    // runtime's catalogue is the runtime's MODULE_CODE_RESERVED, naming it
+    // the high review of #445, 4, 5 and 9: ctx.error hands module code its own
+    // error (never a runtime-branded one); the warning names the module, once
+    // per module and code, its message as text with no control characters
+    it('ctx.error with a catalogue code: a module error back, one warning per module and code naming it', () => {
+      const LOG = require('../../lib/logger');
+      const saved = LOG.W;
+      const warned = [];
+      LOG.W = (w) => { warned.push(String(w)); };
+      try {
+        const hostile = {toString() { throw new Error('ran'); }};
+        const e = CountinghouseError.moduleOwn('USER_HAS_NO_DEVICE', 'line one\nline two\u0007', {n: 1}, 'weather-probe');
+        CountinghouseError.moduleOwn('USER_HAS_NO_DEVICE', 'again', null, 'weather-probe');
+        CountinghouseError.moduleOwn('USER_HAS_NO_DEVICE', hostile, null, 'other-probe');
+        assert.strictEqual(e.origin, 'module', 'the module\'s own, never branded');
+        const mine = warned.filter((w) => /weather-probe/.test(w));
+        assert.strictEqual(mine.length, 1, JSON.stringify(warned));
+        assert.ok(/weather-probe called ctx\.error with USER_HAS_NO_DEVICE/.test(mine[0]), mine[0]);
+        assert.ok(!/[\u0000-\u001f]/.test(mine[0]), JSON.stringify(mine[0]));
+        assert.ok(warned.some((w) => /other-probe/.test(w)), 'another module: its own line');
+        // at the boundary: once, as MODULE_CODE_RESERVED, with no details (no
+        // answer of a runtime-origin error carries them: the second high
+        // review of #445, 6)
+        const answered = CountinghouseError.answerable(e);
+        assert.deepStrictEqual([answered.code, answered.origin, answered.details], ['MODULE_CODE_RESERVED', 'runtime', undefined]);
+        assert.strictEqual(warned.filter((w) => /weather-probe/.test(w)).length, 1, 'not warned again at the boundary');
+      } finally {
+        LOG.W = saved;
+      }
+    });
+    it('a plain Error with a catalogue code is the runtime\'s MODULE_CODE_RESERVED, naming that code', () => {
+      const e = CountinghouseError.fromModule(plain('DEVICE_OFFLINE'));
+      assert.deepStrictEqual([e.code, e.origin, e.kind], ['MODULE_CODE_RESERVED', 'runtime', 'module']);
+      assert.match(e.message, /runtime's own code DEVICE_OFFLINE/);
+    });
+    it('names the module on every conversion path, and its text carries no control or bidi character', () => {
+      const LOG = require('../../lib/logger');
+      const saved = LOG.W;
+      const warned = [];
+      LOG.W = (w) => warned.push(String(w));
+      try {
+        // (the second high review of #445, R3 and R1)
+        CountinghouseError.fromModule(Object.assign(new Error('a\u202eb\u2066c\nd'), {code: 'MODULE_RELOADING'}), {module: 'named-probe'});
+        const line = warned.find((w) => /named-probe/.test(w) && /MODULE_RELOADING/.test(w));
+        assert.ok(line != null, JSON.stringify(warned));
+        assert.ok(/^named-probe answered with MODULE_RELOADING/.test(line), line);
+        assert.ok(!/[\u0000-\u001f\u202a-\u202e\u2066-\u2069]/.test(line), JSON.stringify(line));
+      } finally {
+        LOG.W = saved;
+      }
+    });
+    it('the one module-text rule: control, separator and bidi characters become spaces', () => {
+      const {moduleText} = require('../../lib/module-text');
+      assert.strictEqual(moduleText('a\nb\u0007c\u2028d\u202ee\u2069f'), 'a b c d e f');
+      assert.strictEqual(moduleText('abcdef', 3), 'abc');
+      // moduleLine, a notice's and a refused ask's line: marks spaced, runs
+      // made one, every whitespace trimmed, cut without half a pair
+      const {moduleLine} = require('../../lib/module-text');
+      assert.strictEqual(moduleLine('\n not\u200f  confirmed\u00a0', 120), 'not confirmed');
+      assert.strictEqual(moduleLine(`${'x'.repeat(119)}\u{1F600}`, 120), 'x'.repeat(119));
+      assert.strictEqual(moduleLine('\u3000a\u202e\u2066b ', 120), 'a b');
+      assert.strictEqual(moduleLine(null, 10), '');
+      // padding doesn't spend the budget: the text after it survives
+      assert.strictEqual(moduleLine(`${' '.repeat(200)}module X needs a restart`, 200), 'module X needs a restart');
+      assert.strictEqual(moduleLine(`${'\u200b'.repeat(150)}key`, 128), 'key');
+      assert.strictEqual(moduleText('a\u200eb\u200fc\u061cd'), 'a b c d');
+      // the repo's one hidden-character class (conditions-why.json
+      // hiddenClass): zero-width, soft hyphen, word joiner, BOM, a variation
+      // selector, a tag character, a lone surrogate (the final high review of
+      // #445, 1)
+      assert.strictEqual(moduleText('a\u200bb\u00adc\u2060d\ufeffe\ufe0ff\u{e0041}g\ud800h'), 'a b c d e f g h');
+      // client-text's rule exactly: an emoji sequence, a joiner within a
+      // word (Persian's ZWNJ) and an RGI flag stay whole (the medium on the
+      // final round, 1)
+      // the declarations gate's subset is inside the one class
+      const {hiddenClass} = require('../../lib/conditions-why.json');
+      const CLASS = new RegExp(`^[${hiddenClass}]$`, 'u');
+      const SUBSET = new RegExp(`^${require('../../lib/module-text').CONTROL_OR_BIDI_SOURCE}$`, 'u');
+      for (let cp = 0; cp <= 0x2100; cp++) {
+        const c = String.fromCodePoint(cp);
+        if (SUBSET.test(c)) assert.ok(CLASS.test(c), `U+${cp.toString(16)} is in the gate but not the class`);
+      }
+      for (const whole of ['\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645', '\u2764\ufe0f', '\u{1f468}\u200d\u{1f469}\u200d\u{1f467}', '\u{1f3f4}\u{e0067}\u{e0062}\u{e0065}\u{e006e}\u{e0067}\u{e007f}']) {
+        assert.strictEqual(moduleText(whole), whole, JSON.stringify(whole));
+      }
+      assert.strictEqual(moduleText('ab\ud83d\ude00', 3), 'ab', 'no half of a pair at the cut');
+      assert.strictEqual(require('../../lib/schema-safety').declaredText('x\u2067y'), 'x y');
     });
     it('is not, for a system error, a Node error, or a code that does not look like one', () => {
       const cases = [plain('EACCES', {errno: -13}), plain('ENOENT', {syscall: 'open'}), plain('ERR_INVALID_ARG_TYPE'),
@@ -178,15 +267,59 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
   });
 
   // Review of #37.
+  // ctx.error's fourth argument (the Reviewer, after #445): a module says
+  // whose fault an error of its own is, 'caller' or 'module' (the default),
+  // never the runtime's; carried on every copy and across a reply
+  describe('kind: a module\'s error its module says is the caller\'s', () => {
+    it('is kind caller with {kind: \'caller\'}, kind module by default or with anything else', () => {
+      assert.strictEqual(CountinghouseError.moduleOwn('PROBE_BAD_INPUT', 'no row', null, 'probe', {kind: 'caller'}).kind, 'caller');
+      for (const opts of [undefined, null, {}, {kind: 'module'}, {kind: 'runtime'}, {kind: 'operator'}, 'caller', {kind: ['caller']}]) {
+        assert.strictEqual(CountinghouseError.moduleOwn('PROBE_BAD_INPUT', 'no row', null, 'probe', opts).kind, 'module', JSON.stringify(opts));
+      }
+    });
+    it('is carried on the runtime\'s copy and across a reply, both ways; a hop makes it the module\'s', () => {
+      const e = CountinghouseError.moduleOwn('PROBE_BAD_INPUT', 'no row', {row: 7}, 'probe', {kind: 'caller'});
+      const copy = CountinghouseError.answerable(e);
+      assert.deepStrictEqual([copy.code, copy.origin, copy.kind], ['PROBE_BAD_INPUT', 'module', 'caller']);
+      const fields = CountinghouseError.replyFields(copy);
+      assert.strictEqual(fields.errKind, 'caller');
+      const decoded = CountinghouseError.fromReplyFields(fields);
+      assert.deepStrictEqual([decoded.code, decoded.origin, decoded.kind], ['PROBE_BAD_INPUT', 'module', 'caller']);
+      // over a hop it is the module's again: its caller is the composing
+      // module, not the end caller
+      const hopped = require('../../lib/countinghouse-error').hopError(copy);
+      assert.deepStrictEqual([hopped.code, hopped.origin, hopped.kind], ['PROBE_BAD_INPUT', 'module', 'module']);
+      assert.strictEqual(copy.kind, 'caller', 'the error hopped is left as it was');
+      // the default crosses as no errKind at all
+      assert.ok(!('errKind' in CountinghouseError.replyFields(CountinghouseError.moduleOwn('PROBE_BROKEN', 'x'))));
+      // a reply's errKind other than 'caller' is the module's
+      assert.strictEqual(CountinghouseError.fromReplyFields(Object.assign({}, fields, {errKind: 'runtime'})).kind, 'module');
+    });
+    it('a catalogue code is the runtime\'s MODULE_CODE_RESERVED whatever kind its module named', () => {
+      const LOG = require('../../lib/logger');
+      const saved = LOG.W;
+      LOG.W = () => {};
+      try {
+        const out = CountinghouseError.answerable(CountinghouseError.moduleOwn('ARGUMENTS_INVALID', 'x', null, 'probe', {kind: 'caller'}));
+        assert.deepStrictEqual([out.code, out.origin, out.kind], ['MODULE_CODE_RESERVED', 'runtime', 'module']);
+      } finally {
+        LOG.W = saved;
+      }
+    });
+  });
+
   describe('the review of #37', () => {
     const {hopError} = require('../../lib/countinghouse-error');
-    it('hopError passes a module\'s error through whole, its own code included', () => {
+    it('hopError passes a module\'s error through whole, its own code included; a catalogue code is MODULE_CODE_RESERVED', () => {
       // whole, as a copy (review of c8)
       const same = (a, b) => assert.deepStrictEqual([a.code, a.message, a.origin, a.details], [b.code, b.message, b.origin, b.details]);
       const own = CountinghouseError.module('SHAPE_GONE', 'the shape is gone', {n: 1});
       same(hopError(own), own);
-      const named = CountinghouseError.module('DEVICE_NOT_FOUND', 'no row 7', {row: 7});
-      same(hopError(named), named);
+      // a catalogue code the module named: the runtime's MODULE_CODE_RESERVED
+      // naming it, with the module's details (the back-sweep, 11-18)
+      const named = hopError(CountinghouseError.module('DEVICE_NOT_FOUND', 'no row 7', {row: 7}));
+      assert.deepStrictEqual([named.code, named.origin, named.details], ['MODULE_CODE_RESERVED', 'runtime', undefined]);
+      assert.match(named.message, /runtime's own code DEVICE_NOT_FOUND/);
       // a callee's plain error with a made-up code is still not passed off as typed
       const plain = Object.assign(new Error('made up'), {code: 'MADE_UP'});
       assert.ok(!(hopError(plain) instanceof CountinghouseError) && hopError(plain).code === undefined);

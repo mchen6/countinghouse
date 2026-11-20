@@ -11,6 +11,7 @@ const path = require('path');
 const {spawnSync} = require('child_process');
 const {startStdio, waitForTool, withoutRedisNoise, INITIALIZE} = require('../helpers/stdio-client');
 const tmp = require('../helpers/test-tmp');
+const {testPort} = require('../helpers/test-env');
 
 const ROOT = path.join(__dirname, '..', '..');
 const ENTRY = path.join(ROOT, 'bin', 'countinghouse-stdio.js');
@@ -21,7 +22,7 @@ function start(home, extra = [], module = MODULE) {
   const auth = path.join(home, 'auth.json');
   fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
   return startStdio(['--workerThread', '--loadModule', module, '--authConfigPath', auth,
-    '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749', ...extra], {env: {COUNTINGHOUSE_API_KEY: KEY}});
+    '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`, ...extra], {env: {COUNTINGHOUSE_API_KEY: KEY}});
 }
 
 describe('--stdio: a flag given twice, as --hardened\'s relaunch gives it (#124)', () => {
@@ -53,11 +54,11 @@ describe('--stdio: a flag given twice, as --hardened\'s relaunch gives it (#124)
 describe('--stdio, spawned: the failure message', () => {
   it('drops the Redis connection noise and keeps the rest', () => {
     const err = [
-      '{"level":50,"e":"Redis client error: Redis connection to 127.0.0.1:9749 failed - connect ECONNREFUSED 127.0.0.1:9749"}',
-      'Error: connect ECONNREFUSED 127.0.0.1:9749',
+      `{"level":50,"e":"Redis client error: Redis connection to 127.0.0.1:${testPort(9749)} failed - connect ECONNREFUSED 127.0.0.1:${testPort(9749)}"}`,
+      `Error: connect ECONNREFUSED 127.0.0.1:${testPort(9749)}`,
       '    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16) {',
-      "  errno: -4078,", "  code: 'ECONNREFUSED',", "  syscall: 'connect',", "  address: '127.0.0.1',", '  port: 9749', '}',
-      '{"level":50,"e":"job queue error: Error: connect ECONNREFUSED 127.0.0.1:9749"}',
+      "  errno: -4078,", "  code: 'ECONNREFUSED',", "  syscall: 'connect',", "  address: '127.0.0.1',", `  port: ${testPort(9749)}`, '}',
+      `{"level":50,"e":"job queue error: Error: connect ECONNREFUSED 127.0.0.1:${testPort(9749)}"}`,
       '{"level":50,"e":"module handler-map-module failed to load: the real reason"}'
     ].join('\n');
     assert.strictEqual(withoutRedisNoise(err), '{"level":50,"e":"module handler-map-module failed to load: the real reason"}');
@@ -96,7 +97,7 @@ describe('--stdio, spawned', function() {
       assert.ok(m.id !== null && m.id !== undefined, `an answer to a notification: ${l.slice(0, 200)}`);
     }
     assert.ok(io.err.length > 0, 'the logs went to stderr');
-    // The fixture echoes ctx.caller.apiKey in its own result (id 2); nothing else may hold the key.
+    // The fixture echoes ctx.caller.id in its own result (id 2), never the key (R2-1); nothing may hold the key.
     assert.ok(!io.err.includes(KEY), 'the key is never logged');
     for (const l of io.lines) if (JSON.parse(l).id !== 2) assert.ok(!l.includes(KEY), `the key in a stdout line: ${l.slice(0, 200)}`);
   });
@@ -120,8 +121,34 @@ describe('--stdio, spawned', function() {
     assert.ok(!/countinghouse listen on/.test(io.err), 'it started the HTTP server');
   });
 
+  // countinghouse_settings is served only in the single-identity profile:
+  // --settingsFile anywhere else stops the start, as --controlChannel and
+  // --sessionSocket do, rather than half-apply (a size cap's hint naming a
+  // tool that is not served).
+  it('--settingsFile outside the single-identity profile is refused, naming the flag; a bare one is refused too', () => {
+    const dir = tmp.mkdtemp('ch-stdio-02-sf-');
+    try {
+      const auth = path.join(dir, 'auth.json');
+      fs.writeFileSync(auth, '{}');
+      const common = ['--workerThread', '--store', 'local', '--storePath', path.join(dir, 'store'), '--modulePath', path.join(dir, 'modules'),
+        '--moduleDataPath', path.join(dir, 'module_data'), '--settingsFile', path.join(dir, 'settings.json')];
+      for (const [entry, extra, why] of [[ENTRY, ['--authConfigPath', auth], 'stdio with an auth file'],
+        [path.join(ROOT, 'framework.js'), ['--port', String(testPort(9748))], 'a hosted (HTTP) start']]) {
+        const r = spawnSync(process.execPath, [entry, ...common, ...extra], {encoding: 'utf8', timeout: 30000, input: ''});
+        assert.strictEqual(r.status, 2, `${why}: ${r.stderr}`);
+        assert.match(r.stderr, /--settingsFile is only for the single-identity profile/, why);
+      }
+      // with no path (a shell variable unset), inside the profile or out
+      const bare = spawnSync(process.execPath, [ENTRY, ...common.slice(0, -2), '--settingsFile'], {encoding: 'utf8', timeout: 30000, input: ''});
+      assert.strictEqual(bare.status, 2, bare.stderr);
+      assert.match(bare.stderr, /--settingsFile needs a path/);
+    } finally {
+      fs.rmSync(dir, {recursive: true, force: true});
+    }
+  });
+
   it('--stdio with --port is refused: choose one', () => {
-    const r = spawnSync(process.execPath, [ENTRY, '--workerThread', '--port', '9748'], {encoding: 'utf8', timeout: 30000});
+    const r = spawnSync(process.execPath, [ENTRY, '--workerThread', '--port', String(testPort(9748))], {encoding: 'utf8', timeout: 30000});
     assert.strictEqual(r.status, 2, r.stderr);
     assert.match(r.stderr, /--stdio and --port: choose one/);
     assert.strictEqual(r.stdout, '');

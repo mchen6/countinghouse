@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "stateService": {
+    "touch": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "integer"
+          },
+          "store": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "memory": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file"
+        ]
+      }
+    },
+    "hold": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 60000
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "held": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "crash": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "crashing": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "die": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        }
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "readCount": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "string"
+      }
+    },
+    "flood": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "limited": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  },
+  "prompts": {
+    "greet": {
+      "arguments": {
+        "type": "object",
+        "properties": {
+          "style": {
+            "type": "string",
+            "enum": [
+              "brief",
+              "long"
+            ]
+          }
+        },
+        "required": [
+          "style"
+        ]
+      }
+    }
+  }
+}

@@ -133,12 +133,15 @@ function toolsCall(port, apiKey, id, name, toolArgs, cb) {
 }
 
 // Builds a throwaway module directory on disk -- api.json/schema.json/
-// handlers/ identical in shape to test/fixtures/handler-map-convention, plus
-// an index.js whose content the caller controls. Used by the Task 8 defect-A
-// (require() cache staleness) proof below, which needs to edit a module's
-// main entry BETWEEN two validate calls -- that can't be done against a
-// fixture checked into the repo without leaving the working tree dirty.
-function writeTempModule(indexContent) {
+// handlers/ identical in shape to test/fixtures/handler-map-convention, its
+// handler file starting with code the caller controls (a main entry is never
+// run, lib/module-layout.js; a handler file is required by every validate).
+// Used by the Task 8 defect-A (require() cache staleness) proof below, which
+// needs to edit a module's code BETWEEN two validate calls -- that can't be
+// done against a fixture checked into the repo without leaving the working
+// tree dirty.
+const HELLO = 'module.exports = async (input, ctx) => ({output: {text: `hello ${input.name}`, caller: ctx.caller.id}});\n';
+function writeTempModule(prelude) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-validate-cache-'));
   fs.writeFileSync(path.join(dir, 'package.json'),
     JSON.stringify({name: 'cache-staleness-fixture', version: '1.0.0'}));
@@ -168,9 +171,7 @@ function writeTempModule(indexContent) {
     }
   }));
   fs.mkdirSync(path.join(dir, 'handlers', 'greetService'), {recursive: true});
-  fs.writeFileSync(path.join(dir, 'handlers', 'greetService', 'hello.js'),
-    'module.exports = async (input, ctx) => ({output: {text: `hello ${input.name}`, caller: ctx.caller.apiKey}});\n');
-  fs.writeFileSync(path.join(dir, 'index.js'), indexContent);
+  fs.writeFileSync(path.join(dir, 'handlers', 'greetService', 'hello.js'), `${prelude}${HELLO}`);
   return dir;
 }
 
@@ -268,15 +269,17 @@ describe('authoring tools: present with --authoringTools', function() {
   // identity does not even resolve (no key at all -- and --debugKey is set,
   // so a missing key fails doUserAuth's debug branch too, exactly like it
   // would fail AuthProvider.authenticate under real auth) must get the
-  // same unknown-tool response an unregistered name gets, not a distinct
-  // auth-failure result -- otherwise the response shape is a second oracle
-  // for reserved names, one gate past the flag check.
-  it('an anonymous caller gets the same unknown-tool response as an unregistered name', (done) => {
+  // same response an unregistered name gets -- since #458, the caller's auth
+  // refusal, for every name it can't use -- not a distinct one: otherwise
+  // the response shape is a second oracle for reserved names, one gate past
+  // the flag check.
+  it('an anonymous caller gets the same response as for an unregistered name: the auth refusal', (done) => {
     toolsCall(PORT, null, 5, 'countinghouse_validate_module', {path: '.'}, (err, anonBody) => {
       assert.ifError(err);
       toolsCall(PORT, null, 5, CONTROL_NAME, {}, (err, controlBody) => {
         assert.ifError(err);
         assert.ok(anonBody.error != null, 'an unresolvable caller must get a JSON-RPC error, not a result');
+        assert.strictEqual(anonBody.error.code, -32603, JSON.stringify(anonBody));
         assert.ok(sameEnvelope(anonBody, 'countinghouse_validate_module', controlBody, CONTROL_NAME),
           'anonymous-caller response differs from the unknown-tool control beyond the name:\n' +
           `  anon: ${JSON.stringify(anonBody)}\n  control: ${JSON.stringify(controlBody)}`);
@@ -331,32 +334,32 @@ describe('authoring tools: present with --authoringTools', function() {
   // this long-lived gateway process, so Node's module cache returned the
   // FIRST validate's already-loaded export on every subsequent call against
   // the same path, no matter what the file on disk said by then. Proven here
-  // by validating a module whose index.js does not throw, editing that same
+  // by validating a module whose handler file does not throw, editing that same
   // file on disk to throw, and validating the same path again: the second
   // result must reflect the edit. Against the pre-Task-8 in-process
   // implementation this test fails (second result is still ok:true, from the
   // stale cached export) -- against the child-process implementation it
   // passes, because there is no require() cache spanning two separate
   // `node bin/countinghouse-validate.js` processes.
-  it('reflects an edited entry file on the very next validate call (Task 8, defect A: no stale require cache)', function(done) {
+  it('reflects an edited handler file on the very next validate call (Task 8, defect A: no stale require cache)', function(done) {
     this.timeout(15000);
-    const dir = writeTempModule('module.exports = {};\n');
+    const dir = writeTempModule('');
 
     toolsCall(PORT, 'aabbcc', 10, 'countinghouse_validate_module', {path: dir}, (err, first) => {
       assert.ifError(err);
       assert.strictEqual(first.result.structuredContent.ok, true,
         `expected the first validate to be clean, got: ${JSON.stringify(first.result)}`);
 
-      fs.writeFileSync(path.join(dir, 'index.js'), "throw new Error('edited-after-first-validate');\n");
+      fs.writeFileSync(path.join(dir, 'handlers', 'greetService', 'hello.js'), `throw new Error('edited-after-first-validate');\n${HELLO}`);
 
       toolsCall(PORT, 'aabbcc', 11, 'countinghouse_validate_module', {path: dir}, (err, second) => {
         assert.ifError(err);
         const out = second.result.structuredContent;
         assert.strictEqual(out.ok, false,
           `expected the edit to be picked up by the second validate, got: ${JSON.stringify(out)}`);
-        const entryProblems = out.problems.filter((p) => p.stage === 'loadModuleEntry');
+        const entryProblems = out.problems.filter((p) => p.stage === 'resolveHandlerMap' && /could not be loaded/.test(p.message));
         assert.strictEqual(entryProblems.length, 1,
-          `expected exactly one loadModuleEntry problem, got: ${JSON.stringify(out.problems)}`);
+          `expected exactly one "handler map could not be loaded" problem, got: ${JSON.stringify(out.problems)}`);
         assert.ok(/edited-after-first-validate/.test(entryProblems[0].message),
           `expected the SECOND validate's problem to name the edit, got: ${entryProblems[0].message}`);
         done();
@@ -364,7 +367,7 @@ describe('authoring tools: present with --authoringTools', function() {
     });
   });
 
-  // Task 8, item B: a module whose main entry calls process.exit() during
+  // Task 8, item B: a module whose code (its handler file) calls process.exit() during
   // require() used to take the whole gateway process down with it -- there
   // is no try/catch that survives a require() calling process.exit()
   // in-process. Proven here two ways: the tool call itself answers with a
@@ -390,7 +393,7 @@ describe('authoring tools: present with --authoringTools', function() {
     });
   });
 
-  // Task 8 review round: a module whose main entry writes to stdout during
+  // Task 8 review round: a module whose code (its handler file) writes to stdout during
   // require() -- an ordinary startup log line, not adversarial -- used to
   // corrupt the machine-readable channel bin/countinghouse-validate.js --json
   // promises. The child's stdout became "<module's log line>\n<the real JSON
@@ -426,7 +429,7 @@ describe('authoring tools: present with --authoringTools', function() {
   // would win lib/mcp/gateway.js's end-of-stream scan for "the last line
   // that parses as JSON" -- a bare {shutdown:'clean',...} object parses fine,
   // it just isn't the validator's result. See
-  // test/fixtures/handler-map-logs-on-exit/index.js for the exact reproducer
+  // test/fixtures/handler-map-logs-on-exit/handlers/greetService/hello.js for the exact reproducer
   // and parseValidateChildOutput's shape check for the fix.
   it('a module that logs at process-exit time still validates cleanly (final review: stale stdout scan)', (done) => {
     const fixture = path.join(ROOT, 'test', 'fixtures', 'handler-map-logs-on-exit');
@@ -509,33 +512,24 @@ describe('authoring tools: admin gate holds under real (non-debug) auth', functi
     });
   });
 
-  it('refuses a call from the non-admin key with ADMIN_REQUIRED', (done) => {
-    toolsCall(PORT, NON_ADMIN_KEY, 6, 'countinghouse_validate_module', {path: '.'}, (err, body) => {
-      assert.ifError(err);
-      assert.strictEqual(body.result.isError, true);
-      assert.ok(toolErrorCode(body.result) === 'ADMIN_REQUIRED',
-        `expected _meta['countinghouse/code'] === 'ADMIN_REQUIRED', got: ${JSON.stringify(body.result)}`);
-      done();
-    });
-  });
-
-  // Regression guard for the I5 review finding: the admin gate in
-  // dispatchAuthoringTool runs once, before the name-specific branches --
-  // this had only ever been exercised via countinghouse_validate_module.
-  // countinghouse_load_module and countinghouse_call_tool share the exact
-  // same gate (same function, same early check), but that was never
-  // actually asserted for either of them -- --debug (every other describe
-  // block in this file) forces isAdmin: true unconditionally, so it cannot
-  // exercise this at all; this block is the only one with a real non-admin
-  // identity to call them with.
-  ['countinghouse_load_module', 'countinghouse_call_tool'].forEach((name) => {
-    it(`refuses a ${name} call from the non-admin key with ADMIN_REQUIRED`, (done) => {
+  // A non-admin key is not listed the authoring tools, so each is a name it
+  // can't use: answered exactly as a name never registered, whatever
+  // --authoringTools says, so the answer tells nothing of the server's
+  // configuration (#458's second high round, 2). Every authoring name goes
+  // through dispatchAuthoringTool's one gate (validate_module, load_module
+  // and call_tool here: --debug forces isAdmin in every other describe, so
+  // this block is the only one with a real non-admin identity).
+  ['countinghouse_validate_module', 'countinghouse_load_module', 'countinghouse_call_tool'].forEach((name) => {
+    it(`a ${name} call from the non-admin key is answered as a name never registered`, (done) => {
       toolsCall(PORT, NON_ADMIN_KEY, 6, name, {path: '.', name: 'x'}, (err, body) => {
         assert.ifError(err);
-        assert.strictEqual(body.result.isError, true);
-        assert.ok(toolErrorCode(body.result) === 'ADMIN_REQUIRED',
-          `expected _meta['countinghouse/code'] === 'ADMIN_REQUIRED', got: ${JSON.stringify(body.result)}`);
-        done();
+        toolsCall(PORT, NON_ADMIN_KEY, 6, CONTROL_NAME, {}, (err2, control) => {
+          assert.ifError(err2);
+          assert.ok(sameEnvelope(body, name, control, CONTROL_NAME),
+            `differs from the unknown-tool control beyond the name:\n  ${JSON.stringify(body)}\n  ${JSON.stringify(control)}`);
+          assert.strictEqual(body.error.code, -32602);
+          done();
+        });
       });
     });
   });

@@ -12,7 +12,7 @@ function exhausted() {
   const wm = new WorkerMessage({on() {}, postMessage: (m) => posted.push(m)});
   wm.messageRate = 1;
   wm.rateTokens = 0;
-  wm.rateRefillAt = Date.now();
+  wm.rateRefillAt = require('perf_hooks').performance.now();   // the bucket's own clock (monotonic)
   return {wm, posted};
 }
 
@@ -76,7 +76,7 @@ describe('sandbox 14: main-thread message bounds', () => {
     Object.assign(dm, {peerDeviceWorkerMap: {}, peerChannels: {}, pendingPeerInvokes: {},
       workerMessage: {sendPeerChannelRequestToParent: (d) => requests.push(d)}});
     const results = [];
-    const call = () => dm.invokeActionViaPeerChannel('k', 'k', 'dev-b', 'svc', 'act', {input: {}}, (err) => results.push(err));
+    const call = () => dm.invokeActionViaPeerChannel('dev-b', 'svc', 'act', {input: {}}, (err) => results.push(err));
     call();
     call();
     assert.strictEqual(requests.length, 1);

@@ -1,0 +1,163 @@
+{
+  "device": {
+    "friendlyName": "declares-everything",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "declares every field a module may declare for the MCP layer (MCP completeness M0)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:notesService": {
+        "actionList": [
+          {
+            "name": "readNote",
+            "description": "Reads one saved note.",
+            "title": "Read a note",
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false
+            },
+            "icons": [
+              {
+                "file": "icons/note.png",
+                "sizes": [
+                  "1x1"
+                ]
+              }
+            ],
+            "input": {
+              "schema": "/notesService/readNote/input"
+            },
+            "output": {
+              "schema": "/notesService/readNote/output"
+            },
+            "resource": {
+              "uriTemplate": "notes/{id}",
+              "name": "note",
+              "title": "A note",
+              "description": "One saved note, by its id.",
+              "mimeType": "text/markdown",
+              "icons": [
+                {
+                  "file": "icons/note.png"
+                }
+              ],
+              "changesWith": [
+                "notesService.saveNote"
+              ],
+              "completion": {
+                "id": "notesService.completeId"
+              }
+            }
+          },
+          {
+            "name": "listNotes",
+            "description": "The ids of every saved note.",
+            "annotations": {
+              "readOnlyHint": true
+            },
+            "output": {
+              "schema": "/notesService/listNotes/output"
+            },
+            "resource": {
+              "uriTemplate": "notes",
+              "name": "notes",
+              "changesWith": [
+                "notesService.saveNote"
+              ]
+            }
+          },
+          {
+            "name": "saveNote",
+            "description": "Saves a note. It asks before it replaces one.",
+            "title": "Save a note",
+            "annotations": {
+              "destructiveHint": true,
+              "idempotentHint": true
+            },
+            "icons": [
+              {
+                "file": "icons/note.png",
+                "sizes": [
+                  "1x1"
+                ]
+              }
+            ],
+            "input": {
+              "schema": "/notesService/saveNote/input"
+            },
+            "output": {
+              "schema": "/notesService/saveNote/output"
+            },
+            "fault": {
+              "schema": "/notesService/saveNote/fault"
+            },
+            "questions": {
+              "overwrite": {
+                "message": "Replace the saved note {id}?",
+                "schema": "/notesService/saveNote/questions/overwrite"
+              }
+            }
+          },
+          {
+            "name": "completeId",
+            "description": "Completes the id of a saved note.",
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false
+            },
+            "input": {
+              "schema": "/notesService/completeId/input"
+            },
+            "output": {
+              "schema": "/notesService/completeId/output"
+            }
+          },
+          {
+            "name": "renderNote",
+            "description": "Renders a note as images: a cover and its pages.",
+            "longRunning": true,
+            "input": {
+              "schema": "/notesService/renderNote/input"
+            },
+            "output": {
+              "schema": "/notesService/renderNote/output"
+            }
+          }
+        ]
+      }
+    },
+    "promptList": [
+      {
+        "name": "summarise",
+        "title": "Summarise a note",
+        "description": "Asks for a summary of one saved note.",
+        "icons": [
+          {
+            "file": "icons/note.png",
+            "sizes": [
+              "1x1"
+            ]
+          }
+        ],
+        "arguments": {
+          "schema": "/prompts/summarise/arguments"
+        },
+        "messages": [
+          {
+            "role": "user",
+            "text": "Summarise the note {{id}} in a {{style}} style."
+          },
+          {
+            "role": "assistant",
+            "text": "Here is the summary of {{id}}."
+          }
+        ],
+        "completion": {
+          "id": "notesService.completeId"
+        }
+      }
+    ]
+  }
+}

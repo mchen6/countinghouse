@@ -7,7 +7,7 @@ const assert = require('assert');
 const path = require('path');
 const {performance} = require('perf_hooks');
 const cli = require('../../lib/cli-options');
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 const ModuleManager = require('../../lib/module-manager');
 
 // -> ms from the restart to the new worker's start; unload and load stood in for.
@@ -16,6 +16,8 @@ function restartDelay(name) {
   mm.modules = {[name]: {modulePath: __dirname, packageInfo: {version: '1.0.0'}}};
   mm.generations = {};
   mm.supervisor = null;
+  // nothing pinned: R1's state check (stateRefusal) lets the restart through
+  mm.manifestPins = {wouldPin: () => null, pinnedOf: () => undefined};
   mm.unloadModuleExternal = (n, cb) => setImmediate(cb);
   return new Promise((resolve, reject) => {
     const start = performance.now();

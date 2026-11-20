@@ -65,7 +65,7 @@
 // sites never forwarding `errCode` on the main-thread-routed reply
 // envelope, unlike lib/peer-channel.js's _dispatchInvoke, which already
 // did. Fixed in lib/device-manager.js (added errCode alongside errMsg) and
-// lib/sandbox.js's 'invoke-action-reply' case (reattaches it, mirroring
+// lib/lean-worker.js's 'invoke-action-reply' case (reattaches it, mirroring
 // lib/peer-channel.js:202's `if (msg.errCode != null) err.code =
 // msg.errCode`). The assertion below now checks for the CONVERGED value on
 // both flag states rather than documenting the difference.
@@ -74,6 +74,7 @@ const path    = require('path');
 const request = require('supertest');
 const spawn   = require('child_process').spawn;
 const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
+const {testPort} = require('../helpers/test-env');
 
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
 const ROOT     = path.join(__dirname, '..', '..');
@@ -86,8 +87,8 @@ const ROOT     = path.join(__dirname, '..', '..');
 // nor in the task's own "taken elsewhere" list). 9560 was added later --
 // 02-ctx-call.js's single-thread server moved there off 9557 once it was
 // found colliding with 03-declaration.js's server of the same number.
-const PORT_FLAG_OFF = 9558;
-const PORT_FLAG_ON  = 9559;
+const PORT_FLAG_OFF = testPort(9558);
+const PORT_FLAG_ON  = testPort(9559);
 
 // Under --debug, every appKey in the call chain must equal this exactly
 // (see header comment) -- also the identity fixtures-auth.json's
@@ -219,16 +220,17 @@ function runFailureAndBillingAssertions(getBase, getStdoutBuf) {
         // comment) -- assert null if that's what was observed, otherwise
         // assert the real value.
         assert.ok(observed != null, 'expected a CTX_CALL_FAULT log line from viaBoom.js');
-        if (observed.fault == null) {
-          assert.strictEqual(observed.fault, null);
-        } else {
-          assert.strictEqual(observed.fault.message, 'boom from the callee',
-            `expected the callee's own error message in .fault, got ${JSON.stringify(observed.fault)}`);
-        }
+        // the callee's fault, on both flag states (the refusal ctx.call issues
+        // keeps the error's own fields: a null here hid that PR-c had lost it)
+        assert.ok(observed.fault != null, `the callee's fault was lost: ${JSON.stringify(observed)}`);
+        assert.strictEqual(observed.fault.message, 'boom from the callee',
+          `expected the callee's own error message in .fault, got ${JSON.stringify(observed.fault)}`);
+        // as structured clone made it, never re-made without its prototype
+        assert.strictEqual(observed.faultPlain, true, JSON.stringify(observed));
 
         // Was a genuine divergence (null off / 'DEVICE_INVOKE_EXCEPTION' on)
         // before lib/device-manager.js's sendInvokeActionMessageToWorker and
-        // lib/sandbox.js's 'invoke-action-reply' case were fixed (Task 6b)
+        // lib/lean-worker.js's 'invoke-action-reply' case were fixed (Task 6b)
         // to carry `errCode` as a sibling of `errMsg` on the main-thread-
         // routed reply envelope, mirroring what lib/peer-channel.js already
         // did. Now converges on both flag states -- asserted here rather

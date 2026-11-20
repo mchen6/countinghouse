@@ -1,0 +1,43 @@
+{
+  "device": {
+    "friendlyName": "key-dump-read",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "scans what a resource read's, a task's run after its answer and a completion action's handler can reach (MCP completeness M18)",
+    "promptList": [
+      {"name": "pick", "description": "Picks a thing.", "arguments": {"schema": "/prompts/pick"}, "messages": [{"role": "user", "text": "Pick {{thing}}."}],
+        "completion": {"thing": "readService.completeThing"}}
+    ],
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:readService": {
+        "actionList": [
+          {
+            "name": "peek",
+            "description": "Scans what this read can reach.",
+            "annotations": {"readOnlyHint": true},
+            "output": {"schema": "/readService/peek/output"},
+            "resource": {"uriTemplate": "peek", "name": "peek", "mimeType": "application/json"}
+          },
+          {
+            "name": "who",
+            "description": "Says who called, as a call sees it.",
+            "output": {"schema": "/readService/who/output"}
+          },
+          {
+            "name": "askThenPeek",
+            "description": "Asks first, then scans what its run after the answer can reach.",
+            "input": {"schema": "/readService/askThenPeek/input"},
+            "output": {"schema": "/readService/askThenPeek/output"},
+            "questions": {"confirm": {"message": "Go on?", "schema": "/readService/askThenPeek/questions/confirm"}},
+            "longRunning": true
+          },
+          {
+            "name": "completeThing",
+            "description": "Completes a thing, from what it can reach.",
+            "input": {"schema": "/readService/completeThing/input"},
+            "output": {"schema": "/readService/completeThing/output"}
+          }
+        ]
+      }
+    }
+  }
+}

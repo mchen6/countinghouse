@@ -11,24 +11,35 @@ const {spawn} = require('child_process');
 const realpaths = require('../../lib/hardened-realpaths');
 const {mkdtemp} = require('../helpers/test-tmp');
 
-const LIB = path.join(__dirname, '..', '..', 'lib', 'hardened-realpaths');
+const ROOT = path.join(__dirname, '..', '..');
+const LIB = path.join(ROOT, 'lib', 'hardened-realpaths');
 
 // A child under --permission with only these read grants, given `known` on
-// fd 3 as the relaunch does; it prints what realpathSync gave for `ask`.
-function childSees(grants, known, ask) {
-  return new Promise((resolve) => {
-    const code = `const r = require(${JSON.stringify(LIB)}); r.receive();
-      const out = {}; for (const p of ${JSON.stringify(ask)}) { try { out[p] = r.realpathSync(p); } catch (e) { out[p] = e.code; } }
-      out.env = process.env[r.ENV] == null ? 'gone' : 'still set';
-      process.stdout.write(JSON.stringify(out));`;
+// fd 3 as the relaunch does, and the install's links with it (undefined:
+// none handed). It prints what the expression `ask` gives, with r the
+// library, read once its output has closed.
+function childGives(grants, known, links, ask) {
+  return new Promise((resolve, reject) => {
+    const code = `const r = require(${JSON.stringify(LIB)}); r.receive(); process.stdout.write(JSON.stringify(${ask}));`;
     const flags = ['--permission'].concat(grants.map((g) => `--allow-fs-read=${g}`), [`--allow-fs-read=${path.dirname(LIB)}`]);
     const child = spawn(process.execPath, flags.concat(['-e', code]),
-      {env: Object.assign({}, process.env, realpaths.childEnv()), stdio: ['ignore', 'pipe', 'inherit', 'pipe']});
+      {env: Object.assign({}, process.env, realpaths.childEnv()), stdio: ['ignore', 'pipe', 'pipe', 'pipe']});
     let out = '';
+    let err = '';
     child.stdout.on('data', (c) => { out += c; });
-    child.on('exit', () => resolve(JSON.parse(out)));
-    realpaths.send(child, known);
+    child.stderr.on('data', (c) => { err += c; });
+    child.on('close', () => { try { resolve(JSON.parse(out)); } catch (e) { reject(new Error(`the child printed ${JSON.stringify(out)}; stderr: ${err.slice(-2000)}`)); } });
+    realpaths.send(child, known, links);
   });
+}
+
+// What realpathSync gave that child for each of `ask`, and whether the
+// marker is still in its environment.
+function childSees(grants, known, ask) {
+  return childGives(grants, known, undefined, `(() => {
+    const out = {}; for (const p of ${JSON.stringify(ask)}) { try { out[p] = r.realpathSync(p); } catch (e) { out[p] = e.code; } }
+    out.env = process.env[r.ENV] == null ? 'gone' : 'still set';
+    return out; })()`);
 }
 
 describe('sandbox 19: --hardened precomputed real paths', function() {
@@ -74,6 +85,55 @@ describe('sandbox 19: --hardened precomputed real paths', function() {
     const seen = await childSees([base], {}, [other, path.join(base, 'missing')]);
     assert.strictEqual(seen[other], other);
     assert.strictEqual(seen[path.join(base, 'missing')], 'ENOENT');
+  });
+
+  // #280's follow-up: the links countinghouse is reached through
+  // (lib/fs-broker/index.js protectedLinks) are found by lstat-ing every
+  // directory above each path, which the child may not do. The parent's
+  // lists, one a path, travel with the real paths.
+  it('each path\'s links travel with the real paths, and are no real path\'s answer', async () => {
+    base = mkdtemp('realpaths-');
+    const place = path.join(base, 'r', 'install');
+    const handed = {[path.join(base, 'install')]: [place], [path.join(base, 'data')]: []};
+    const seen = await childGives([base], {[base]: base}, handed, `({links: r.linkPlaces(), real: r.realpathSync(${JSON.stringify(base)})})`);
+    assert.deepStrictEqual(seen, {links: handed, real: base});
+    assert.deepStrictEqual(await childGives([base], {}, {}, 'r.linkPlaces()'), {}, 'none found is an answer too');
+    // a relaunched server handed none has an empty map, not "look for yourself": it may not
+    assert.deepStrictEqual(await childGives([base], {}, undefined, 'r.linkPlaces()'), {}, 'nothing handed over');
+    assert.strictEqual(realpaths.linkPlaces(), null, 'null only in a process that was not relaunched');
+    // the map has no prototype to replace, and "__proto__" is no path
+    assert.deepStrictEqual(await childGives([base], {}, {['__proto__']: [place]},
+      '({proto: Object.getPrototypeOf(r.linkPlaces()), own: Object.keys(r.linkPlaces()), inherited: r.linkPlaces().toString === undefined})'),
+    {proto: null, own: [], inherited: true});
+    // what is not a list of places for a path is dropped, never taken for
+    // one; a path and a place are absolute, or they are not one (the review of #282, M2)
+    assert.deepStrictEqual(await childGives([base], {}, {[base]: 'x', [path.join(base, 'ok')]: [place, 7, 'relative/x', ''], 'relative/key': [place]}, 'r.linkPlaces()'),
+      {[path.join(base, 'ok')]: [place]});
+  });
+
+  it('the broker goes by the parent\'s list for a path; for one it was handed none for, it cannot look, and has none', async () => {
+    base = mkdtemp('realpaths-');
+    const place = path.join(base, 'r', 'data-link');
+    const options = {modulePath: path.join(base, 'modules'), moduleDataPath: path.join(base, 'data'), authConfigPath: path.join(base, 'auth.json'),
+      deviceConfigPath: path.join(base, 'devices')};
+    const broker = `require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))})`;
+    const ask = `(() => { try { return {links: ${broker}.protectedLinks(${JSON.stringify(options)})}; } catch (e) { return {refused: [e.code, e.message]}; } })()`;
+    // handed a list for every path it asks about: the parent's lists, nothing looked for
+    const every = `(() => { const b = ${broker}; const all = {}; for (const p of b.pathsWalked(${JSON.stringify(options)})) all[p] = []; return Object.keys(all); })()`;
+    const paths = await childGives([ROOT, base], {}, {}, every);
+    const handed = Object.fromEntries(paths.map((p) => [p, p === options.moduleDataPath ? [place] : []]));
+    assert.deepStrictEqual(await childGives([ROOT, base], {}, handed, ask), {links: [place]});
+    // one path it was handed nothing for: it may not lstat above its grants,
+    // and does not go on without it (the review of #282, M1)
+    delete handed[options.modulePath];
+    const some = await childGives([ROOT, base], {}, handed, ask);
+    assert.strictEqual(some.refused[0], 'MODULE_SANDBOX_REFUSED');
+    assert.ok(some.refused[1].includes(options.modulePath) && /--permission.*--hardened/.test(some.refused[1]), some.refused[1]);
+    // framework.js asks this when it starts under the permission model, and
+    // refuses the start with what it says: nothing for a --hardened
+    // relaunch, the reason for a process restricted another way
+    const problem = `require(${JSON.stringify(path.join(ROOT, 'lib', 'hardened-launch'))}).startProblem()`;
+    assert.match(await childGives([ROOT, base], {}, undefined, problem), /--permission.*--hardened/);
   });
 
   it('without the marker it reads nothing (an ordinary start)', () => {

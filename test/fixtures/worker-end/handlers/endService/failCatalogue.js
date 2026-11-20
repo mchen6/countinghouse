@@ -1,6 +1,5 @@
 // failCatalogue.js -- fails with a code from the runtime's error catalogue.
-// A deliberate rule-breaker (logger-design §5.1: a module raises only its own
-// codes), kept until §5.4 decides how a callee's code crosses a hop: today a
-// runtime code from a callee reaches the composite's caller
-// (test/composition/15). The step-1 inventory names it as the one exception.
+// A module may not (logger-design §5.1, section 12, 1): ctx.error answers it
+// with the runtime's MODULE_CODE_RESERVED, which reaches the composite's
+// caller as the runtime's (the back-sweep, 11-18).
 module.exports = async (input, ctx) => { throw ctx.error('DEVICE_INVOKE_FAIL'); };

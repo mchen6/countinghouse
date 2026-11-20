@@ -6,6 +6,7 @@
 const assert = require('assert');
 const path   = require('path');
 const {ROOT, startServer, stopServer, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
 const KEY     = 'job-timeout-key';
@@ -24,7 +25,7 @@ describe('sandbox 26: --jobTimeout bounds a job that sets no timeout', function(
   this.timeout(60000);
 
   describe('--jobTimeout 2', () => {
-    const PORT = 9624;
+    const PORT = testPort(9624);
     let server = null;
     before(async () => {
       server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread', '--jobTimeout', '2', '--loadModule', FIXTURE]);
@@ -40,7 +41,7 @@ describe('sandbox 26: --jobTimeout bounds a job that sets no timeout', function(
         return b.state === 'failed' ? b : null;
       }, 15000, 'the job to time out');
       const ms = Date.now() - started;
-      assert.match(job.job.failedReason, /timed out after 2000 milliseconds/);
+      assert.match(job.job.failedReason, /^JOB_TIMEOUT: The job did not finish within its timeout \(2 s\), so it failed/);
       assert.ok(ms >= 1500 && ms < 8000, `failed after ${ms} ms`);
     });
 
@@ -52,14 +53,14 @@ describe('sandbox 26: --jobTimeout bounds a job that sets no timeout', function(
         const b = await jobState(PORT, added.body.id);
         return b.state === 'failed' ? b : null;
       }, 10000, 'the job to time out at its own 5 s');
-      assert.match(job.job.failedReason, /timed out after 5000 milliseconds/);
+      assert.match(job.job.failedReason, /^JOB_TIMEOUT: The job did not finish within its timeout \(5 s\), so it failed/);
     });
   });
 
   // setTimeout fires at once past 2^31-1 ms (about 24.8 days), so a larger
   // value is clamped to that, not taken as "fail every job immediately".
   describe('--jobTimeout 3000000 (about 35 days)', () => {
-    const PORT = 9627;
+    const PORT = testPort(9627);
     let server = null;
     before(async () => {
       server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread', '--jobTimeout', '3000000', '--loadModule', FIXTURE]);
@@ -83,7 +84,7 @@ describe('sandbox 26: --jobTimeout bounds a job that sets no timeout', function(
   });
 
   describe('--jobTimeout 0', () => {
-    const PORT = 9625;
+    const PORT = testPort(9625);
     let server = null;
     before(async () => {
       server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread', '--jobTimeout', '0', '--loadModule', FIXTURE]);

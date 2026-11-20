@@ -1,0 +1,5 @@
+{"device": {"friendlyName": "compat-probe", "manufacturer": "countinghouse-test",
+  "modelDescription": "uses one loader-related library the way its dependents do (test/sandbox/69, the compatibility table)",
+  "serviceList": {"urn:countinghouse-test:serviceID:probeService": {"actionList": [
+    {"name": "library", "description": "Use one library and say whether it works.", "input": {"schema": "/probeService/library/input"}, "output": {"schema": "/probeService/library/output"}}
+  ]}}}}

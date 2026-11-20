@@ -80,18 +80,27 @@ describe('auth 43: the resilient Redis client and rate limiter (M5)', function()
     } finally { c.end(false); }
   });
 
-  it('a rate-limit check Redis never answers gets RATE_LIMIT_TIMEOUT at the deadline, once', async () => {
+  // A check Redis never answers is answered at the deadline, once, and
+  // decided by the same limit in memory: never an error the caller would
+  // take as "allowed" (the Reviewer on #443: a timeout must not become
+  // unlimited calls for a key)
+  it('a rate-limit check Redis never answers is answered at the deadline, once, by the same limit in memory', async () => {
     const hung = {options: {}, multi: () => ({zremrangebyscore() { return this; }, zrange() { return this; }, zadd() { return this; },
       expire() { return this; }, exec() { /* never calls back */ }})};
     const limit = redisResilient.rateLimiter({redis: hung, interval: 1000, maxInInterval: 1}, 300);
     const t0 = Date.now();
     const calls = [];
     await new Promise((resolve) => {
-      limit('id', (err) => { calls.push(err); resolve(); });
+      limit('id', (err, timeLeft) => { calls.push({err, timeLeft}); resolve(); });
     });
     await new Promise((r) => setTimeout(r, 200));
     assert.strictEqual(calls.length, 1);
-    assert.strictEqual(calls[0].code, 'RATE_LIMIT_TIMEOUT');
+    assert.strictEqual(calls[0].err, null);
+    assert.strictEqual(calls[0].timeLeft, 0, 'the first in the second: allowed');
     assert.ok(Date.now() - t0 >= 300 && Date.now() - t0 < 1000);
+    // the second in the same second: limited, though Redis still says nothing
+    const second = await new Promise((resolve) => limit('id', (err, timeLeft) => resolve({err, timeLeft})));
+    assert.strictEqual(second.err, null);
+    assert.ok(second.timeLeft > 0, JSON.stringify(second));
   });
 });

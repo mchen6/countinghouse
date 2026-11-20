@@ -22,6 +22,7 @@
 const assert = require('assert');
 const path   = require('path');
 const {startServer, stopServer} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {runCases, MODES} = require('../helpers/error-shape-cases');
 const {CODES} = require('../../lib/error-catalogue');
 const {toolErrorCode} = require('../helpers/tool-result');
@@ -30,7 +31,7 @@ const ROOT    = path.join(__dirname, '..', '..');
 const GOLDEN  = require('./error-shape.golden.json');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'error-shape-module');
 const AUTH    = path.join(__dirname, 'error-shape-auth.json');
-const PORTS   = {worker: 9656, 'single-thread': 9657};
+const PORTS   = {worker: testPort(9656), 'single-thread': testPort(9657)};
 
 
 describe('mcp-contract 07: error bodies are byte-identical to the golden (logger-design step 1)', function() {

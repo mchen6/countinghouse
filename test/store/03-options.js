@@ -8,6 +8,7 @@
 const assert = require('assert');
 const path = require('path');
 const {spawnSync} = require('child_process');
+const {testPort} = require('../helpers/test-env');
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -26,7 +27,7 @@ function optionsFor(argv) {
 }
 
 function start(args) {
-  return spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', '9730'].concat(args),
+  return spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', String(testPort(9730))].concat(args),
     {cwd: ROOT, encoding: 'utf8', timeout: 20000});
 }
 

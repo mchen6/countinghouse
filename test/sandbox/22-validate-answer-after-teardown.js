@@ -19,7 +19,7 @@ const PROBE = path.join(ROOT, 'test', 'fixtures', 'validate-probe');
 const SLOW  = path.join(ROOT, 'test', 'fixtures', 'validate-slow');
 
 const options = require('../../lib/cli-options');
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 let base = null;
 
 function manager() {

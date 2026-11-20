@@ -10,6 +10,258 @@ the auth config.
 
 ## Unreleased
 
+### Changed — the usage report counts a cancelled call apart: `profile.cancelled`
+
+A call cancelled while it ran (M19) was counted among the report's errors.
+It is no error: `countinghouse_usage_report` (and `countinghouse-usage`)
+now count such calls in `profile.cancelled`, and leave them, and the
+server calls the cancel aborted (`CALL_TOKEN_INVALID`), out of
+`profile.errors`. A task cancelled with `tasks/cancel` while its run ran
+is such a call: its run's record says `cancelled`, whatever the run's end.
+### Changed — `tools/call` answers a tool outside the key's grants as an unknown tool
+
+A known key's `tools/call` of a tool outside its grants (an unlisted part's
+too) now answers `-32602 unknown tool: <name>`, as a name never registered
+does, instead of `-32603` with the no-access text: one answer for every tool
+a caller can't see, so a call no longer tells what is installed; so is a
+runtime tool not listed to the key (an authoring tool for a non-admin key,
+which answered `ADMIN_REQUIRED`; the single-identity profile's hidden
+built-ins, which answered `MODULE_NOT_LISTED`). No key and
+an unknown key keep their auth refusal, now the same for every name,
+the runtime's own `countinghouse_*` tools included.
+
+### Removed — the pack form, `--packsRoot`, a ceiling's `packs`, `fallbackEnv`
+
+Module-level configuration's cleanup (#413 rev 3, section 16, rule 7):
+- ch-local's control messages are the module form only. A message carrying
+  `scenario`, `pack`, `global` or `remoteCredentials` is refused, and
+  `--packsRoot` stops the start (exit 2); ch-local passes `--modulesRoot`.
+- The ceiling's `packs` is no longer a key: a ceiling that still holds it is
+  not trusted, saying to list each module under `modules`.
+- A runtime with `--controlChannel` takes only a version 2
+  `--remoteCredentials` file.
+- A remote's `fallbackEnv` is refused: a credential is one variable.
+- The settings tool no longer reads `packs.json`: with no `modules.json`,
+  nothing is installed.
+- Usage records and the report say `scenario` for the call's top-level
+  module (`groupBy: "scenario"`); a record that says `pack` is still read.
+- The catalogue's texts name a module, never a pack.
+
+### Changed — `--settingsFile` outside the single-identity profile stops the start
+
+- **`--settingsFile` is refused (exit 2) outside the single-identity
+  profile**, as `--controlChannel` and `--sessionSocket` are:
+  `countinghouse_settings` is served only there (ch-local start). Given on a
+  hosted server, or with `--authConfigPath` or `--authProvider`, it used to be
+  accepted and half-applied: the tool was not served, yet a size cap's error
+  told the agent to raise the cap with it. ch-local passes it only in that
+  profile.
+
+### Fixed — modules load on Windows when the install is run by an 8.3 short name
+
+An install run by a short-name spelling (`C:\Users\RUNNER~1\...`, as
+under GitHub's Windows runner's temporary directory), with no
+`--preserve-symlinks`, listed none of its modules under the sandbox: each
+failed with `Cannot find module '/app/handlers/...'`. A module's worker
+loaded the runtime's files by the short spelling until its file broker was
+installed and by the long one after, so one of them was loaded twice. The
+worker is now started by its real path, and each file is loaded once.
+
+### Fixed — the settings ceiling is found on Windows with no SystemDrive in the environment
+
+A runtime started with no `SystemDrive` in its environment (ch-local's
+daemon is) could not find ProgramData. Every setting that loosens a default
+was then refused with `SETTING_CEILING_UNTRUSTED`. The lookup now sets
+`SystemDrive` itself, from the system's Windows directory, before asking for
+the folder.
+
+### Removed — flags that did nothing, or let a failing module load
+
+- **`--verifyModule`** is gone. With it, the loader carried on past a
+  module's failed interface check, `DEVICE_SPEC_VALIDATION_FAIL`,
+  `INVALID_MODULE_INSTANCE` and even `DEVICE_OBJECT_CONFLICT`, and
+  registered the device anyway. A module that fails a check is now refused
+  whatever the options (`test/module-loading/37`). `countinghouse-validate`
+  is the way to check a module.
+- **`--apiMonitor`** is gone, with the Redis client it opened: it wrote a
+  per-call API log that nothing read.
+- **`--centralPortalUrl`**, **`--wetty`** and **`--validateData`** are gone:
+  nothing read them.
+- **`--logStream`** is gone: it chose between the logger's two
+  configurations, which had become one (the log goes to the same place with
+  it or without).
+- **`--heapDump`** stays (a dev aid), and no longer throws every minute when
+  Node runs without `--expose-gc`: it says once that it needs it
+  (`bin/countinghouse` and `npm run start-heap-dump` pass it) and does
+  nothing.
+
+### Added — the shared runtime: one runtime for a user's client sessions (#245–#371)
+
+- **`--sessionSocket <path>`** serves MCP sessions on a Unix socket, or on
+  Windows a named pipe with `--sessionDir` (#245, #248, #275). It is
+  `ch-local daemon`'s, one runtime per user, which each client session
+  reaches through ch-local's native shim. It needs `--store local`,
+  `--controlChannel ipc` and the single-identity profile.
+- **Each session is its own:**
+  - its `server/discover` and `subscriptions/listen` (#249);
+  - its settings within the operator's ceiling, a loosening confirmed in
+    its own form (B2: #268, #271, #292, #296);
+  - its packs (B3: #340, #341, #359);
+  - its tasks, which another session cannot see and which its end cancels
+    (B5: #334, #366, #371);
+  - its usage in the report and its settings history (#352, #360).
+- **A session resumes across a runtime restart** with its state (#262, #300,
+  #308). A drain lets calls in flight answer before the runtime stops (#255,
+  #267).
+
+### Added — modules that keep state per session (R1, #350–#356)
+
+- **`"countinghouse": {"state": "per-session"}`** in a module's
+  `package.json` gives it, on the shared runtime, a worker of its own per
+  session, started on that session's first call, with its own `ctx.redis`
+  keys, `/data` and `/tmp`, removed when the session ends (#350, #351, #353,
+  #356).
+  - A hosted server refuses such a module (`MODULE_NEEDS_SESSIONS`); under
+    `--stdio` it runs as a shared one.
+  - Any other value refuses the load (`MODULE_STATE_INVALID`), and a reload
+    that changes it is refused (`MODULE_STATE_CHANGED`).
+- **`--maxSessionWorkers`** (16 by default) caps how many such workers run
+  at once, in all. At the cap the least recently used idle one gives up its
+  slot, and with none idle a call is `SESSION_WORKERS_BUSY`. Each costs
+  about 24 MB, plus about 15 MB once: about 400 MB at the default cap
+  ([measured](docs/benchmarks/lean-worker.md#per-session-workers-shared-runtime-r1),
+  #377).
+
+### Changed — a job past its timeout fails `JOB_TIMEOUT` (#375)
+
+- A job run past its own `opts.timeout`, else `--jobTimeout`, fails with
+  the catalogued `JOB_TIMEOUT` (retryable, HTTP 504), not a library's text,
+  in both job runners. An answer that comes later is dropped. A 2026-07-28
+  task that times out is `failed` with that code.
+
+### Added — the tasks extension for 2026-07-28 clients (MCP completeness, M15, #329)
+
+- **A call to an action that declares `longRunning`**, from a client that
+  declares `io.modelcontextprotocol/tasks`, is answered at once with a task
+  (with `--workerThread`). The client polls `tasks/get`, and may
+  `tasks/update` and `tasks/cancel`. Anyone else's call runs inline.
+- **A request to those methods without the extension is `-32021`.** Over
+  HTTP they, `tools/call`, `resources/read` and `prompts/get` carry an
+  `Mcp-Name` header that must agree with the body. A task is its caller's,
+  and on a shared runtime its session's. Another's, an unknown id or a
+  legacy task is one `-32602` that echoes no id. Legacy-era tasks are
+  unchanged.
+
+### Added — prompts (MCP completeness, M10, #321)
+
+- **A device's `promptList`** is served on `prompts/list` and `prompts/get`,
+  as `<module>_<name>` (a scenario's under the bare name), to the keys that
+  may reach the module. `prompts/get` runs no module code: it checks the
+  arguments against the prompt's schema, puts each `{{name}}` in once and
+  returns the messages, at most 64 KiB.
+
+### Added — module resources (MCP completeness, M7, #327)
+
+- **An action may be declared a resource** (`resource` in `api.json`), not
+  a tool. It is listed on `resources/list` (no variables) or
+  `resources/templates/list`, as `countinghouse://m/<module>/<path>`, to the
+  keys that may reach its module. `resources/read` runs the action as a
+  `tools/call` would: authorized, validated, rate limited and billed, with
+  the URI's variables as its input, decoded once. A value with a control
+  character, a `/` or a `\`, or that is exactly `.` or `..`, never reaches
+  the module.
+
+### Added — a tool's title, annotations and icons (MCP completeness, M2, #319)
+
+- **`tools/list` carries an action's `title`, `annotations` and `icons`**
+  when it declares them. The hints are the author's claims; the runtime
+  enforces none. Icons, files in the module (PNG, JPEG or WebP, at most
+  16 KiB, never SVG or a URL), are read at load and sent inline as `data:`
+  URIs. A missing or bad one refuses the load (stage `icons`).
+
+### Added — `tools/list` in pages (MCP completeness, M1, #317)
+
+- **A list longer than `--listPageSize`** (250 by default, 10 to 1000) is
+  answered in pages, each but the last with a `nextCursor`. The resource,
+  template and prompt lists page the same way. A client can't choose the
+  size. A modern list result carries `ttlMs` and `cacheScope` (#379).
+
+### Added — cancelling a call in flight (MCP completeness, M19, #314, #316)
+
+- **A 2026-07-28 request over HTTP is cancelled** when its POST closes
+  before the answer. On stdio and a shared runtime's session,
+  `notifications/cancelled` cancels a call of the same connection or
+  session. A cancelled call writes no answer. A composite stops at its next
+  hop, and a remote call made for it is aborted. Work already running
+  finishes, its result discarded, and is billed. With `--workerThread`; in
+  single-thread mode a cancel only suppresses the answer.
+
+### Changed — output schemas of any JSON value (MCP completeness, M20, #304)
+
+- **A 2026-07-28 `tools/list` advertises an output schema of any root
+  type**, and a modern result carries the output, whatever its type, as
+  `structuredContent`. A module's output may be any JSON value its schema
+  allows, `null` included (before, anything but an object was refused). A
+  legacy request is unchanged.
+
+### Added — progress (MCP completeness, M9, #303; M21, #306)
+
+- **A `tools/call` with a `progressToken`** gets `notifications/progress` as
+  its hops and remote calls run, at most every 250 ms, before the answer,
+  on HTTP (the POST becomes an SSE stream when the first one is due), stdio
+  and a session.
+- **Breaking: `ctx.job` is never `null`.** Outside a task it is
+  `{id: null, progress(n), info(cb)}`: `progress(n)` (0 to 100) is the
+  call's own progress, sent with `total: 100`. A module that asked
+  `ctx.job == null` asks `ctx.job.id == null`.
+
+### Added — stored results and resource links (MCP completeness, M5, #299; M6, #313)
+
+- **A result's binary values past `--inlineContentBytes`** (1 MiB of decoded
+  bytes per result, in schema order) are stored and sent as `resource_link`s.
+  `resources/read` returns them to the caller who made the call, in the same
+  session, for `--resourceRetention` (24 h).
+- **The store is bounded:** `--resourceStoreBytes` in all, and per caller
+  `--resourceQuotaBytes` and `--resourceQuotaItems`. A result that would pass
+  a limit is refused `RESULT_STORE_FULL`, with nothing stored. It lives in
+  Redis db 13, or local files under `<storePath>/resources/`.
+  `--resourceReadCost` meters a read. Stored results are never listed.
+
+### Changed — binary values: base64 asserted, and sent as blocks (MCP completeness, M3, #293; M4, #297)
+
+- **Breaking: `contentEncoding: "base64"` is an assertion**, on input and
+  output: canonical RFC 4648 base64, or `INPUT_DATA_VALIDATION_FAIL` /
+  `OUTPUT_DATA_VALIDATION_FAIL` naming the field.
+- **Breaking: a Buffer, typed array or DataView in an output is refused**,
+  `OUTPUT_NOT_JSON`, in the module's worker (it was mangled).
+- **An `image/*` or `audio/*` base64 field is sent as its own content
+  block**, and any other media type as a `resource` block. Each is referenced
+  in `structuredContent` as the advertised `outputSchema` says.
+
+### Added — resource and prompt change notices on a listen (MCP completeness, M8)
+
+- **`subscriptions/listen` agrees to `resourcesListChanged`,
+  `promptsListChanged` and `resourceSubscriptions`**, on HTTP (the SSE
+  stream), stdio and a shared runtime's session, beside `toolsListChanged`.
+  A settled change that moves the resources (or templates) or the prompts a
+  listener is shown sends one `notifications/resources/list_changed` or
+  `notifications/prompts/list_changed`; a reload that lists the same says
+  nothing. `server/discover` declares `resources: {listChanged: true,
+  subscribe: true}` and `prompts: {listChanged: true}` where a listen is
+  served.
+- **`resourceSubscriptions`**: of the URIs asked, the acknowledgement agrees
+  to those the caller can read (a module resource its key, and its session,
+  are listed), in order, at most 64, each at most 2048 bytes; the rest are
+  left out. After a call to an action a subscribed resource names in
+  `changesWith` succeeds, by any entry path, each of the calling key's
+  subscriptions naming one of its URIs is sent
+  `notifications/resources/updated`, once per URI per quarter second. On a
+  shared runtime a per-session module's change reaches only the calling
+  session. A call with no key (`--debug` without `--debugKey`) is not
+  recorded, so it announces nothing. An HTTP listen whose client leaves
+  more than 1 MiB unread is closed (the listen is cancelled). A resource's
+  `changesWith` naming its own read action refuses the load.
+
 Upgrading from 7.x: [`docs/upgrading-to-8.md`](docs/upgrading-to-8.md)
 groups everything below by what an operator has to do. Measured cost of the
 file broker on the maintainer's 2-CPU VM (at `9246db1`): 250 rounds of a 4 KB
@@ -17,6 +269,457 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 `--moduleSandbox off` and 1.9 s under `enforce`; a module restart takes about
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
+
+### Changed — declared text reaches the client with no hidden characters (MCP completeness, M18)
+
+What a module declares for the client is cleaned as it leaves: a tool's
+title and description, a prompt's title, description, arguments'
+descriptions and messages, a resource's title and description, and a
+question's dialog. Each hidden character (a control, line separator, bidi
+control, zero-width character, tag, variation selector or filler) becomes a
+space. A prompt's message keeps its line breaks and tabs, and an emoji
+keeps its joiner and VS-16. A completion candidate with a hidden character
+is no longer offered. Nothing is refused or changed at load.
+
+### Added — completion for resource templates, and completion actions (MCP completeness, M11)
+
+- **`completion/complete` takes `ref/resource`**: one of the caller's listed
+  resource templates, by its URI template; the variable's candidates are
+  the input property's `enum`, then its `examples`, derived at load and
+  matched as a prompt argument's are.
+- **A prompt or a resource may name a completion action**
+  (`"completion": {"<argument>": "<service>.<action>"}`): called with
+  `{argument, value, context}`, it answers `{values: string[]}` (100 kept,
+  of at most 256 characters). It runs as a call of that action, authorized
+  and rate limited, is not billed and is recorded in usage as
+  `completion/complete`; it is not listed as a tool. If it fails, answers
+  no values or takes more than 2 s, the schema's candidates are offered,
+  and a run past 2 s is cancelled as a cancelled call is.
+
+### Fixed — a 2026-07-28 task's status mirrors the inline answer
+
+- **A task whose module was unloaded, reloaded or suspended while it ran**
+  is now `completed`, its result the isError result the same `tools/call`
+  gets inline, with the code in `_meta["countinghouse/code"]`
+  (`MODULE_UNLOADED`, `MODULE_RELOADING`, `MODULE_SUSPENDED`). It was
+  `failed`. The tasks extension uses `failed` only for a request that fails
+  with a JSON-RPC error, and a tool result with `isError` is `completed`
+  (`tasks.md` l.157-158, l.835-837). A task is still `failed`, with its
+  JSON-RPC `error`, when its run left no answer: the runner's
+  `--jobTimeout`, or the owner's access refused when the run starts.
+  Legacy-era tasks are unchanged.
+
+### Changed — the module sandbox's checks run on intrinsics captured at load; `path`, `url` and `URL` are fixed
+
+- **The lockdown's checks** (the allowed built-ins, a path given to
+  `CHUtil.loadFile` or the reduced `module.createRequire`, a granted host
+  for `CHUtil.request`) call only functions taken before module code loads,
+  and each guard hands a call on through a `Reflect.apply` taken then; so
+  do the file broker's routing, grants and loader hook, and the resolve
+  shim. The allowed built-ins and
+  the loopback names are no longer exported as live sets
+  (`ALLOWED_BUILTIN_IDS`, a frozen array, takes the place of the first).
+- **A module can no longer patch `EventTarget`, `NodeEventTarget` or
+  `MessagePort`** under audit or enforce: their methods are fixed at the
+  lockdown, as `path`'s and `url`'s are. A peer channel's port is set up
+  by Node with them after module code has loaded. An assignment on an
+  instance (`target.addEventListener = fn`) now throws in strict code;
+  accessors such as `port.onmessage`, subclasses and
+  `Object.defineProperty` on an instance still work, and so do
+  `AbortController` and `AbortSignal`. The runtime's own port use (replies,
+  stdio, peer channels) goes through methods taken at a worker's boot. The
+  keys Node assigns on a port it sets up (`kEvents`, `kHandlers` and the
+  rest) are made the port's own without reaching `Object.prototype`, and
+  `util.inspect` of a port still works.
+- **What a worker's calls go through is loaded at its boot**, before module
+  code, and fixed there: the call path's files (call limits, a hop's
+  input, peer channels, the service client, the device query and
+  `countinghouse-util`, attached to the worker then) are no longer loaded
+  on first use, so what module code puts in `require.cache` changes
+  nothing the runtime uses, and their exports and classes' prototypes are
+  non-writable. A call's token, its queues and its replies are kept in
+  containers written as own properties and walked by index, with
+  intrinsics taken at boot. About 8 ms more per worker boot.
+- **A module can no longer patch `path`, `url` or `URL`** under audit or
+  enforce: the functions of the `path`, `path.posix`, `path.win32` and `url`
+  exports, `URL.prototype`'s accessors and methods, and `module.isBuiltin`
+  are non-writable and non-configurable from the lockdown on. A module that
+  patches them runs under `--moduleSandbox off`.
+
+### Added — what a module declares for MCP clients is checked (MCP completeness, M0)
+
+- **`api.json` takes the fields the MCP layer serves**: an action's `title`,
+  `annotations`, `icons`, `longRunning`, `questions` and `resource`, and the
+  device's `promptList`. The meta-schema holds each one's shape and bounds,
+  and an action stays closed to anything else. Each field is served as its
+  part of the layer is released.
+- **The rules a schema cannot express are checked at load**, in a
+  validator, before any of the module's code runs: `MODULE_ASSEMBLY_FAIL` at
+  stage `declarations`, for the first problem. `countinghouse-validate`
+  reports every problem and warning, and checks the module's icon files.
+- **Two things a module could carry before are now refused at load:** a
+  binary output field that is not under `properties` or an array's `items`
+  (it was served as a plain string), and `x-mcp-header` anywhere in an input
+  schema (the server's side of it is not built).
+
+### Added — a task may ask its user a module's question (MCP completeness, M22)
+
+A long-running action run as a 2026-07-28 task may now use `ctx.ask`, when
+the request that made the task declared form elicitation. The pass that
+asks ends; the task reads `input_required`, with the form in
+`inputRequests` and the status message "waiting for an answer"; the client
+answers with `tasks/update`, and the handler runs again under the same
+`taskId`. The question is held on the server, outside every module's
+reach, never in a requestState. The pass that asks is not billed and
+spends no attempt. A question waits at most an hour, then the task fails
+with the new code `ASK_EXPIRED`; at most 64 of a key's tasks (10,000 in
+all) wait on a question at once, past which `ctx.ask` is
+`ASK_UNAVAILABLE`.
+
+### Added — a module may ask its user a declared question: `ctx.ask` (MCP completeness, M13)
+
+- **`ctx.ask(name, values)`** puts one of the action's declared questions
+  (`api.json`'s `questions`) to the user of a 2026-07-28 client that
+  declares form elicitation, and resolves with the form's content, or
+  `null` for a decline. The runtime composes what the user reads,
+  `<module name>: <message>`.
+- **The handler runs again.** With no answer yet `ctx.ask` rejects
+  `ASK_PENDING`, the call is answered with the question (an
+  `InputRequiredResult`), and the client's retry runs the handler from the
+  top. Module authors: ask first, act after
+  ([module development](docs/module-development.md#asking-the-user-ctxask)).
+- **The retry's `requestState`** is bound to the caller, the session, the
+  tool and the arguments, lasts five minutes and is used once, also across
+  a restart. New error codes: `ASK_PENDING`, `ASK_UNAVAILABLE`,
+  `ASK_NOT_DECLARED`, `ASK_STATE_INVALID`, `ASK_STATE_UNCHECKED`.
+- **A call is asked at most eight rounds in all**, three at most of one
+  question; after that `ctx.ask` is `ASK_UNAVAILABLE`.
+- **`--moduleQuestions off`** turns every module's question off. Under
+  `--store redis` the used states' nonces are in Redis db 14, which must
+  not evict.
+- **A part may ask too (M14).** A module reached through a scenario's
+  `ctx.call`, routed or over a direct peer channel, asks the outer call's
+  user one of its own action's declared questions. The dialog carries the
+  called, listed module's name, never the part's; the usage record
+  (`askedBy`) and the runtime's log name the part. The call's rounds are
+  the chain's: one question a round, eight in all. The part's
+  `ASK_PENDING` rejects the caller's `ctx.call`; a caller that catches it
+  and returns a result keeps that result, and the question is dropped.
+  In single-thread mode a part has no one to ask.
+- **A call that can end on a question** (its own action declares one, or
+  one it can reach through declared calls does) refuses `requestState` or
+  `inputResponses` in its arguments.
+- **A call cancelled while its form is made** is asked nothing: no state
+  is made for it, and its record says `cancelled`.
+
+### Changed — a latched session is told why, never that the user declined
+
+- **`SETTING_CLIENT_NOT_CONFIRMED`** (new): a loosening asked in a shared
+  runtime's session whose client said its configuration could answer a
+  dialog by itself. It says why, as the client line gives it (a reason such
+  as "project plugin or marketplace" and a place under the home as
+  "~/..."), or "this client could not be confirmed". It was
+  `SETTING_DECLINED_THIS_SESSION`, whose text read as if the user had
+  declined.
+- **`SETTING_DECLINED_THIS_SESSION`** is a decline's, or two dialogs left
+  unanswered: its text no longer speaks of the client's configuration.
+
+### Changed — `countinghouse-validate` fails a `schema.json` the load refuses as unsafe
+
+- **A module that passed validate and was then refused at load now fails
+  validate too.** `countinghouse-validate` (and the
+  `countinghouse_validate_module` tool) runs the load's own schema safety
+  check, in the load's order and words: a problem at stage `schemaSafety`,
+  code `MODULE_ASSEMBLY_FAIL`, for a `schema.json` over 1 MB, a pattern
+  that can backtrack catastrophically or is over 1000 characters, more than
+  100,000 schema nodes with `$ref`s expanded, a `$ref` to itself or to no
+  place, or a schema nested too deeply to check. Such a schema is not
+  walked for its declarations: one problem says why.
+- **Validate's problems at the stages `declarations` and `readRootSchema`
+  carry `code: "MODULE_ASSEMBLY_FAIL"`**, as the load refuses the module
+  with it.
+- **The schema path in a `schemaSafety` refusal is cut to 512 characters
+  and carries no control character**, at load and in validate: it is made
+  of the module's own property names.
+
+### Removed — BSON request bodies
+
+- **An `application/bson` body is no longer taken**, on any route: it is
+  answered 415 (`REQUEST_UNSUPPORTED_MEDIA_TYPE`), and not parsed or kept
+  (it is discarded as it arrives). MCP is
+  JSON only, and `POST /devices/:deviceID/invoke-action`, from the CDIF-era
+  HTTP API, was the last route that decoded BSON. Send JSON, with binary
+  data as base64.
+- **`--maxBsonRequestBody` is gone** (it bounded those bodies, and existed
+  only in this release's development). Given, it is ignored, as any flag
+  the runtime does not know is.
+- The `bson` package is no longer a dependency, and `INVALID_BSON_REQUEST`
+  is no longer an error code.
+
+### Added — MCP 2026-07-28 discovery and versioning; `initialize` is the legacy path (#229)
+
+- **`server/discover`**, which 2026-07-28 requires of every server, on HTTP and
+  stdio: `supportedVersions` (`["2026-07-28"]`), the capabilities, and
+  `_meta["io.modelcontextprotocol/serverInfo"]`. A client that probes with it
+  used to get -32601, and by the spec's rule fell back to the legacy handshake.
+- **A modern request is checked.** It is one whose `_meta` carries the
+  revision's `protocolVersion` or `clientCapabilities`. It must carry both
+  (-32602), and name a version served (-32022, with `data: {supported,
+  requested}`). Over HTTP it must also match its `MCP-Protocol-Version`,
+  `Mcp-Method` and `Mcp-Name` headers (-32020). Each of these is HTTP 400.
+  Its result carries `resultType: "complete"`. An unknown method is HTTP 404,
+  and a modern request in a batch is refused.
+- **`initialize` is unchanged** and selects legacy semantics: results stay
+  exactly as before. A legacy session gets no confirmation form for a
+  loosening (`InputRequiredResult` is the 2026-07-28 mechanism). It is told
+  to run the terminal command.
+
+### Changed — a call over a direct peer channel is checked by the main thread (lean worker step 4, #202)
+
+- **The caller states the call; the callee can't restate it.** The calling
+  module's worker announces each peer invoke's target (device, service,
+  action) and its input, as bytes, to the main thread, which holds them. The
+  port between the two workers carries the invoke's id alone. The callee
+  learns the target and the checked input only from the main thread.
+- **Input, before any handler runs:** checked at the announcement (strings
+  within bounds, an action the caller declared, a device the channel's
+  callee hosts: otherwise `CTX_CALL_UNDECLARED` or `PEER_NOT_GRANTED`),
+  capped by `--maxOutputBytes` (`INPUT_TOO_LARGE`), then validated against
+  the callee's input schema in a validator worker, as a routed hop's is. A
+  callee whose spec the main thread doesn't hold is refused: nothing passes
+  unchecked.
+- **Output, before it reaches the caller:** the callee sends its result or
+  error as bytes with its bill request. The main thread caps it
+  (`OUTPUT_TOO_LARGE`), validates it against the callee's output schema
+  (`OUTPUT_DATA_VALIDATION_FAIL`), bills only a result that passes, and
+  delivers it. A result a callee posts on the port is dropped and reported
+  as a sandbox violation (`peer-forged-reply`).
+- **The pool's bounds apply to peer calls too:** the deadline, the caller
+  throttle and strikes against the callee for its own output.
+- **Bounded held input:** each calling worker holds at most two hops at the
+  cap (at least 16 MiB) of announced input awaiting a match, and all
+  callers at most eight (at least 128 MiB); past that, an invoke is refused
+  `RATE_LIMITED`. A caller's announcements are released when the call ends
+  or its deadline passes. Invoke ids are integers in range.
+- **No added round trip:** the input rides the existing announcement and
+  match, and the result rides the existing bill request.
+
+### Changed — modules run in lean workers; the main thread registers their devices
+
+- Every module now runs in `lib/lean-worker.js`,
+  which loads the module's handler files and little of the runtime: no
+  device manager or discovery in the worker, and a `CHUtil` facade whose
+  helpers load on first use. The main thread registers a module's device
+  from its own reading of `api.json` once the worker has loaded, so a worker
+  no longer announces its device. A handler file that throws while it is
+  required fails the load with `LOAD_MODULE_FAIL` naming the file. Under
+  `--moduleSandbox off`, a module that blocks right after loading is no
+  longer ended by the old discovery bound (as with any blocking handler,
+  `off` bounds nothing; `audit` and `enforce` have the block watchdog).
+
+### Added — guarding settings by conversation, part 3
+
+- `countinghouse_settings` answers a raised cap or timeout, or a pack
+  turned on, with `SETTING_NEEDS_CONFIRMATION`, naming the `ch-local`
+  command the user runs to allow it; loosening the sandbox or automatic
+  upgrades is terminal only (`SETTING_LOOSENS_A_GUARD`, naming the command).
+  Requests not made are recorded in the history, once per kind per start.
+- The operator's ceiling (`/etc/countinghouse/ceiling.json`,
+  `%ProgramData%\countinghouse\ceiling.json`): lowers the hard bounds or
+  forbids a loosening; a file an ordinary user could have written fails
+  closed (docs/security-model.md).
+- A loosening asked for in conversation can be confirmed by the user in
+  their client's own dialog (an MCP elicitation form), for this start only:
+  `settings.json` is never written, and the change ends when the client
+  restarts countinghouse. A dialog is shown only to a client inside a tested
+  version range (`lib/elicitation-clients.json`, shipped empty until the
+  maintainer's hand test before release), on a request that declares form
+  elicitation, and when ch-local finds nothing in the client's own
+  configuration that could answer it. Otherwise the terminal command is
+  given, as before. New codes: `SETTING_CONFIRMATION_INVALID`,
+  `SETTING_CONFIRMATION_EXPIRED`, `SETTING_CONFIRMATION_USED`,
+  `SETTING_DECLINED_THIS_START`, `SETTING_CHANGED_MEANWHILE`,
+  `SETTING_CEILING_CHANGED_MEANWHILE`, `SETTING_NOT_APPLIED`
+  (docs/security-model.md, "Confirming a loosening in the client's dialog").
+- A confirmed `maxOutputBytes` raise resizes the validators first
+  (`ValidatorPool.resize`: one slot at a time, the spare first, checks
+  answering throughout), then applies; a pack turned on is loaded by
+  ch-local at the version the dialog showed. What was applied, or could not
+  be, is told to the user as a notice.
+
+### Added — packs in place, runtime side: a control channel, change notices and `countinghouse_settings` (#183)
+
+For ch-local's single-identity runtime (`--store local --stdio`, no auth
+configuration). None of it is available to a hosted server.
+
+- **`--controlChannel ipc`:** a channel that only `ch-local start` holds,
+  over the IPC descriptor of the process that spawned the runtime.
+  - Requests are applied one at a time, in order, each answered by its id.
+    `notice {module, text}` and `set {name, value}` are served. `load`,
+    `unload` and `reload` follow with the rest of part 2.
+  - Refused at start (exit 2) for any other value, outside the
+    single-identity profile, without an IPC descriptor, or with
+    `--hardened`.
+- **Change notices:** a pack change ch-local applies is said once as an MCP
+  `notifications/message` (level `notice`), and once as a one-line text
+  block on the pack's next result, tasks included.
+  - Over stdio the server declares the `logging` capability and answers
+    `logging/setLevel`; a level above `notice` stops the notifications, not
+    the result line.
+  - A notice and its pack name are cleaned of control characters and line
+    separators, and bounded. Past 20 pending, the newest are kept and the
+    rest counted in one line.
+- **`--settingsFile <path>`** (ch-local's `<home>/settings.json`) lists
+  **`countinghouse_settings`**, to the one local user only, never through
+  `ctx.call`. `get` returns each setting's value, default, bounds, whether
+  it guards, when it applies, and the last 50 changes, without ch-local's
+  host or pid. `set` changes one setting within its bounds and never
+  loosens a guarding one:
+  - `SETTING_UNKNOWN`, `SETTING_OUT_OF_BOUNDS` and `SETTING_LOOSENS_A_GUARD`
+    (the user loosens with the `ch-local` command).
+  - It follows ch-local's protocol: a lock file created whole
+    (`settings.lock`), the change appended to `history.jsonl` before the
+    file is replaced, and every change logged on stderr. That adds
+    `SETTINGS_BUSY`, `SETTINGS_FILE_INVALID` and `SETTING_NOT_RECORDED`.
+- **A live `set`** over the control channel applies `locale`,
+  `maxOutputBytes` and `requestTimeout` from the next call, and reaches
+  every running module worker. A value above what the runtime started with
+  applies at the next start, since the validators' heap is sized at start.
+  A running call keeps its timer.
+
+### Fixed — `countinghouse-auth-sqlite` and `countinghouse-meter` are installed as commands
+
+- They were in `bin/` but missing from `package.json` `"bin"`, so a package
+  install put no such command on the PATH, though the docs name them as
+  commands (`countinghouse-auth-sqlite bind-module`,
+  `countinghouse-meter set`). Before this, run them as
+  `node <install>/bin/<name>.js`.
+
+### Fixed — a worker's durations equal the main thread's (#188, #112)
+
+- A module worker's `jobTimeout` and `jobResultTtl` were 1000 times the main
+  thread's: the worker read the main thread's milliseconds as seconds again.
+  Its `requestTimeout` was right only through a workaround,
+  `requestTimeoutMs`.
+- A worker now sets the main thread's options with
+  `options.setResolvedOptions(o)`, which keeps durations in milliseconds.
+  `setOptions` converts the CLI's seconds once. `requestTimeoutMs` is
+  retired: ctx.call's verdict wait and a direct peer channel hop's timeout
+  read `requestTimeout`.
+- `--requestTimeout`, `--jobTimeout` and `--jobResultTtl` with no number
+  (`--no-requestTimeout`, a bare flag, a repeated one) give the default,
+  as before. Every value is capped at setTimeout's largest delay
+  (2147483647 ms), past which Node fires at once.
+
+### Changed — a routed hop's input crosses the main thread as bytes (#185)
+
+- A `ctx.call` routed through the main thread (`--no-directPeerChannels`)
+  sends its input as `v8.serialize` bytes, transferred: the main thread
+  checks it in a validator and hands the checked bytes to the called module,
+  never deserialising or cloning it. On 1 MB hops the main thread's CPU per
+  hop fell from 5.3–6.0 ms to 2.6–3.9 ms (the PR has the table).
+- **`INPUT_TOO_LARGE`** (new): a hop's input over `--maxOutputBytes`, the
+  one cap, is refused on the main thread before any check or handler runs.
+- A hop's input that structured clone cannot carry, or a
+  `SharedArrayBuffer` (which a hop used to share between two modules'
+  workers), now fails the `ctx.call` in the calling worker.
+
+### Added — a bound on a module's load, in every sandbox mode (#144)
+
+- **`--moduleLoadTimeout <seconds>`** (default 120): a module's worker that
+  has not answered its load in time is ended, and the load fails
+  `MODULE_LOAD_TIMEOUT`. Requiring a module's files is synchronous, so one
+  that blocks while it is required never answers; under `audit` and
+  `enforce` the block watchdog already ended it, but under
+  `--moduleSandbox off` nothing did and the worker stayed.
+
+### Added — `--moduleSandbox enforce` on Windows (#195)
+
+- A module's files carry a drive on Windows: they are `<V>:\app\...` to
+  the module (its `__filename`, `__dirname`, current directory and stack
+  frames), V a drive letter the host does not have, picked once per
+  process, so Node there can load them as `file:///<V>:/app/...`. The
+  runtime keeps naming them `/app/...` and the file broker maps `<V>:\app`
+  back to `/app`; enforce keeps a module to its own files on Windows as it
+  does elsewhere. The identity loader's checks of countinghouse's code
+  roots follow the host's path rules (backslash on Windows), and taking
+  module roots out of them folds case there. Off Windows nothing changes.
+
+### Changed — a module's output and its worker's log, bounded
+
+- **Under audit and enforce a module's stdout and stderr are runtime-owned
+  streams**: Node's own, which hold its port to the main thread, are never
+  handed to module code. Output reaches the log line by line, prefixed with
+  the module's name, each line cut at 8 KiB and stripped of control
+  characters but tab, at most 256 KiB a minute per stream (then dropped,
+  with one line a minute saying how much); to stderr under `--stdio`.
+- **A worker's own log crosses as records** (1 MiB a minute, fields cut at
+  8 KiB, the module named by the main thread), so a module flooding its
+  output cannot crowd them out. Each record now carries `module`.
+
+### Added — a bound on what a module's worker sends the main thread (#170)
+
+- **Every message from a module's worker to the main thread is an envelope of
+  serialized bytes**, its length read before anything is decoded. Over
+  `--maxOutputBytes` plus 64 KiB it is refused in the worker,
+  `MESSAGE_TOO_LARGE` (the file bridge: 16 MiB plus 64 KiB, `EINVAL`; a
+  file write is split as before). Under `audit` and `enforce` the lockdown
+  pins the worker's ports, so module code that patches
+  `MessagePort.prototype` is never handed one; a worker whose message is not
+  an envelope, or is over the cap, is ended. Cost: about 20 µs of main-thread
+  CPU per message (a `ctx.redis` command is one).
+
+### Changed — `ctx.redis` is per module (#164, breaking)
+
+- **Each key a module names is stored under `m:<module name, URI-encoded>:`**, the name
+  the main thread loaded the module under (never one its worker states), so
+  one module cannot read, overwrite or delete another's keys, nor the
+  runtime's own. Every allowed command has its key positions in a table
+  (`lib/redis-namespace.js`); a command whose keys cannot be placed is
+  refused. `multi` and `exec` are gone from `ctx.redis`: under
+  `--store redis` node_redis's multi runs any command name queued in it.
+  Single-thread mode's `ctx.redis` is namespaced the same way.
+- **`POST /uninstall-module` deletes the module's `ctx.redis` keys** with its
+  data (unless `keepData`), so a later module of the same name inherits none;
+  the answer gains `keysDeleted`. A reload or an upgrade keeps them.
+
+### Added — `ctx.usage()`: the current call's counts so far
+
+- `ctx.usage()` resolves with the current tools/call's counts so far,
+  read-only: `{calls, linesIn, bytesIn, tokensInEst, servers, sentence}`
+  (and `standIn` when a stand-in answered). `sentence` is the first half of
+  the receipt's sentence, word for word. Every remote server call made under
+  the call is counted, its parts' included. The call's own output is not
+  counted, since it is measured when the call returns. A scenario writes its
+  receipt sentence from these counts, so the sentence reaches the model in
+  its summary. It is `null` outside a counted call, and never carries a key,
+  an id or a caller.
+- A worker's query is checked on the main thread. The call's token is
+  checked first, always: it must be one issued to that worker (else
+  `CALL_TOKEN_INVALID`). Then anything but an open call that worker was
+  given answers `null` alike, so a module cannot tell another worker's
+  open call from a finished one.
+
+### Changed — modules receive no API key and no user name (R2-1, breaking)
+
+- `ctx.caller` is `{id, isAdmin}` (an opaque id, `u_` and 22 characters);
+  `ctx.recordUsage` answers `{id, tool, cost, ts}`; `ctx.httpHeaders` drop
+  `X-CH-Key`, `X-App-Key` and `Authorization`.
+- `ctx.serviceClient` refuses `as` and authorizes as the module's binding,
+  like `ctx.call`; `CHUtil.createServiceClient` refuses an `appKey` in a
+  worker. The CDIF-era `--debug --verifyModule` portal branch, which sent a
+  key over HTTP, is gone.
+- No hop message, peer invoke or device query carries a key: the main thread
+  authorizes and bills each by the call's token. The worker's composition
+  says only that the module is bound. A hop callee's `ctx.caller` is the
+  hop identity's `{id, isAdmin}`.
+- The global `CHUtil` has no `dm` or `ci` (undocumented, breaking for any
+  use); a worker's options carry no `redisUrl`.
+- Another module announcing a reloading or restarting module's device ID is
+  refused (`DEVICE_OBJECT_CONFLICT`); the device query runs the access check
+  for a present device too.
+- `MODULE_INSTALL_FAIL` is gone with the unreachable install path that
+  raised it (with a stack in its message).
 
 ### Changed — a composing module is bound by its module name; its hops and queries reach only what it declared (breaking)
 
@@ -41,8 +744,8 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 ### Removed — SOAP support: `CHUtil.createSOAPClient` (breaking)
 
 - **`CHUtil.createSOAPClient` is gone**, with the `soap` dependency and its
-  lockdown host check (Matt, 2026-11-13). Nothing in the repository, the
-  bundled modules or the packs used it. A module that still needs SOAP
+  lockdown host check (maintainer's decision, 2026-11-13). Nothing in the
+  repository, the bundled modules or the packs used it. A module that still needs SOAP
   depends on a SOAP library itself and declares its hosts under
   `countinghouse.permissions.net`. The ONVIF WSDL files under `spec/tools`
   stay, as data.
@@ -64,7 +767,8 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `metering.json` under each key's fingerprint (never the key);
   `countinghouse-meter set` seeds one, the key read from
   `COUNTINGHOUSE_SEED_KEY` only.
-- **`ctx.redis`:** the same 21 commands with Redis's answers and errors.
+- **`ctx.redis`:** the same 19 commands (21 before #164 removed `multi`
+  and `exec`), with Redis's answers and errors.
 - **Jobs and MCP tasks:** an in-process runner with job-control's surface;
   not kept across restarts; `--jobResultTtl <seconds>` (default 3600).
 - **The single-identity profile** (`--store local --stdio` without
@@ -79,6 +783,147 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   metering, five seconds of `ctx.redis` data); a clean stop (stdin
   closing, Ctrl-C) writes them.
 
+
+### Removed — CDIF-style modules: one module format (breaking)
+
+- **A module is `api.json`, `schema.json` and `handlers/<service>/<action>.js`**
+  (lean worker, step 1; maintainer's decision, 2026-11-13). A module with a
+  main entry (`package.json` `"main"`, or an `index.js`) and no `handlers/`
+  directory is
+  refused before any of its code runs, at every way in (start, load, reload,
+  restart) and by `countinghouse-validate` (stage `layout`), with the new code
+  `MODULE_LAYOUT_UNSUPPORTED`, whose text names the file. That retires a
+  `device.js` exporting a handler map and an `index.js` class or EventEmitter
+  doing its own discovery (`discover`, `deviceonline`, `deviceoffline`). With
+  a `handlers/` directory, a main entry is never run, by the runtime or the
+  validator (whose `loadModuleEntry` stage is gone).
+- **`MODULE_NOT_DISCOVERABLE` is gone**: only the retired shape could raise it.
+- `npx countinghouse-migrate-module ./my-module` converts a 5.x module (a
+  `CHDevice` with `setAction`); a `device.js` handler map is converted by
+  moving each entry into its own handler file.
+- `CountinghouseError.withFields(code, fields, ...args)`: a catalogue text's
+  `{placeholders}` filled in for the locale.
+
+### Security — a module's input and output are checked in validator workers, out of its reach
+
+- **Every call the main thread sends to a module's worker** (an MCP
+  `tools/call`, an HTTP `invoke-action`, a job's run, a hop routed through
+  the main thread) is validated (lean worker, step 1(b)). The input is
+  checked before the call is sent, so a bad input never reaches the worker,
+  and the output on the reply.
+- **Where:** in a validator worker (`lib/validator-pool.js`), neither on the
+  main thread nor in the module's own worker. No module code runs there.
+- **How:** the main thread reads the module's `api.json` and `schema.json`
+  before its worker starts (`lib/module-spec.js`) and keeps only structural
+  facts: names, the spec text, a hash. The validator compiles the schemas
+  lazily with the same `Service` code a worker uses, so every refusal keeps
+  its code, text and fault. The module's worker skips its own validation for
+  those calls.
+- **Why:** the checks ran in the module's own worker, where its code could
+  reach them. Under the default sandbox (`audit`) and with none, the
+  runtime's `Service` and validator are in the worker's `require.cache`, and
+  a module could replace them and return an output its schema refuses
+  (`test/sandbox/41`). They could not move to the shared main thread: no
+  check made beforehand bounds JSON Schema validation of a module's schema.
+  Some patterns take seconds (`^(\w|a)+$`), a 700-byte `anyOf` schema takes
+  seconds to compile, and so does `uniqueItems` over 20000 items.
+- **`--validatorWorkers <n>`** (default one per spare CPU, 2 to 4) sets the pool's size, each worker
+  with resource limits.
+- **`--validationTimeoutMs <n>`** (default 1000) is one validation's
+  deadline, counted from when it is queued (queue wait plus run). Past it the
+  call is refused `VALIDATION_TIMEOUT` (naming the module, the action and the
+  side, never a value). A request still queued is dropped, never validated
+  nor sent on, and a running one has its validator replaced (at once; only
+  workers that keep ending before they are ready back off).
+- **Fair between tenants:** one queue per module, served round-robin, and a
+  module holds at most all but one READY validator, so another module's
+  check takes milliseconds during one module's flood. One caller has one
+  validation in flight across the pool, so one key's flood cannot hold it.
+- **A slow input is held against its caller, not the module:** it replaces
+  its validator and nothing else. A caller whose inputs to a module miss the
+  deadline 3 times in 5 minutes has its own calls to that module refused
+  `VALIDATION_CALLER_THROTTLED` for a minute; no one else's are, and it
+  never takes the last free validator meanwhile. A flood from many keys (a
+  distributed one) is for the per-key rate limits, not the pool.
+- **`--validationCompileMs <n>`** (default 10000): a module's schemas are
+  compiled per action, from one dereference of its document, at load. Past
+  the budget the load is refused (`MODULE_ASSEMBLY_FAIL`, stage
+  `schemaCompile`). Every new validator compiles every known module, and
+  runs each compiled check once, before it takes a call. A call never waits
+  past its own deadline: if its action is still compiling it is refused
+  `VALIDATION_TIMEOUT` with no strike, and the compile goes on in the
+  background.
+- **A quarantine:** a module whose own outputs or compiles miss their
+  deadline 3 times in 5 minutes is refused `VALIDATION_QUARANTINED`, by
+  name, until an operator loads it again. A slow input is not held against
+  the module: any caller can send one.
+- **`--maxOutputBytes <n>`** (default 16 MiB, at most 256 MiB): a module's
+  output, a hop's result to another module included, is measured in its own
+  worker before it is posted, and refused `OUTPUT_TOO_LARGE` (naming the
+  module and the action) past it.
+- **A hop's result crosses the main thread as bytes it never unpacks**
+  (lean worker step 2). The callee's worker posts its result as
+  `v8.serialize` bytes, transferred, not copied. The main thread refuses
+  them `OUTPUT_TOO_LARGE` from their length alone over `--maxOutputBytes`.
+  It then has them checked against the callee's output schema in a
+  validator worker, and transfers them on to the calling worker, which
+  decodes them. A large result between modules no longer stalls the main
+  thread for every tenant. Bytes a module forges through its worker are
+  refused or checked like any others: a caller only ever decodes bytes a
+  validator passed, within the cap. Bytes reach only a request that asked
+  for them, and a hop's reply that is not bytes is refused.
+- **Every module output is capped by its bytes on the main thread** (the
+  review of #165). Every call whose spec the main thread holds answers in
+  bytes: a client's, a job's and a hop's, and a failed call's error and
+  payload too. The main thread refuses them `OUTPUT_TOO_LARGE` from their
+  own length, so a getter, a patched `byteLength`, a huge fault or message
+  cannot get a result or an error past the cap. Not yet bounded: a module
+  that patches its worker's `MessagePort` can attach extra fields to a
+  reply, which the main thread deserialises on receipt, before any length
+  check. That is the general module-to-main channel, with no byte bound yet
+  (#170). A client's or a
+  job's result is unpacked on the main thread once a validator passed it; a
+  plain reply where bytes were asked for is refused. A Buffer crosses
+  as a Uint8Array, as structured clone gives it, using V8's own serializer.
+  A validator's heap follows the cap: four times it plus 64 MB, never under
+  256 MB. Final results (an MCP tools/call, an HTTP invoke-action answer, a
+  job's result) are unpacked on the main thread as before.
+- **Measured** (2 CPUs): 0.17 ms p50 a call for its two checks, 0.53 ms with
+  a 100 KB output.
+- **A worker's device is registered only if it announces exactly that spec,**
+  with schema.json unchanged by hash, and it is listed as the main thread's
+  copy. Any other is neither registered nor listed, and the mismatch is
+  logged.
+- **A service or action named like an `Object.prototype` member**
+  (`constructor`, `__proto__`, `toString`...) is the module's own or not
+  found, in every mode: an undeclared one is answered `SERVICE_NOT_FOUND` or
+  `ACTION_NOT_FOUND`, and a declared one works. A device's services and
+  actions were plain objects, so such a name found the prototype's member.
+  An undeclared one answered `ACTION_NOT_IMPLEMENTED` or crashed, and a
+  declared one's handler was set on `Object.prototype`'s function.
+- **Unchanged here:** single-thread mode validates in-process as before. (A
+  call over a direct peer channel was still validated in the called worker
+  at this point. Lean worker step 4 moved it to the main thread: see its
+  entry above.)
+- **A courtesy refusal at load** (`MODULE_ASSEMBLY_FAIL`, stage
+  `schemaSafety`, naming the module and the schema path, never the pattern),
+  run in a validator in worker mode (`lib/schema-safety.js`); a check that
+  fails to run refuses the module too. It refuses:
+  - a schema.json over 1 MB;
+  - a regular expression (`pattern`, a `patternProperties` key, a
+    `propertyNames` pattern) over 1000 characters, or with a repetition
+    inside a repeated group (`^(a+)+$`) or alternatives that start alike in
+    one (`(a|aa)+`);
+  - a document over 100,000 nodes with its `$ref`s and `$dynamicRef`s
+    expanded (measured without expanding it), a `$ref` cycle, and a `$ref`
+    that names no place in schema.json.
+
+  A refused reload leaves the loaded version serving.
+- **One answer changes:** a result that cannot cross between threads (a
+  function or a Symbol inside a module's output) is answered
+  `DEVICE_INVOKE_EXCEPTION` ("the result could not be sent between
+  threads"), where the worker's own check used to refuse it first with
+  `OUTPUT_DATA_VALIDATION_FAIL`.
 
 ### Fixed — on Windows, a module worker never started (#40)
 
@@ -114,8 +959,9 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   where a credential goes.
 - `--remoteTimeout` (default 60 s, one deadline for connecting and calling)
   and `--remoteMaxBytes` (default 16 MiB, an answer cut off as it streams).
-  Redirects are refused, and a loopback, private or Redis-endpoint address
-  is refused by URL at load and by resolved address before the socket
+  A redirect is followed only within the declared URL's origin (at most 5,
+  its Authorization kept) and refused to another, and a loopback, private
+  or Redis-endpoint address is refused by URL at load and by resolved address before the socket
   opens.
 - Each remote call is metered to the outer caller as an inner hop. The
   server's tools/list is recorded at load with a hash in the log; it
@@ -786,21 +1632,13 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 
 ### Security — review round R1
 
-- **Request bodies are bounded.** JSON, XML and form bodies are limited to
-  `--maxRequestBody` MB (default 8) on every route, and BSON bodies are read
-  only on `invoke-action`, limited to `--maxBsonRequestBody` MB (default
-  64). Both were 1 GB on every route, read before any key was checked, so a
-  few concurrent large posts from an unauthenticated client could exhaust
-  the server's memory. An oversized body is answered 413.
-- **A BSON body is read only for a caller who may use the device.** On
-  `invoke-action` the key and its grant for the URL's device are checked
-  before the body, from the headers and the URL, so a client without one is
-  refused (the same 500 and code as before) without the server reading up
-  to 64 MB first.
-- **`add-job` takes no BSON.** It accepted and read an `application/bson`
-  body, but never decoded it, so every BSON job failed with
-  `SERVICEID_NOT_AVAILABLE`. A job is a JSON description of the task, so the
-  route no longer reads a BSON body at all.
+- **Request bodies are bounded.** JSON and XML bodies are limited to
+  `--maxRequestBody` MB (default 8) on every route. They were 1 GB, read
+  before any key was checked, so a few concurrent large posts from an
+  unauthenticated client could exhaust the server's memory. An oversized
+  body is answered 413. (BSON bodies, which this round first bounded and
+  read only for a caller who may use the device, are no longer taken at
+  all: see "Removed — BSON request bodies" above.)
 - **The server binds `127.0.0.1` by default.** Without `--bindAddr` it used
   to bind the first non-internal IPv4 address. Give `--bindAddr` (for
   example `0.0.0.0`) for remote clients.

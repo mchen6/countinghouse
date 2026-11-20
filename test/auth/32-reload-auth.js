@@ -9,8 +9,9 @@ const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
 const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 
-const PORT      = 9628;
+const PORT      = testPort(9628);
 const URL       = `http://127.0.0.1:${PORT}`;
 // Random, so a 6-character piece of a key can't be an ordinary word in a
 // message or a path.
@@ -122,6 +123,24 @@ describe('auth 32: reloading the auth config without a restart', function() {
     assert.strictEqual((await invokeAs(ALICE)).body.code, 'USER_HAS_NO_DEVICE');
     noKeys(r.body);
   });
+
+  // #458: a reload, by either route, clears the grant sets tools/call is
+  // answered by (lib/auth reloadAuth), so a grant it revokes is an unknown
+  // tool on the very next call, with no 5 s window
+  for (const [label, reloadBy] of [['POST /reload-auth', () => reload(ADMIN)], ['countinghouse_reload_auth', () => tool(ADMIN)]]) {
+    it(`after ${label}, a revoked tool is an unknown tool on the next tools/call`, async () => {
+      const echo = () => request(URL).post('/mcp').set('X-CH-Key', ALICE).set('Accept', 'application/json, text/event-stream')
+        .send({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'echo_device_echoservice_echo', arguments: {foo: [{item1: 'x'}], bar: 'y'}}});
+      write([DEVICE_ID]);
+      assert.strictEqual((await reloadBy()).status, 200);
+      const granted = await echo();
+      assert.strictEqual(granted.body.error, undefined, JSON.stringify(granted.body));
+      write([]);
+      assert.strictEqual((await reloadBy()).status, 200);
+      const revoked = await echo();
+      assert.deepStrictEqual(revoked.body.error, {code: -32602, message: 'unknown tool: echo_device_echoservice_echo'});
+    });
+  }
 });
 
 describe('auth 32: a syntax error at startup is logged without the file\'s contents', () => {
@@ -134,7 +153,7 @@ describe('auth 32: a syntax error at startup is logged without the file\'s conte
       const script = `
         require(${JSON.stringify(path.join(lib, 'cli-options'))}).setOptions({workerThread: false});
         const LOG = require(${JSON.stringify(path.join(lib, 'logger'))});
-        LOG.createLogger(false);
+        LOG.createLogger();
         const lines = [];
         LOG.E = (e) => { lines.push(String(e && e.message ? e.message : e)); return e; };
         const P = require(${JSON.stringify(path.join(lib, 'auth', 'file-provider'))});

@@ -15,6 +15,11 @@ function run(args, done) {
   });
 }
 
+// this file's temporary trees, in os.tmpdir() (a module a runtime loads
+// stays outside the runtime's tree) and removed (test/helpers/test-tmp.js
+// forFile); nothing left there
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-validate-cli-'], {base: require('os').tmpdir()});
+
 describe('countinghouse-validate CLI', function() {
   this.timeout(20000);
 
@@ -34,6 +39,132 @@ describe('countinghouse-validate CLI', function() {
     });
   });
 
+  // M3 (#413 section 6.1): each remote in its expanded form, and what it
+  // means, whichever form the author wrote; asserted byte for byte.
+  const withRemote = (remote) => {
+    const fs = require('fs');
+    const dir = path.join(tmpDirs.mkdtemp('ch-validate-cli-'), 'm');
+    fs.cpSync(path.join(FIXTURES, 'handler-map-convention'), dir, {recursive: true});
+    const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+    pkg.countinghouse = Object.assign({}, pkg.countinghouse, {remotes: [remote]});
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
+    return {dir: dir, name: pkg.name};
+  };
+
+  it('prints a remote declared in the short form expanded, and where its credential goes', (done) => {
+    const m = withRemote({name: 'github', url: 'https://api.githubcopilot.com/mcp/', credential: 'GITHUB_TOKEN'});
+    run(m.dir, (r) => {
+      assert.strictEqual(r.code, 0, r.stdout + r.stderr);
+      assert.strictEqual(r.stdout,
+        `ok: ${m.name} -- no problems found\n` +
+        'remote github: {"name":"github","transport":"streamable-http","url":"https://api.githubcopilot.com/mcp/","credential":{"env":"GITHUB_TOKEN","header":"Authorization","scheme":"Bearer"}}\n' +
+        '  sends the credential GITHUB_TOKEN to https://api.githubcopilot.com as "Authorization: Bearer <value>"\n');
+      done();
+    });
+  });
+
+  it('a bare-token header, and a remote with no credential, say so', (done) => {
+    const m = withRemote({name: 'keyed', url: 'https://api.example.com/mcp', credential: {env: 'API_KEY', header: 'X-Api-Key', scheme: ''}});
+    run(m.dir, (r) => {
+      assert.ok(r.stdout.includes('\n  sends the credential API_KEY to https://api.example.com as "X-Api-Key: <value>"\n'), r.stdout);
+      const open = withRemote({name: 'open', url: 'https://api.example.com/mcp'});
+      run(open.dir, (o) => {
+        assert.ok(o.stdout.endsWith('remote open: {"name":"open","transport":"streamable-http","url":"https://api.example.com/mcp"}\n' +
+          '  sends no credential to https://api.example.com\n'), o.stdout);
+        done();
+      });
+    });
+  });
+
+  it('--json carries the remotes, expanded, with what each means', (done) => {
+    const m = withRemote({name: 'github', url: 'https://api.githubcopilot.com/mcp/', credential: 'GITHUB_TOKEN'});
+    run(`--json ${m.dir}`, (r) => {
+      const out = JSON.parse(r.stdout);
+      assert.deepStrictEqual(out.remotes, [{declared: {name: 'github', transport: 'streamable-http', url: 'https://api.githubcopilot.com/mcp/',
+        credential: {env: 'GITHUB_TOKEN', header: 'Authorization', scheme: 'Bearer'}},
+      meaning: 'sends the credential GITHUB_TOKEN to https://api.githubcopilot.com as "Authorization: Bearer <value>"'}]);
+      done();
+    });
+  });
+
+  it('a wrong declaration\'s fix line shows the short form, filled in with what the author wrote', (done) => {
+    const m = withRemote({name: 'gh', transport: 'streamable-http', url: 'https://example.com/mcp', credential: {env: 'GH_TOKEN', extra: 1}});
+    run(m.dir, (r) => {
+      assert.strictEqual(r.code, 1);
+      assert.ok(r.stdout.includes('      fix: the shortest form is {"name":"gh","url":"https://example.com/mcp","credential":"GH_TOKEN"}; ' +
+        'see "Declaring a remote MCP server" in docs/module-development.md\n'), r.stdout);
+      done();
+    });
+  });
+
+  // #422 high review, 3: a URL the checks refuse is not offered back
+  it('a refused URL (http, a loopback or private host) is not in the fix line: a placeholder is', (done) => {
+    const urls = ['http://example.com/mcp', 'https://127.0.0.1/mcp', 'https://10.0.0.1/mcp'];
+    let left = urls.length;
+    for (const url of urls) {
+      run(withRemote({name: 'gh', url: url, credential: 'GH_TOKEN'}).dir, (r) => {
+        assert.ok(r.stdout.includes('fix: the shortest form is {"name":"gh","url":"<https URL of your server>","credential":"GH_TOKEN"}'), `${url}: ${r.stdout}`);
+        if (--left === 0) done();
+      });
+    }
+  });
+
+  // the medium review of the high-review fixes: a query can carry a secret
+  it('a URL that passes keeps its path, and its query is replaced by a placeholder', (done) => {
+    const token = ['t', 'o', 'k', '7', '7'].join('');
+    run(withRemote({name: 'gh', url: `https://example.com/mcp/v1?access_token=${token}`, credential: {env: 'GH_TOKEN', extra: 1}}).dir, (r) => {
+      assert.ok(!r.stdout.includes(token), r.stdout);
+      assert.ok(r.stdout.includes('"url":"https://example.com/mcp/v1?<query>"'), r.stdout);
+      done();
+    });
+  });
+
+  it('a credential field the grammar refuses is a placeholder in the full form, never dropped', (done) => {
+    run(withRemote({name: 'gh', url: 'https://example.com/mcp', credential: {env: 'GH_TOKEN', header: 'Bad Header', scheme: 'B a d'}}).dir, (r) => {
+      assert.ok(r.stdout.includes('"credential":{"env":"GH_TOKEN","header":"<header>","scheme":"<scheme>"}'), r.stdout);
+      done();
+    });
+  });
+
+  // #422 high review, 5: the short form only where it means the same
+  it('with headers, or a credential header or scheme of its own, the fix line shows the full form, header values left out', (done) => {
+    const m = withRemote({name: 'gh', url: 'https://example.com/mcp', headers: {'X-Toolsets': 'secret-ish'}, credential: {env: 'GH_TOKEN', header: 'X-Api-Key', scheme: '', extra: 1}});
+    run(m.dir, (r) => {
+      assert.ok(r.stdout.includes('fix: the full form is {"name":"gh","transport":"streamable-http","url":"https://example.com/mcp","headers":{"X-Toolsets":"<value>"},' +
+        '"credential":{"env":"GH_TOKEN","header":"X-Api-Key","scheme":""}}'), r.stdout);
+      assert.ok(!r.stdout.includes('secret-ish'), r.stdout);
+      done();
+    });
+  });
+
+  // the review of M3: a URL's user info is never printed back
+  it('the fix line never prints a URL\'s user info or fragment', (done) => {
+    // built at run time: no credential pair in the source
+    const secret = ['pa', 'ss', 'word', '42'].join('');
+    const u = new URL('https://api.example.com/mcp#frag');
+    u.username = 'bot';
+    u.password = secret;
+    const m = withRemote({name: 'gh', url: u.href, credential: 'GH_TOKEN'});
+    run(m.dir, (r) => {
+      assert.strictEqual(r.code, 1);
+      assert.ok(!r.stdout.includes(secret) && !r.stdout.includes('#frag'), r.stdout);
+      // a URL with user info fails the URL checks: the placeholder (#422's high review, 3)
+      assert.ok(r.stdout.includes('the shortest form is {"name":"gh","url":"<https URL of your server>","credential":"GH_TOKEN"}'), r.stdout);
+      done();
+    });
+  });
+
+  // M6: a credential is one variable; the fix is the shortest form
+  it('a fallbackEnv is refused, and the fix leaves it out', (done) => {
+    const m = withRemote({name: 'gh', url: 'https://api.example.com/mcp', credential: {env: 'A_TOKEN', fallbackEnv: 'B_TOKEN'}});
+    run(m.dir, (r) => {
+      assert.ok(r.stdout.includes('remotes[0].credential.fallbackEnv is no longer read: a credential is one variable, named by env'), r.stdout);
+      assert.ok(r.stdout.includes('the shortest form is {"name":"gh","url":"https://api.example.com/mcp","credential":"A_TOKEN"}'), r.stdout);
+      assert.ok(!r.stdout.includes('B_TOKEN'), r.stdout);
+      done();
+    });
+  });
+
   it('exits 2 when the path does not exist', (done) => {
     run(path.join(FIXTURES, 'no-such-module-anywhere'), (r) => {
       assert.strictEqual(r.code, 2);
@@ -48,4 +179,5 @@ describe('countinghouse-validate CLI', function() {
       done();
     });
   });
+  tmpDirs.hooks();
 });

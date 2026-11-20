@@ -1,0 +1,53 @@
+{
+  "device": {
+    "friendlyName": "main-checked-caller",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Calls main-checked over a hop and reports what came back (test/sandbox/41).",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:callerService": {
+        "actionList": [
+          {
+            "name": "hop",
+            "description": "Calls main-checked with the given action and input; reports the result or the rejection's code.",
+            "input": {
+              "schema": "/callerService/hop/input"
+            },
+            "output": {
+              "schema": "/callerService/hop/output"
+            }
+          },
+          {
+            "name": "ping",
+            "description": "Answers at once: another module's call during a flood of main-checked's.",
+            "input": {
+              "schema": "/callerService/ping/input"
+            },
+            "output": {
+              "schema": "/callerService/ping/output"
+            }
+          },
+          {
+            "name": "hopDigest",
+            "description": "main-checked's big over a hop, as its length and sha256 (test/sandbox/42).",
+            "input": {
+              "schema": "/callerService/hopDigest/input"
+            },
+            "output": {
+              "schema": "/callerService/hopDigest/output"
+            }
+          },
+          {
+            "name": "hopOdd",
+            "description": "main-checked's odd or forge over a hop: what arrived, or the rejection's code (test/sandbox/42).",
+            "input": {
+              "schema": "/callerService/hopOdd/input"
+            },
+            "output": {
+              "schema": "/callerService/hopOdd/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

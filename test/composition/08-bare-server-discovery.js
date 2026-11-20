@@ -26,9 +26,10 @@ const path   = require('path');
 const spawn  = require('child_process').spawn;
 const waitForReady = require('../helpers/wait-for-ready');
 const {toolOutput} = require('../helpers/tool-result');
+const {testPort} = require('../helpers/test-env');
 
 const ROOT = path.join(__dirname, '..', '..');
-const PORT = 9562;   // verified unused across test/ and examples/
+const PORT = testPort(9562);   // verified unused across test/ and examples/
 
 describe('composition 08: a bare server completes discovery', function() {
   this.timeout(40000);
@@ -81,7 +82,7 @@ describe('composition 08b: a module loaded at runtime into a bare server can ctx
   const os      = require('os');
   const request = require('supertest');
 
-  const PORT_E2E = 9563;   // verified unused across test/ and examples/
+  const PORT_E2E = testPort(9563);   // verified unused across test/ and examples/
   const BASE     = `http://127.0.0.1:${PORT_E2E}`;
   const ADMIN    = 'e2e-admin-key';
 
@@ -121,11 +122,10 @@ describe('composition 08b: a module loaded at runtime into a bare server can ctx
         path: path.join(ROOT, 'test', 'fixtures', 'compose-callee'), name: 'compose-callee'}}, () => {
         mcp('tools/call', {name: 'countinghouse_load_module', arguments: {
           path: path.join(ROOT, 'test', 'fixtures', 'compose-caller'), name: 'compose-caller'}}, () => {
-          // The composition verdict cannot arrive until the worker's
-          // discovery window closes: lib/sandbox.js holds 'discover-device'
-          // open for a hardcoded 5000ms per load before replying to the
-          // parent, and only that reply lets the main thread emit
-          // 'allmodulediscovered' -> verifyComposition -> setComposition.
+          // The composition verdict arrives once the worker has loaded and
+          // the main thread has registered its device from its own spec
+          // (lean worker step 3): that lets it emit 'allmodulediscovered'
+          // -> verifyComposition -> setComposition.
           //
           // So wait for the server to say that has happened, rather than
           // guessing a duration: one ready line at startup plus one per

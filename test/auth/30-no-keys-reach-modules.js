@@ -5,8 +5,9 @@
 // HTTP invoke-action (with X-CH-Key), a task, and a peer hop from a composite
 // bound to an internal identity, whose own view is checked too.
 //
-// Skipped until R2-1's last task removes the old fields (Task 5); on the base
-// it fails, listing where each value was found.
+// On since R2-1's last task removed the old fields (Task 5); before it, it
+// failed, listing where each value was found. A walk that ran out of budget
+// would prove nothing, so a view must not have.
 const assert  = require('assert');
 const crypto  = require('crypto');
 const fs      = require('fs');
@@ -14,9 +15,10 @@ const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
 const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
-const PORT = 9631;
+const PORT = testPort(9631);
 const URL  = `http://127.0.0.1:${PORT}`;
 const hex  = () => crypto.randomBytes(8).toString('hex');
 const ALICE = `alice-key-${hex()}`;
@@ -44,13 +46,24 @@ function assertClean(view, label) {
   const names = Array.from(new Set((view.accessors || []).map((p) => p.slice(p.lastIndexOf('.') + 1)))).sort();
   console.log(`    [${label}] visited ${view.visited}, budget exhausted: ${view.budgetExhausted}, depth-capped: ${view.depthCapped}, ` +
     `accessors skipped: ${view.accessorCount} (names: ${names.join(', ')})`);
+  assert.strictEqual(view.budgetExhausted, false, `${label}: the walk ran out of budget, so it proves nothing`);
   assert.strictEqual(view.hitCount, 0, `${label}: ${view.hitCount} found:\n  ${describeHits(view).join('\n  ')}`);
   assert.deepStrictEqual(Object.keys(view.caller || {}).sort(), ['id', 'isAdmin'], `${label}: ctx.caller is ${JSON.stringify(Object.keys(view.caller || {}))}`);
   assert.match(view.caller.id, ID_SHAPE);
   assert.strictEqual(view.caller.isAdmin, false);
 }
 
-describe.skip('auth 30: no API key, user name or Redis URL reaches a module', function() {
+// port: what the peer-port case asserts. 'locked': the sandbox fixes the
+// port methods at boot and the runtime listens and posts with those it took
+// (PR-c, lib/port-scope.js), so no part's hook on MessagePort.prototype sees
+// a runtime port; 'sees': under --moduleSandbox off the runtime posts with
+// the method as the port has it, so the calling composite's hook sees each
+// invoke it posts, and none carries a key (what crosses is the same in every
+// mode: since lean worker step 4 only {id, command}, the input and the
+// answer going through the main thread); 'none': a routed hop crosses no port.
+[['direct peer channels', [], 'locked'], ['direct peer channels, sandbox off', ['--moduleSandbox', 'off'], 'sees'],
+  ['routed through the main thread', ['--no-directPeerChannels'], 'none']].forEach(([label, flags, port]) => {
+describe(`auth 30: no API key, user name or Redis URL reaches a module (${label})`, function() {
   this.timeout(120000);
   let base = null;
   let server = null;
@@ -66,7 +79,7 @@ describe.skip('auth 30: no API key, user name or Redis URL reaches a module', fu
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath,
       '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'key-dump'),
-      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'key-dump-caller')]);
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'key-dump-caller')].concat(flags));
   });
   after(() => {
     stopServer(server);
@@ -90,7 +103,7 @@ describe.skip('auth 30: no API key, user name or Redis URL reaches a module', fu
     const created = await mcp(ALICE, 'tools/call', {name: DUMP, arguments: {reversed}, task: {}});
     const taskId = created.result.task.taskId;
     let status = null;
-    for (let i = 0; i < 100 && status !== 'completed' && status !== 'failed'; i++) {
+    for (let i = 0; i < 300 && status !== 'completed' && status !== 'failed'; i++) {
       await new Promise((ok) => setTimeout(ok, 100));
       status = (await mcp(ALICE, 'tasks/get', {taskId})).result.status;
     }
@@ -99,14 +112,45 @@ describe.skip('auth 30: no API key, user name or Redis URL reaches a module', fu
     assertClean(res.result.structuredContent || JSON.parse(res.result.content[0].text), 'task');
   });
 
+  // #153's review (1): a part listening on its own peer channel's port sees
+  // every invoke that crosses it; none carries a key. The first call opens
+  // the channel and starts the listener; the second crosses it.
+  (port === 'none' ? it.skip : it)(port === 'locked' ? 'on the peer channel\'s port: a part\'s hook on the port methods never sees it (they were fixed at boot)'
+    : 'on the peer channel\'s port, as a part listening on it sees each invoke', async () => {
+    await mcp(ALICE, 'tools/call', {name: VIA, arguments: {reversed}});
+    const r = await mcp(ALICE, 'tools/call', {name: VIA, arguments: {reversed}});
+    assert.strictEqual(r.result && r.result.isError, false, JSON.stringify(r).slice(0, 500));
+    const out = r.result.structuredContent || JSON.parse(r.result.content[0].text);
+    assert.strictEqual(out.callee.inputArrived, true, `the invoke never arrived: ${JSON.stringify(out.callee).slice(0, 300)}`);
+    const seen = {heard: out.callee.portMessages, posted: out.self.portPosted};
+    if (port === 'locked') {
+      // the hooks never took (fixed at boot): the zeros are no hook's
+      assert.deepStrictEqual([out.callee.hooksTook, out.self.hooksTook], [{on: false, post: false}, {on: false, post: false}], JSON.stringify(seen));
+      assert.deepStrictEqual(seen, {heard: 0, posted: 0}, 'a part\'s hook saw the runtime\'s port');
+    } else {
+      // installed, and the runtime posts with the method as the port has it
+      // now: what crosses is seen, and scanned below
+      assert.strictEqual(out.self.hooksTook.post, true, JSON.stringify(out.self.hooksTook));
+      assert.ok(seen.posted > 0, `the composite's hook saw no invoke posted: ${JSON.stringify(seen)}`);
+    }
+    assertClean(out.callee, 'peer port (the callee)');
+    assertClean(out.self, 'peer port (the composite, with what it posted)');
+  });
+
   it('through a peer hop from a composite bound to an internal identity, and in the composite itself', async () => {
     const r = await mcp(ALICE, 'tools/call', {name: VIA, arguments: {reversed}});
     assert.strictEqual(r.result && r.result.isError, false, JSON.stringify(r).slice(0, 500));
     const out = r.result.structuredContent || JSON.parse(r.result.content[0].text);
+    // the hop's payload, on the route it takes since lean worker step 4: the
+    // callee's input as the main thread delivered it, and the answer as
+    // delivered to the composite, are scanned too
+    assert.ok(out.callee.roots.includes('input') && out.callee.inputArrived === true, `the callee's input was not scanned: ${JSON.stringify(out.callee.roots)}`);
+    assert.ok(out.self.roots.includes('answered'), `the delivered answer was not scanned: ${JSON.stringify(out.self.roots)}`);
     const failures = [];
     [[out.callee, 'peer callee'], [out.self, 'composite']].forEach(([view, label]) => {
       try { assertClean(view, label); } catch (e) { failures.push(e.message); }
     });
     assert.deepStrictEqual(failures, []);
   });
+});
 });

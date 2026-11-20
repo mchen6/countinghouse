@@ -62,7 +62,7 @@ describe('usage: where the usage files go by default', function() {
       look();
     });
     try {
-      child.stdin.write(`${JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2026-07-28', capabilities: {}, clientInfo: {name: 't', version: '0'}}})}\n`);
+      child.stdin.write(`${JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 't', version: '0'}}})}\n`);
       try {
         await answer(1);
       } catch (e) {

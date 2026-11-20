@@ -5,8 +5,8 @@
 // reveals nothing about devices the caller may not use), grants the callee's
 // worker just before the send and releases it when the hop answers; a direct
 // peer hop gives the callee only {input}. On both routes the callee gets
-// its own token and no ctx: no key, no caller identity (R2-1 Task 5, #130's
-// interim args.ctx removed); a part's own remote calls are billed by the
+// its own token and, as its ctx, the hop identity's {id, isAdmin}, never a
+// key (R2-1 Task 5, #130's interim args.ctx removed); a part's own remote calls are billed by the
 // token (test/remote/11). Driven directly: fake workers and a user-auth
 // stub, restored after.
 const assert = require('assert');
@@ -24,7 +24,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
   let DeviceManager, usage, CountinghouseError;
   before(() => {
     require(path.join(LIB, 'cli-options')).setOptions({redisUrl: 'redis://127.0.0.1:9749', workerThread: true});
-    require(path.join(LIB, 'logger')).createLogger(false);
+    require(path.join(LIB, 'logger')).createLogger();
     ({CountinghouseError} = require(path.join(LIB, 'countinghouse-error')));
     savedAuth = require.cache[authPath];
     require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,
@@ -54,7 +54,11 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const replies = [];
     const callee = {workerId: 2, sendInvokeActionMessage: (m, cb) => sent.push({m, cb})};
     const caller = {workerId: 1, sendActionInvokeReplyToChild: (m) => replies.push(m), bindings: DECLARES_D2};
-    return {sent, replies, callee, caller, dm: {deviceMap: {d2: callee}}};
+    // a hop asks the manager for its callee's worker (R1 Task 5: workerFor)
+    // the real prototype: the hop asks replacingInPlace (M4a), false with no
+    // module manager
+    const dm = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {d2: callee}});
+    return {sent, replies, callee, caller, dm};
   }
   // R2-1 Task 4: the calling module (device d1) declared svc/act on d2, as a
   // hop's target must be declared; the call's token is for d1
@@ -63,10 +67,19 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
   // (it has no appKey) and the hop's billing key.
   // the call's token, as the main thread issued one to the caller worker
   // (R2-1 Task 3); the forwarded args carry the callee's own
+  // the callee's ctx.caller: the hop identity's {id, isAdmin}, built on the
+  // main thread (R2-1 Task 5); no identity service runs here, so no id
+  const CALLER = {id: null, isAdmin: false};
   const tokenFor = (workerId) => require(path.join(LIB, 'call-tokens')).issue({billingKey: 'k', workerId: workerId, deviceID: 'd1'});
-  const forward = (w, args) => DeviceManager.prototype.sendInvokeActionMessageToWorker.call(w.dm, 'k', 'k', 'd2', 'svc', 'act', args, 'm1', w.caller, tokenFor(w.caller.workerId));
-  const forwarded = (w) => { const {token, ...rest} = w.sent[0].m.args; assert.strictEqual(typeof(token), 'string', 'the callee got no token of its own'); return rest; };
-  const begin = () => { const c = usage().beginCall({pack: 'p', module: 'p', tool: 't', caller: 'u_a'}); begun.push(c); return c; };
+  // A hop as a worker sends it: its input as bytes (lib/hop-input.js, #185);
+  // the main thread refuses a value input as a worker tampered with. What the
+  // callee got is read back decoded.
+  const hopInput = require('../../lib/hop-input');
+  const asSent = (args) => hopInput.encode(args).args;
+  const forward = (w, args) => DeviceManager.prototype.sendInvokeActionMessageToWorker.call(w.dm, 'k', 'k', 'd2', 'svc', 'act', asSent(args), 'm1', w.caller, tokenFor(w.caller.workerId));
+  // (the decoded args have no prototype, by design: compared by their fields)
+  const forwarded = (w) => { const {token, ...rest} = w.sent[0].m.args; assert.strictEqual(typeof(token), 'string', 'the callee got no token of its own'); return {...hopInput.decodeArgs(rest)}; };
+  const begin = () => { const c = usage().beginCall({scenario: 'p', module: 'p', tool: 't', caller: 'u_a'}); begun.push(c); return c; };
 
   it('the gateway\'s call is granted to the worker invokeAction sends it to', () => {
     const call = begin();
@@ -111,7 +124,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const w = workers();
     forward(w, {input: {v: 1}, usageCall: call});
     assert.strictEqual(w.sent.length, 1);
-    assert.deepStrictEqual(forwarded(w), {input: {v: 1}, usageCall: call});
+    assert.deepStrictEqual(forwarded(w), {input: {v: 1}, usageCall: call, ctx: CALLER});
     assert.strictEqual(usage().ownsCall(call, 2), true, 'the part may call on under it');
     w.sent[0].cb(null, {output: {}});
     assert.strictEqual(usage().ownsCall(call, 2), false, 'released when the hop answers');
@@ -128,7 +141,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const w2 = workers();
     w2.dm.deviceMap = {d2: {workerId: 3, sendInvokeActionMessage: (m, cb) => w2.sent.push({m, cb})}};
     const fromCallee = {workerId: 2, sendActionInvokeReplyToChild: (m) => w2.replies.push(m), bindings: DECLARES_D2};
-    DeviceManager.prototype.sendInvokeActionMessageToWorker.call(w2.dm, 'k', 'k', 'd2', 'svc', 'act', {input: {}, usageCall: call}, 'm2', fromCallee, tokenFor(2));
+    DeviceManager.prototype.sendInvokeActionMessageToWorker.call(w2.dm, 'k', 'k', 'd2', 'svc', 'act', asSent({input: {}, usageCall: call}), 'm2', fromCallee, tokenFor(2));
     assert.deepStrictEqual([w2.sent.length, w2.replies.length], [1, 0], JSON.stringify(w2.replies));
     w.sent[0].cb(null, {output: {}}); // the first callee answers at last
     assert.strictEqual(usage().ownsCall(call, 2), false);
@@ -158,7 +171,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const w = workers();
     forward(w, {input: {}, usageCall: call});
     assert.deepStrictEqual([w.sent.length, w.replies.length], [1, 0]);
-    assert.deepStrictEqual(forwarded(w), {input: {}});
+    assert.deepStrictEqual(forwarded(w), {input: {}, ctx: CALLER});
   });
 
   it('a hop whose args are null is forwarded without a throw on the main thread', () => {
@@ -184,12 +197,19 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const CHUtil = require(path.join(LIB, 'countinghouse-util'));
     const ci = CHUtil.ci;
     const seen = [];
-    CHUtil.ci = {invokeDeviceAction: (d, s, a, args) => { seen.push(args); finish(); }};
+    // (the callee's args have no prototype, by design: compared by their fields)
+    CHUtil.ci = {invokeDeviceAction: (d, s, a, args) => { seen.push({...args}); finish(); }};
     const ch = new MessageChannel();
     peerRestore = () => { CHUtil.ci = ci; ch.port1.close(); };
-    const self = {peerChannels: {}, workerMessage: {sendPeerMeteringRequestToParent: (data, cb) => cb(null, {charged: 0}, 'tok')}};
+    // since lean worker step 4 (the review of #202) the match answers with
+    // the caller's announced target and the checked input bytes; the port
+    // carries the invoke's id alone, and anything else on it is not read
+    const {serialize, toArrayBuffer} = require(path.join(LIB, 'serialized-result'));
+    const checked = toArrayBuffer(serialize({input: {v: 1}}));
+    const self = {peerChannels: {}, workerMessage: {sendPeerMeteringRequestToParent: (data, cb) => cb(null, {charged: 0}, 'tok', null, checked,
+      {deviceID: 'd2', serviceID: 'svc', actionName: 'act'})}};
     DeviceManager.prototype.onPeerChannelOpen.call(self, {callerWorkerId: 1, appKey: 'k', targetDeviceID: 'd2', actions: ['svc|act'], port: ch.port2});
-    ch.port1.postMessage({id: 1, command: 'peer-invoke', deviceID: 'd2', serviceID: 'svc', actionName: 'act', input: {v: 1}, billingKey: 'k', usageCall: 5});
+    ch.port1.postMessage({id: 1, command: 'peer-invoke', deviceID: 'd2', serviceID: 'svc', actionName: 'act', input: {v: 2}, billingKey: 'k', usageCall: 5});
     function finish() {
       try {
         assert.deepStrictEqual(seen, [{input: {v: 1}, token: 'tok'}]);

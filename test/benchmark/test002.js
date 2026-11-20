@@ -1,7 +1,8 @@
 
 const request = require('supertest');
 const benchrest = require('bench-rest');
-const url = 'http://127.0.0.1:9527';
+const {testPort} = require('../helpers/test-env');
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 
 module.exports = function (cp, isSingleThread) {
@@ -10,7 +11,7 @@ module.exports = function (cp, isSingleThread) {
 
     const flow = {
       main: [
-        { post: 'http://localhost:9527/devices/efefb416-bdc0-54eb-96a9-38f96f52779d/invoke-action',
+        { post: `http://localhost:${testPort(9527)}/devices/efefb416-bdc0-54eb-96a9-38f96f52779d/invoke-action`,
           json: {serviceID: 'urn:example-com:serviceID:服务名称', actionName: 'API名称', input:{foo: 'vv'}},
           headers: {
             'X-CH-Key': 'aabbcc',

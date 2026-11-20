@@ -250,13 +250,15 @@ describe('validation 06: the review of c15 -- every failure is answered, and log
     `, {eval: true});
     const msg = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('no reply')), 5000);
-      worker.once('message', (m) => { clearTimeout(timer); resolve(m); });
+      // a worker's messages to the main thread are envelopes (#170): opened as WorkerMessage does
+      worker.once('message', (raw) => { clearTimeout(timer); resolve(require('../../lib/message-envelope').unwrap(raw, Infinity).message); });
       worker.once('error', (e) => { clearTimeout(timer); reject(e); });
     });
     await worker.terminate();
     assert.strictEqual(msg.id, 7);
     assert.strictEqual(msg.errCode, 'DEVICE_INVOKE_EXCEPTION');
     assert.ok(msg.errMsg != null);
+    assert.strictEqual(msg.data, null, 'no module data');
   });
 
   it('logs no file outside the runtime\'s root for a runtime bug', async () => {
@@ -285,6 +287,31 @@ describe('validation 06: the review of c15 -- every failure is answered, and log
     assert.ok(/06-fail-answers\.js:\d+/.test(lines[0]), `names the runtime's own frame: ${lines[0]}`);
   });
 
+  // (#194's PR 2: in a worker the seal empties require.cache of the
+  // runtime's files, so a runtime bug's frame is named by the list the seal
+  // took, handed over once; in a child, so the hand-over stays out of here)
+  it('names a runtime bug\'s frame by the sealed runtime files once handed over, never by require.cache after', () => {
+    const {spawnSync} = require('child_process');
+    const lib = require('path').resolve(__dirname, '../../lib');
+    const script = `
+      const lib = ${JSON.stringify(lib)};
+      const {whereFrom, runtimeFilesAre} = require(lib + '/handler-answer');
+      const err = new TypeError('x');
+      err.stack = 'TypeError: x\\n    at f (' + lib + '/logger.js:10:5)\\n    at g (' + lib + '/cli-options.js:20:3)';
+      const before = whereFrom(err);
+      runtimeFilesAre([lib + '/cli-options.js']);
+      const after = whereFrom(err);
+      runtimeFilesAre([lib + '/logger.js']);
+      process.stdout.write(JSON.stringify([before, after, whereFrom(err)]));
+    `;
+    const r = spawnSync(process.execPath, ['-e', script], {encoding: 'utf8', timeout: 30000});
+    assert.strictEqual(r.status, 0, r.stderr);
+    const [before, after, again] = JSON.parse(r.stdout);
+    assert.strictEqual(before, 'TypeError at lib/logger.js:10');
+    assert.strictEqual(after, 'TypeError at lib/cli-options.js:20');
+    assert.strictEqual(again, after, 'handed over once');
+  });
+
   it('the debug API log line carries neither the caller\'s input nor the module\'s message or fault', () => {
     // In a child process, so the options it sets (--debug) stay out of
     // this folder's process.
@@ -293,7 +320,6 @@ describe('validation 06: the review of c15 -- every failure is answered, and log
     const script = `
       const options = require(${JSON.stringify(`${lib}/cli-options`)});
       options.debug = true;
-      options.apiMonitor = false;
       const LOG = require(${JSON.stringify(`${lib}/logger`)});
       const {CountinghouseError} = require(${JSON.stringify(`${lib}/countinghouse-error`)});
       const Session = require(${JSON.stringify(`${lib}/session`)});
@@ -339,7 +365,11 @@ describe('validation 06: the high review of #37 -- c17', () => {
     });
   }
 
-  it('a direct peer channel answers a callee result that cannot be cloned, and takes the next request', async () => {
+  // Lean worker step 4: a served invoke is answered by the main thread
+  // (peer-result), never on the port; the callee posts only its own refusal,
+  // with no data. A result that cannot be cloned is answered as a crash by
+  // the callee's serialisation (lib/peer-worker.js), through the main thread.
+  it('a direct peer channel\'s callee posts only a refusal, with no data; a served invoke posts nothing; either frees the slot once', async () => {
     const {MessageChannel} = require('worker_threads');
     const PeerChannel = require('../../lib/peer-channel');
     const {port1, port2} = new MessageChannel();
@@ -349,16 +379,17 @@ describe('validation 06: the high review of #37 -- c17', () => {
     channel.dispatchQueue = [];
     let drained = 0;
     channel._drainDispatchQueue = () => { drained++; };
-    channel.onInvoke = (msg, cb) => cb(null, {fn() { return 1; }}, null);
+    const seen = [];
+    port2.on('message', (m) => seen.push(m));
     try {
-      const reply = firstMessage(port2);
+      const {CountinghouseError} = require('../../lib/countinghouse-error');
+      channel.onInvoke = (msg, cb) => { cb(new CountinghouseError('CTX_CALL_UNDECLARED', 's/a')); cb(new CountinghouseError('CTX_CALL_UNDECLARED', 's/a')); };
       channel._dispatchInvoke({id: 4});
-      const msg = await reply;
-      assert.strictEqual(msg.id, 4);
-      assert.strictEqual(msg.category, 'peer-reply');
-      assert.strictEqual(msg.errCode, 'DEVICE_INVOKE_EXCEPTION');
-      assert.strictEqual(msg.data, null);
-      assert.strictEqual(drained, 1);
+      channel.onInvoke = (msg, cb) => { cb(); cb(); };
+      channel._dispatchInvoke({id: 5});
+      await new Promise((r) => setTimeout(r, 100));
+      assert.deepStrictEqual(seen.map((m) => [m.id, m.category, m.errCode, m.data]), [[4, 'peer-reply', 'CTX_CALL_UNDECLARED', null]]);
+      assert.strictEqual(drained, 2, 'once each');
       assert.strictEqual(channel.activeDispatches, 0);
     } finally {
       port1.close();

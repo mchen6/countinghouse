@@ -1,0 +1,1 @@
+module.exports = {own: 'cjs'};

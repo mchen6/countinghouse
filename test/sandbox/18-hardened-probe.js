@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const hardened = require('../../lib/hardened-launch');
 const {mkdtemp} = require('../helpers/test-tmp');
+const {testPort} = require('../helpers/test-env');
 
 describe('sandbox 18: --hardened grant probe', function() {
   this.timeout(30000);
@@ -19,6 +20,20 @@ describe('sandbox 18: --hardened grant probe', function() {
     const flags = ['--permission', '--allow-fs-read=/x/ch', '--allow-fs-read=/x/ch_data', '--allow-fs-write=/x/ch_data',
       '--allow-fs-read=/x/ch/lib', '--allow-fs-read=/x/a', '--allow-fs-read=/x/b', '--allow-fs-read=/y/redis', '--allow-fs-read=/y/redis-commands'];
     assert.deepStrictEqual(hardened.grantOverlaps(flags), [['/x/ch', '/x/ch_data'], ['/y/redis', '/y/redis-commands']]);
+    // on Windows a directory inside another continues with "\\": nested, not a name extended (#197)
+    if (process.platform === 'win32') {
+      assert.deepStrictEqual(hardened.grantOverlaps(['--allow-fs-read=C:\\x\\ch', '--allow-fs-read=C:\\x\\ch\\node_modules\\a', '--allow-fs-read=C:\\x\\ch_data']),
+        [['C:\\x\\ch', 'C:\\x\\ch_data']]);
+    }
+    // Windows compares without case (the back-sweep, 11-18): a case-only
+    // difference is still the layout, and a directory inside is still nested
+    assert.deepStrictEqual(hardened.grantOverlaps(['--allow-fs-read=C:\\X\\ch', '--allow-fs-read=c:\\x\\ch_data', '--allow-fs-read=c:\\x\\CH\\lib'], 'win32'),
+      [['C:\\X\\ch', 'c:\\x\\ch_data']]);
+    // elsewhere case is part of the name
+    assert.deepStrictEqual(hardened.grantOverlaps(['--allow-fs-read=/X/ch', '--allow-fs-read=/x/ch_data'], 'linux'), []);
+    // a root's grant names no layout: every grant is inside it
+    assert.deepStrictEqual(hardened.grantOverlaps(['--allow-fs-read=C:\\', '--allow-fs-read=C:\\x\\ch'], 'win32'), []);
+    assert.deepStrictEqual(hardened.grantOverlaps(['--allow-fs-read=/', '--allow-fs-read=/x/ch'], 'linux'), []);
   });
 
   it('allows grants with distinct names, on every Node', () => {
@@ -73,7 +88,7 @@ describe('sandbox 18: --hardened grant probe', function() {
     base = mkdtemp('probe-');
     const x = path.join(base, 'X');
     const r = require('child_process').spawnSync(process.execPath, [path.join(__dirname, '..', '..', 'framework.js'),
-      '--workerThread', '--hardened', '--debug', '--debugKey', 'k', '--port', '9653',
+      '--workerThread', '--hardened', '--debug', '--debugKey', 'k', '--port', String(testPort(9653)),
       '--modulePath', x, '--moduleDataPath', `${x}_data`], {encoding: 'utf8', timeout: 20000, cwd: base});
     assert.strictEqual(r.status, 2, `${r.stdout}\n${r.stderr}`);
     assert.ok(r.stderr.includes(`${x} and ${x}_data`), r.stderr);

@@ -12,13 +12,15 @@ const path = require('path');
 const roles = require('../../lib/module-roles');
 
 // A module directory: package.json and an api.json with one action per name.
-function moduleAt(dir, {name, friendlyName = name.replace(/^@[^/]+\//, ''), role, calls, actions = ['run']}) {
+function moduleAt(dir, {name, friendlyName = name.replace(/^@[^/]+\//, ''), role, calls, actions = ['run'], prompts}) {
   fs.mkdirSync(dir, {recursive: true});
   const ch = {};
   if (role !== undefined) ch.role = role;
   if (calls !== undefined) ch.calls = calls;
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name, version: '1.0.0', ...(Object.keys(ch).length ? {countinghouse: ch} : {})}));
-  fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName, serviceList: {'urn:x:serviceID:svc': {actionList: actions.map((a) => ({name: a, description: a}))}}}}));
+  const device = {friendlyName, serviceList: {'urn:x:serviceID:svc': {actionList: actions.map((a) => ({name: a, description: a}))}}};
+  if (prompts !== undefined) device.promptList = prompts.map((p) => ({name: p, description: p, messages: [{role: 'user', text: p}]}));
+  fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device}));
   return dir;
 }
 
@@ -117,6 +119,24 @@ describe('module roles, scenarios and parts', () => {
     ]);
   });
 
+  // the reviewer's #340 review, 3: names were deduped across every module before the session filter, so a
+  // hidden pack's `review` renamed a global one's to review_2. A clash is refused at load instead.
+  it('two scenarios with the same bare prompt name, or one taking a listed module\'s or a reserved prompt name: refused PROMPT_NAME_TAKEN', () => {
+    const a = moduleAt(path.join(root, 'pa'), {name: 'pa', role: 'scenario', actions: ['a_tool'], prompts: ['review']});
+    const b = moduleAt(path.join(root, 'pb'), {name: 'pb', role: 'scenario', actions: ['b_tool'], prompts: ['review']});
+    const plain = moduleAt(path.join(root, 'plain'), {name: 'plain', actions: ['go'], prompts: ['brief']});
+    const c = moduleAt(path.join(root, 'pc'), {name: 'pc', role: 'scenario', actions: ['c_tool'], prompts: ['plain_brief']});
+    const d = moduleAt(path.join(root, 'pd'), {name: 'pd', role: 'scenario', actions: ['d_tool'], prompts: ['held']});
+    const {load, refused} = roles.expandLoadList([a, b, plain, c, d], {reservedPrompts: ['held']});
+    assert.deepStrictEqual(load.map((m) => m.name).sort(), ['pa', 'plain']);
+    assert.deepStrictEqual(refused.map((r) => [r.name, r.code, r.prompt, r.with]), [
+      ['pb', 'PROMPT_NAME_TAKEN', 'review', 'pa'],
+      ['pc', 'PROMPT_NAME_TAKEN', 'plain_brief', 'plain'],
+      ['pd', 'PROMPT_NAME_TAKEN', 'held', 'another module']
+    ]);
+    assert.match(roles.refusedWhy(refused[0]), /pb: its prompt review is already the prompt of pa/);
+  });
+
   it('two scenarios with the same bare tool name: the second is refused', () => {
     const a = moduleAt(path.join(root, 'a'), {name: 'a', role: 'scenario', actions: ['triage']});
     const b = moduleAt(path.join(root, 'b'), {name: 'b', role: 'scenario', actions: ['triage']});
@@ -192,7 +212,7 @@ describe('--loadModule expands a scenario in the module manager', () => {
   it('the load list holds the scenario and its parts, and the parts are recorded unlisted', () => {
     const options = require('../../lib/cli-options');
     options.setOptions({redisUrl: 'redis://127.0.0.1:9749'});
-    require('../../lib/logger').createLogger(false);
+    require('../../lib/logger').createLogger();
     const ModuleManager = require('../../lib/module-manager');
     const nm = path.join(root, 'node_modules');
     const scenario = moduleAt(path.join(nm, 's'), {name: 's', role: 'scenario', calls: ['p1/svc.run']});
@@ -216,5 +236,44 @@ describe('--loadModule expands a scenario in the module manager', () => {
     } finally {
       roles.expandLoadList = original;
     }
+  });
+
+  // Packs in place (part 2, plan Task A1): each pack version has a tree of its
+  // own (<home>/packs/<name>/<version>/node_modules), so two packs that share
+  // a part each bring a copy. A runtime holds one version of a module.
+  describe('a part two scenarios share, from trees of their own', () => {
+    function packTree(packName, scenarioName, tool, partVersion) {
+      const nm = path.join(root, 'packs', packName, '1.0.0', 'node_modules');
+      const scenario = moduleAt(path.join(nm, '@countinghouse', scenarioName), {name: `@countinghouse/${scenarioName}`, role: 'scenario', actions: [tool],
+        calls: ['ch-step-shared/svc.run']});
+      const part = moduleAt(path.join(nm, '@countinghouse', 'ch-step-shared'), {name: '@countinghouse/ch-step-shared', role: 'part'});
+      if (partVersion != null) {
+        const pkgFile = path.join(part, 'package.json');
+        fs.writeFileSync(pkgFile, JSON.stringify({...JSON.parse(fs.readFileSync(pkgFile, 'utf8')), version: partVersion}));
+      }
+      return scenario;
+    }
+
+    it('the same name at the same version loads once, and both scenarios load; owners name both', () => {
+      const one = packTree('one', 'ch-pack-one', 'tool_one');
+      const two = packTree('two', 'ch-pack-two', 'tool_two');
+      const {load, refused, owners} = roles.expandLoadList([one, two]);
+      assert.deepStrictEqual(refused, []);
+      assert.deepStrictEqual(load.map((m) => m.name).sort(), ['@countinghouse/ch-pack-one', '@countinghouse/ch-pack-two', '@countinghouse/ch-step-shared']);
+      const shared = load.find((m) => m.name === '@countinghouse/ch-step-shared');
+      assert.strictEqual(shared.listed, false);
+      assert.deepStrictEqual([...owners.get('@countinghouse/ch-step-shared')].sort(), ['@countinghouse/ch-pack-one', '@countinghouse/ch-pack-two']);
+      assert.deepStrictEqual([...owners.get('@countinghouse/ch-pack-one')], ['@countinghouse/ch-pack-one']);
+    });
+
+    it('the same name at another version: the later scenario is refused PART_VERSION_CONFLICT, and nothing of it loads', () => {
+      const one = packTree('one', 'ch-pack-one', 'tool_one');
+      const two = packTree('two', 'ch-pack-two', 'tool_two', '2.0.0');
+      const {load, refused} = roles.expandLoadList([one, two]);
+      assert.deepStrictEqual(load.map((m) => m.name).sort(), ['@countinghouse/ch-pack-one', '@countinghouse/ch-step-shared']);
+      assert.strictEqual(load.find((m) => m.name === '@countinghouse/ch-step-shared').version, '1.0.0');
+      assert.deepStrictEqual(refused.map((r) => ({code: r.code, name: r.name, part: r.part, versions: r.versions})),
+        [{code: 'PART_VERSION_CONFLICT', name: '@countinghouse/ch-pack-two', part: '@countinghouse/ch-step-shared', versions: ['1.0.0', '2.0.0']}]);
+    });
   });
 });

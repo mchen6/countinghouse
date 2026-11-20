@@ -2,7 +2,8 @@ const fs = require('fs');
 const exec = require('child_process').exec;
 const waitForReady = require('./helpers/wait-for-ready');
 const request = require('supertest');
-const url = 'http://127.0.0.1:9527';
+const {testPort, redisFlag} = require('./helpers/test-env');
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/direct-peer-channels-design.md section 5's step-by-step acceptance
 // requires "全量测试在 flag 开/关两态下均绿" -- test1.js/test2.js already cover
@@ -16,6 +17,9 @@ const url = 'http://127.0.0.1:9527';
 // covered by test/direct-peer-channels/*.js below.
 const testFiles = fs.readdirSync(`${__dirname}/unit`);
 const peerChannelTestFiles = fs.readdirSync(`${__dirname}/direct-peer-channels`);
+// The parts below run against this file's server: each skips, saying so, when
+// run alone (#234: alone, it had no server and failed as refused connections)
+global.COUNTINGHOUSE_TEST8_PARTS = true;
 
 describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChannels", () => {
   before(function (done) {
@@ -25,12 +29,12 @@ describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChann
     // window open 2 s, whatever the boot time (lib/module-manager.js restartModule).
     process.env.COUNTINGHOUSE_TEST_RESTART_HOLD_MS = '2000';
     process.env.COUNTINGHOUSE_TEST_RESTART_HOLD_MODULE = 'echo-device-module';
-    const server = exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --apiMonitor --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', (err, stdout, stderr) =>{console.log(err)});
+    const server = exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --port ${testPort(9527)}${redisFlag()} --debugKey aabbcc --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module`, (err, stdout, stderr) =>{console.log(err)});
     waitForReady(server, done);
   });
 
   testFiles.forEach((file) => {
-    if (file !== 'input.bson' && file !== 'test018.js') require(`./unit/${file}`);
+    require(`./unit/${file}`);
   });
 
   // Files in this list need their own server config incompatible with the

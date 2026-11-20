@@ -6,10 +6,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {toolOutput} = require('../helpers/tool-result');
 
-const PORT = 9635;
+const PORT = testPort(9635);
 const KEY = 'k';
 const PROBE = path.join(ROOT, 'test', 'fixtures', 'fs-probe');
 const tool = (a) => `fs_probe_probeservice_${a}`;
@@ -126,8 +127,9 @@ describe('sandbox 17: POST /uninstall-module', function() {
     base = mkdtemp('uninstall-');
     const modulesDir = path.join(base, 'modules');
     fs.mkdirSync(modulesDir);
+    // the registry is opt-in (--moduleRegistry): this case tests it on purpose
     server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleSandbox', 'audit',
-      '--modulePath', modulesDir, '--moduleDataPath', store()]);
+      '--modulePath', modulesDir, '--moduleDataPath', store(), '--moduleRegistry']);
     const db = new sqlite3.Database(path.join(modulesDir, 'countinghouse-modules.db'));
     await new Promise((resolve, reject) => db.run("CREATE TABLE IF NOT EXISTS module_info(name TEXT PRIMARY KEY, version TEXT, path TEXT, deviceList TEXT)",
       (e) => (e ? reject(e) : db.run("INSERT INTO module_info(name, version, path, deviceList) VALUES ('ghost-mod', '1.0.0', '/nonexistent', '[]')",

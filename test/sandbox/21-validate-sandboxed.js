@@ -10,6 +10,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {mkdtemp} = require('../helpers/test-tmp');
 
 const PROBE = path.join(ROOT, 'test', 'fixtures', 'validate-probe');
@@ -22,6 +23,9 @@ const seenBy = (r) => {
   return {out: out, seen: m != null ? JSON.parse(m[1]) : null, text: text};
 };
 
+// (each start with the test's late-load probe, --testLateLoads: since
+// #194's PR 2 its fixtures reach a runtime object only through the
+// probe's hand-over, module code's own require.cache holding its own files)
 describe('sandbox 21: countinghouse_validate_module in a sandboxed worker', function() {
   this.timeout(120000);
   let server = null;
@@ -32,20 +36,20 @@ describe('sandbox 21: countinghouse_validate_module in a sandboxed worker', func
   });
   const start = async (mode, extra) => {
     base = base || mkdtemp('validate-');
-    server = await startServer(9666, ['--workerThread', '--debug', '--debugKey', 'k', '--authoringTools', '--moduleSandbox', mode,
+    server = await startServer(testPort(9666), ['--testLateLoads', '--workerThread', '--debug', '--debugKey', 'k', '--authoringTools', '--moduleSandbox', mode,
       '--moduleDataPath', path.join(base, 'store')].concat(extra || []), {env: {COUNTINGHOUSE_TEST_SECRET: 's3cret'}});
   };
 
   it('enforce: the module sees no server secret and nothing outside its namespace', async () => {
     await start('enforce');
-    const r = seenBy(await validate(9666, PROBE));
+    const r = seenBy(await validate(testPort(9666), PROBE));
     assert.strictEqual(r.out.ok, false, r.text);
     assert.deepStrictEqual(r.seen && {secret: r.seen.secret, outside: r.seen.outside}, {secret: 'hidden', outside: 'ENOENT'}, r.text);
   });
 
   it('main-thread messages a validation does not need are refused, and the validation still finishes', async () => {
     await start('enforce');
-    const r = seenBy(await validate(9666, PROBE));
+    const r = seenBy(await validate(testPort(9666), PROBE));
     assert.strictEqual(r.seen && r.seen.forged, 'sent', r.text);
     await new Promise((resolve) => setTimeout(resolve, 500));
     ['rediscommand', 'invokeforeignaction'].forEach((c) =>
@@ -54,8 +58,8 @@ describe('sandbox 21: countinghouse_validate_module in a sandboxed worker', func
 
   it('leaves no tools and no data behind', async () => {
     await start('enforce');
-    await validate(9666, PROBE);
-    const list = await mcpCall(9666, 'k', 'countinghouse_list_tools', {}, {allowUnknownTool: true});
+    await validate(testPort(9666), PROBE);
+    const list = await mcpCall(testPort(9666), 'k', 'countinghouse_list_tools', {}, {allowUnknownTool: true});
     assert.ok(!/validate_probe/.test(JSON.stringify(list)), JSON.stringify(list).slice(0, 300));
     // The answer comes before the teardown: validateModuleSandboxed calls
     // back with the result, then removes its throwaway directory once the
@@ -76,18 +80,18 @@ describe('sandbox 21: countinghouse_validate_module in a sandboxed worker', func
 
   it('at most two validations at a time; a third is answered busy', async () => {
     await start('audit');
-    const results = await Promise.all([validate(9666, SLOW), validate(9666, SLOW), validate(9666, SLOW)]);
+    const results = await Promise.all([validate(testPort(9666), SLOW), validate(testPort(9666), SLOW), validate(testPort(9666), SLOW)]);
     const busy = results.filter((r) => /busy/.test(JSON.stringify(r)));
     assert.strictEqual(busy.length, 1, JSON.stringify(results).slice(0, 800));
   });
 
   it('a module that exits while being validated is reported, not a server error', async () => {
     await start('enforce');
-    const r = await validate(9666, path.join(ROOT, 'test', 'fixtures', 'handler-map-process-exit'));
+    const r = await validate(testPort(9666), path.join(ROOT, 'test', 'fixtures', 'handler-map-process-exit'));
     const out = r.structuredContent != null ? r.structuredContent : r;
     assert.strictEqual(out.ok, false, JSON.stringify(r));
     assert.ok(out.problems.some((p) => /ended its validation|exit/i.test(p.message)), JSON.stringify(out));
-    assert.strictEqual((await mcpCall(9666, 'k', 'countinghouse_validate_module', {path: PROBE})).isError, false, 'the server still answers');
+    assert.strictEqual((await mcpCall(testPort(9666), 'k', 'countinghouse_validate_module', {path: PROBE})).isError, false, 'the server still answers');
   });
 
   // A worker that ends itself emits 'exit' once; the teardown must not wait
@@ -96,8 +100,8 @@ describe('sandbox 21: countinghouse_validate_module in a sandboxed worker', func
   it('modules that exit leave no busy slot and no data behind', async () => {
     await start('enforce');
     const EXIT = path.join(ROOT, 'test', 'fixtures', 'handler-map-process-exit');
-    for (let i = 0; i < 3; i++) await validate(9666, EXIT);
-    const after = await validate(9666, PROBE);
+    for (let i = 0; i < 3; i++) await validate(testPort(9666), EXIT);
+    const after = await validate(testPort(9666), PROBE);
     assert.ok(!/busy/.test(JSON.stringify(after)), `still busy: ${JSON.stringify(after).slice(0, 300)}`);
     const dir = path.join(base, 'store', '.validate');
     const left = () => (fs.existsSync(dir) ? fs.readdirSync(dir) : []);
@@ -105,9 +109,31 @@ describe('sandbox 21: countinghouse_validate_module in a sandboxed worker', func
     assert.deepStrictEqual(left(), []);
   });
 
+  // MCP completeness M0: the declaration checks and the icon reader run in
+  // the sandboxed worker too, the icon's file read through the file broker
+  // (an open by flags, lstat, fstat, realpath), under enforce and audit.
+  it('a module that declares everything validates clean in the sandboxed worker, its icon read there', async () => {
+    const EVERYTHING = path.join(ROOT, 'test', 'fixtures', 'declares-everything');
+    for (const mode of ['enforce', 'audit']) {
+      await start(mode);
+      const r = seenBy(await validate(testPort(9666), EVERYTHING));
+      assert.strictEqual(r.out.ok, true, `${mode}: ${r.text.slice(0, 1500)}`);
+      assert.deepStrictEqual(r.out.problems, [], mode);
+      stopServer(server); server = null;
+    }
+    // and an icon that is not one is reported from there
+    const bad = path.join(base, 'bad-icon');
+    fs.cpSync(EVERYTHING, bad, {recursive: true});
+    fs.writeFileSync(path.join(bad, 'icons', 'note.png'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+    await start('enforce');
+    const r = seenBy(await validate(testPort(9666), bad));
+    assert.strictEqual(r.out.ok, false, r.text.slice(0, 1500));
+    assert.ok(r.out.problems.some((p) => p.stage === 'declarations' && /SVG is refused/.test(p.message)), r.text.slice(0, 1500));
+  });
+
   it('off: a child process with a clean environment (no server secret)', async () => {
     await start('off');
-    const r = seenBy(await validate(9666, PROBE));
+    const r = seenBy(await validate(testPort(9666), PROBE));
     assert.strictEqual(r.seen && r.seen.secret, 'hidden', r.text);
   });
 });

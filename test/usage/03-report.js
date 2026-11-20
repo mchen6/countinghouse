@@ -22,7 +22,7 @@ describe('countinghouse_usage_report', () => {
   function live() {
     let t = NOW - 1000;
     const u = createUsage({usageDir: null, pid: 7, startMs: NOW - 5000, now: () => t++});
-    const call = u.beginCall({pack: 'ch-pack-ci-failure-triage', tool: 'ci_failure_triage', caller: 'u_alice'});
+    const call = u.beginCall({scenario: 'ch-pack-ci-failure-triage', tool: 'ci_failure_triage', caller: 'u_alice'});
     u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'actions_list', bytes: 100, lines: 10, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 300, lines: 30, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     u.recordOut(call, {tool: 'ci_failure_triage', bytes: 40, lines: 4, ms: 9, outcome: 'ok'});
@@ -48,10 +48,10 @@ describe('countinghouse_usage_report', () => {
     assert.ok(!/alice@|apiKey|"key"|userName/.test(text), 'no user name or key, only opaque ids');
   });
 
-  it('groups by tool, server, pack or module', async () => {
+  it('groups by tool, server, scenario or module', async () => {
     const who = {caller: 'u_alice', isAdmin: false};
     assert.deepStrictEqual((await run({since: '2026-11-11', groupBy: 'server'}, who)).groups.map((g) => [g.server, g.serverCalls]), [['github', 6], ['(no server)', 0]]);
-    assert.ok((await run({since: '2026-11-11', groupBy: 'pack'}, who)).groups.some((g) => g.pack === 'ch-pack-ci-failure-triage'));
+    assert.ok((await run({since: '2026-11-11', groupBy: 'scenario'}, who)).groups.some((g) => g.scenario === 'ch-pack-ci-failure-triage'));
     const modules = (await run({since: '2026-11-11', groupBy: 'module'}, who)).groups.map((g) => g.module);
     assert.ok(modules.includes('ch-access-github') && modules.includes('ch-pack-ci-failure-triage'), modules.join(','));
   });

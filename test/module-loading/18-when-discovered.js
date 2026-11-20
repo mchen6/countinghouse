@@ -1,15 +1,16 @@
 // whenDiscovered (lib/module-manager.js), server-free: discovery ends when this
 // discovery's devices are reported, never on a device an earlier discovery
-// reported, and the 5 s hold stays the cap for a discovery-style module
-// (review of 84cd6bd, 2026-11-12). The flag is set where every handler-map
-// instance is made, so a reload discovers at once too.
+// reported, and the 5 s hold stays the cap for a module that never reports
+// (its device failed at construction) (review of 84cd6bd, 2026-11-12). Every
+// module brings its device online at once on discover (the one module
+// format), on a reload too.
 const assert = require('assert');
 const path = require('path');
 const {EventEmitter} = require('events');
 require('../../lib/cli-options').setOptions({workerThread: false});
 const ModuleManager = require('../../lib/module-manager');
 
-function handlerMapLike() { const m = new EventEmitter(); m.discoversAtOnce = true; return m; }
+function handlerMapLike() { return new EventEmitter(); }
 const settle = () => new Promise((r) => setImmediate(r));
 
 // Timing (reviewer, 2026-11-12: 1 failure in 5 runs at load 2): each case
@@ -50,23 +51,26 @@ describe('module-loading 18: whenDiscovered', function() {
     assert.strictEqual(done, 1);
   });
 
-  it('a discovery-style module keeps the hold as the cap, even if it reports at once', function(done) {
+  it('a module that never reports (its device failed) is ended by the hold, the cap', function(done) {
     this.timeout(ModuleManager.DISCOVERY_HOLD_MS + 20000);
     const {performance} = require('perf_hooks');
-    const legacy = new EventEmitter();
+    const a = handlerMapLike();
+    const failed = handlerMapLike();
     const start = performance.now();
-    ModuleManager.whenDiscovered({a: handlerMapLike(), legacy}, () => {
+    ModuleManager.whenDiscovered({a, failed}, () => {
       // A timer never fires early on the monotonic clock; 5 ms for rounding.
       const ms = performance.now() - start;
       try { assert.ok(ms >= ModuleManager.DISCOVERY_HOLD_MS - 5, `ended after ${ms} ms`); done(); } catch (e) { done(e); }
     });
-    legacy.emit('devicereported', {});
+    a.emit('devicereported', {});
   });
 
-  it('every handler-map instance is marked, so a reload discovers at once too', () => {
+  it('an instantiated module brings its one device online at once on discover, so a reload discovers at once too', () => {
     const mm = Object.create(ModuleManager.prototype);
     const made = mm.instantiateModule(path.join(__dirname, '..', 'fixtures', 'usage-scenario'), 'usage-scenario');
-    assert.strictEqual(made.isHandlerMap, true);
-    assert.strictEqual(made.instance.discoversAtOnce, true);
+    let online = 0;
+    made.instance.on('deviceonline', () => { online++; });
+    made.instance.emit('discover');
+    assert.strictEqual(online, 1);
   });
 });

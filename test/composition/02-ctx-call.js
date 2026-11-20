@@ -7,7 +7,7 @@
 // completes, binds compose-caller's identity from fixtures-auth.json's
 // "runsModules", and calls handlerCtx.setComposition -- under --workerThread
 // that binding is relayed into compose-caller's own worker thread
-// (WorkerMessage.prototype.sendSetCompositionMessage / lib/sandbox.js's
+// (WorkerMessage.prototype.sendSetCompositionMessage / lib/lean-worker.js's
 // 'set-composition' case), since the real CHDevice buildCtx reads
 // _composition off of lives there, not on the main thread's WorkerMessage
 // proxy. That is also why the OLD "viaCall fails: no identity is bound"
@@ -93,8 +93,9 @@ const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 // test/composition/05-module-identity.js.
 require('../../lib/cli-options').setOptions({workerThread: false});
 const handlerCtx = require('../../lib/handler-ctx');
+const {testPort} = require('../helpers/test-env');
 
-const PORT = 9556;
+const PORT = testPort(9556);
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
 const BASE = `http://127.0.0.1:${PORT}`;
 
@@ -244,7 +245,7 @@ describe('ctx.call: guard clause messages (in-process, same production code)', f
 // onAllModulesDiscovered. Under --workerThread, this.deviceMap[deviceID] on
 // the main thread is a WorkerMessage proxy, so the resolved {identity,
 // allowed} has to be relayed into the composing module's own worker thread
-// (WorkerMessage.prototype.sendSetCompositionMessage / lib/sandbox.js's
+// (WorkerMessage.prototype.sendSetCompositionMessage / lib/lean-worker.js's
 // 'set-composition' case) before ctx.call can see it -- that is what the
 // describe block above exercises. Without --workerThread,
 // this.deviceMap[deviceID] IS the real CHDevice directly, so verifyComposition
@@ -261,7 +262,7 @@ describe('ctx.call: guard clause messages (in-process, same production code)', f
 // files back to back -- see this file's after() below for the other half
 // of that fix (waiting for the process to actually exit before the next
 // file's before() tries to bind the port it just freed).
-const PORT_SINGLE_THREAD = 9560;
+const PORT_SINGLE_THREAD = testPort(9560);
 const BASE_SINGLE_THREAD = `http://127.0.0.1:${PORT_SINGLE_THREAD}`;
 
 let singleThreadServer;

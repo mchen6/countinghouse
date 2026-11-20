@@ -103,6 +103,147 @@
         },
         "additionalProperties": false
       }
+    },
+    "binary_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "caption",
+          "chart",
+          "clips",
+          "doc"
+        ],
+        "properties": {
+          "caption": {
+            "type": "string"
+          },
+          "chart": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "contentMediaType": "image/png",
+            "title": "Chart",
+            "description": "The rendered chart"
+          },
+          "clips": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "contentEncoding": "base64",
+              "contentMediaType": "audio/wav"
+            }
+          },
+          "doc": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "contentMediaType": "application/pdf",
+            "description": "A report, sent as base64 until M6"
+          }
+        }
+      }
+    },
+    "many_images_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "imgs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "contentEncoding": "base64",
+              "contentMediaType": "image/png"
+            }
+          }
+        }
+      }
+    },
+    "big_image_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "img": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "contentMediaType": "image/png"
+          }
+        }
+      }
+    },
+    "array_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "string_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "string"
+      }
+    },
+    "number_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "number"
+      }
+    },
+    "null_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "null"
+      }
+    },
+    "binary_whole_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "string",
+        "contentEncoding": "base64",
+        "contentMediaType": "image/png"
+      }
+    },
+    "images_array_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "contentMediaType": "image/png"
+        }
+      }
     }
   }
 }

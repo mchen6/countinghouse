@@ -10,6 +10,7 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
 const KEY     = 'jobs-wait-key';
@@ -22,13 +23,12 @@ const END_SVC = 'urn:countinghouse-test:serviceID:endService';
 const sleep   = (ms) => new Promise((r) => setTimeout(r, ms));
 const codeOf  = (r) => (r.body != null ? r.body.code : undefined);
 
-// v2: answers {v: 'v2'}, and takes `loadMs` to load (a blocking require).
+// v2: answers {v: 'v2'}, and takes `loadMs` to load (a blocking require of
+// its handler file, which every load requires).
 function writeV2(dir, loadMs) {
-  const device = path.join(dir, 'device.js');
-  fs.writeFileSync(device, fs.readFileSync(path.join(STRAY, 'device.js'), 'utf8')
-    .replace("return callback(null, {output: {v: args.input.v}});", "return callback(null, {output: {v: 'v2'}});"));
-  const index = path.join(dir, 'index.js');
-  fs.writeFileSync(index, `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${loadMs});\n${fs.readFileSync(path.join(STRAY, 'index.js'), 'utf8')}`);
+  fs.writeFileSync(path.join(dir, 'handlers', 'svc', 'returnsCleanly.js'),
+    `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${loadMs});\n` +
+    "module.exports = (input, ctx, callback) => callback(null, {output: {v: 'v2'}});\n");
 }
 
 function suite(label, port, extraArgs) {
@@ -49,7 +49,7 @@ async function settled(port, deviceID, id, ms) {
 describe('sandbox 25: a job waits through its module\'s reload', function() {
   this.timeout(120000);
 
-  [suite('under audit', 9621, ['--modulePolicy']), suite('under --moduleSandbox off', 9622, ['--moduleSandbox', 'off'])].forEach((s) => {
+  [suite('under audit', testPort(9621), ['--modulePolicy']), suite('under --moduleSandbox off', testPort(9622), ['--moduleSandbox', 'off'])].forEach((s) => {
     describe(s.label, () => {
       let server = null;
       let base = null;
@@ -134,7 +134,7 @@ describe('sandbox 25: a job waits through its module\'s reload', function() {
   });
 
   describe('a supervisor restart (audit)', () => {
-    const PORT = 9623;
+    const PORT = testPort(9623);
     let server = null;
     const ping = () => post(PORT, KEY, `/devices/${END_ID}/invoke-action`, {serviceID: END_SVC, actionName: 'ping', input: {}});
     const addPing = (opts) => post(PORT, KEY, `/devices/${END_ID}/add-job`, {serviceID: END_SVC, actionName: 'ping', input: {},

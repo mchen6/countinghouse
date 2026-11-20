@@ -64,6 +64,33 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     runner.close();
   });
 
+  // The hook's error is the one the call answered with, as the BullMQ
+  // runner hands it, so the usage record keeps its code (and a module's
+  // kind); the job's stored failure is its text (it was that text's plain
+  // Error, so every failed task on this runner was recorded NO_CODE).
+  it('a failed run hands the completion hook the error the call answered with, its code kept; the job keeps the failure text', async () => {
+    const answered = Object.assign(new Error('no such row'), {code: 'PROBE_BAD_INPUT'});
+    const {runner} = runnerWith((i, cb) => setImmediate(cb, answered, null));
+    const seen = [];
+    runner.setCompletionHook((jobData, results, meta) => { seen.push(meta.error); });
+    const {r} = await call(runner, 'addJob', INTERNAL, {name: 'f'}, 'dev', 'svc', 'act', {});
+    assert.ok(await until(async () => (await state(runner, r.id)).state === 'failed'));
+    assert.ok(await until(async () => seen.length === 1));
+    assert.ok(seen[0] === answered, 'the very error the call answered with');
+    assert.strictEqual(seen[0].code, 'PROBE_BAD_INPUT');
+    assert.match((await state(runner, r.id)).job.failedReason, /no such row/);
+    runner.close();
+  });
+
+  it('a module\'s caller-kind error is not retried: the same input fails the same way', async () => {
+    const {CountinghouseError} = require('../../lib/countinghouse-error');
+    const {runner, ci} = runnerWith((i, cb) => setImmediate(cb, CountinghouseError.moduleOwn('PROBE_BAD_INPUT', 'no row', null, 'probe', {kind: 'caller'}), null));
+    const {r} = await call(runner, 'addJob', INTERNAL, {name: 'k', attempts: 4}, 'dev', 'svc', 'act', {});
+    assert.ok(await until(async () => (await state(runner, r.id)).state === 'failed'));
+    assert.strictEqual(ci.calls.length, 1, 'run once');
+    runner.close();
+  });
+
   it('records progress', async () => {
     const ref = {};
     const {runner} = runnerWith((i, cb, c, jobID) => { ref.runner.updateJobProgress(jobID, 50); setTimeout(cb, 50, null, {}); });
@@ -93,11 +120,13 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     runner.setCompletionHook((jobData, results, meta) => { failures.push({results, error: meta && meta.error && meta.error.message}); });
     const {r} = await call(runner, 'addJob', INTERNAL, {name: 't', timeout: 100}, 'd', 's', 'a', {});
     assert.ok(await until(async () => (await state(runner, r.id)).state === 'failed'));
-    assert.strictEqual((await state(runner, r.id)).job.failedReason, 'Promise timed out after 100 milliseconds');
+    // the catalogued JOB_TIMEOUT, as "CODE: text" (lib/job-control-common.js timeoutError)
+    const TIMEOUT = 'JOB_TIMEOUT: The job did not finish within its timeout (0.1 s), so it failed; an answer after that is dropped';
+    assert.strictEqual((await state(runner, r.id)).job.failedReason, TIMEOUT);
     late(null, {late: true});
     await wait(50);
     assert.strictEqual((await state(runner, r.id)).state, 'failed');
-    assert.deepStrictEqual(failures, [{results: null, error: 'Promise timed out after 100 milliseconds'}]);
+    assert.deepStrictEqual(failures, [{results: null, error: TIMEOUT}]);
     runner.close();
   });
 
@@ -161,8 +190,13 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     runner.setCompletionHook((jobData, results, meta) => { metas.push(meta); });
     const {r} = await call(runner, 'addJob', INTERNAL, {name: 's'}, 'd', 's', 'act', {});
     assert.ok(await until(async () => (await state(runner, r.id)).state === 'completed'));
-    assert.deepStrictEqual(ci.calls[0].extraArgs, {usageCall: 7, name: 'act'});
-    assert.deepStrictEqual(metas, [{extra: {usageCall: 7, name: 'act'}}]);
+    // (and the run's own progress writer, F4-3: a function, never sent on)
+    const {progressTo, ...given} = ci.calls[0].extraArgs;
+    assert.strictEqual(typeof(progressTo), 'function');
+    assert.deepStrictEqual(given, {usageCall: 7, name: 'act'});
+    // and the run's session (M6: a task stores in its job's), none here, and
+    // its job's id (a task's tombstone tells a cancelled run: B-cancelled)
+    assert.deepStrictEqual(metas, [{extra: {usageCall: 7, name: 'act'}, session: null, jobId: String(r.id)}]);
     runner.close();
   });
 
@@ -282,13 +316,16 @@ describe('jobs-local 01: the review of B5', function() {
     runner.close();
   });
 
-  it('the job history names its owner by fingerprint, never the key, and still finds the owner\'s runs', async () => {
+  it('the job history names its owner by its caller id, never the key, and still finds the owner\'s runs', async () => {
     const fs = require('fs');
     const os = require('os');
     const path = require('path');
     const LocalKv = require('../../lib/local-kv');
     const redisAPI = require('../../lib/redis-api');
     const storePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-jobs-local-01-'));
+    // the identity service a server starts with (R2-1: owners are caller ids)
+    const identity = require('../../lib/identity');
+    if (!identity.ready()) identity.initSync({moduleDataPath: storePath});
     const kv = new LocalKv({storePath});
     const saved = redisAPI.client;
     redisAPI.client = kv;

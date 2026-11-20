@@ -8,6 +8,7 @@
 const assert = require('assert');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 
 const KEY   = 'aabbcc';
@@ -58,7 +59,7 @@ describe('sandbox 39: the routes to the module resolver', function() {
 
   describe('enforce', () => {
     let server = null;
-    before(async () => { server = await startServer(9724, serverArgs('enforce')); });
+    before(async () => { server = await startServer(testPort(9724), serverArgs('enforce')); });
     after(() => stopServer(server));
 
     [
@@ -70,14 +71,14 @@ describe('sandbox 39: the routes to the module resolver', function() {
       ['createRequireResolve', CLIMB]
     ].forEach(([what, arg]) => {
       it(`${what}(${arg}) finds nothing and returns no host path`, async () => {
-        const a = await attempt(server, 9724, what, arg);
+        const a = await attempt(server, testPort(9724), what, arg);
         assertNotFound(a);
         assertNoHostPath(a);
       });
     });
 
     it('Module._resolveFilename called directly finds nothing and returns no host path', async () => {
-      const a = await attempt(server, 9724, 'directResolveFilename', '/etc/passwd');
+      const a = await attempt(server, testPort(9724), 'directResolveFilename', '/etc/passwd');
       assertNotFound(a);
       assertNoHostPath(a);
     });
@@ -87,44 +88,48 @@ describe('sandbox 39: the routes to the module resolver', function() {
     // that names the install and the home directory. Under enforce a module
     // sees only its virtual lookup paths.
     it('require.resolve.paths returns only virtual paths', async () => {
-      const a = await attempt(server, 9724, 'resolvePaths', 'anything');
+      const a = await attempt(server, testPort(9724), 'resolvePaths', 'anything');
       assert.ok(Array.isArray(a.out.result) && a.out.result.length > 0, a.raw);
       assert.ok(a.out.result.every((p) => p === '/node_modules' || p.startsWith('/app/')), a.raw);
     });
 
     it('a module\'s own file resolves to its virtual path, by require.resolve and createRequire on its directory', async () => {
       for (const what of ['ownFile', 'ownFileDir']) {
-        const a = await attempt(server, 9724, what);
+        const a = await attempt(server, testPort(9724), what);
         assert.strictEqual(a.out.outcome, 'allowed', a.raw);
         assert.strictEqual(a.out.result, OWN_FILE, a.raw);
       }
     });
 
     it('a module cannot replace Module._resolveFilename', async () => {
-      const a = await attempt(server, 9724, 'replaceResolveFilename');
+      const a = await attempt(server, testPort(9724), 'replaceResolveFilename');
       assert.strictEqual(a.out.result, OWN_FILE, a.raw);
     });
   });
 
   describe('audit', () => {
     let server = null;
-    before(async () => { server = await startServer(9725, serverArgs('audit')); });
+    before(async () => { server = await startServer(testPort(9725), serverArgs('audit')); });
     after(() => stopServer(server));
 
     it('records require.resolve and the real createRequire().resolve outside the namespace', async () => {
       for (const what of ['resolveAbsolute', 'createRequireResolve']) {
-        const a = await attempt(server, 9725, what, '/etc/passwd');
+        const a = await attempt(server, testPort(9725), what, '/etc/passwd');
         assert.strictEqual(a.out.outcome, 'allowed', a.raw);
         assert.ok(a.added >= 1, `${what}: no violation recorded: ${server.output.slice(-1500)}`);
       }
     });
 
-    // Under audit nothing locks Module._resolveFilename, on any version (on
-    // 24.15 and later nothing is installed; below it the shim locks only
-    // under enforce), so a dependency that patches it works alike.
-    it('a module may replace Module._resolveFilename, on every version', async () => {
-      const a = await attempt(server, 9725, 'replaceResolveFilename');
-      assert.strictEqual(a.out.result, '/replaced', a.raw);
+    // Under audit Module._resolveFilename is held since #194's PR 2 (the
+    // Fable pass, F7): an assignment is reported and never takes effect, so
+    // a replacement decides none of a module's own resolutions on any Node
+    // line, require.resolve included (below 24.15 it calls the static
+    // itself). A loader-patching dependency needs --moduleSandbox off
+    // (#194's compatibility table).
+    it('a module may assign Module._resolveFilename, but its replacement decides none of its own resolutions (F4-1, F7)', async () => {
+      const a = await attempt(server, testPort(9725), 'replaceResolveFilename');
+      assert.strictEqual(a.out.outcome, 'allowed', a.raw);
+      assert.match(String(a.out.result), /[\\/]app[\\/]handlers[\\/]probeService[\\/]attempt\.js$/, a.raw);
     });
   });
 });
@@ -176,5 +181,16 @@ describe('sandbox 39: a hook context\'s conditions, as an array or a Set', () =>
     }
     assert.strictEqual(hasCondition({}, 'require'), false);
     assert.strictEqual(hasCondition(null, 'require'), false);
+  });
+  // CI's 22.16 and 24.0.0 legs: Node's own SafeSet, a Set whose prototype
+  // chain is cut off from Set.prototype; read as an absent condition, every
+  // CommonJS require became an import and no module loaded
+  it('reads a Set by what it is, not by its prototype; an object that only looks like one is not', () => {
+    const conditions = new Set(['require', 'node']);
+    Object.setPrototypeOf(conditions, null);
+    assert.strictEqual(Object.prototype.isPrototypeOf.call(Set.prototype, conditions), false);
+    assert.strictEqual(hasCondition({conditions}, 'require'), true);
+    assert.strictEqual(hasCondition({conditions}, 'import'), false);
+    assert.strictEqual(hasCondition({conditions: {has: () => true}}, 'require'), false);
   });
 });
