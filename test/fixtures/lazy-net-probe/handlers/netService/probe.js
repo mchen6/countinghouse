@@ -13,6 +13,20 @@ const failed = (err) => ({outcome: 'error', code: err.code != null ? String(err.
 
 module.exports = (input) => new Promise((resolve) => {
   if (input.what === 'loaded') return resolve({output: {loaded: loaded()}});
+  // a refused request with no callback answers a Request-like object: its
+  // 'error' listener gets the refusal, and .pipe() does not throw (the
+  // register's "post-rel request refusal shape", from #425)
+  if (input.what === 'streamRefused') {
+    let req;
+    try { req = CHUtil.request({url: input.url, timeout: 5000}); } catch (e) { return resolve({output: {outcome: 'threw', message: String(e.message).slice(0, 200)}}); }
+    const shape = {object: req != null && typeof(req) === 'object', on: req != null && typeof(req.on) === 'function', pipe: req != null && typeof(req.pipe) === 'function'};
+    if (!shape.object || !shape.on || !shape.pipe) return resolve({output: {outcome: 'no-request', shape}});
+    let piped = null;
+    try { piped = req.pipe({}) != null; } catch (e) { return resolve({output: {outcome: 'pipe-threw', message: String(e.message).slice(0, 200), shape}}); }
+    const timer = setTimeout(() => resolve({output: {outcome: 'no-error', shape, piped}}), 3000);
+    req.on('error', (err) => { clearTimeout(timer); resolve({output: {outcome: 'error', code: err.code != null ? String(err.code) : null, shape, piped}}); });
+    return undefined;
+  }
   return CHUtil.request({url: input.url, timeout: 5000}, (err, res, body) => resolve({output: Object.assign(
     err != null ? failed(err) : {outcome: 'ok', status: res.statusCode, body: String(body)}, {loaded: loaded()})}));
 });

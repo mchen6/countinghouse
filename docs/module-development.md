@@ -1081,6 +1081,28 @@ logged and the request still goes ahead; only `enforce` refuses it. Under
 `headers`, `body`, `json`, `qs`, `timeout`, ... but not `baseUrl`, `proxy`,
 `agent`, `har` and similar) and checks every redirect.
 
+A refused `CHUtil.request` answers with a stand-in for postman-request's
+`Request`, never `undefined`. Its methods send nothing but return what a
+`Request`'s would: `pipe(dest)` returns `dest`, `form()` a FormData,
+`form(fields)` and the builders the request, and `write` true. `abort()`
+sets `_aborted` and emits `'abort'`.
+The refusal (`ERR_ACCESS_DENIED`) goes to your callback and to the
+request's `'error'` listeners, including one you add later. With neither,
+nothing is emitted, so a stream you piped it into is never ended. Listen
+for `'error'` when you stream. After `abort()`, nothing is delivered. A
+`URL` object given as `uri` leaves the stand-in's `uri` null. A string
+gives its parts, as an informational approximation of postman-request's
+own (`url.parse`'s fields), not an exact copy: `slashes` is always true,
+`auth` stays percent-encoded, `href` is the string as given, and a
+backslash form (`http:\\host:8080/`) has the port URL reads, where
+`url.parse` reads none.
+
+Under `audit` a request goes ahead whatever its target, and what is reported
+is what is sent, as under `enforce`. The target is read once (an object
+`uri` by its `href`, never by its own host fields), and what is handed on is
+its normalised href. A target that can't be read or parsed is reported
+invalid, and nothing is sent.
+
 **Self-contained.** Every dependency of your module, followed through the
 whole tree, must be installed inside the module's own directory. Install
 with `npm install --prefix <module>` (or run `npm install` inside it), and

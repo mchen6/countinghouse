@@ -154,6 +154,267 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
     assert.ok(out.reports.includes('net a request while validating'), JSON.stringify(out.reports));
   }));
 
+  // the register's "post-rel request refusal shape" (from #425): a refused
+  // CHUtil.request answers a Request-like object, in a validation worker
+  // and under enforce, never undefined: its Request methods do nothing; its
+  // 'error' reaches a listener added late, and the callback with any
+  // listener beside it; with none, nothing unhandled ends the worker; and
+  // a module's own EventEmitter.init is never the runtime's to call
+  [['a validation worker under enforce', {mode: 'enforce', noRequests: true}],
+    ['a validation worker under audit', {mode: 'audit', noRequests: true}],
+    ['enforce, a host not granted', {mode: 'enforce'}]].forEach(([where, cfg]) => it(`${where}: a refused CHUtil.request answers a Request-like object; its 'error' is never lost or unhandled`, () => {
+    const {inWorker, install} = require('../helpers/lockdown-worker');
+    const out = inWorker(`
+      global.CHUtil = {request: () => { throw new Error('the library was reached'); }};
+      ${install(Object.assign({net: [{host: 'late-load.example.invalid'}]}, cfg))}
+      const url = 'http://not-granted.example.invalid/';
+      const events = require('events');
+      const init0 = events.init;
+      let initCalls = 0;
+      events.init = function(...a) { initCalls++; return init0.apply(this, a); };
+      // no callback, its listener added after other I/O; every Request method a no-op
+      const r1 = CHUtil.request(url);
+      const shape = {on: typeof(r1.on), pipe: typeof(r1.pipe), form: typeof(r1.form), destroy: typeof(r1.destroy)};
+      r1.pipe({}); r1.form().append('k', 'v'); r1.write('x'); r1.end(); r1.destroy();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const late = await new Promise((resolve) => r1.on('error', (e) => resolve(e.code)));
+      // no callback and no listener: nothing unhandled
+      CHUtil.request(url);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      // a callback and a listener: both
+      const both = await new Promise((resolve) => {
+        const got = [];
+        const take = (who) => (e) => { got.push(who + ':' + e.code); if (got.length === 2) resolve(got.sort()); };
+        CHUtil.request(url, take('callback')).on('error', take('listener'));
+      });
+      events.init = init0;
+      return {shape, late, both, initCalls};
+    `);
+    assert.deepStrictEqual(out, {shape: {on: 'function', pipe: 'function', form: 'function', destroy: 'function'}, late: 'ERR_ACCESS_DENIED',
+      both: ['callback:ERR_ACCESS_DENIED', 'listener:ERR_ACCESS_DENIED'], initCalls: 0}, JSON.stringify(out));
+  }));
+
+  // the reviewer's high review of #474: the stand-in is never built by
+  // assignment, nor by EventEmitter.init, so accessors module code puts on
+  // EventEmitter's prototype or Object's never run inside the refusal; a late
+  // once listener gets it once, a listener after it is delivered gets
+  // nothing; form(fields) answers the request; abort() means no refusal;
+  // uri and method say what was asked
+  [['a validation worker under enforce', {mode: 'enforce', noRequests: true}],
+    ['enforce, a host not granted', {mode: 'enforce'}]].forEach(([where, cfg]) => it(`${where}: the refused request's stand-in runs no module accessor; once is once; form, abort, uri as postman-request's`, () => {
+    const {inWorker, install} = require('../helpers/lockdown-worker');
+    const out = inWorker(`
+      global.CHUtil = {request: () => { throw new Error('the library was reached'); }};
+      ${install(Object.assign({net: [{host: 'late-load.example.invalid'}]}, cfg))}
+      const url = 'http://not-granted.example.invalid/x';
+      const EE = require('events');
+      // accessors module code plants: none may run inside the refusal
+      let ran = 0;
+      Object.defineProperty(EE.prototype, '_events', {configurable: true, get() { ran++; return undefined; }, set(v) { ran++; }});
+      Object.defineProperty(Object.prototype, 'toJSON', {configurable: true, get() { ran++; return undefined; }, set(v) { ran++; throw new Error('a module setter ran'); }});
+      Object.defineProperty(Object.prototype, 'pipe', {configurable: true, get() { ran++; return undefined; }, set(v) { ran++; }});
+      const viaCallback = await new Promise((resolve) => CHUtil.request(url, (e) => resolve(e.code)));
+      const piped = CHUtil.request(url).pipe('dest');
+      delete Object.prototype.toJSON; delete Object.prototype.pipe; delete EE.prototype._events;
+      // a late once (or prependOnce) listener: called once, not twice
+      const r2 = CHUtil.request(url);
+      const r2b = CHUtil.request(url);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      let onceCalls = 0;
+      let prependOnceCalls = 0;
+      r2.once('error', () => { onceCalls++; });
+      r2b.prependOnceListener('error', () => { prependOnceCalls++; });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      // a listener added after it was delivered: nothing
+      let after = 0;
+      r2.on('error', () => { after++; });
+      // form(fields) answers the request, its 'error' the refusal
+      const viaForm = await new Promise((resolve) => CHUtil.request(url).form({a: 1}).on('error', (e) => resolve(e.code)));
+      // abort(): no 'error', no callback; 'abort' emitted
+      let abortErr = 0;
+      let aborted = 0;
+      const r3 = CHUtil.request(url, () => { abortErr++; });
+      r3.on('abort', () => { aborted++; });
+      r3.on('error', () => { abortErr++; });
+      r3.abort();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const r4 = CHUtil.request({url, method: 'POST'});
+      r4.on('error', () => {});
+      // (the medium on the high round) a module may wrap its own request's
+      // methods, in strict code too
+      const r5 = CHUtil.request(url);
+      let assigned = true;
+      try { (function() { 'use strict'; const emit = r5.emit; r5.emit = function(...a) { return emit.apply(this, a); }; })(); } catch (e) { assigned = String(e.message); }
+      r5.on('error', () => {});
+      // abort() in the tick a late listener is added: nothing
+      const r6 = CHUtil.request(url);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      let lateThenAbort = 0;
+      r6.on('error', () => { lateThenAbort++; });
+      r6.abort();
+      // an 'error' listener added inside a 'newListener' handler gets it
+      const r7 = CHUtil.request(url);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const nested = await new Promise((resolve) => {
+        r7.on('newListener', (ev) => { if (ev === 'response') r7.on('error', (e) => resolve(e.code)); });
+        r7.on('response', () => {});
+      });
+      // a replaced EventEmitter.prototype.removeListener never runs in the delivery
+      let removeRan = 0;
+      const rl0 = EE.prototype.removeListener;
+      EE.prototype.removeListener = function(...a) { removeRan++; return rl0.apply(this, a); };
+      const r8 = CHUtil.request(url);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      await new Promise((resolve) => r8.once('error', () => resolve()));
+      EE.prototype.removeListener = rl0;
+      // _aborted, and write after abort, as postman-request's
+      const afterAbort = {aborted: r3._aborted, write: r3.write('x')};
+      // a string uri: its parts
+      const r9 = CHUtil.request({uri: 'http://not-granted.example.invalid/p?q=1'});
+      r9.on('error', () => {});
+      const uriParts = r9.uri == null ? null : {host: r9.uri.host, path: r9.uri.path, protocol: r9.uri.protocol};
+      // a URL object whose searchParams has its own toString, made dirty by
+      // the real append: any URL getter runs it (Node 22.16 to 26.13). The
+      // stand-in reads none, and its uri is null (the reviewer on #474, from
+      // C's medium on #465). The one run counted is the host check's
+      // (normaliseRequestOptions reads the uri's href once, in the module's
+      // own call, and checks and hands on what that read gave)
+      let urlToStringRan = 0;
+      const own = new URL('http://not-granted.example.invalid/p?q=1');
+      const sp = own.searchParams;
+      sp.toString = function() { urlToStringRan++; return 'evil=1'; };
+      URLSearchParams.prototype.append.call(sp, 'k', 'v');
+      const r10 = CHUtil.request({uri: own});
+      r10.on('error', () => {});
+      const urlObjectUri = r10.uri;
+      // (the reviewer's round 2) a late listener removed before its tick
+      // leaves the refusal for the next one: events.once still gets it
+      const r11 = CHUtil.request(url);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const gone = () => {};
+      r11.on('error', gone);
+      r11.removeListener('error', gone);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      // (events.once of 'error' itself resolves with the error's arguments)
+      const afterRemoved = await EE.once(r11, 'error').then((args) => args[0].code, (e) => 'rejected ' + e.code);
+      // plain, mutable objects: uri, headers, toJSON's, form()'s
+      const r12 = CHUtil.request({uri: null, url: 'http://not-granted.example.invalid/u'});
+      r12.on('error', () => {});
+      let plain;
+      try {
+        const fd = r12.form();
+        (function() { 'use strict'; const a = fd.append; fd.append = function(...x) { return a.apply(this, x); }; r12.uri.extra = 1; r12.headers.h = 1; })();
+        plain = {said: 'to ' + r12.uri.href, has: r12.headers.hasOwnProperty('h'), frozen: Object.isFrozen(r12.uri), json: typeof(r12.toJSON().headers.hasOwnProperty)};
+      } catch (e) { plain = String(e.message); }
+      // captureRejections honoured as a real emitter's
+      let fresh;
+      let r13;
+      EE.captureRejections = true;
+      try {
+        fresh = new EE();
+        r13 = CHUtil.request(url);
+        r13.on('error', () => {});
+      } finally {
+        EE.captureRejections = false;
+      }
+      const captureSym = Object.getOwnPropertySymbols(fresh).filter((k) => fresh[k] === true);
+      const capture = captureSym.length > 0 && captureSym.every((k) => r13[k] === true);
+      // toJSON as postman-request's: the request's own headers as they are now
+      r12.headers.k = 'v';
+      const json = JSON.parse(JSON.stringify(r12));
+      const jsonShape = {uri: json.uri && json.uri.href, method: json.method, k: json.headers.k};
+      // the uri's fields as url.parse gives them: a written default port, an
+      // IPv6 hostname unbracketed, query and hash without their marks
+      const r14 = CHUtil.request('http://not-granted.example.invalid:80/p?q=1#f');
+      r14.on('error', () => {});
+      const r15 = CHUtil.request('http://[::1]:9/x');
+      r15.on('error', () => {});
+      // (the reviewer's final high, 1) a leading space and a tab inside the
+      // port, as both parsers read them; a backslash form's port from URL
+      const r16 = CHUtil.request(' http://not-granted.example.invalid:80\t81/x');
+      r16.on('error', () => {});
+      const r17 = CHUtil.request('http:\\\\not-granted.example.invalid:8080/x');
+      r17.on('error', () => {});
+      // (the medium on its last commits) a :81 after a backslash is the
+      // path's, not a port
+      const r18 = CHUtil.request('http://not-granted.example.invalid\\\\x:81/y');
+      r18.on('error', () => {});
+      const parse = {port: r14.uri.port, host: r14.uri.host, query: r14.uri.query, hash: r14.uri.hash, slashes: r14.uri.slashes, v6: r15.uri.hostname,
+        tabbed: r16.uri && r16.uri.port, backslash: r17.uri && r17.uri.port, pathColon: r18.uri && r18.uri.port};
+      // a uri whose href getter throws: refused, never a throw
+      let hrefThrows;
+      try {
+        hrefThrows = await new Promise((resolve) => CHUtil.request({uri: {get href() { throw new Error('a module getter'); }}}, (e) => resolve(e.code)));
+      } catch (e) { hrefThrows = 'threw: ' + e.message; }
+      return {ran, viaCallback, piped, onceCalls, prependOnceCalls, after, viaForm, abortErr, aborted, uri: r4.uri && r4.uri.href, method: r4.method,
+        assigned, lateThenAbort, nested, removeRan, afterAbort, uriParts, urlToStringRan, urlObjectUri, afterRemoved, plain, capture, hrefThrows, jsonShape, parse};
+    `);
+    assert.deepStrictEqual(out, {ran: 0, viaCallback: 'ERR_ACCESS_DENIED', piped: 'dest', onceCalls: 1, prependOnceCalls: 1, after: 0, viaForm: 'ERR_ACCESS_DENIED',
+      abortErr: 0, aborted: 1, uri: 'http://not-granted.example.invalid/x', method: 'POST',
+      assigned: true, lateThenAbort: 0, nested: 'ERR_ACCESS_DENIED', removeRan: 0, afterAbort: {aborted: true},
+      uriParts: {host: 'not-granted.example.invalid', path: '/p?q=1', protocol: 'http:'}, urlToStringRan: 1, urlObjectUri: null,
+      afterRemoved: 'ERR_ACCESS_DENIED', plain: {said: 'to http://not-granted.example.invalid/u', has: true, frozen: false, json: 'function'}, capture: true,
+      hrefThrows: 'ERR_ACCESS_DENIED', jsonShape: {uri: 'http://not-granted.example.invalid/u', method: 'GET', k: 'v'},
+      parse: {port: '80', host: 'not-granted.example.invalid:80', query: 'q=1', hash: '#f', slashes: true, v6: '::1', tabbed: '8081', backslash: '8080', pathColon: null}}, JSON.stringify(out));
+  }));
+
+  // the reviewer on #474: audit previews enforce, so what it reports is what
+  // is sent. A uri object whose href getter names the granted host once and
+  // another after: the string read once is reported and handed on, and
+  // postman-request never reads the object again
+  it('audit: an object uri\'s href is read once, and that string is what is reported and handed on', () => {
+    const {inWorker, install} = require('../helpers/lockdown-worker');
+    const out = inWorker(`
+      let sent = null;
+      global.CHUtil = {request: (opts, cb) => { sent = opts; if (typeof(cb) === 'function') cb(null, {statusCode: 200}, ''); }};
+      ${install({mode: 'audit', net: [{host: 'late-load.example.invalid'}]})}
+      let reads = 0;
+      const uri = {get href() { reads++; return reads === 1 ? 'http://late-load.example.invalid/x' : 'http://elsewhere.example.invalid/x'; }};
+      await new Promise((resolve) => CHUtil.request({uri}, () => resolve()));
+      // what postman-request would use as the target (it reads an object's href)
+      const target = typeof(sent.uri) === 'string' ? sent.uri : sent.uri.href;
+      // (the medium on its last commits) a getter that throws on its first
+      // read: read once, reported invalid, nothing sent; never read again
+      let reads2 = 0;
+      const throwing = {get href() { reads2++; if (reads2 === 1) throw new Error('first'); return reads2 === 2 ? 'http://late-load.example.invalid/x' : 'http://elsewhere.example.invalid/x'; }};
+      await new Promise((resolve) => CHUtil.request({uri: throwing}, () => resolve()));
+      const afterThrow = {uri: sent.uri === undefined ? 'none' : sent.uri, reads: reads2};
+      // what enforce would send, normalised
+      await new Promise((resolve) => CHUtil.request({uri: {href: 'HTTP://LATE-LOAD.example.invalid/x'}}, () => resolve()));
+      const normalised = sent.uri;
+      // url's getter is never read when uri is given
+      let urlReads = 0;
+      await new Promise((resolve) => CHUtil.request({uri: 'http://late-load.example.invalid/y', url: {get href() { urlReads++; return 'http://elsewhere.example.invalid/'; }}}, () => resolve()));
+      const withUrl = {uri: sent.uri, url: sent.url === undefined ? 'none' : 'kept', urlReads};
+      // a plain string target is sent normalised too
+      await new Promise((resolve) => CHUtil.request('HTTP://late-load.example.invalid/z', () => resolve()));
+      const stringSent = sent;
+      return {target, reads, reports, afterThrow, normalised, withUrl, stringSent};
+    `);
+    assert.strictEqual(out.target, 'http://late-load.example.invalid/x', JSON.stringify(out));
+    assert.strictEqual(out.reads, 1, JSON.stringify(out));
+    assert.ok(!out.reports.some((r) => /elsewhere/.test(r)), JSON.stringify(out.reports));
+    assert.deepStrictEqual(out.afterThrow, {uri: 'none', reads: 1}, JSON.stringify(out));
+    assert.ok(out.reports.includes('net invalid'), JSON.stringify(out.reports));
+    assert.strictEqual(out.normalised, 'http://late-load.example.invalid/x');
+    assert.deepStrictEqual(out.withUrl, {uri: 'http://late-load.example.invalid/y', url: 'none', urlReads: 0}, JSON.stringify(out));
+    assert.strictEqual(out.stringSent, 'http://late-load.example.invalid/z');
+  });
+
+  // the stand-in's method list can't drift from postman-request's Request
+  it('the stand-in answers every method postman-request\'s Request and caseless\'s httpify have', () => {
+    const {REQUEST_METHODS} = require('../../lib/module-lockdown');
+    const Request = require('postman-request').Request;
+    const expected = Object.getOwnPropertyNames(Request.prototype).filter((k) => k !== 'constructor');
+    const headers = {};
+    const holder = {};
+    // (caseless as postman-request has it: the reviewer's round 2, 6)
+    require('module').createRequire(require.resolve('postman-request'))('caseless').httpify(holder, headers);
+    for (const k of Object.keys(holder)) if (typeof(holder[k]) === 'function') expected.push(k);
+    assert.deepStrictEqual([...new Set(REQUEST_METHODS)].sort(), [...new Set(expected)].sort());
+    assert.ok(Object.isFrozen(REQUEST_METHODS), 'the exported list is frozen');
+  });
+
   // the runtime's loads of module files (the dispatcher's, CHUtil.loadFile's)
   // have the module's own anchor as parent, and the fixture's files carry the
   // CLI idiom (`if (!module.parent) throw`), so they load at all only with
