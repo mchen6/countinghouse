@@ -9,8 +9,9 @@ const path = require('path');
 const {createNamespace} = require('../../lib/fs-broker/namespace');
 const {FsBroker} = require('../../lib/fs-broker/broker');
 const {mkdtemp} = require('../helpers/test-tmp');
+const {Quota} = require('../../lib/fs-broker/quota');
 
-async function setup(mode, afterCheck) {
+async function setup(mode, afterCheck, quota) {
   const base = mkdtemp('broker-fb2-');
   const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp'),
     outside: path.join(base, 'outside'), ro: path.join(base, 'ro')};
@@ -22,7 +23,7 @@ async function setup(mode, afterCheck) {
   await namespace.prepare();
   const reports = [];
   const broker = new FsBroker({name: 'm', mode: mode, namespace: namespace, cwd: '/',
-    report: (rule, target) => reports.push(`${rule} ${target}`), hooks: {afterCheck: (s, h) => afterCheck(s, h, dirs)}});
+    report: (rule, target) => reports.push(`${rule} ${target}`), hooks: {afterCheck: (s, h) => afterCheck(s, h, dirs)}, quota});
   return {base, dirs, broker, reports, done: () => broker.closeAll().then(() => fs.rmSync(base, {recursive: true, force: true}))};
 }
 
@@ -64,7 +65,9 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
       const t = await setup('enforce', plantParent('late', to));
       try {
         await assert.rejects(t.broker.handle('open', [`/data/late/${name}`, 'w']), enoent(`/data/late/${name}`));
-        assert.strictEqual(fs.existsSync(path.join(t.dirs[to], name)), false, `${to}: the file the refused open made is gone`);
+        // (removed where /proc says the descriptor is: Linux; elsewhere it
+        // stays, never removed by a path a host process could swap)
+        if (process.platform === 'linux') assert.strictEqual(fs.existsSync(path.join(t.dirs[to], name)), false, `${to}: the file the refused open made is gone`);
       } finally { await t.done(); }
     }
     // (an 'a' open creates only when there is nothing: the existing file
@@ -88,6 +91,20 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
     } finally { await t.done(); }
   });
 
+  // (a creating open refused after it did not land in the root it was
+  // counted for: its new entry is given back, whether it made the file or
+  // found one there -- O_EXCL said EEXIST)
+  it('a refused creating open gives its quota entry back, a file it found as well as one it made', async () => {
+    for (const name of ['secret', 'made-new']) {
+      const quota = new Quota({maxBytes: 1 << 20, maxEntries: 100, enforce: true, report: () => {}});
+      const t = await setup('enforce', plantParent('late', 'outside'), quota);
+      try {
+        await assert.rejects(t.broker.handle('open', [`/data/late/${name}`, 'a']), enoent(`/data/late/${name}`));
+        assert.strictEqual(quota.entries, 0, name);
+      } finally { await t.done(); }
+    }
+  });
+
   it('a parent created as a real directory inside the root in between is fine', async () => {
     const t = await setup('enforce', (syscall, host) => {
       if (syscall === 'open' && path.basename(path.dirname(host)) === 'late') fs.mkdirSync(path.dirname(host));
@@ -99,30 +116,38 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
     } finally { await t.done(); }
   });
 
-  // (the FB2 follow-up, ruled 11-10: the leaf a link inside the root is no
-  // escape -- the name and the descriptor compared as the same file, the
-  // link followed where it really leads -- and a leaf link leading out still
-  // is one)
-  it('a leaf that is a link to a file inside the root opens; one to a file outside is refused', async () => {
-    for (const [target, ok] of [['data', true], ['outside', false]]) {
-      const t = await setup('enforce', (syscall, host, dirs) => {
-        if (syscall === 'open' && path.basename(path.dirname(host)) === 'late') {
-          fs.mkdirSync(path.dirname(host));
-          const file = path.join(dirs[target], target === 'data' ? 'inside-file' : 'secret');
-          if (target === 'data') fs.writeFileSync(file, 'inside');
-          fs.symlinkSync(file, host);
-        }
-      });
-      try {
-        if (ok) {
-          const fd = await t.broker.handle('open', ['/data/late/leaf', 'r']);
-          await t.broker.handle('close', [fd]);
-          assert.ok(!t.reports.some((r) => r.startsWith('escape')), t.reports.join(', '));
-        } else {
-          await assert.rejects(t.broker.handle('open', ['/data/late/leaf', 'r']), enoent('/data/late/leaf'));
-        }
-      } finally { await t.done(); }
-    }
+  // (the FB2 follow-up, ruled 11-10: a leaf that is a link is compared
+  // where it really leads, judged as the descriptor is -- a read in any of
+  // the module's roots, a write in the one its path names -- never the link
+  // against what it opened. /proc's own check stood down here, so the leaf
+  // rule alone decides, as off Linux.)
+  it('a leaf that is a link: a read into this root or another of the module\'s opens, a write into another is refused, one outside is refused', async () => {
+    const realReadlink = fs.promises.readlink;
+    fs.promises.readlink = async function(p, o) {
+      if (String(p).startsWith('/proc/self/fd/')) throw Object.assign(new Error('stood down'), {code: 'ENOENT'});
+      return realReadlink.call(this, p, o);
+    };
+    try {
+      for (const [target, flags, ok] of [['data', 'r', true], ['ro', 'r', true], ['ro', 'r+', false], ['outside', 'r', false]]) {
+        const t = await setup('enforce', (syscall, host, dirs) => {
+          if (syscall === 'open' && path.basename(path.dirname(host)) === 'late') {
+            fs.mkdirSync(path.dirname(host));
+            const file = path.join(dirs[target], {data: 'inside-file', ro: 'config', outside: 'secret'}[target]);
+            if (target === 'data') fs.writeFileSync(file, 'inside');
+            fs.symlinkSync(file, host);
+          }
+        });
+        try {
+          if (ok) {
+            const fd = await t.broker.handle('open', ['/data/late/leaf', flags]);
+            await t.broker.handle('close', [fd]);
+            assert.ok(!t.reports.some((r) => r.startsWith('escape')), `${target} ${flags}: ${t.reports.join(', ')}`);
+          } else {
+            await assert.rejects(t.broker.handle('open', ['/data/late/leaf', flags]), enoent('/data/late/leaf'), `${target} ${flags}`);
+          }
+        } finally { await t.done(); }
+      }
+    } finally { fs.promises.readlink = realReadlink; }
   });
 
   it('audit does not refuse it: the check after open is enforce-only, as before', async () => {
