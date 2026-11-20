@@ -15,7 +15,10 @@ the auth config.
 A known key's `tools/call` of a tool outside its grants (an unlisted part's
 too) now answers `-32602 unknown tool: <name>`, as a name never registered
 does, instead of `-32603` with the no-access text: one answer for every tool
-a caller can't see, so a call no longer tells what is installed. No key and
+a caller can't see, so a call no longer tells what is installed; so is a
+runtime tool not listed to the key (an authoring tool for a non-admin key,
+which answered `ADMIN_REQUIRED`; the single-identity profile's hidden
+built-ins, which answered `MODULE_NOT_LISTED`). No key and
 an unknown key keep their auth refusal, now the same for every name,
 the runtime's own `countinghouse_*` tools included.
 

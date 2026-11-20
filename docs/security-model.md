@@ -1287,15 +1287,22 @@ and every one is bounded.
   one never registered, and the runtime's own `countinghouse_*` tools,
   enabled or not. A known key: a name never registered, a tool outside its
   grants (an unlisted part's too) and one hidden while its module goes on
-  or off all answer `unknown tool: <name>`, byte for byte. A key granted an
-  unlisted part still learns it is not listed. The grant set that chooses
+  or off all answer `unknown tool: <name>`, byte for byte, and so does a
+  runtime tool not listed to it: an authoring tool for a key that is no
+  admin's (whatever `--authoringTools` says), and in the single-identity
+  profile the built-ins it hides (outside it, `countinghouse_settings`). A
+  key granted an unlisted part still learns it is not listed. The grant set that chooses
   the answer is kept per known key (by a SHA-256 digest of the key, never
   the key) for at most 5 s; authorisation is still `userAuth`'s read on
   every call, so within those 5 s a revoked grant's tool gets the auth
   refusal (which tells it from a name never registered), and a new grant's
   answers "unknown tool". A reload of the auth config ends that window at
   once for the file provider; the sqlite and CouchDB providers have no
-  change signal, so for them the 5 s is the bound.
+  change signal, so for them the 5 s is the bound. The cost: a key's first
+  call, and its first after 5 s idle, resolves the key before it reads its
+  grants (a key never seen costs one provider read if it does not resolve,
+  so an unknown key pays no more), one serial read more for a valid key
+  once per 5 s; a key resolved before has both read side by side.
 
 **Bounds.** Each is enforced on the main thread, and each has a test that
 fails if it is removed:
