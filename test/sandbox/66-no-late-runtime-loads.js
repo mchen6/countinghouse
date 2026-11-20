@@ -287,13 +287,47 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       const r10 = CHUtil.request({uri: own});
       r10.on('error', () => {});
       const urlObjectUri = r10.uri;
+      // (the reviewer's round 2) a late listener removed before its tick
+      // leaves the refusal for the next one: events.once still gets it
+      const r11 = CHUtil.request(url);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const gone = () => {};
+      r11.on('error', gone);
+      r11.removeListener('error', gone);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      // (events.once of 'error' itself resolves with the error's arguments)
+      const afterRemoved = await EE.once(r11, 'error').then((args) => args[0].code, (e) => 'rejected ' + e.code);
+      // plain, mutable objects: uri, headers, toJSON's, form()'s
+      const r12 = CHUtil.request({uri: null, url: 'http://not-granted.example.invalid/u'});
+      r12.on('error', () => {});
+      let plain;
+      try {
+        const fd = r12.form();
+        (function() { 'use strict'; const a = fd.append; fd.append = function(...x) { return a.apply(this, x); }; r12.uri.extra = 1; r12.headers.h = 1; })();
+        plain = {said: 'to ' + r12.uri.href, has: r12.headers.hasOwnProperty('h'), frozen: Object.isFrozen(r12.uri), json: typeof(r12.toJSON().headers.hasOwnProperty)};
+      } catch (e) { plain = String(e.message); }
+      // captureRejections honoured as a real emitter's
+      EE.captureRejections = true;
+      const fresh = new EE();
+      const r13 = CHUtil.request(url);
+      r13.on('error', () => {});
+      EE.captureRejections = false;
+      const captureSym = Object.getOwnPropertySymbols(fresh).filter((k) => fresh[k] === true);
+      const capture = captureSym.length > 0 && captureSym.every((k) => r13[k] === true);
+      // a uri whose href getter throws: refused, never a throw
+      let hrefThrows;
+      try {
+        hrefThrows = await new Promise((resolve) => CHUtil.request({uri: {get href() { throw new Error('a module getter'); }}}, (e) => resolve(e.code)));
+      } catch (e) { hrefThrows = 'threw: ' + e.message; }
       return {ran, viaCallback, piped, onceCalls, prependOnceCalls, after, viaForm, abortErr, aborted, uri: r4.uri && r4.uri.href, method: r4.method,
-        assigned, lateThenAbort, nested, removeRan, afterAbort, uriParts, urlToStringRan, urlObjectUri};
+        assigned, lateThenAbort, nested, removeRan, afterAbort, uriParts, urlToStringRan, urlObjectUri, afterRemoved, plain, capture, hrefThrows};
     `);
     assert.deepStrictEqual(out, {ran: 0, viaCallback: 'ERR_ACCESS_DENIED', piped: 'dest', onceCalls: 1, prependOnceCalls: 1, after: 0, viaForm: 'ERR_ACCESS_DENIED',
       abortErr: 0, aborted: 1, uri: 'http://not-granted.example.invalid/x', method: 'POST',
       assigned: true, lateThenAbort: 0, nested: 'ERR_ACCESS_DENIED', removeRan: 0, afterAbort: {aborted: true},
-      uriParts: {host: 'not-granted.example.invalid', path: '/p?q=1', protocol: 'http:'}, urlToStringRan: 1, urlObjectUri: null}, JSON.stringify(out));
+      uriParts: {host: 'not-granted.example.invalid', path: '/p?q=1', protocol: 'http:'}, urlToStringRan: 1, urlObjectUri: null,
+      afterRemoved: 'ERR_ACCESS_DENIED', plain: {said: 'to http://not-granted.example.invalid/u', has: true, frozen: false, json: 'function'}, capture: true,
+      hrefThrows: 'ERR_ACCESS_DENIED'}, JSON.stringify(out));
   }));
 
   // the stand-in's method list can't drift from postman-request's Request
@@ -303,7 +337,8 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
     const expected = Object.getOwnPropertyNames(Request.prototype).filter((k) => k !== 'constructor');
     const headers = {};
     const holder = {};
-    require('caseless').httpify(holder, headers);
+    // (caseless as postman-request has it: the reviewer's round 2, 6)
+    require('module').createRequire(require.resolve('postman-request'))('caseless').httpify(holder, headers);
     for (const k of Object.keys(holder)) if (typeof(holder[k]) === 'function') expected.push(k);
     assert.deepStrictEqual([...new Set(REQUEST_METHODS)].sort(), [...new Set(expected)].sort());
     assert.ok(Object.isFrozen(REQUEST_METHODS), 'the exported list is frozen');
