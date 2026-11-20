@@ -1,4 +1,5 @@
 const fs      = require('fs');
+const {deviceIDForName} = require('../../lib/call-address');
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
@@ -27,13 +28,11 @@ const MALLORY = 'mallory-key';  // valid key, wildcard device access, owns nothi
 const ADMIN   = 'admin-key';    // may read across tenants
 const ECHO_TOOL = 'echo_device_echoservice_echo';
 
-// echo-device-module's deviceID is deterministic (UUID.v5 of a fixed
-// namespace and the module's api.json friendlyName -- see
-// lib/call-address.js's deviceIDForName), so it can be hardcoded here the same way
-// pre-installed-packages/composite-demo/device.js hardcodes its targets.
+// echo-device-module's deviceID: deviceIDForName of its api.json
+// friendlyName (lib/call-address.js), the one derivation.
 // Declared here rather than at the foot of the file, where `var` hoisting
 // was the only thing making its use ~60 lines above the declaration work.
-const DEVICE_ID = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767';
+const DEVICE_ID = deviceIDForName('echo-device');
 
 // Deliberately given the SAME device access as alice. Ownership must not
 // fall out of device access -- if mallory could read alice's task merely by

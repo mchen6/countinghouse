@@ -1,5 +1,7 @@
 # Module composition API — `ctx.call`
 
+> **Note (8.0):** the device-ID seed changed in 8.0, so the device IDs below are pre-8.0 ones; see `lib/call-address.js` (`deviceIDForName`).
+
 A module calls another module by name instead of by hardcoded UUID.
 
 Status: design approved in brainstorming, not implemented.

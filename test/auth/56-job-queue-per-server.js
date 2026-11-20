@@ -25,7 +25,7 @@ const KEY = `k${crypto.randomBytes(12).toString('hex')}`;
 const RUNTIMES = {
   a: {port: testPort(9733), module: path.join(ROOT, 'test', 'fixtures', 'job-snoop'), device: deviceIDForName('job-snoop'),
     serviceID: 'urn:countinghouse-test:serviceID:jobService', actionName: 'whoami', input: {note: 'n'}},
-  b: {port: testPort(9796), module: path.join(ROOT, 'pre-installed-packages', 'echo-device-module'), device: 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767',
+  b: {port: testPort(9796), module: path.join(ROOT, 'pre-installed-packages', 'echo-device-module'), device: deviceIDForName('echo-device'),
     serviceID: 'urn:countinghouse-com:serviceID:echoService', actionName: 'echo', input: {foo: [{item1: 'x'}], bar: 'y'}}
 };
 // (the count is whatever this Redis holds under the old prefix: the job

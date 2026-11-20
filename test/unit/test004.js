@@ -1,4 +1,5 @@
 const request = require('supertest');
+const {deviceIDForName} = require('../../lib/call-address');
 const jsf     = require('json-schema-faker');
 const chalk   = require('chalk');
 const {testPort} = require('../helpers/test-env');
@@ -14,7 +15,7 @@ describe('test4: invoke with unknown serviceID', function() {
   const req = { serviceID: 'pseudo', actionName: 'pseudo', input: {} };
 
   it('invoke with unknown serviceID', (done) => {
-    request(url).post('/devices/c5284c70-ae5f-591c-b2f1-cf0b4ebd0767/invoke-action')
+    request(url).post(`/devices/${deviceIDForName('echo-device')}/invoke-action`)
     .set('X-CH-Key', 'aabbcc')
     .send(req)
     .expect('Content-Type', /[json | text]/)

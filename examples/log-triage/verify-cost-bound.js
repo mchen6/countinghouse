@@ -12,6 +12,7 @@
 // outer call. The read-then-redact chains run concurrently, so this is also
 // the check that concurrent hops are each charged exactly once.
 const assert  = require('assert');
+const {deviceIDForName} = require('../../lib/call-address');
 const fs      = require('fs');
 const os      = require('os');
 const path    = require('path');
@@ -22,10 +23,10 @@ const gen = require('./generate-logs');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
-const TRIAGE_DEVICE  = 'dad07d2a-9d65-5ef5-af59-05c0160c5fdc';
-const READ_DEVICE    = 'fd0eafbd-20da-53e6-9302-681687350a3b';
-const REDACT_DEVICE  = 'b5048beb-2128-52c0-9cd4-42669f57090f';
-const CLUSTER_DEVICE = '9f9aab37-b175-5286-81c3-68bdd24bd4f7';
+const TRIAGE_DEVICE  = deviceIDForName('log-triage');
+const READ_DEVICE    = deviceIDForName('log-read');
+const REDACT_DEVICE  = deviceIDForName('pii-redact');
+const CLUSTER_DEVICE = deviceIDForName('error-cluster');
 
 // The module identity's user name (what the bill shows as authorizedAs) and
 // its API key, which differ: a user name reaches every caller.

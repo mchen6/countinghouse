@@ -1,4 +1,5 @@
 const request = require('supertest');
+const {deviceIDForName} = require('../../lib/call-address');
 const jsf     = require('json-schema-faker');
 const chalk   = require('chalk');
 const {testPort} = require('../helpers/test-env');
@@ -21,7 +22,7 @@ describe('test29: invoke action which throws inside a detached setTimeout', func
   // comment above doActionCall). The request now times out instead of
   // getting a fast structured error.
   it('never calls back, so the request times out as DEVICE_NOT_RESPONDING', (done) => {
-    request(url).post('/devices/c5284c70-ae5f-591c-b2f1-cf0b4ebd0767/invoke-action')
+    request(url).post(`/devices/${deviceIDForName('echo-device')}/invoke-action`)
     .set('X-CH-Key', 'aabbcc')
     .send(req)
     .expect('Content-Type', /[json | text]/)

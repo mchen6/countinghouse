@@ -1,5 +1,7 @@
 # Module Composition API Implementation Plan
 
+> **Note (8.0):** the device-ID seed changed in 8.0, so the device IDs below are pre-8.0 ones; see `lib/call-address.js` (`deviceIDForName`).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A module calls another module by name — `await ctx.call('repo-scan/scanService.scan', input)` — instead of pasting a UUID v5 device ID, a service URN and an identity string into its handler.

@@ -48,12 +48,13 @@
 // to stdout, ready to paste into docs/direct-peer-channels.md.
 
 const cp = require('child_process');
+const {deviceIDForName} = require('../lib/call-address');
 const path = require('path');
 const multiRun = require('./multi-run');
 
 const PORT = 18500;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
-const CALLER_DEVICE_ID = '13793b1a-132d-5a03-a46b-2e0bb72d0d82'; // perf-caller-demo, computed offline via UUID.v5
+const CALLER_DEVICE_ID = deviceIDForName('perf-caller-demo');
 
 const ALL_PAYLOAD_SIZES = [1024, 102400, 1048576]; // 1KB, 100KB, 1MB
 const ALL_CONCURRENCY_LEVELS = [1, 16, 64];

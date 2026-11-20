@@ -1,4 +1,5 @@
 const fs      = require('fs');
+const {deviceIDForName} = require('../../lib/call-address');
 const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
@@ -22,7 +23,7 @@ const PRELOAD          = './test/fixtures/no-sqlite3-preload.js';
 const KEY   = `nosqlite-key-${process.pid}`;
 const OTHER = `nosqlite-other-${process.pid}`;
 
-const DEVICE_ID  = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767';
+const DEVICE_ID  = deviceIDForName('echo-device');
 const SERVICE_ID = 'urn:countinghouse-com:serviceID:echoService';
 const ECHO_INPUT = {foo: [{item1: 'x'}], bar: 'y'};
 

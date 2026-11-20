@@ -129,7 +129,7 @@ Give the caller's key a grant to the composite device *only*:
 
 ```json
 {
-  "your-api-key": {"userName": "you", "devices": ["51b0d6ac-7a77-5083-8476-26a9be96a101"]}
+  "your-api-key": {"userName": "you", "devices": ["227c7bea-87f8-5dfa-b9de-a4dd7eaedffd"]}
 }
 ```
 
