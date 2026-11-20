@@ -282,7 +282,8 @@ are each recorded as a cancelled call (nothing sent, the time it had run).
 A stopped task's job is not lost with it: under Redis, BullMQ runs it again
 on the next start, as a call of its own; under `--store local` the queue is
 in memory and ends with the process. SIGTERM ends the process with status
-143 (SIGINT with 0, as before); work that was waiting on something
+143 (SIGINT with 0, as before; under systemd, `SuccessExitStatus=143` makes
+it a clean stop, as the unit in the security model has it); work that was waiting on something
 asynchronous when the signal came (a charge still waiting for the store's
 lock, a result not yet written back to Redis) is lost, as it was when the
 signal ended the process outright.

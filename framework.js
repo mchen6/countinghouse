@@ -516,7 +516,7 @@ function serve() {
   // in the record.
   const exitSequence = require('./lib/exit-sequence');
   if (options.workerThread === true) exitSequence.atExit(() => require('./lib/store').jobs.close());
-  exitSequence.atExit(() => require('./lib/usage/runtime').closeOpen());
+  exitSequence.atExit(() => require('./lib/usage/runtime').closeOpen(jobHooks != null ? jobHooks.outcomeOf : null));
 
   var redisAPI = require('./lib/redis-api');
   redisAPI.init();
@@ -528,9 +528,12 @@ function serve() {
   global.CHUtil.redis = redisAPI.client;
 
   var JobControl    = require('./lib/store').jobs;
+  // the task hooks (worker mode): the exit sequence asks them for a failure
+  // noted while its record was being written
+  var jobHooks      = null;
   if (options.workerThread === true) {
     JobControl.initJobProcess(routeManager.cdifInterface);
-    const jobHooks = require('./lib/mcp/gateway').jobHooks(routeManager.cdifInterface);
+    jobHooks = require('./lib/mcp/gateway').jobHooks(routeManager.cdifInterface);
     JobControl.setStartHook(jobHooks.start);
     JobControl.setCompletionHook(jobHooks.complete);
     JobControl.setCancelHook(jobHooks.cancel);

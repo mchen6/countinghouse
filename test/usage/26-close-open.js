@@ -12,18 +12,9 @@ const {spawnSync} = require('child_process');
 const {createUsage} = require('../../lib/usage');
 const tmp = require('../helpers/test-tmp').forFile(['ch-usage-26-']);
 
-const recordsUnder = (dir) => {
-  const out = [];
-  const walk = (d) => {
-    for (const e of fs.readdirSync(d, {withFileTypes: true})) {
-      const p = path.join(d, e.name);
-      if (e.isDirectory()) walk(p);
-      else if (e.name.endsWith('.jsonl')) out.push(...fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)));
-    }
-  };
-  walk(dir);
-  return out;
-};
+const {readUsage} = require('../../lib/usage/read');
+// the records as the report reads them
+const recordsUnder = (dir) => readUsage(dir);
 
 describe('usage 26: every open call is closed at exit, cancelled (B-shutdown-usage)', () => {
   it('closeOpen writes a cancelled Out record for each open call, with its time so far and nothing sent; none for a finished call; once', () => {
@@ -48,19 +39,51 @@ describe('usage 26: every open call is closed at exit, cancelled (B-shutdown-usa
     assert.strictEqual(recordsUnder(dir).length, 3);
   });
 
-  it('the exit sequence runs before the local store\'s exit flush: what it writes reaches disk', () => {
-    const dir = tmp.mkdtemp('ch-usage-26-');
-    const file = path.join(dir, 'm.json');
-    const ROOT = path.resolve(__dirname, '..', '..');
-    const run = spawnSync(process.execPath, ['-e', `
-      const {openJsonFile, flushAllOnExit} = require(${JSON.stringify(path.join(ROOT, 'lib/store/json-file'))});
-      const map = openJsonFile(${JSON.stringify(file)}, {debounceMs: 60000});
-      flushAllOnExit();
-      require(${JSON.stringify(path.join(ROOT, 'lib/exit-sequence'))}).atExit(() => map.set('late', 'written at exit'));
-      process.exit(0);
-    `], {encoding: 'utf8', timeout: 20000});
-    assert.strictEqual(run.status, 0, run.stderr);
-    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {late: 'written at exit'});
+  // the runtime's own chain (framework.js): the store's exit flush, the
+  // monitor's signal handling and the exit sequence, registered in any
+  // order, and a SIGTERM through them all
+  for (const order of [['sequence', 'flush', 'monitor'], ['flush', 'monitor', 'sequence'], ['monitor', 'flush', 'sequence']]) {
+    it(`the exit sequence runs before the local store's exit flush, a SIGTERM through the monitor: what it writes reaches disk (${order.join(', ')})`, () => {
+      const dir = tmp.mkdtemp('ch-usage-26-');
+      const file = path.join(dir, 'm.json');
+      const ROOT = path.resolve(__dirname, '..', '..');
+      const run = spawnSync(process.execPath, ['-e', `
+        const {openJsonFile, flushAllOnExit} = require(${JSON.stringify(path.join(ROOT, 'lib/store/json-file'))});
+        const exitSequence = require(${JSON.stringify(path.join(ROOT, 'lib/exit-sequence'))});
+        const map = openJsonFile(${JSON.stringify(file)}, {debounceMs: 60000});
+        const steps = {
+          sequence: () => exitSequence.atExit(() => map.set('late', 'written at exit')),
+          flush: () => flushAllOnExit(),
+          monitor: () => require(${JSON.stringify(path.join(ROOT, 'lib/monitor'))}).init()
+        };
+        for (const name of ${JSON.stringify(order)}) steps[name]();
+        process.kill(process.pid, 'SIGTERM');
+        setTimeout(() => {}, 5000);
+      `], {encoding: 'utf8', timeout: 20000});
+      assert.deepStrictEqual([run.status, run.signal], [143, null], run.stderr);
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {late: 'written at exit'});
+    });
+  }
+
+  it('a call whose failure was noted while its record was being written is recorded as that failure, not a cancel', () => {
+    const u = createUsage({usageDir: null, pid: 1, startMs: 1});
+    const {taskHooks} = require('../../lib/usage/task');
+    const hooks = taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}), callerOf: () => 'c1', buildResult: () => ({content: []})});
+    const failing = hooks.start({apiKey: 'k'});
+    const plain = hooks.start({apiKey: 'k'});
+    hooks.failed({extra: failing}, Object.assign(new Error('timed out'), {code: 'JOB_TIMEOUT'}));
+    assert.strictEqual(u.closeOpen(hooks.outcomeOf), 2);
+    const outs = u.records().filter((r) => r.bytesOut !== undefined);
+    assert.deepStrictEqual(outs.map((r) => [r.call, r.outcome, r.code]).sort(), [[failing.usageCall, 'error', 'JOB_TIMEOUT'], [plain.usageCall, 'cancelled', undefined]].sort());
+  });
+
+  it('one call that cannot be recorded leaves the rest to be', () => {
+    const u = createUsage({usageDir: null, pid: 1, startMs: 1});
+    const calls = [1, 2, 3].map((i) => u.beginCall({module: 'm', tool: `t${i}`, caller: 'c'}));
+    let n = 0;
+    assert.strictEqual(u.closeOpen(() => { if (++n === 1) throw new Error('broken'); return null; }), 2);
+    assert.strictEqual(u.inFlight(), 0);
+    assert.deepStrictEqual(u.records().map((r) => r.call), calls.slice(1));
   });
 
   tmp.hooks();

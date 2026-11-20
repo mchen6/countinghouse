@@ -26,19 +26,9 @@ const rpc = (port, method, params, key) => new Promise((resolve, reject) => {
   rq.on('error', reject);
   rq.end(data);
 });
-const recordsUnder = (dir) => {
-  const out = [];
-  const walk = (d) => {
-    if (!fs.existsSync(d)) return;
-    for (const e of fs.readdirSync(d, {withFileTypes: true})) {
-      const p = path.join(d, e.name);
-      if (e.isDirectory()) walk(p);
-      else if (e.name.endsWith('.jsonl')) out.push(...fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)));
-    }
-  };
-  walk(dir);
-  return out;
-};
+const {readUsage} = require('../../lib/usage/read');
+// the records as the report reads them (none when nothing was written)
+const recordsUnder = (dir) => (fs.existsSync(dir) ? readUsage(dir) : []);
 
 const posix = process.platform === 'win32' ? describe.skip : describe;
 [['the local store (its own runner)', true, testPort(9703)], ['Redis (the BullMQ runner)', false, testPort(9704)]].forEach(([label, local, port]) => {
