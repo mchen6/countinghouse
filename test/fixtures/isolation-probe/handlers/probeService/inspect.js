@@ -128,6 +128,300 @@ const STEPS = {
     return out.join(' ');
   },
   // F4 (#194's PR 3): an import() from an ES module is no existence oracle
+  // (C-bare, Fable's pass on #452: a bare name's subpath, or a '#' mapping
+  // to one, never walks or stats above the root; a package found above it
+  // and one missing give one answer, and nothing of module code's runs
+  // inside Node's step while it looks)
+  // C-bare R0: a bare require is CommonJS's own lookup, every disk access
+  // on it judged. An "exports" target climbing out by '%2e' (plain Node:
+  // the file beside the root) reads as a missing name, by the whole error;
+  // an import of it the same; a self-reference from deep in the tree finds
+  // the root's package.json, never the one above the root.
+  cjsJudged: async () => {
+    const out = [];
+    const o = (fn, pkg) => { try { fn(); return 'found'; } catch (e) { return `${e.code}|${e.message}`.split(pkg).join('PKG'); } };
+    const same = (tag, a, b) => out.push(a === b ? 'same' : `${tag}(${a.slice(0, 200)} / ${b.slice(0, 200)})`);
+    same('requireClimb', o(() => require('dep6/e'), 'dep6'), o(() => require('nosuchdep6/e'), 'nosuchdep6'));
+    same('resolveClimb', o(() => require.resolve('dep6/e'), 'dep6'), o(() => require.resolve('nosuchdep6/e'), 'nosuchdep6'));
+    const oi = async (spec, pkg) => { try { await import(spec); return 'found'; } catch (e) { return `${e.code}|${e.message}`.split(pkg).join('PKG'); } };
+    same('importClimb', await oi('dep6/e', 'dep6'), await oi('nosuchdep6/e', 'nosuchdep6'));
+    const deep = require('../../lib/deep/a/b/c/self.js');
+    out.push(deep('isolation-probe/self-check') === 'counted' ? 'same' : `ownSelf(${deep('isolation-probe/self-check')})`);
+    same('outerSelf', deep('outer-self').split('outer-self').join('PKG'), deep('no-such-outer').split('no-such-outer').join('PKG'));
+    // (a require by CommonJS's own test: '..foo/...' is a relative path,
+    // which loads; 'a:b/...' a bare name, whose climbing subpath is refused
+    // as any bare name's is)
+    out.push(o(() => require('..foo/../../../lib/stat-count.js'), 'x') === 'found' ? 'same' : `dotdotRelative(${o(() => require('..foo/../../../lib/stat-count.js'), 'x').slice(0, 200)})`);
+    // (the climbing pairs: the 'a:b' side refused -- never found, which
+    // plain Node on POSIX answers for either side (on Windows 'a:b' is
+    // drive-relative, so there the pair's equality is what catches it) --
+    // and by the same whole error as a missing name's climb)
+    const refusedPair = (tag, a, b) => out.push(!a.startsWith('found') && a === b ? 'same' : `${tag}(${a.slice(0, 200)} / ${b.slice(0, 200)})`);
+    refusedPair('urlishClimb', o(() => require('a:b/../../lib/stat-count.js'), 'a:b'), o(() => require('nosuchdep/../../lib/stat-count.js'), 'nosuchdep'));
+    // (the same by require.resolve, and by a direct Module._resolveFilename
+    // below: these pin the behaviour by each route module code has, not one
+    // layer -- on 24.21, with the direct wrapper's own line reverted, both
+    // still refused: another layer of identity's answers first)
+    out.push(o(() => require.resolve('..foo/../../../lib/stat-count.js'), 'x') === 'found' ? 'same' : `dotdotResolve(${o(() => require.resolve('..foo/../../../lib/stat-count.js'), 'x').slice(0, 200)})`);
+    refusedPair('urlishResolve', o(() => require.resolve('a:b/../../lib/stat-count.js'), 'a:b'), o(() => require.resolve('nosuchdep/../../lib/stat-count.js'), 'nosuchdep'));
+    out.push(o(() => M._resolveFilename('..foo/../../../lib/stat-count.js', module), 'x') === 'found' ? 'same' : `dotdotDirect(${o(() => M._resolveFilename('..foo/../../../lib/stat-count.js', module), 'x').slice(0, 200)})`);
+    refusedPair('urlishDirect', o(() => M._resolveFilename('a:b/../../lib/stat-count.js', module), 'a:b'), o(() => M._resolveFilename('nosuchdep/../../lib/stat-count.js', module), 'nosuchdep'));
+    // (#465's Fable pass, F1: a request that is no string -- a String
+    // object, an object with its own toString -- is refused by a direct
+    // Module._resolveFilename and answers nothing from findPackageJSON,
+    // after the seal, with nothing of module code's run to make it one)
+    {
+      let ran = 0;
+      const tricky = {toString() { ran++; return '#p/sshpk/package.json'; }};
+      const codeOf = (fn) => { try { fn(); return 'found'; } catch (e) { return String(e.code); } };
+      const direct = [codeOf(() => M._resolveFilename(new String('#p/sshpk/package.json'), module)), codeOf(() => M._resolveFilename(tricky, module))];
+      const findOf = (fn) => { try { return String(fn()); } catch (e) { return String(e.code); } };
+      const finds = typeof(M.findPackageJSON) === 'function' ? [findOf(() => M.findPackageJSON(new String('sshpk'), __filename)), findOf(() => M.findPackageJSON(tricky, __filename)),
+        findOf(() => M.findPackageJSON('sshpk', {toString() { ran++; return __filename; }}))] : ['undefined', 'undefined', 'undefined'];
+      out.push(direct.every((c) => c === 'ERR_INVALID_ARG_TYPE') && finds.every((f) => f === 'undefined') && ran === 0 ? 'same' : `nonString(${direct.join(',')} ${finds.join(',')} ran ${ran})`);
+    }
+    // (the high review of #465, 6: a '#' require from a scope with no
+    // "imports" falls through to node_modules, as Node's CommonJS lookup
+    // does; one from a scope with "imports" is resolved there)
+    {
+      const fromSelfScope = require('../../lib/selfscope/req.js');
+      const hash = fromSelfScope('#hashpkg');
+      out.push(hash === 'hash' ? 'same' : `hashFallsThrough(${hash})`);
+    }
+    // (the high review of #465, 5: '#cond' by a direct call and by the
+    // hook, the same target, as Node's own CommonJS conditions pick it)
+    {
+      const base = (fn) => { try { return path.basename(String(fn())); } catch (e) { return String(e.code); } };
+      const direct = base(() => M._resolveFilename('#cond', module));
+      const hooked = base(() => require.resolve('#cond'));
+      // (Node's own answer on every line here: require(esm) is on, so its
+      // CommonJS conditions hold 'module-sync', which comes first)
+      out.push(direct === 'cond-ms.js' && hooked === 'cond-ms.js' ? 'same' : `conditions(${direct} / ${hooked})`);
+    }
+    // (#465's Fable pass, F4: findPackageJSON of the module's own name,
+    // a self-reference through its "exports", answers its own package.json)
+    if (typeof(M.findPackageJSON) === 'function') {
+      let own;
+      try { own = String(M.findPackageJSON('isolation-probe/self-check', __filename)); } catch (e) { own = String(e.code); }
+      out.push(/\/app\/package\.json$|\\app\\package\.json$/.test(own) ? 'same' : `selfFind(${own})`);
+    } else out.push('same');
+    // (the high review of #465, round 3, item 1: a package.json read for a
+    // resolution runs nothing of module code's -- Buffer.prototype.toString,
+    // Buffer.from and Object.assign replaced here are never called while a
+    // '#' name resolves from a scope no resolution has read yet)
+    {
+      let calls = 0;
+      const realToString = Buffer.prototype.toString;
+      const realFrom = Buffer.from;
+      const realAssign = Object.assign;
+      Buffer.prototype.toString = function(...a) { calls++; return realToString.apply(this, a); };
+      Buffer.from = function(...a) { calls++; return realFrom.apply(this, a); };
+      Object.assign = function(...a) { calls++; return realAssign.apply(this, a); };
+      let got;
+      try {
+        try { got = path.basename(String(M._resolveFilename('#f', {filename: '/app/lib/fresh2/x.js', paths: []}))); } catch (e) { got = String(e.code); }
+      } finally { Buffer.prototype.toString = realToString; Buffer.from = realFrom; Object.assign = realAssign; }
+      out.push(calls === 0 && got === 'f.js' ? 'same' : `moduleCodeInRead(${calls} ${got})`);
+    }
+    // (K1, ruled after #465's round 3: after the seal findPackageJSON takes
+    // a primitive string alone -- any object, a real URL included, answers
+    // nothing, and none of its code runs: not a Proxy's traps in its
+    // prototype chain, not a URL's searchParams.toString, which the href
+    // getter calls once the params are marked changed)
+    if (typeof(M.findPackageJSON) === 'function') {
+      let ran = 0;
+      const count = (k) => (...a) => { ran++; return Reflect[k](...a); };
+      const handler = {};
+      ['get', 'has', 'getOwnPropertyDescriptor', 'getPrototypeOf', 'ownKeys'].forEach((k) => { handler[k] = count(k); });
+      const odd = Object.create(new Proxy(URL.prototype, handler));
+      const dirty = new URL(require('url').pathToFileURL(__filename).href);
+      Object.defineProperty(dirty.searchParams, 'toString', {value() { ran++; return 'q=1'; }});
+      URLSearchParams.prototype.append.call(dirty.searchParams, 'a', 'b');
+      const plain = require('url').pathToFileURL(__filename);
+      const bare = Object.setPrototypeOf(require('url').pathToFileURL(__filename), null);
+      const answers = [];
+      for (const [spec, base] of [[odd, __filename], ['./', odd], [dirty, __filename], ['./', dirty], [plain, __filename], ['./', plain], [bare, __filename], ['./', bare]]) {
+        try { answers.push(String(M.findPackageJSON(spec, base))); } catch (e) { answers.push(String(e.code)); }
+      }
+      const all = answers.every((x) => x === 'undefined');
+      out.push(ran === 0 && all ? 'same' : `objectInFind(${ran} ${answers.join(',')})`);
+    } else out.push('same');
+    // (#465's Fable pass, F2 and F3: a require whose parent is the root
+    // itself -- createRequire('/app') -- is refused before Node, as a missing
+    // name is, while createRequire('/app/'), a directory, still requires
+    // from it; an empty specifier is refused by import as a missing name is,
+    // and findPackageJSON answers nothing for it)
+    {
+      const req = M.createRequire('/app');
+      const errOf = (fn) => { try { fn(); return 'found'; } catch (e) { return String(e.code); } };
+      const rootParent = [errOf(() => req('outer-self')), errOf(() => req('no-such-outer'))];
+      const fromDir = errOf(() => M.createRequire('/app/')('./lib/stat-count.js'));
+      const emptyImport = await oi('', 'x');
+      const missingImport = (await oi('no-such-empty-control', 'no-such-empty-control')).split('PKG').join('');
+      let emptyFind = 'undefined';
+      if (typeof(M.findPackageJSON) === 'function') { try { emptyFind = String(M.findPackageJSON('', __filename)); } catch (e) { emptyFind = String(e.code); } }
+      const ok = rootParent[0] === rootParent[1] && rootParent[0] !== 'found' && fromDir === 'found' && emptyImport.split('|')[0] === missingImport.split('|')[0] && emptyFind === 'undefined';
+      out.push(ok ? 'same' : `rootOrEmpty(${rootParent.join(',')} ${fromDir} ${emptyImport.slice(0, 80)} / ${missingImport.slice(0, 80)} ${emptyFind})`);
+    }
+    // (a bare name with a ':' URL parsing rejects -- bare to Node -- above
+    // the root against a missing one, by import, findPackageJSON and
+    // require; POSIX, where a file name can hold one)
+    if (process.platform !== 'win32') {
+      same('colonImport', await oi('co_lon:pkg', 'co_lon:pkg'), await oi('noco_lon:pkg', 'noco_lon:pkg'));
+      if (typeof(M.findPackageJSON) === 'function') {
+        same('colonFind', o(() => String(M.findPackageJSON('co_lon:pkg', __filename)), 'co_lon:pkg'), o(() => String(M.findPackageJSON('noco_lon:pkg', __filename)), 'noco_lon:pkg'));
+      } else out.push('same');
+      same('colonRequire', o(() => require('co_lon:pkg'), 'co_lon:pkg'), o(() => require('noco_lon:pkg'), 'noco_lon:pkg'));
+      // (and it is the in-root resolver that answers such a name, never
+      // Node's walk: one with a node_modules/node_modules copy imports as
+      // dep2 does, the copy Node's walk takes; and findPackageJSON, rebased
+      // to its level, answers nothing for it as for dep2, where Node's own
+      // findPackageJSON would name one)
+      same('colonDecoy', await oi('co_lon:dec', 'co_lon:dec'), await oi('dep2', 'dep2'));
+      if (typeof(M.findPackageJSON) === 'function') {
+        same('colonDecoyFind', o(() => String(M.findPackageJSON('co_lon:dec', __filename)), 'co_lon:dec'), o(() => String(M.findPackageJSON('dep2', __filename)), 'dep2'));
+      } else out.push('same');
+    } else out.push('same', 'same', 'same', 'same', 'same');
+    return out.join(' ');
+  },
+  // C-bare R0's layers past the judged _stat, each pinned alone by a
+  // route only it stands on. A link inside the root (made by the test after
+  // the load) to the file beside the root passes the lexical stat, and
+  // Node's realpath answers outside:
+  // - findPath: a direct Module._findPath of a package whose index.js is
+  //   the link -- the _findPath wrapper's answer check alone
+  // - direct: a direct _resolveFilename of the root's own export that is
+  //   the link (trySelf's answer never passes _findPath) -- the direct
+  //   call's answer check alone
+  // - hook: a require of another such export -- the require hook's
+  //   bound() alone
+  // each a missing name (a missing file, by the whole error)
+  linkLayers: () => {
+    const o = (fn, pkg) => { try { const r = fn(); return r === false ? 'false' : `found ${String(r)}`; } catch (e) { return `${e.code}|${e.message}`.split(pkg).join('PKG'); } };
+    const out = [];
+    const pair = (tag, a, b) => out.push(a === b ? 'same' : `${tag}(${a.slice(0, 200)} / ${b.slice(0, 200)})`);
+    pair('findPath', o(() => M._findPath('linkpkg', module.paths), 'linkpkg'), o(() => M._findPath('nosuchlink', module.paths), 'nosuchlink'));
+    pair('direct', o(() => M._resolveFilename('isolation-probe/link-self', module), 'link-self'), o(() => M._resolveFilename('isolation-probe/link-none', module), 'link-none'));
+    pair('hook', o(() => require('isolation-probe/link-self2'), 'link-self2'), o(() => require('isolation-probe/link-none2'), 'link-none2'));
+    return out.join(' ');
+  },
+  bareSubpath: async () => {
+    const out = [];
+    const tryImport = async (spec) => { try { await import(spec); return 'found'; } catch (e) { return String(e.code); } };
+    const tryRequire = (spec) => { try { require(spec); return 'found'; } catch (e) { return String(e.code); } };
+    const same = (tag, a, b) => out.push(a === b ? 'same' : `${tag}(${a}/${b})`);
+    // (a sibling above the root against a missing one, climbing back to the
+    // module's own file)
+    same('importSibling', await tryImport('sibpkg/../../isolation-probe/lib/bare-target.mjs'), await tryImport('nosuchsib/../../isolation-probe/lib/bare-target.mjs'));
+    same('importMapped', await tryImport('#sibclimb'), await tryImport('#nosibclimb'));
+    same('requireMapped', tryRequire('#sibclimb'), tryRequire('#nosibclimb'));
+    // (a package scope inside the root named as the sibling, its "exports"
+    // null: no self-reference, so the one answer again)
+    const selfTry = require('../../lib/selfscope/try.js');
+    same('nullExports', await selfTry('sibpkg/../../isolation-probe/lib/bare-target.mjs'), await selfTry('nosuchsib/../../isolation-probe/lib/bare-target.mjs'));
+    // (a '#' mapping as plain Node resolves it: to a bare built-in name
+    // loads; to a 'node:' URL is an invalid target (ERR_INVALID_PACKAGE_
+    // TARGET in plain Node on 22.16, 24 and 26); an array's first valid
+    // target loads)
+    out.push((await tryImport('#bare')) === 'found' && tryRequire('#bare') === 'found' && (await tryImport('#builtin')) !== 'found' &&
+      (await tryImport('#fallback')) === 'found' ? 'same' : 'mapped');
+    // (a subpath climbing out of the module's own dependency: no getter of
+    // module code's runs inside Node's step)
+    let ran = 'not run';
+    Object.defineProperty(Object.prototype, 'WATCH_REPORT_DEPENDENCIES', {configurable: true, get() { ran = 'ran'; return undefined; }});
+    try {
+      await tryImport('dep/../../../../no-such-climb.mjs');
+      tryRequire('dep/../../../../no-such-climb.js');
+      tryRequire('dep/x?/../../../../../no-such-climb.js');
+      tryRequire('dep\\..\\..\\..\\..\\no-such-climb.js');
+    } finally { delete Object.prototype.WATCH_REPORT_DEPENDENCIES; }
+    out.push(ran === 'not run' ? 'same' : 'ranInStep');
+    // (a backslash spelling of a climbing subpath is the one refusal too)
+    out.push(tryRequire('dep\\..\\..\\lib\\bare-target.mjs') === tryRequire('nosuchdep\\..\\..\\lib\\bare-target.mjs') ? 'same' : 'backslash');
+    // (a getter on Object.prototype named as the lookup's own fields never
+    // runs inside the hook, and changes nothing)
+    let protoRan = 'not run';
+    const fields = ['specifier', 'from', 'file', 'refuse', 'asIs'];
+    for (const f of fields) Object.defineProperty(Object.prototype, f, {configurable: true, get() { protoRan = `ran ${f}`; return undefined; }});
+    let protoOutcome;
+    try { protoOutcome = await tryImport('#fallback'); } finally { for (const f of fields) delete Object.prototype[f]; }
+    out.push(protoRan === 'not run' && protoOutcome === 'found' ? 'same' : `proto(${protoRan} ${protoOutcome})`);
+    // (a package with a node_modules/node_modules copy beside it loads the
+    // one Node's walk takes from here, the real one; the high review of
+    // #465, 2)
+    { let real; try { real = (await import('dep2')).default; } catch (e) { real = String(e.code); } out.push(real === 'real' ? 'same' : `decoy(${real})`); }
+    // (an import from a script given a filename outside the root: judged
+    // from the root, never walked from there)
+    const vm = require('vm');
+    const fromOutside = async (spec) => {
+      try { await vm.runInThisContext(`import(${JSON.stringify(spec)})`, {filename: '/nowhere.invalid/x.js', importModuleDynamically: vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER}); return 'found'; } catch (e) { return String(e.code); }
+    };
+    same('outsideParent', await fromOutside('sibpkg/../../isolation-probe/lib/bare-target.mjs'), await fromOutside('nosuchsib/../../isolation-probe/lib/bare-target.mjs'));
+    // (targets picked as Node picks them: an empty array is no target, as
+    // plain Node answers on 22.16, 24 and 26; an invalid segment falls to
+    // the array's next entry)
+    out.push((await tryImport('#emptyArr')) !== 'found' && (await tryImport('#badFirst')) === 'found' ? 'same' : 'targets');
+    // ("exports" false is none, as Node's reader takes it: a climbing
+    // subpath under it the one refusal)
+    same('exportsFalse', await tryImport('dep3/../../lib/bare-target.mjs'), await tryImport('nosuchdep/../../lib/bare-target.mjs'));
+    // (a pattern with an empty segment loads, as in Node; an array of
+    // invalid targets falls to no other condition)
+    out.push((await tryImport('#pat//x.mjs')) === 'found' && (await tryImport('#z')) !== 'found' ? 'same' : 'patterns');
+    // (a parent named as a countinghouse file is judged from the root: a
+    // runtime package's presence is no answer)
+    const h = handle();
+    const runtimeLib = h != null ? path.join(path.dirname(path.dirname(h.module.filename)), 'lib', 'any.js') : null;
+    const fromRuntime = async (spec) => {
+      try { await require('vm').runInThisContext(`import(${JSON.stringify(spec)})`, {filename: runtimeLib, importModuleDynamically: require('vm').constants.USE_MAIN_CONTEXT_DEFAULT_LOADER}); return 'found'; } catch (e) { return String(e.code); }
+    };
+    same('runtimeParent', await fromRuntime('mocha/../../node_modules/.ch-sb-68 probe/isolation-probe/lib/bare-target.mjs'),
+      await fromRuntime('nosuchpkg/../../node_modules/.ch-sb-68 probe/isolation-probe/lib/bare-target.mjs'));
+    // (a direct Module._resolveFilename call with a '#' name, which Node
+    // 24.15 and later run no hook for: one answer for a sibling above the
+    // root and a missing one)
+    const direct = (spec) => { try { M._resolveFilename(spec, module); return 'found'; } catch (e) { return String(e.code); } };
+    same('directMapped', direct('#sibclimb'), direct('#nosibclimb'));
+    // (findPackageJSON of a bare name: the module's own dependency's, found
+    // inside the root -- for a subpath too, its root manifest, as plain Node
+    // answers -- from a file or a directory base; one above it is nothing)
+    const fpj = M.findPackageJSON;
+    const asDir = require('url').pathToFileURL(`${path.dirname(__filename)}/`).href;
+    out.push(typeof(fpj) !== 'function' ||
+      (String(fpj('dep', __filename)).endsWith('/node_modules/dep/package.json') && String(fpj('dep', asDir)).endsWith('/node_modules/dep/package.json') &&
+       String(fpj('dep/esm/x.mjs', __filename)).endsWith('/node_modules/dep/package.json') && fpj('sibpkg', __filename) === undefined) ? 'same' : `findPackageJSON(${fpj('dep', asDir)} ${fpj('dep/esm/x.mjs', __filename)})`);
+    // (a '#' target is an exact file, as in Node: none with no extension)
+    out.push(direct('#noext') !== 'found' ? 'same' : 'noext');
+    // (findPackageJSON of a '#' name, one mapped to a built-in too, is
+    // nothing; a bare name holding '?' or '#', which Node's URL lookup would
+    // cut short and climb with, is the one refusal, as a missing one)
+    out.push(typeof(fpj) !== 'function' || (fpj('#builtin', __filename) === undefined && fpj('#sibclimb', __filename) === undefined) ? 'same' : 'fpjMapped');
+    same('queryName', await tryImport('q?x/index.js'), await tryImport('nosuchq/index.js'));
+    same('tabName', await tryImport('t\tx/index.js'), await tryImport('nosucht/index.js'));
+    // (a subpath whose URL names another path -- a tab the URL parser drops
+    // -- under an "exports" pattern, is refused, never carried by it into a
+    // sibling package; a plain subpath under it loads)
+    out.push((await tryImport('dep4/index.js')) === 'found' && (await tryImport('dep4/.\t./dep/index.js')) !== 'found' ? 'same' : 'exportsSubpath');
+    // (Reflect.apply replaced by module code: the in-root resolver calls
+    // its own, so no host path ever reaches it)
+    const realApply = Reflect.apply;
+    let hostSeen = false;
+    Reflect.apply = function(fn, self, args) {
+      for (const a of [self].concat(Array.from(args || []))) if (typeof(a) === 'string' && a.includes('ch-sb-68')) hostSeen = true;
+      return realApply(fn, self, args);
+    };
+    try { await tryImport('dep'); await tryImport('#fallback'); } finally { Reflect.apply = realApply; }
+    out.push(hostSeen ? 'reflectApply' : 'same');
+    // (require.resolve with options.paths looks a bare name up from those,
+    // as a plugin loader does; a direct Module._resolveFilename from module
+    // code fails closed for any name, the virtual-paths compat gap)
+    let viaPaths;
+    try { viaPaths = require.resolve('dep5', {paths: ['/app/node_modules/dep']}); } catch (e) { viaPaths = `threw ${e.code}`; }
+    out.push(String(viaPaths).endsWith('/node_modules/dep5/index.js') ? 'same' : `paths(${viaPaths})`);
+    // (and the module's own dependency still loads, by name and by subpath)
+    out.push((await tryImport('dep')) === 'found' && (await tryImport('dep/index.js')) === 'found' && tryRequire('dep') === 'found' &&
+      tryRequire('filedep') === 'found' ? 'same' : 'ownDep');
+    return out.join(' ');
+  },
   importOracle: async () => {
     const h = handle();
     if (h == null) return 'no handle';

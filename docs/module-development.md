@@ -814,6 +814,28 @@ is reported. Node picks a `"main"` past every check the sandbox makes, so
 where it led would otherwise tell your code whether a host file exists.
 Keep `"main"` inside your module, naming a file.
 
+Under `enforce` a `package.json` anywhere in your module is also refused at
+load (and reported under `audit`) when any of these holds:
+
+- it isn't valid UTF-8;
+- it writes `"imports"`, `"exports"`, `"name"`, `"main"` or `"type"` twice,
+  or writes one of those keys with an escape (`"\u0069mports"`);
+- it writes the value of `"name"`, `"main"` or `"type"` with a backslash
+  escape.
+
+The sandbox and Node read a `package.json` with different parsers, and
+these are the places they can disagree.
+
+Under `enforce`, `module.findPackageJSON` takes its specifier and base as
+strings. A `URL` object answers `undefined`, so pass `url.href`.
+
+On Node below 24.15, under `enforce`, a `#` name resolved with
+`require.resolve` (or `createRequire().resolve`) uses the CommonJS
+conditions Node brought with the first `require` in your module's worker
+(Node's own, `--conditions` and all); only before any `require` has run
+there would it use Node's default list. A plain `require` always uses its
+own, as on 24.15 and later.
+
 Under `enforce` your module's directory may not hold a link to a
 directory: the load is refused ("holds a directory link at ..."), and
 under `audit` it is reported. Node's ES resolver reads a package's

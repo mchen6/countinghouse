@@ -76,6 +76,17 @@ const eacces = (e) => e.code === 'EACCES';
       t.unchanged();
     });
 
+    // (C-bare R0: the root's own package.json bounds the one native read on a
+    // bare require's path, trySelf's walk up from the parent, so it can't be
+    // taken away)
+    it('an unlink or rm of it, by either path: EACCES', async () => {
+      for (const p of ['/app/package.json', t.host]) {
+        await assert.rejects(t.broker.handle('unlink', [p]), eacces);
+        await assert.rejects(t.broker.handle('rm', [p, {force: true}]), eacces);
+      }
+      t.unchanged();
+    });
+
     it('no write reaches the pin records, any module\'s, nor their directory (Task 4\'s last re-review, MED-2)', async () => {
       const pins = path.join(t.dirs.store, '.pins');
       fs.mkdirSync(pins, {recursive: true});
