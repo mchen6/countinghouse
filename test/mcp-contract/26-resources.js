@@ -458,7 +458,7 @@ describe('mcp-contract 26: module resources (M7)', function() {
   const settingsWrites = () => (fs.existsSync(SETTINGS) ? [fs.readFileSync(SETTINGS, 'utf8')] : []);
   // a tools/call of name, its own identity read (the provider's nth
   // authenticate) held: then cancelled, or its session ended
-  const during = async(name, key, args, {nth, end, single, authoring}) => {
+  const during = async(name, key, args, {nth, end, single, authoring, extra = {}}) => {
     require('../../lib/mcp/tool-registry').forgetGrants();
     for (const a of [spent, balances, loads, reloads, invoked, billed]) a.length = 0;
     fs.rmSync(SETTINGS, {force: true});
@@ -492,7 +492,7 @@ describe('mcp-contract 26: module resources (M7)', function() {
       });
     };
     try {
-      const got = new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name, arguments: args || {}}}, ci, key,
+      const got = new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 1, method: 'tools/call', params: Object.assign({name, arguments: args || {}}, extra)}, ci, key,
         (err, resp, info) => resolve({resp, info}), opts));
       if (!end) {
         for (let w = 0; held == null && w < 400; w++) await new Promise((res) => setImmediate(res));
@@ -526,6 +526,20 @@ describe('mcp-contract 26: module resources (M7)', function() {
       assert.deepStrictEqual(b.nothing(), b.nothing().map(() => []));
     });
   }
+  // (the medium of the cut) a task-augmented call: cancelled, or its session
+  // ended, while its userAuth reads the key, it spends no rate-limit unit
+  // and makes no job
+  it('a task-augmented call cancelled during its userAuth spends no rate limit, and is not answered', async () => {
+    const {resp, info} = await during('notes_svc_save', KEY_A, {}, {nth: 2, extra: {task: {}}});
+    assert.strictEqual(resp, null, JSON.stringify(resp));
+    assert.deepStrictEqual(info, {cancelled: true});
+    assert.deepStrictEqual([spent, invoked], [[], []]);
+  });
+  it('a task-augmented call whose session ends during its userAuth spends no rate limit, and is answered as ended', async () => {
+    const {resp} = await during('notes_svc_save', KEY_A, {}, {nth: 2, end: true, extra: {task: {}}});
+    assert.strictEqual(resp.result && resp.result._meta && resp.result._meta['countinghouse/code'], 'MODULE_NOT_LISTED', JSON.stringify(resp));
+    assert.deepStrictEqual([spent, invoked], [[], []]);
+  });
   it('a reserved name and a name never registered answer a cancel during the gate\'s read alike', async () => {
     const reserved = await during('countinghouse_check_balance', KEY_A, {}, {nth: 1});
     const never = await during('no_such_tool_anywhere', KEY_A, {}, {nth: 1});

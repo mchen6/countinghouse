@@ -91,7 +91,7 @@ describe('stdio 21: the confirmation round trip, spawned (part 3 P2)', function(
     assert.match(retry.result.content[0].text, /needs your own confirmation/);
   });
 
-  it('countinghouse_call_tool never forms or confirms; a module\'s look-alike result stays content', async () => {
+  it('countinghouse_call_tool, hidden in the profile, is an unknown tool (so no form or confirmation through it); a module\'s look-alike result stays content', async () => {
     await begin();
     // (the single-identity profile hides countinghouse_call_tool: a name the
     // caller can't use, answered as one never registered since #458 -- no
