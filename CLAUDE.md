@@ -27,9 +27,12 @@ assuming a plan doc exists.
 ## Key decisions already made
 - License: Apache-2.0 everywhere (done).
 - Origin stays visible: the README credits the 2015 CDIF lineage. Branding
-  noise (apemesh, the private registry, customer dirs) was removed, not
-  history. One deliberate exception: the `apemesh` hash seed in
-  `lib/call-address.js`; changing it changes every device ID.
+  noise (the old names, the private registry, customer dirs) was removed,
+  not history.
+- A device ID is derived from the module's name by one function,
+  `deviceIDForName` in `lib/call-address.js`. Changing that derivation
+  reassigns every device ID (grants and stored logs keyed by ID stop
+  matching); never compute or hard-code an ID anywhere else.
 - The old sqlite3-based module manager is merged as `lib/device-db.js`,
   with no private-registry dependency.
 - Target: Node >= 22.16 (24.15+ for multi-tenant hosting; below 24.15 the
