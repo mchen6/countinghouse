@@ -11,7 +11,8 @@ const {CountinghouseError} = require(path.join(ROOT, 'lib/countinghouse-error'))
 require(path.join(ROOT, 'lib/cli-options')).setOptions({});
 require.cache[require.resolve(path.join(ROOT, 'lib/user-auth'))] = {
   id: 'user-auth-stub', loaded: true,
-  exports: (req, res, deviceID, appKey, serviceID, actionName, localCB, callback) => callback(new CountinghouseError('UNAUTH_RATE_LIMITED'))
+  // (argv[2]: the code every lookup answers; the limit's by default)
+  exports: (req, res, deviceID, appKey, serviceID, actionName, localCB, callback) => callback(new CountinghouseError(process.argv[2] || 'UNAUTH_RATE_LIMITED'))
 };
 const express = require('express');
 const app = express();
@@ -43,6 +44,7 @@ const server = app.listen(0, '127.0.0.1', async () => {
   out.push(await send('POST', '/devices/x/invoke-action', {serviceID: 's', actionName: 'a'}));
   out.push(await send('POST', '/mcp', {jsonrpc: '2.0', id: 7, method: 'tools/call', params: {name: 'any_tool', arguments: {}}}));
   out.push(await send('POST', '/mcp', [{jsonrpc: '2.0', id: 8, method: 'tools/call', params: {name: 'any_tool', arguments: {}}}]));
+  out.push(await send('POST', '/mcp', {jsonrpc: '2.0', id: 9, method: 'tools/list', params: {}}));
   process.stdout.write(JSON.stringify(out));
   server.close();
   process.exit(0);

@@ -77,7 +77,7 @@ if (options.debugKeyMissing === true) {
 }
 if (options.unauthRateLimitInvalid != null) {
   var badUnauth = options.unauthRateLimitInvalid.value;
-  console.error('--unauthRateLimit must be a whole number >= 0 (got ' +
+  console.error('--unauthRateLimit must be a whole number from 0 to 1000 (got ' +
     (typeof(badUnauth) === 'boolean' || badUnauth === '' ? 'no value' : JSON.stringify(String(badUnauth))) + ')');
   process.exit(2);
 }

@@ -154,6 +154,39 @@ describe('auth 59: the limiter (lib/unauth-limit.js)', () => {
     }
   });
 
+  // (the last-round high on #483, 1) no check scans a window: a full process
+  // window is read by its counts, and a key that resolves leaves by a mark
+  it('a full window is checked and an entry taken back without scanning the window', function() {
+    this.timeout(60000);   // (filling a 100,000-entry window, not the checks)
+    const l = createLimiter({perMinute: 1000, now: clock});
+    for (let i = 0; i < 100 * 1000; i++) l.refused(`10.${(i >> 8) & 255}.${i & 255}.${i % 7}`);
+    assert.strictEqual(l.sizes().refusals, 100 * 1000);
+    const e = l.count('10.250.0.1', {pending: true});
+    const counted = {some: 0, indexOf: 0, splice: 0};
+    const real = {some: Array.prototype.some, indexOf: Array.prototype.indexOf, splice: Array.prototype.splice};
+    for (const m of Object.keys(real)) Array.prototype[m] = function(...a) { counted[m]++; return real[m].apply(this, a); };
+    try {
+      for (let i = 0; i < 100; i++) l.retryAfterMs(`10.251.${i}.1`);
+      l.uncount('10.250.0.1', e);
+    } finally {
+      for (const m of Object.keys(real)) Array.prototype[m] = real[m];
+    }
+    assert.deepStrictEqual(counted, {some: 0, indexOf: 0, splice: 0});
+  });
+
+  it('a window\'s counts follow its lookups: in flight, settled, taken back', () => {
+    const l = createLimiter({perMinute: 2, now: clock});
+    const a = l.count('10.252.0.1', {pending: true});
+    const b = l.count('10.252.0.1', {pending: true});
+    assert.ok(l.retryAfterMs('10.252.0.1') <= 1000, 'in flight: a second');
+    l.settle(a);
+    l.settle(b);
+    assert.ok(l.retryAfterMs('10.252.0.1') > 1000, 'settled refusals: the window\'s own time');
+    l.uncount('10.252.0.1', b);
+    assert.strictEqual(l.retryAfterMs('10.252.0.1'), 0);
+    assert.strictEqual(l.sizes().refusals, 1);
+  });
+
   it('perMinute 0 turns it off', () => {
     const l = createLimiter({perMinute: 0, now: clock});
     for (let i = 0; i < 100; i++) l.refused('a');
@@ -305,6 +338,14 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
     }
   });
 
+  // (the last-round high on #483, 3) refusals with no lookup (no key, a
+  // wrong debugKey) are counted only while the windows have room
+  it('a batch of key-less refusals adds no more than the address\'s budget', () => {
+    const before = unauthLimit.sizesForTests().refusals;
+    request('10.14.0.1', null, () => { for (let i = 0; i < 32; i++) unauthLimit.keyRefused(null); return null; });
+    assert.strictEqual(unauthLimit.sizesForTests().refusals - before, 2);
+  });
+
   // (round 2, 8) a lookup with no key is the route reading none, whatever
   // headers came: an empty X-CH-Key, a header /mcp does not read
   it('a lookup with no key counts, though the request carried headers the route did not read', () => {
@@ -376,6 +417,13 @@ describe('auth 59: --trustProxy refuses a range wider than a /8 (IPv4) or a /32 
   after(() => { scope.restore(kept); });
   const parsed = (value) => { options.setOptions({trustProxy: value}); return {trust: options.trustProxy, invalid: options.trustProxyInvalid}; };
 
+  it('--unauthRateLimit takes 0 to 1000', () => {
+    for (const [v, ok] of [[0, true], [1000, true], [1001, false], [-1, false]]) {
+      options.setOptions({unauthRateLimit: v});
+      assert.strictEqual(options.unauthRateLimitInvalid == null, ok, String(v));
+    }
+  });
+
   it('a hop count outside 1 to 10, or not whole, is refused as that', () => {
     for (const v of [0, 1.5, 11, '0']) {
       const r = parsed(v);
@@ -437,6 +485,14 @@ describe('auth 59: a refusal met under way answers one shape on every route', fu
     const [m] = JSON.parse(batched.body);
     assert.deepStrictEqual([m.id, m.error.code, m.error.data.code], [8, -32000, 'UNAUTH_RATE_LIMITED'], batched.body);
     assert.strictEqual(m.error.message, one.error.message);
+    // a tools/list met by the limit under way: the same shape
+    assert.deepStrictEqual([answers[6].status, JSON.parse(answers[6].body).error.data.code], [429, 'UNAUTH_RATE_LIMITED'], answers[6].body);
+    // (the last-round high on #483, 2) the provider's own failure is answered,
+    // never listed as no key (an empty list a client would keep)
+    const down = spawnSync(process.execPath, [path.join(__dirname, '..', 'fixtures', 'unauth-limited-routes.js'), 'SYSTEM_ERROR_USERDB_NA'], {encoding: 'utf8', timeout: 25000});
+    assert.strictEqual(down.status, 0, down.stderr);
+    const list = JSON.parse(JSON.parse(down.stdout)[6].body);
+    assert.ok(list.error != null && list.result == null, JSON.stringify(list));
   });
 });
 
@@ -494,7 +550,7 @@ describe('auth 59: on a running server', function() {
   const rest = (port, headers) => send(port, `/devices/${ECHO}/invoke-action`, {serviceID: 'urn:countinghouse-com:serviceID:echoService', actionName: 'echo', input: {foo: [], bar: 'x'}}, headers);
 
   it('the fourth unresolvable key from an address is 429 with Retry-After, on /mcp and on the REST routes, with no provider lookup; the same body whatever the key or the name', async () => {
-    const port = testPort(9678);
+    const port = testPort(9822);
     await start(port);
     // a valid key resolves first: it is remembered (its hash)
     const ok = await mcp(port, {'X-CH-Key': KEY});
@@ -538,7 +594,7 @@ describe('auth 59: on a running server', function() {
   // reached by all of them together)
   describe('behind a trusted proxy', () => {
     let port = null;
-    before(async () => { port = testPort(9679); await start(port, ['--trustProxy', 'loopback']); });
+    before(async () => { port = testPort(9823); await start(port, ['--trustProxy', 'loopback']); });
     const as = (ip, headers = {}) => Object.assign({'X-Forwarded-For': ip}, headers);
 
     it('X-Forwarded-For names the client: another client behind the proxy has its own budget', async () => {
@@ -594,7 +650,7 @@ describe('auth 59: on a running server', function() {
   // (the high review of #483, 5) with --authoringTools a tools/list looks
   // its key up once: a keyless one not at all, an unknown key once
   it('--authoringTools: a keyless tools/list is not looked up or counted; an unknown key is looked up and counted once per list', async () => {
-    const port = testPort(9702);
+    const port = testPort(9825);
     await start(port, ['--authoringTools', '--trustProxy', 'loopback']);
     const list = (headers) => send(port, '/mcp', {jsonrpc: '2.0', id: 1, method: 'tools/list', params: {}}, headers);
     const before = authenticateCalls();
@@ -621,7 +677,7 @@ describe('auth 59: on a running server', function() {
       ['--trustProxy', '0.0.0.0/0'], ['--trustProxy', '::/0'], ['--trustProxy', '11'],
       // (round 2, 6) one the parse takes and Express cannot compile: exit 2 with the refusal, never a stack trace
       ['--trustProxy', '::1.2.3.4/96']]) {
-      const s = await startServer(testPort(9701), ['--workerThread', flag, value], {expectExit: true});
+      const s = await startServer(testPort(9824), ['--workerThread', flag, value], {expectExit: true});
       assert.strictEqual(s.exitCode, 2, `${flag} ${value}: ${s.output.slice(-400)}`);
       assert.ok(s.output.includes(flag), s.output.slice(-400));
       assert.ok(!/\n\s+at /.test(s.output), `a stack trace: ${s.output.slice(-400)}`);
