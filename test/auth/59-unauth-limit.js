@@ -232,6 +232,42 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
     assert.ok(unauthLimit.beforeLookup('k-five') != null, 'not in an HTTP request: no limit');
   });
 
+  // #482, merging #483 (the medium on the merge, 2): the refusal's hint is
+  // the limiter's own wait, under way (user-auth's refusal()) and at the
+  // gate alike, never the 1 s floor when the limiter computed more
+  it('the refusal carries the limiter\'s own wait as its hint, under way and at the gate: a full window says about a minute', () => {
+    const {retryAfterOf} = require('../../lib/countinghouse-error');
+    // (an address of its own: the file's tests share the limiter)
+    const ip = '10.31.0.1';
+    inRequest(ip, 'k-good').resolved();
+    inRequest(ip, 'k-bad-1').refused();
+    inRequest(ip, 'k-bad-2').refused();
+    // under way: a request whose key resolved lately passes the gate, and a
+    // lookup it makes for another key is refused with the limiter's wait
+    const underWay = request(ip, 'k-good', () => unauthLimit.refusal()).out;
+    const hint = retryAfterOf(underWay);
+    assert.ok(Number.isInteger(hint) && hint > 50 && hint <= 60, `the limiter's wait, about 60 s: ${hint}`);
+    // at the gate: a key that never resolved is refused before any route,
+    // its Retry-After the same wait
+    const gated = request(ip, 'k-new', () => { throw new Error('let through'); });
+    assert.strictEqual(gated.res.code, 429);
+    const header = Number(gated.res.headers['Retry-After']);
+    assert.ok(header > 50 && header <= 60, `the gate's Retry-After is the limiter's wait: ${header}`);
+  });
+
+  // (the medium on the merge, 9) only the limiter's own answer is sent as its
+  // 429: an error that merely carries the code (a resource read's, copied
+  // from a tool result) is answered as it was made
+  it('an answer is the limit\'s 429 only by the limiter\'s own JSON-RPC code, not by the code its data carries', () => {
+    const sent = [];
+    const res = {set() { return res; }, status(c) { sent.push(c); return res; }, json() { return res; }};
+    const carried = {jsonrpc: '2.0', id: 3, error: {code: -32603, message: 'x', data: {'countinghouse/code': 'UNAUTH_RATE_LIMITED'}}};
+    assert.strictEqual(unauthLimit.answerRpcLimited(res, carried), false);
+    const own = unauthLimit.rpcLimited(3, unauthLimit.refusal());
+    assert.strictEqual(unauthLimit.answerRpcLimited(res, own), true);
+    assert.deepStrictEqual(sent, [429]);
+  });
+
   it('a key refused now leaves the set of keys that resolved: a revoked key is counted again (the high review of #483, 2)', () => {
     const ip = '10.2.0.1';
     inRequest(ip, 'k-revoked').resolved();
