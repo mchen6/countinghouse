@@ -25,6 +25,28 @@ describe('sandbox 72: a module root with no package.json never loads (C-bare R0)
 
   // (a load after start, by the admin route, as the runtime runs one:
   // worker-thread mode, enforce)
+  // (the in-root resolver stats and reads a package by its path in the
+  // root, a link followed: a package directory linked out of the root
+  // never loads under enforce, so nothing it would read is outside; the
+  // high review of #465, 4)
+  it('a module whose package directory is a link out of its root is refused at load under enforce', async function() {
+    if (process.platform === 'win32') return this.skip();
+    base = mkdtemp('root-pkg-');
+    const mod = path.join(base, 'fs-probe');
+    fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'fs-probe'), mod, {recursive: true});
+    const out = path.join(base, 'outside-pkg');
+    fs.mkdirSync(out);
+    fs.writeFileSync(path.join(out, 'package.json'), JSON.stringify({name: 'lp', exports: './i.js'}));
+    fs.writeFileSync(path.join(out, 'i.js'), 'module.exports = 1;\n');
+    fs.mkdirSync(path.join(mod, 'node_modules'), {recursive: true});
+    fs.symlinkSync(out, path.join(mod, 'node_modules', 'lp'));
+    server = await startServer(testPort(9760), ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', 'enforce',
+      '--moduleDataPath', path.join(base, 'store')]);
+    const r = await post(testPort(9760), 'k', '/load-module', {path: mod, name: 'fs-probe', version: '1.0.0'});
+    assert.strictEqual(r.body && r.body.code, 'MODULE_SANDBOX_REFUSED', JSON.stringify(r).slice(0, 600));
+    assert.ok(/node_modules\/lp is a symlink to .*, outside the module/.test(r.body.message), r.body.message);
+  });
+
   it('a load after start of a root with no package.json is refused, with its package.json it loads', async () => {
     base = mkdtemp('root-pkg-');
     const mods = {};
