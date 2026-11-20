@@ -329,6 +329,9 @@ describe('auth 56: two --stdio runtimes on one data directory and one Redis', fu
         const opts = JSON.parse(await kv11.hget(k, 'opts'));
         assert.deepStrictEqual([opts.removeOnComplete, opts.removeOnFail], [{age: 10800}, {age: 10800}], k);
       }
+      // and that age outlasts a task question's hold, as job-control checks at load
+      const asks = require('../../lib/task-asks');
+      assert.ok(require('../../lib/job-control').STDIO_JOB_KEPT_S * 1000 > asks.WAIT_MS + asks.KEPT_PAST_WAIT_MS);
       assert.deepStrictEqual(await kv11.keys(`chj-claim:{chj-${id}*`), [], 'no claim made');
       // and no job history: nothing a later process could read
       const kv5 = new (require('ioredis'))(redisConnectionFor(5));
