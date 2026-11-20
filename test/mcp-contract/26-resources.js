@@ -21,8 +21,11 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-26-'));
 const AUTH = path.join(home, 'auth.json');
 const KEY_A = `test-a-${'a'.repeat(24)}`;
 const KEY_B = `test-b-${'b'.repeat(24)}`;
+// an admin, for countinghouse_call_tool (an authoring tool)
+const KEY_ADMIN = `test-admin-${'c'.repeat(20)}`;
 const ID = (name) => callAddress.deviceIDForName(name);
-fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: [ID('notes')]}}));
+fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: [ID('notes')]},
+  [KEY_ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
 
 const options = require('../../lib/cli-options');
 // set again before this file's tests: a folder run requires every file first
@@ -292,6 +295,83 @@ describe('mcp-contract 26: module resources (M7)', function() {
     assert.deepStrictEqual(invoked, [], 'not run');
     assert.deepStrictEqual(billed, [], 'not billed');
     assert.strictEqual(registered, null, 'unregistered at its end');
+  });
+
+  // #458's second high round, 1: countinghouse_call_tool registers its
+  // cancellation at its outer gate and its inner call reuses it, so a cancel
+  // during the outer gate's key resolution or the admin check's read runs
+  // nothing and bills nothing
+  for (const [label, slowAt] of [['the outer gate\'s key resolution', 1], ['the admin check\'s identity read', 2]]) {
+    it(`countinghouse_call_tool cancelled during ${label}: the inner call neither runs nor bills, and nothing is answered`, async () => {
+      invoked.length = 0;
+      billed.length = 0;
+      require('../../lib/mcp/tool-registry').forgetGrants();
+      options.setOptions(Object.assign({}, OPTIONS, {authoringTools: true}));
+      let registered = null;
+      const opts = {cancellable: (fn) => { registered = fn; return () => { registered = null; }; }};
+      let inWindow = null;
+      let n = 0;
+      const authenticate = provider.authenticate;
+      provider.authenticate = (...args) => {
+        const cb = args.pop();
+        const slow = ++n === slowAt;
+        return authenticate(...args, (...answer) => { if (slow) inWindow = setImmediate(() => cb(...answer)); else cb(...answer); });
+      };
+      let got;
+      try {
+        const req = {jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'countinghouse_call_tool', arguments: {name: 'notes_svc_save', arguments: {}}}};
+        got = new Promise((resolve) => gateway.handle(req, ci, KEY_ADMIN, (err, r, info) => resolve({r, info}), opts));
+        for (let w = 0; inWindow == null && w < 400; w++) await new Promise((res) => setImmediate(res));
+        assert.ok(inWindow != null, 'the read is in flight');
+        assert.strictEqual(typeof(registered), 'function', 'registered at the outer gate');
+        registered();
+      } finally {
+        provider.authenticate = authenticate;
+        options.setOptions(OPTIONS);
+      }
+      const {r, info} = await got;
+      assert.strictEqual(r, null, JSON.stringify(r));
+      assert.deepStrictEqual(info, {cancelled: true});
+      await new Promise((res) => setTimeout(res, 100));
+      assert.deepStrictEqual(invoked, [], 'not run');
+      assert.deepStrictEqual(billed, [], 'not billed');
+      assert.strictEqual(registered, null, 'unregistered at its end');
+    });
+  }
+
+  // #458's second high round, 4: a plain call whose session ends while its
+  // own userAuth runs (the second authenticate: the first resolves the key at
+  // the gate) is answered as an ended session's, and nothing runs or bills,
+  // as a task gets no job
+  it('a tools/call whose session ends during its userAuth neither runs nor bills', async () => {
+    invoked.length = 0;
+    billed.length = 0;
+    require('../../lib/mcp/tool-registry').forgetGrants();
+    const sessions = require('../../lib/sessions');
+    const SID = 's'.repeat(32);
+    const realGet = sessions.get;
+    let live = true;
+    sessions.get = (id) => (id === SID ? (live ? {id} : null) : realGet(id));
+    let n = 0;
+    const authenticate = provider.authenticate;
+    provider.authenticate = (...args) => {
+      const cb = args.pop();
+      const nth = ++n;
+      return authenticate(...args, (...answer) => { if (nth === 2) live = false; cb(...answer); });
+    };
+    try {
+      const req = {jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'notes_svc_save', arguments: {}}};
+      const r = await new Promise((resolve) => gateway.handle(req, ci, KEY_A, (err, resp) => resolve(resp),
+        {session: {id: SID, client: {status: 'ok', conditions: 'no', repo: null}}}));
+      assert.strictEqual(r.result && r.result._meta && r.result._meta['countinghouse/code'], 'MODULE_NOT_LISTED', JSON.stringify(r));
+      assert.ok(n >= 2, 'the gate\'s resolution, then the call\'s own userAuth');
+    } finally {
+      provider.authenticate = authenticate;
+      sessions.get = realGet;
+    }
+    await new Promise((res) => setTimeout(res, 100));
+    assert.deepStrictEqual(invoked, [], 'not run');
+    assert.deepStrictEqual(billed, [], 'not billed');
   });
 
   it('the output\'s shape: a string as text (the schema\'s media type, else the declared one), a binary string as a blob, anything else as JSON', async () => {

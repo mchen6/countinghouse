@@ -347,14 +347,16 @@ describe('sessions 15: a module going on or off is in no session\'s lists (B3 Ta
     const down = Object.assign(new Error('the auth provider is unavailable'), {code: 'SYSTEM_ERROR_USERDB_NA'});
     toolRegistry.grantsForCall = (key, identify, cb) => cb(null, undefined, down);
     try {
-      for (const name of ['ci_failure_triage', 'no_such_tool']) {
+      // (the settings tool, outside the single-identity profile, is a name
+      // the caller can't use: answered as every such name)
+      for (const name of ['ci_failure_triage', 'no_such_tool', 'countinghouse_settings']) {
         const r = await request(ci, A, 'tools/call', {name, arguments: {}});
         assert.deepStrictEqual(r.error, {code: -32603, message: down.message}, name);
       }
-      // (outside the single-identity profile the settings tool is not listed: its own answer)
-      const own = await request(ci, A, 'tools/call', {name: 'countinghouse_settings', arguments: {action: 'get'}});
-      assert.strictEqual(own.error, undefined, JSON.stringify(own));
-      assert.ok(JSON.stringify(own.result).includes('MODULE_NOT_LISTED'), JSON.stringify(own));
+      // a runtime tool the caller can use needs no grants: served as ever
+      const own = await request(ci, A, 'tools/call', {name: 'countinghouse_usage_report', arguments: {}});
+      assert.ok(own.error == null || own.error.message !== down.message, JSON.stringify(own));
+      assert.ok(own.result != null, JSON.stringify(own));
     } finally {
       toolRegistry.grantsForCall = real;
     }

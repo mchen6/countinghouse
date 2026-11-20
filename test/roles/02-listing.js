@@ -35,6 +35,12 @@ const call = (ci, name) => new Promise((resolve) => gateway.handle({jsonrpc: '2.
 const codeOf = (r) => r.result && r.result._meta && r.result._meta['countinghouse/code'];
 
 describe('listing: roles, bare names, MODULE_NOT_LISTED, the single-identity profile', () => {
+  // (--debug: every device granted, and a caller with no key resolved, so
+  // what is looked at is the listing; since #458 tools/call refuses an
+  // unresolvable caller before any name, auth 54 and mcp-contract 40's)
+  let savedDebug;
+  before(() => { savedDebug = options.debug; options.debug = true; });
+  after(() => { options.debug = savedDebug; });
   afterEach(() => { options.singleIdentity = false; });
 
   it('unlisted parts are not tools; a scenario is listed under its bare action name; others keep the long form', () => {
@@ -53,16 +59,23 @@ describe('listing: roles, bare names, MODULE_NOT_LISTED, the single-identity pro
     assert.match(unknown.error.message, /unknown tool/, 'a name that is no module stays "unknown tool"');
   });
 
-  it('the single-identity profile lists only the scenarios\' tools, and refuses the built-ins it hides by name', async () => {
+  // (a built-in the profile hides is a name the caller can't use: answered
+  // as a name never registered, #458's second high round, 3; a granted
+  // caller's unlisted module is still MODULE_NOT_LISTED)
+  it('the single-identity profile lists only the scenarios\' tools; a built-in it hides is an unknown tool, a module it hides MODULE_NOT_LISTED', async () => {
     options.singleIdentity = true;
     assert.deepStrictEqual(Object.keys(toolRegistry.buildToolTargets(fakeInterface())), ['ci_failure_triage']);
     assert.ok(!toolRegistry.platformTools().some((t) => t.name === 'countinghouse_check_balance'), 'no balance exists in the profile');
     assert.ok(toolRegistry.platformTools().some((t) => t.name === 'countinghouse_usage_report'), 'the usage report is listed in every mode');
-    for (const name of ['countinghouse_check_balance', 'countinghouse_lookup_identity', 'plain_svc_go']) {
+    const never = await call(fakeInterface(), 'no_such_tool');
+    const scrub = (r, name) => JSON.stringify(r).split(name).join('<name>');
+    for (const name of ['countinghouse_check_balance', 'countinghouse_lookup_identity']) {
       const r = await call(fakeInterface(), name);
-      assert.strictEqual(codeOf(r), 'MODULE_NOT_LISTED', name);
-      assert.ok(!/key|balance|free call|rate limit/i.test(r.result.content[0].text), `no tenant vocabulary: ${r.result.content[0].text}`);
+      assert.strictEqual(scrub(r, name), scrub(never, 'no_such_tool'), name);
     }
+    const r = await call(fakeInterface(), 'plain_svc_go');
+    assert.strictEqual(codeOf(r), 'MODULE_NOT_LISTED');
+    assert.ok(!/key|balance|free call|rate limit/i.test(r.result.content[0].text), `no tenant vocabulary: ${r.result.content[0].text}`);
   });
 
   // F3-5 (Fable pass over the MCP surface): a module whose worker exited keeps its devices' specs with its
