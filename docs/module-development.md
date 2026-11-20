@@ -142,13 +142,25 @@ the answer at once. So:
 - **`ASK_UNAVAILABLE` means there is no one to ask**, and you may catch it
   to fall back: the client offered no form, the call came by HTTP
   `invoke-action`, it runs as a task whose request declared no form
-  elicitation or while too many tasks already wait on questions, the
-  operator turned questions off
+  elicitation, the operator turned questions off
   (`--moduleQuestions off`), the outer call (when your action is a part)
   has no one to ask for any of these reasons, three rounds brought no valid
   answer, or the call has had eight rounds in all already (every
   question's together). A part reached in single-thread mode
-  (`--no-workerThread`) has no one to ask either.
+  (`--no-workerThread`) has no one to ask either. In a task, a question
+  whose form can't be shown is a round like one asked, and the task runs
+  again at once. When too many tasks already wait on questions -- its first
+  question as any other -- the task waits for room instead: it runs again
+  after a pause (1 s, doubling to 30 s) and asks again. Waiting spends none
+  of the task's eight rounds. The wait ends at whichever comes first: a
+  question's wait (an hour) with no room, when its question is unavailable
+  and one round is spent (so a task can't wait for ever by asking under a
+  new key each time); or the run's time limit (the task's own
+  timeout, else `--jobTimeout`), counted from the first pass of the run
+  that is started again (for a question no form could be shown for, or a
+  wait for room), when the task fails `JOB_TIMEOUT`. With the Redis job
+  queue, a task waiting for room keeps its worker for each pause (up to
+  30 s at a time); the in-memory runner lets it go between passes.
 - **Keep a question's values the same on every run.** A time or a counter
   in `values` makes a new question each time, and the answer the user gave
   is for the old one.

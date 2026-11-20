@@ -535,6 +535,16 @@
               "type": "integer",
               "minimum": 0
             },
+            "unavailable": {
+              "title": "passes of a task that ended on a question no form could be shown for (run again; the final pass is the call counted)",
+              "type": "integer",
+              "minimum": 0
+            },
+            "waitedForRoom": {
+              "title": "passes of a task that waited for room among the tasks waiting on questions (run again after a backoff; the final pass is the call counted)",
+              "type": "integer",
+              "minimum": 0
+            },
             "serverCallsPerCall": {
               "type": "object",
               "properties": {
@@ -591,6 +601,8 @@
             "errors",
             "asked",
             "cancelled",
+            "unavailable",
+            "waitedForRoom",
             "serverCallsPerCall"
           ],
           "additionalProperties": false

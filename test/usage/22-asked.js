@@ -131,6 +131,24 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       assert.deepStrictEqual(report.profile.errors.calls, {});
     });
 
+    // F2-2: a task's pass that ended with no form shown ('unavailable') is a
+    // pass too, never a call, counted apart (profile.unavailable, which moved
+    // the tools/list golden for countinghouse_usage_report)
+    it('a task\'s pass with no question shown is a pass: no call, its own count, and its line', async () => {
+      const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
+      for (const outcome of ['unavailable', 'unavailable', 'ok']) {
+        const c = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+        u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 1000, lines: 1, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+        u.recordOut(c, {tool: 't', bytes: outcome === 'ok' ? 20 : 0, lines: 0, ms: 40, outcome});
+      }
+      const report = await reportOf(u, {since: 'all', groupBy: 'tool'});
+      assert.deepStrictEqual([report.totals.calls, report.totals.serverCalls, report.profile.asked, report.profile.unavailable], [1, 3, 0, 2]);
+      assert.strictEqual(report.profile.callMs.count, 1);
+      assert.deepStrictEqual(report.profile.errors.calls, {}, 'never an error');
+      assert.match(require('../../lib/usage/report').reportText(report), /no question shown: 2 passes of a task ended on a question no form could be shown for/);
+      assert.strictEqual((await reportOf(createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW}))).profile.unavailable, 0, 'there with none, too');
+    });
+
     it('the CLI\'s aggregate counts the call once too, and the passes that asked among its outcomes', () => {
       // as the reader hands them to it (lib/usage/read.js normalise: a result's server is null)
       const {normalise} = require('../../lib/usage/read');
@@ -166,6 +184,33 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       }
       const out = require('../../lib/usage/aggregate').aggregate(u.records().map((r) => normalise(r)).filter((r) => r != null).map((r) => Object.assign(r, {process: '1-1'})));
       assert.deepStrictEqual(out.replaced.map((r) => [r.tool, r.scenarioCalls, r.serverCalls]), [['t', 0, 2]]);
+    });
+
+    // (F2-2's medium: a task's pass no form could be shown for is a pass as
+    // an asked one is: its tool stays in the replaced view)
+    it('the CLI\'s replaced view keeps a tool whose only passes in the range were unavailable', () => {
+      const {normalise} = require('../../lib/usage/read');
+      const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
+      for (let i = 0; i < 2; i++) {
+        const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
+        u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 1000, lines: 1, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+        u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'unavailable'});
+      }
+      const out = require('../../lib/usage/aggregate').aggregate(u.records().map((r) => normalise(r)).filter((r) => r != null).map((r) => Object.assign(r, {process: '1-1'})));
+      assert.deepStrictEqual(out.replaced.map((r) => [r.tool, r.scenarioCalls, r.serverCalls]), [['t', 0, 2]]);
+    });
+
+    // (F2-2, ruled: a pass that waited for room is a pass too, counted apart
+    // from one no form could be shown for, and never a call)
+    it('a task\'s pass that waited for room is counted in profile.waitedForRoom, a pass, never a call or unavailable', async () => {
+      const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
+      for (const outcome of ['waited', 'waited', 'unavailable', 'ok']) {
+        const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
+        u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome});
+      }
+      const report = await reportOf(u);
+      assert.deepStrictEqual([report.totals.calls, report.profile.unavailable, report.profile.waitedForRoom], [1, 1, 2], JSON.stringify(report.profile));
+      assert.strictEqual(require('../../lib/usage/aggregate').isPass({server: null, outcome: 'waited'}), true);
     });
 
     it('the report and the CLI\'s aggregate tell an asked pass by one rule', () => {
