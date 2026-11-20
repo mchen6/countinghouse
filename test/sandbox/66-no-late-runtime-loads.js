@@ -329,7 +329,14 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       r14.on('error', () => {});
       const r15 = CHUtil.request('http://[::1]:9/x');
       r15.on('error', () => {});
-      const parse = {port: r14.uri.port, host: r14.uri.host, query: r14.uri.query, hash: r14.uri.hash, slashes: r14.uri.slashes, v6: r15.uri.hostname};
+      // (the reviewer's final high, 1) a leading space and a tab inside the
+      // port, as both parsers read them; a backslash form's port from URL
+      const r16 = CHUtil.request(' http://not-granted.example.invalid:80\t81/x');
+      r16.on('error', () => {});
+      const r17 = CHUtil.request('http:\\\\not-granted.example.invalid:8080/x');
+      r17.on('error', () => {});
+      const parse = {port: r14.uri.port, host: r14.uri.host, query: r14.uri.query, hash: r14.uri.hash, slashes: r14.uri.slashes, v6: r15.uri.hostname,
+        tabbed: r16.uri && r16.uri.port, backslash: r17.uri && r17.uri.port};
       // a uri whose href getter throws: refused, never a throw
       let hrefThrows;
       try {
@@ -344,7 +351,7 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       uriParts: {host: 'not-granted.example.invalid', path: '/p?q=1', protocol: 'http:'}, urlToStringRan: 1, urlObjectUri: null,
       afterRemoved: 'ERR_ACCESS_DENIED', plain: {said: 'to http://not-granted.example.invalid/u', has: true, frozen: false, json: 'function'}, capture: true,
       hrefThrows: 'ERR_ACCESS_DENIED', jsonShape: {uri: 'http://not-granted.example.invalid/u', method: 'GET', k: 'v'},
-      parse: {port: '80', host: 'not-granted.example.invalid:80', query: 'q=1', hash: '#f', slashes: true, v6: '::1'}}, JSON.stringify(out));
+      parse: {port: '80', host: 'not-granted.example.invalid:80', query: 'q=1', hash: '#f', slashes: true, v6: '::1', tabbed: '8081', backslash: '8080'}}, JSON.stringify(out));
   }));
 
   // the reviewer on #474: audit previews enforce, so what it reports is what
