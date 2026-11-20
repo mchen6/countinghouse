@@ -10,20 +10,23 @@ const {createNamespace} = require('../../lib/fs-broker/namespace');
 const {FsBroker} = require('../../lib/fs-broker/broker');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {Quota} = require('../../lib/fs-broker/quota');
+const {DeniedSet} = require('../../lib/fs-broker/denied');
 
-async function setup(mode, afterCheck, quota) {
+async function setup(mode, afterCheck, quota, deniedNames) {
   const base = mkdtemp('broker-fb2-');
   const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp'),
     outside: path.join(base, 'outside'), ro: path.join(base, 'ro')};
   Object.values(dirs).forEach((d) => fs.mkdirSync(d));
   fs.writeFileSync(path.join(dirs.outside, 'secret'), 'no');
   fs.writeFileSync(path.join(dirs.ro, 'config'), 'ro');
+  fs.writeFileSync(path.join(dirs.data, 'denied-secret'), 'denied');
   const namespace = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp,
     declared: [{path: dirs.ro, access: 'r'}], protectedPaths: []});
   await namespace.prepare();
   const reports = [];
   const broker = new FsBroker({name: 'm', mode: mode, namespace: namespace, cwd: '/',
-    report: (rule, target) => reports.push(`${rule} ${target}`), hooks: {afterCheck: (s, h) => afterCheck(s, h, dirs)}, quota});
+    report: (rule, target) => reports.push(`${rule} ${target}`), hooks: {afterCheck: (s, h) => afterCheck(s, h, dirs)}, quota,
+    denied: deniedNames != null ? new DeniedSet(deniedNames.map((n) => path.join(dirs.data, n))) : undefined});
   return {base, dirs, broker, reports, done: () => broker.closeAll().then(() => fs.rmSync(base, {recursive: true, force: true}))};
 }
 
@@ -123,8 +126,7 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
   // never as an escape; the leaf check runs ahead of /proc's, on every
   // platform)
   it('a leaf that is a link, appeared with its parent, is refused wherever it leads, reported as link-appeared', async () => {
-    {
-      for (const [target, flags] of [['data', 'r'], ['ro', 'r'], ['ro', 'r+'], ['outside', 'r']]) {
+    for (const [target, flags] of [['data', 'r'], ['ro', 'r'], ['ro', 'r+'], ['outside', 'r']]) {
         const t = await setup('enforce', (syscall, host, dirs) => {
           if (syscall === 'open' && path.basename(path.dirname(host)) === 'late') {
             fs.mkdirSync(path.dirname(host));
@@ -140,7 +142,54 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
           assert.strictEqual(t.broker.fds.size, 0);
         } finally { await t.done(); }
       }
+  });
+
+  // (the high review of #466, item 1: the same race with the parent there --
+  // no leaf when checkHost ran ({parent}), a link planted before the open --
+  // refused as link-appeared wherever it leads: outside, in this root, to a
+  // denied file in it)
+  it('a leaf link planted in an existing parent after the check is refused as link-appeared, wherever it leads', async () => {
+    for (const [target, flags] of [['outside/secret', 'r'], ['data/inside-file', 'r'], ['data/denied-secret', 'r'], ['data/inside-file', 'r+']]) {
+      const t = await setup('enforce', (syscall, host, dirs) => {
+        if (syscall === 'open' && path.basename(host) === 'planted') {
+          const [root, name] = target.split('/');
+          if (name === 'inside-file') fs.writeFileSync(path.join(dirs.data, name), 'inside');
+          fs.symlinkSync(path.join(dirs[root], name), host);
+        }
+      }, null, ['denied-secret']);
+      try {
+        await assert.rejects(t.broker.handle('open', ['/data/planted', flags]), enoent('/data/planted'), `${target} ${flags}`);
+        assert.ok(t.reports.includes('link-appeared /data/planted'), `${target} ${flags}: ${t.reports.join(', ')}`);
+        assert.strictEqual(t.broker.fds.size, 0);
+      } finally { await t.done(); }
     }
+    // (the denied file by its own name: refused as place() refuses it)
+    const t = await setup('enforce', () => {}, null, ['denied-secret']);
+    try {
+      await assert.rejects(t.broker.handle('open', ['/data/denied-secret', 'r']), (e) => e.code === 'EACCES');
+    } finally { await t.done(); }
+  });
+
+  // (a dangling link checkHost saw, written through: where it leads must be
+  // in this root, as a file the open made -- a host's leading outside is
+  // refused on every platform, not by /proc's check alone: that one stood
+  // down here, as off Linux)
+  it('a write through a dangling host-made link leading outside is refused; one leading inside writes', async () => {
+    const t = await setup('enforce', () => {});
+    const realReadlink = fs.promises.readlink;
+    fs.promises.readlink = async function(p, o) {
+      if (String(p).startsWith('/proc/self/fd/')) throw Object.assign(new Error('stood down'), {code: 'ENOENT'});
+      return realReadlink.call(this, p, o);
+    };
+    try {
+      fs.symlinkSync(path.join(t.dirs.outside, 'made-by-link'), path.join(t.dirs.data, 'dangling-out'));
+      await assert.rejects(t.broker.handle('open', ['/data/dangling-out', 'w']), enoent('/data/dangling-out'));
+      assert.ok(t.reports.includes('escape /data/dangling-out'), t.reports.join(', '));
+      fs.symlinkSync('made-inside', path.join(t.dirs.data, 'dangling-in'));
+      const fd = await t.broker.handle('open', ['/data/dangling-in', 'w']);
+      await t.broker.handle('close', [fd]);
+      assert.ok(fs.existsSync(path.join(t.dirs.data, 'made-inside')));
+    } finally { fs.promises.readlink = realReadlink; await t.done(); }
   });
 
   it('audit does not refuse it: the check after open is enforce-only, as before', async () => {

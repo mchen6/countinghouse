@@ -146,7 +146,7 @@ describe('fs-broker 20: a symlink is decided by its real target, and takes no ".
         fs.writeFileSync(path.join(locked, 'x'), 'x');
         fs.chmodSync(locked, 0);
         await assert.rejects(t.broker.handle('symlink', ['locked/x', '/data/l']), eperm, mode);
-        assert.ok(t.reports.includes('link-unreadable /data/l EACCES'), `${mode}: ${t.reports.join(', ')}`);
+        assert.ok(t.reports.includes('link-unreadable EACCES /data/l'), `${mode}: ${t.reports.join(', ')}`);
       } finally { fs.chmodSync(locked, 0o700); await t.done(); }
     }
   });
@@ -157,6 +157,8 @@ describe('fs-broker 20: a symlink is decided by its real target, and takes no ".
       fs.symlinkSync('p', path.join(t.dirs.data, 'q'));
       fs.symlinkSync('q', path.join(t.dirs.data, 'p'));
       await assert.rejects(t.broker.handle('symlink', ['p/x', '/data/l']), eperm);
+      // (past the kernel's 40 links: reported as its ELOOP)
+      assert.ok(t.reports.includes('link-unreadable ELOOP /data/l'), t.reports.join(', '));
     } finally { await t.done(); }
   });
 });
