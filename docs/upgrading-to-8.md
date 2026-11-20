@@ -9,6 +9,17 @@ you have to do. What the sandbox does and does not protect is in
 
 ## Before you upgrade
 
+- **Every device ID changed.** A device's ID is now a UUID v5 of its
+  `friendlyName` in countinghouse's own namespace (`lib/call-address.js`
+  `deviceIDForName`); before 8.0 it was derived from another project's
+  registry URL. Grants that list specific device IDs (an auth file's
+  `devices`, a sqlite provider's `user_devices`) must be regenerated: a
+  grant of `'*'` is unaffected. At start, a grant that still names a loaded
+  module's pre-8.0 ID is logged once, with its new ID. A device's log
+  stored under its old ID is left where it is and no longer read. Composite
+  modules address their callees by name (`<module>/<service>.<action>`) and
+  are unaffected; one that hard-codes a callee's device ID must take the
+  new one.
 - **If you run ch-local, or write a ceiling or a module's remote: what
   module-level configuration removed.**
   - The operator's ceiling (`/etc/countinghouse/ceiling.json`, or
