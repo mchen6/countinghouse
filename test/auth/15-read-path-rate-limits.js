@@ -163,6 +163,28 @@ describe('auth 15: the authenticated read paths are rate limited', function() {
     });
   });
 
+  // #482's high, round 3, 2: the task-creation limiter's refusal is the
+  // typed one every other limiter answers, with its retry hint
+  it('a task-augmented tools/call: a burst is denied as the typed RATE_LIMIT_EXCEEDED, with countinghouse/retryAfter', (done) => {
+    drain(() => {
+      const body = {jsonrpc: '2.0', id: 1, method: 'tools/call',
+                    params: {name: 'echo_device_echoservice_echo', arguments: {foo: [{item1: 'x'}], bar: 'y'}, task: {}}};
+      burst(BURST, (cb) => mcpReq(url, ALICE, body, cb), (responses) => {
+        const denied = responses.map((r) => (r.res != null ? r.res.body.result : null))
+          .filter((result) => result != null && result.isError === true && toolErrorCode(result) === 'RATE_LIMIT_EXCEEDED');
+        if (denied.length === 0) {
+          return done(new Error(`no task-augmented call in a burst of ${BURST} was rate limited: ${JSON.stringify(responses.map((r) => r.res && r.res.body))}`));
+        }
+        for (const result of denied) {
+          if (result._meta['countinghouse/kind'] !== 'caller' || result._meta['countinghouse/retryAfter'] !== 1) {
+            return done(new Error(`a refusal without its kind or hint: ${JSON.stringify(result)}`));
+          }
+        }
+        return done();
+      });
+    });
+  });
+
   ['tasks/get', 'tasks/result', 'tasks/cancel'].forEach((method) => {
     it(`${method}: a burst is denied before the job lookup`, (done) => {
       drain(() => {
