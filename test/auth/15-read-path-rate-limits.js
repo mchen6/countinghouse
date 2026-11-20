@@ -227,8 +227,39 @@ describe('auth 15: the authenticated read paths are rate limited', function() {
     drain(() => {
       const body = {jsonrpc: '2.0', id: 1, method: 'resources/read', params: {uri: `countinghouse://r/${'A'.repeat(43)}`}};
       burst(BURST, (cb) => mcpReq(url, ALICE, body, cb), (responses) => {
-        if (mcpDenials(responses).length === 0) {
+        const denied = mcpDenials(responses);
+        if (denied.length === 0) {
           return done(new Error(`no read in a burst of ${BURST} was rate limited: ${JSON.stringify(responses.map((r) => r.res && r.res.body.error))}`));
+        }
+        // (its data as every rate-limit error's: #482's high, round 3, 6)
+        for (const r of denied) {
+          const data = r.res.body.error.data;
+          if (data == null || data['countinghouse/code'] !== 'RATE_LIMIT_EXCEEDED' || data['countinghouse/kind'] !== 'caller' || data['countinghouse/retryAfter'] !== 1) {
+            return done(new Error(`a read's refusal without its code, kind or hint: ${JSON.stringify(r.res.body.error)}`));
+          }
+        }
+        return done();
+      });
+    });
+  });
+
+  // #482's high, round 3, 6: a resource read refused by the limiter (a probe
+  // of a URI never served, as a limited read of a module's resource) says the
+  // code, its kind and when to retry, as every rate-limit error's data does
+  it('resources/read of a URI never served: a burst is denied with the code, its kind and the hint in its data', (done) => {
+    drain(() => {
+      const body = {jsonrpc: '2.0', id: 1, method: 'resources/read', params: {uri: 'countinghouse://m/no-such-module-15/x'}};
+      burst(BURST, (cb) => mcpReq(url, ALICE, body, cb), (responses) => {
+        const denied = responses.filter((r) => r.res != null && r.res.body.error != null && r.res.body.error.data != null &&
+          r.res.body.error.data['countinghouse/code'] === 'RATE_LIMIT_EXCEEDED');
+        if (denied.length === 0) {
+          return done(new Error(`no probe in a burst of ${BURST} was rate limited: ${JSON.stringify(responses.map((r) => r.res && r.res.body.error))}`));
+        }
+        for (const r of denied) {
+          const data = r.res.body.error.data;
+          if (data['countinghouse/kind'] !== 'caller' || data['countinghouse/retryAfter'] !== 1) {
+            return done(new Error(`a probe's refusal without its kind or hint: ${JSON.stringify(r.res.body.error)}`));
+          }
         }
         return done();
       });

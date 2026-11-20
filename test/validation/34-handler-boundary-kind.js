@@ -224,6 +224,9 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
     gate.guard(unsaid, {appKey: 'k'}, res2, () => { throw new Error('let through'); });
     await new Promise((r) => setImmediate(r));
     assert.deepStrictEqual([res2.code, bare['Retry-After'], res2.body.code], [429, undefined, 'RATE_LIMIT_EXCEEDED']);
+    // (the hint's _meta and data key, in seconds, is one exported constant:
+    // #482's high, round 3, 6)
+    assert.strictEqual(require('../../lib/mcp/gateway').RETRY_AFTER_META_KEY, 'countinghouse/retryAfter');
     // (the runtime-wide limiter's window is the store's constant)
     assert.strictEqual(require('../../lib/store').GLOBAL_LIMIT_WINDOW_MS, 1000);
   });
