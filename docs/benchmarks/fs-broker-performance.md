@@ -74,7 +74,10 @@ report.
 
 `perf/fs-broker-profile.js` runs R (3 × 250 rounds), S and W under `enforce`
 with the server's main thread under `--cpu-prof`. Of 42.9 s profiled, the
-main thread was idle 55.5%. Where the rest went (self time):
+main thread was idle 55.5%. Where the rest went (self time; the profile is
+the main thread's, as the code it shows says: the broker and its server's
+`reply` run there, and nowhere else. The script now picks that profile by
+its name, the server's pid and thread 0):
 
 | Share | What |
 |---|---|
@@ -91,7 +94,9 @@ works: proposals 1, 3 and 5 are aimed there. No read in these workloads is
 
 The JavaScript the profile did show was the bridge's own per-request
 allocations: a timer, a timeout promise, `Promise.race` and `finally` for
-each request. The candidate (branch `b-fsb-p4-sweep`, `9066c5a`, since deleted) checks every
+each request. The candidate (branch `b-fsb-p4-sweep`, `9066c5a`; the branch
+was deleted when the user dropped it, and the commit is no longer kept)
+checks every
 pending request's deadline with one sweep instead. Measured against
 `d5191d2` in three alternating sessions; `perf/fs-broker-workloads.js` now
 also records the CPU time of the server's main thread over each call, which
@@ -109,8 +114,9 @@ the machine's other load moves far less than wall-clock:
 The main thread's CPU did not move, so the change saves no measurable work.
 R with 10 modules ran faster beyond its spread while S under `off` ran slower
 in the median (with a wide spread after). That is a mixed result: by the
-spec's rule it goes to the user with both numbers, and the recommendation is
-**not to keep it** (no work saved, one workload possibly slower).
+spec's rule it went to the user with both numbers, and the recommendation was
+**not to keep it** (no work saved, one workload possibly slower). The user
+dropped it on 2026-11-14.
 
 ## Proposal 3: compound ops -- the trace finds nothing to fold
 
@@ -150,7 +156,7 @@ So proposal 3 adds no op: there is nothing in the workloads to fold.
 | Proposal | Result |
 |---|---|
 | 2: no readlink for an existing file in `/data`/`/tmp` | **Dropped.** One pool job fewer per `enforce` round (26 → 25); no wall-clock gain beyond the sessions' spread, and it would add a residual against the host. Code and tests on `b-fsb-p2`. |
-| 4: profile the main thread, fix what it shows | **Dropped** (the user's decision, 2026-11-14). The profile: fs bindings about 15% of the main thread, GC 7%, the broker's own JavaScript under 4%. Its one candidate (one deadline sweep instead of a timer per request) saves no main-thread CPU and gave mixed wall-clock results; its branch is deleted. The profile script and the main-thread CPU columns stay. |
+| 4: profile the main thread, fix what it shows | **Dropped** (the user's decision, 2026-11-14). The profile: fs bindings about 15% of the main thread, GC 7%, the broker's own JavaScript about 4% (`server.js` 2.6%, `broker.js` 1.4%). Its one candidate (one deadline sweep instead of a timer per request) saves no main-thread CPU and gave mixed wall-clock results; its branch is deleted. The profile script and the main-thread CPU columns stay. |
 | 3: compound ops | **Nothing to fold.** The trace shows the loader's reads bypass the broker, the common calls are already single ops, and the rest are the module's own call sequences. No op added; a compound `cp` only if a module needs one. |
-| 1: direct I/O on verified descriptors, with write leases | **Deferred until after the first release.** With the broker's own JavaScript under 4% of the main thread, the remaining cost is the hand-offs themselves; proposal 1 is the one change aimed there, but it is large and opens a security boundary (the worker holding real descriptors). |
+| 1: direct I/O on verified descriptors, with write leases | **Deferred until after the first release.** With the broker's own JavaScript about 4% of the main thread, the remaining cost is the hand-offs themselves; proposal 1 is the one change aimed there, but it is large and opens a security boundary (the worker holding real descriptors). |
 | 5: file threads | Not started: it follows proposal 1 in the landing order. |
