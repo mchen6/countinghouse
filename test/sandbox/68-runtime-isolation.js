@@ -77,7 +77,9 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       fs.writeFileSync(path.join(probe, 'node_modules', 'q?x', 'package.json'), JSON.stringify({name: 'q?x'}));
       fs.writeFileSync(path.join(probe, 'node_modules', 'q?x', 'index.js'), 'module.exports = 1;\n');
       fs.mkdirSync(path.join(probe, 'node_modules', 't\tx'), {recursive: true});
-      fs.writeFileSync(path.join(probe, 'node_modules', 't\tx', 'package.json'), JSON.stringify({name: 't\tx'}));
+      // (found by its directory's name; its "name" plain, as a tab written
+      // into JSON is an escape, refused at load under enforce: K2)
+      fs.writeFileSync(path.join(probe, 'node_modules', 't\tx', 'package.json'), JSON.stringify({name: 'tab-dir-pkg'}));
       fs.writeFileSync(path.join(probe, 'node_modules', 't\tx', 'index.js'), 'module.exports = 1;\n');
     }
     // (C-bare R0: an "exports" target climbing out by '%2e' to the file

@@ -15,7 +15,7 @@ function tree(files) {
   Object.keys(files).forEach((rel) => {
     const file = path.join(dir, rel);
     fs.mkdirSync(path.dirname(file), {recursive: true});
-    fs.writeFileSync(file, typeof(files[rel]) === 'string' ? files[rel] : JSON.stringify(files[rel]));
+    fs.writeFileSync(file, (typeof(files[rel]) === 'string' || Buffer.isBuffer(files[rel])) ? files[rel] : JSON.stringify(files[rel]));
   });
   return dir;
 }
@@ -32,7 +32,7 @@ describe('sandbox 03: tree checks', () => {
       'node_modules/a/node_modules/c/package.json': {name: 'c'},
       'node_modules/b/package.json': {name: 'b', dependencies: {a: '1'}}
     });
-    assert.deepStrictEqual(checkTree(d), {problems: [], warnings: [], dirLinks: [], brokenLinks: [], manifestLinks: [], outsideMains: [], duplicateKeys: [], escapedKeys: []});
+    assert.deepStrictEqual(checkTree(d), {problems: [], warnings: [], dirLinks: [], brokenLinks: [], manifestLinks: [], outsideMains: [], duplicateKeys: [], escapedKeys: [], notUtf8: []});
   });
 
   it('a dependency whose package.json is a directory has none, as for Node (the high review of #452)', () => {
@@ -83,6 +83,24 @@ describe('sandbox 03: tree checks', () => {
     assert.deepStrictEqual(t.duplicateKeys, []);
   });
 
+  // (ruled K2 after #465's round 3: what JSON.parse and Node's reader could
+  // read differently is refused at load -- a backslash escape in the string
+  // value of "name", "main" or "type" (a lone surrogate, say), and bytes
+  // that aren't UTF-8, which a 'utf8' read turns into U+FFFD where Node's
+  // reader throws ERR_INVALID_PACKAGE_CONFIG)
+  it('reports an escape in the value of "name", "main" or "type", and a package.json that is not UTF-8', () => {
+    const d = mk({'package.json': '{"name":"m","version":"1.0.0"}',
+      'lib/p/package.json': '{"name":"p","main":"./\\ud800.js"}',
+      'lib/q/package.json': '{"name":"q\\u0071","type":"module","exports":{"\\u002e":"./a.js"}}',
+      'lib/r/package.json': Buffer.from('{"name":"r","x\xff":1,"exports":"./e.js"}', 'latin1'),
+      'lib/s/package.json': '\ufeff{"name":"s","main":"./\u00e9.js"}',
+      'lib/t/package.json': '{"name":"t","type":"modul\\u0065"}'});
+    const t = checkTree(d);
+    assert.deepStrictEqual(t.escapedKeys.sort(), ['lib/p/package.json\'s "main" value', 'lib/q/package.json\'s "name" value', 'lib/t/package.json\'s "type" value'].sort());
+    assert.deepStrictEqual(t.notUtf8, ['lib/r/package.json']);
+    assert.deepStrictEqual(t.duplicateKeys, []);
+  });
+
   it('reports native code: .node files, binding.gyp, gypfile', () => {
     const d = mk({
       'package.json': {name: 'm', dependencies: {n: '1', g: '1'}},
@@ -124,7 +142,7 @@ describe('sandbox 03: tree checks', () => {
     fs.symlinkSync('./nowhere', path.join(d, 'dangling'));
     // (inside: no problem of its own; a link to a directory is listed, for
     // the refusal under enforce below)
-    assert.deepStrictEqual(checkTree(d), {problems: [], warnings: [], dirLinks: ['alias'], brokenLinks: ['dangling'], manifestLinks: [], outsideMains: [], duplicateKeys: [], escapedKeys: []});
+    assert.deepStrictEqual(checkTree(d), {problems: [], warnings: [], dirLinks: ['alias'], brokenLinks: ['dangling'], manifestLinks: [], outsideMains: [], duplicateKeys: [], escapedKeys: [], notUtf8: []});
   });
 
   // The _stat PR (the reviewer's ruling): Node's ES resolver reads a

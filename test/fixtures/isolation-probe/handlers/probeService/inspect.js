@@ -223,14 +223,28 @@ const STEPS = {
       } finally { Buffer.prototype.toString = realToString; Buffer.from = realFrom; Object.assign = realAssign; }
       out.push(calls === 0 && got === 'f.js' ? 'same' : `moduleCodeInRead(${calls} ${got})`);
     }
-    // (the medium review of 9685cb1f: an object whose prototype chain holds
-    // a Proxy, handed to findPackageJSON, runs none of its traps inside it)
+    // (K1, ruled after #465's round 3: after the seal findPackageJSON takes
+    // a primitive string alone -- any object, a real URL included, answers
+    // nothing, and none of its code runs: not a Proxy's traps in its
+    // prototype chain, not a URL's searchParams.toString, which the href
+    // getter calls once the params are marked changed)
     if (typeof(M.findPackageJSON) === 'function') {
-      let traps = 0;
-      const odd = Object.create(new Proxy({}, {getPrototypeOf() { traps++; return URL.prototype; }}));
-      let got;
-      try { got = String(M.findPackageJSON(odd, __filename)); } catch (e) { got = String(e.code); }
-      out.push(traps === 0 ? 'same' : `protoTrap(${traps} ${got})`);
+      let ran = 0;
+      const count = (k) => (...a) => { ran++; return Reflect[k](...a); };
+      const handler = {};
+      ['get', 'has', 'getOwnPropertyDescriptor', 'getPrototypeOf', 'ownKeys'].forEach((k) => { handler[k] = count(k); });
+      const odd = Object.create(new Proxy(URL.prototype, handler));
+      const dirty = new URL(require('url').pathToFileURL(__filename).href);
+      Object.defineProperty(dirty.searchParams, 'toString', {value() { ran++; return 'q=1'; }});
+      URLSearchParams.prototype.append.call(dirty.searchParams, 'a', 'b');
+      const plain = require('url').pathToFileURL(__filename);
+      const bare = Object.setPrototypeOf(require('url').pathToFileURL(__filename), null);
+      const answers = [];
+      for (const [spec, base] of [[odd, __filename], ['./', odd], [dirty, __filename], ['./', dirty], [plain, __filename], ['./', plain], [bare, __filename], ['./', bare]]) {
+        try { answers.push(String(M.findPackageJSON(spec, base))); } catch (e) { answers.push(String(e.code)); }
+      }
+      const all = answers.every((x) => x === 'undefined');
+      out.push(ran === 0 && all ? 'same' : `objectInFind(${ran} ${answers.join(',')})`);
     } else out.push('same');
     // (#465's Fable pass, F2 and F3: a require whose parent is the root
     // itself -- createRequire('/app') -- is refused before Node, as a missing
