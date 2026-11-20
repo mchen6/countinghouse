@@ -154,6 +154,46 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
     assert.ok(out.reports.includes('net a request while validating'), JSON.stringify(out.reports));
   }));
 
+  // the register's "post-rel request refusal shape" (from #425): a refused
+  // CHUtil.request answers a Request-like object, in a validation worker
+  // and under enforce, never undefined: its Request methods do nothing; its
+  // 'error' reaches a listener added late, and the callback with any
+  // listener beside it; with none, nothing unhandled ends the worker; and
+  // a module's own EventEmitter.init is never the runtime's to call
+  [['a validation worker under enforce', {mode: 'enforce', noRequests: true}],
+    ['a validation worker under audit', {mode: 'audit', noRequests: true}],
+    ['enforce, a host not granted', {mode: 'enforce'}]].forEach(([where, cfg]) => it(`${where}: a refused CHUtil.request answers a Request-like object; its 'error' is never lost or unhandled`, () => {
+    const {inWorker, install} = require('../helpers/lockdown-worker');
+    const out = inWorker(`
+      global.CHUtil = {request: () => { throw new Error('the library was reached'); }};
+      ${install(Object.assign({net: [{host: 'late-load.example.invalid'}]}, cfg))}
+      const url = 'http://not-granted.example.invalid/';
+      const events = require('events');
+      const init0 = events.init;
+      let initCalls = 0;
+      events.init = function(...a) { initCalls++; return init0.apply(this, a); };
+      // no callback, its listener added after other I/O; every Request method a no-op
+      const r1 = CHUtil.request(url);
+      const shape = {on: typeof(r1.on), pipe: typeof(r1.pipe), form: typeof(r1.form), destroy: typeof(r1.destroy)};
+      r1.pipe({}); r1.form().append('k', 'v'); r1.write('x'); r1.end(); r1.destroy();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const late = await new Promise((resolve) => r1.on('error', (e) => resolve(e.code)));
+      // no callback and no listener: nothing unhandled
+      CHUtil.request(url);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      // a callback and a listener: both
+      const both = await new Promise((resolve) => {
+        const got = [];
+        const take = (who) => (e) => { got.push(who + ':' + e.code); if (got.length === 2) resolve(got.sort()); };
+        CHUtil.request(url, take('callback')).on('error', take('listener'));
+      });
+      events.init = init0;
+      return {shape, late, both, initCalls};
+    `);
+    assert.deepStrictEqual(out, {shape: {on: 'function', pipe: 'function', form: 'function', destroy: 'function'}, late: 'ERR_ACCESS_DENIED',
+      both: ['callback:ERR_ACCESS_DENIED', 'listener:ERR_ACCESS_DENIED'], initCalls: 0}, JSON.stringify(out));
+  }));
+
   // the runtime's loads of module files (the dispatcher's, CHUtil.loadFile's)
   // have the module's own anchor as parent, and the fixture's files carry the
   // CLI idiom (`if (!module.parent) throw`), so they load at all only with
