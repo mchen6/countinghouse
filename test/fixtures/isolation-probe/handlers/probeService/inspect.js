@@ -180,6 +180,23 @@ const STEPS = {
         findOf(() => M.findPackageJSON('sshpk', {toString() { ran++; return __filename; }}))] : ['undefined', 'undefined', 'undefined'];
       out.push(direct.every((c) => c === 'ERR_INVALID_ARG_TYPE') && finds.every((f) => f === 'undefined') && ran === 0 ? 'same' : `nonString(${direct.join(',')} ${finds.join(',')} ran ${ran})`);
     }
+    // (#465's Fable pass, F2 and F3: a require whose parent is the root
+    // itself -- createRequire('/app') -- is refused before Node, as a missing
+    // name is, while createRequire('/app/'), a directory, still requires
+    // from it; an empty specifier is refused by import as a missing name is,
+    // and findPackageJSON answers nothing for it)
+    {
+      const req = M.createRequire('/app');
+      const errOf = (fn) => { try { fn(); return 'found'; } catch (e) { return String(e.code); } };
+      const rootParent = [errOf(() => req('outer-self')), errOf(() => req('no-such-outer'))];
+      const fromDir = errOf(() => M.createRequire('/app/')('./lib/stat-count.js'));
+      const emptyImport = await oi('', 'x');
+      const missingImport = (await oi('no-such-empty-control', 'no-such-empty-control')).split('PKG').join('');
+      let emptyFind = 'undefined';
+      if (typeof(M.findPackageJSON) === 'function') { try { emptyFind = String(M.findPackageJSON('', __filename)); } catch (e) { emptyFind = String(e.code); } }
+      const ok = rootParent[0] === rootParent[1] && rootParent[0] !== 'found' && fromDir === 'found' && emptyImport.split('|')[0] === missingImport.split('|')[0] && emptyFind === 'undefined';
+      out.push(ok ? 'same' : `rootOrEmpty(${rootParent.join(',')} ${fromDir} ${emptyImport.slice(0, 80)} / ${missingImport.slice(0, 80)} ${emptyFind})`);
+    }
     // (a bare name with a ':' URL parsing rejects -- bare to Node -- above
     // the root against a missing one, by import, findPackageJSON and
     // require; POSIX, where a file name can hold one)
