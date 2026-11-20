@@ -1452,9 +1452,10 @@ is not made; every route answers it alike (429, `Retry-After`, the code; on
 `/mcp` the JSON-RPC error -32000 with the code in its data).
 
 Only the request's own lookups count against its address: those it makes
-until its answer is sent (a client that drops the connection mid-batch is
-still counted), of a key it carried, or with no key when the route read
-none. A module's worker or a
+until its answer is sent -- or, when the connection closes first (a client
+that drops it mid-batch), for one more minute -- of a key it carried, or
+with no key when the route read none. A job a request queues runs outside
+it. A module's worker or a
 validator started while a request is served is started outside it, and a
 change notice's re-listing for another subscriber is another key's; neither
 is counted against, or refused for, the request that happened to start it.
@@ -1476,10 +1477,11 @@ process limit, a client whose key has not resolved in the last ten minutes
 its own budget. A hop count is right only when it is the real number of
 proxies (one more, and the client's own entry is believed); more than 10
 hops is refused, and so is any list whose ranges together cover more than
-an IPv4 /8 or an IPv6 /32, however spelled (an IPv4-mapped form, several
-narrower ranges). Express's names for the private ranges (`loopback`,
-`linklocal`, `uniquelocal`) stand: no client on the internet has a socket
-address in them.
+an IPv4 /8 or an IPv6 /32 of public addresses, however spelled (an
+IPv4-mapped form, several narrower ranges). The private ranges, by
+Express's names (`loopback`, `linklocal`, `uniquelocal`) or as ranges inside
+them (`10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`), are not counted: no client
+on the internet has a socket address in them.
 
 A key that resolved in the last ten minutes, from any address (its digest
 is kept, never the key), still passes, so a user behind a shared address is

@@ -174,7 +174,7 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
   // a request from `ip` carrying `key`: a fake res (an emitter, as express's
   // is), run through the middleware; fn runs inside it
   const request = (ip, key, fn) => {
-    const res = Object.assign(new EventEmitter(), {set() { return res; }, status(code) { res.code = code; return res; }, json() { return res; }});
+    const res = Object.assign(new EventEmitter(), {headers: {}, set(name, value) { res.headers[name] = value; return res; }, status(code) { res.code = code; return res; }, json() { return res; }});
     let out = null;
     unauthLimit.middleware()({ip, headers: key != null ? {'x-ch-key': key} : {}, socket: {}}, res, () => { out = fn(); });
     if (res.code != null) assert.strictEqual(res.code, 429);
@@ -251,6 +251,60 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
     assert.strictEqual(inRequest(ip, 'k-reset-2'), null, 'the batch\'s lookups after the reset counted');
   });
 
+  // (the medium on round 2, 1) a request whose answer was destroyed, never
+  // finished: counted for one more window after its close, then no more
+  it('a closed, never-finished request counts its own lookups for one window, then none', () => {
+    const ip = '10.9.0.1';
+    const later = [];
+    const r = request(ip, 'k-gone', () => { later.push(AsyncResource.bind(() => unauthLimit.beforeLookup('k-gone'))); later.push(AsyncResource.bind(() => unauthLimit.requestStoreForTests())); return null; });
+    r.res.emit('close');
+    const own = later[1]();
+    assert.ok(own != null && own.closedAt != null, 'the close is noted');
+    own.closedAt = Date.now() - WINDOW_MS - 1;   // a window past it
+    for (let i = 0; i < 3; i++) { const l = later[0](); assert.ok(l != null); l.refused(); }
+    assert.ok(inRequest(ip, 'k-other') != null, 'nothing counted a window after the close');
+  });
+
+  // (the medium on round 2, 2) a window full only because lookups are in
+  // flight asks the caller back in a second, not a minute
+  it('Retry-After is a second while the window is full of lookups in flight', () => {
+    const ip = '10.11.0.1';
+    inRequest(ip, 'k-flight-1');
+    inRequest(ip, 'k-flight-2');
+    const r = request(ip, 'k-flight-3', () => 'passed');
+    assert.strictEqual(r.out, null);
+    assert.strictEqual(r.res.code, 429);
+    assert.strictEqual(r.res.headers['Retry-After'], '1');
+  });
+
+  // (the medium on round 2, 4) --debug's own key is remembered as resolved
+  it('a key resolved without a lookup (--debug\'s debugKey) passes its address\'s limit as any resolved key', () => {
+    const ip = '10.12.0.1';
+    request(ip, 'k-debug', () => unauthLimit.keyResolved('k-debug'));
+    for (let i = 0; i < 2; i++) inRequest(ip, `junk-${i}`).refused();
+    assert.ok(inRequest(ip, 'k-debug') != null);
+  });
+
+  // (the medium on round 2, 3) a job a request queues runs outside it
+  it('a local job queued in a request runs with no request\'s address', async () => {
+    const {createRunner} = require('../../lib/job-control-local');
+    const runner = createRunner({jobTimeoutMs: 0});
+    runner.authorizeRun = () => Promise.resolve();
+    let seen;
+    const ran = new Promise((resolve) => runner.initJobProcess({recordCall: (k, t, c, cb) => cb && cb(null),
+      invokeJobs: (d, sv, a, input, id, cb) => { seen = unauthLimit.requestStoreForTests(); resolve(); cb(null, {}); }}));
+    const wt = options.workerThread;
+    options.workerThread = true;
+    try {
+      request('10.13.0.1', 'k-queue', () => { runner.addJob({appKey: 'k-queue', isAdmin: false}, {name: 'n'}, 'd', 's', 'a', {}, () => undefined); return null; });
+      await ran;
+      assert.strictEqual(seen, undefined, 'the job ran in the queuing request\'s store');
+    } finally {
+      options.workerThread = wt;
+      runner.close();
+    }
+  });
+
   // (round 2, 8) a lookup with no key is the route reading none, whatever
   // headers came: an empty X-CH-Key, a header /mcp does not read
   it('a lookup with no key counts, though the request carried headers the route did not read', () => {
@@ -322,16 +376,23 @@ describe('auth 59: --trustProxy refuses a range wider than a /8 (IPv4) or a /32 
   after(() => { scope.restore(kept); });
   const parsed = (value) => { options.setOptions({trustProxy: value}); return {trust: options.trustProxy, invalid: options.trustProxyInvalid}; };
 
+  it('a hop count outside 1 to 10, or not whole, is refused as that', () => {
+    for (const v of [0, 1.5, 11, '0']) {
+      const r = parsed(v);
+      assert.ok(r.trust == null && r.invalid != null && /whole number of hops from 1 to 10/.test(r.invalid.why), `${JSON.stringify(v)}: ${JSON.stringify(r.invalid)}`);
+    }
+  });
+
   it('refuses each wide form', () => {
-    for (const v of ['0.0.0.0/0', '::/0', '::ffff:0.0.0.0/96', '::ffff:0:0/96', '0.0.0.0/1,128.0.0.0/1', '10.0.0.0/7', '10.0.0.0/8,11.0.0.0/8',
-      '10.0.0.0/8,192.168.0.0/16', '::ffff:10.0.0.0/103', '2001:db8::/31', '2001:db8::/32,2001:db9::/32', 11, true, '']) {
+    for (const v of ['0.0.0.0/0', '::/0', '::ffff:0.0.0.0/96', '::ffff:0:0/96', '0.0.0.0/1,128.0.0.0/1', '10.0.0.0/7', '11.0.0.0/8,12.0.0.0/8',
+      '11.0.0.0/8,192.0.2.0/24', '::ffff:10.0.0.0/103', '2001:db8::/31', '2001:db8::/32,2001:db9::/32', 11, true, '']) {
       const r = parsed(v);
       assert.ok(r.trust == null && r.invalid != null, `${JSON.stringify(v)} was taken: ${JSON.stringify(r)}`);
     }
   });
 
   it('takes a /8 or narrower, overlapping entries counted once, and the named ranges', () => {
-    for (const v of ['2', '10.0.0.0/8', '203.0.113.7', '::ffff:10.0.0.0/104', '10.0.0.0/9,10.128.0.0/9', '10.0.0.0/8,10.1.0.0/16', '2001:db8::/32',
+    for (const v of ['2', ['10.0.0.1', '10.0.0.2'], '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16', 'fc00::/7', '10.0.0.0/8', '203.0.113.7', '::ffff:10.0.0.0/104', '10.0.0.0/9,10.128.0.0/9', '10.0.0.0/8,10.1.0.0/16', '2001:db8::/32',
       'loopback', 'loopback,linklocal,uniquelocal', 3]) {
       const r = parsed(v);
       assert.ok(r.trust != null && r.invalid == null, `${JSON.stringify(v)} was refused: ${JSON.stringify(r.invalid)}`);
