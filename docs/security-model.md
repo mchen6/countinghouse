@@ -424,7 +424,7 @@ A module sees its own namespace, in every mode:
 |---|---|---|
 | `/app` | the module's install directory | read-only: `EROFS` under `enforce`, `EACCES` under `audit` |
 | `/data` | `<moduleDataPath>/<name>/data` | read-write, quota, kept across restarts |
-| `/tmp` | `<moduleDataPath>/<name>/tmp` | read-write, quota, emptied when the worker starts |
+| `/tmp` | `<moduleDataPath>/<name>/tmp` | read-write, quota, emptied when the worker starts (only one the runtime made: "Only what the runtime made is deleted") |
 | each declared path, e.g. `/var/log/app` | the same host path | `r` or `rw` as the operator's policy narrows it; no quota |
 
 `<name>` is the package.json name the main thread verified. A load whose
@@ -649,6 +649,75 @@ the registry entry and deletes `<moduleDataPath>/<name>` unless `keepData`,
 never following links. It refuses while the module is loaded, restarting or
 suspended, and never removes the module's code under `--modulePath`.
 Unload, restart and reload never delete data.
+
+**Only what the runtime made is deleted.** Every recursive delete the
+runtime does is limited to directories it made:
+- `/tmp` emptied at a spawn (a worker, a session's worker, single-thread
+  mode);
+- a module's data removed by an uninstall;
+- a session's partition removed at its end or by the start's sweep.
+
+When it creates a module's or a session's `data` and `tmp`, it records each
+directory's identity (device, inode and birth time) in an owner-only marker,
+`.countinghouse-owned`, in the directory holding them: `<name>/`, or
+`<name>/sessions/<id>/`. No worker sees that directory. Before deleting, the
+directory as it is now must be the one recorded. A directory the runtime did
+not make, or one swapped in since (another at the same path, an inode number
+reused included), is never emptied or removed; it is kept and said once. The
+module's root and a session's root are never removed recursively, only by
+`rmdir` once empty.
+
+A marker is read, and a directory judged its own, only through real
+directories from `--moduleDataPath` down. A `<name>/` or `@scope` that is a
+link leads to another module's marker, which vouches for nothing there, so
+**a module's data directory can't be a symlink**. To put it on other
+storage, use a bind mount, or link `--moduleDataPath` itself. An uninstall
+refuses a module whose `<name>/` is reached through a link
+(`MODULE_DATA_NOT_DIRECTORY`). A `.countinghouse-owned-probe-*` directory
+in a module's `data` or `tmp` is the runtime's, briefly: it checks there
+whether the file system keeps real birth times.
+
+A directory made before this rule, by an earlier version, is adopted in any
+of these:
+- its module's first spawn;
+- a session worker's spawn;
+- a load in single-thread mode;
+- an uninstall;
+- a session's end;
+- the start's sweep.
+
+Adoption happens only when:
+- it is at the path the runtime would have made it, with no link from
+  `--moduleDataPath` down to it;
+- the overlap judgement found no module's code inside it or around it: the
+  file broker's own at a spawn, elsewhere the same question asked of every
+  module root the runtime knows, each `--loadModule` directory and the
+  `--modulePath` folders.
+
+A directory whose marker names another, changed since, is never adopted
+again: a mismatch is the sign that something other than the runtime changed
+it. When the runtime removes a directory, it rewrites the marker without
+that directory's entry. A birth time recorded on a host that can read them
+is never set aside for device and inode alone. A directory that can't be
+checked that way is kept, said with the same recovery: stop the runtime and
+delete the marker.
+
+Nothing about a package name or a file layout is read to decide. The
+throwaway `<moduleDataPath>/.validate` of a validation is not under this
+rule: the runtime makes it fresh, under a dot name no module's name can
+take.
+
+A directory the runtime made that holds module code it knows is kept too,
+since a module may have been loaded from inside another's `/data`. That
+covers a module root it knows, a `--loadModule` directory, or a
+`--modulePath` folder inside it.
+
+The marker names directories by their identity, so a copy names nothing.
+After `--moduleDataPath` is moved or restored (`rsync -a`, `cp -a`), or on a
+file system whose device numbers change across reboots, every directory
+there is kept and said. To have them adopted again, under the same
+conditions as an earlier version's, delete the `.countinghouse-owned`
+files with the runtime stopped.
 
 **7. `--hardened`.** Re-launches the server under Node's permission model
 (`--permission`) with read access to the install directory, `--modulePath`,

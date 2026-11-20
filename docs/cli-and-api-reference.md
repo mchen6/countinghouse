@@ -165,7 +165,7 @@ is how a suspended module is brought back. A `path` that does not exist is
 refused with `INVALID_MODULE_PATH` before anything is unloaded.
 
 **`POST /uninstall-module`** takes `{name, keepData}` and answers
-`{uninstalled: true, name, dataDeleted, keysDeleted, registryEntryRemoved}`.
+`{uninstalled: true, name, dataDeleted, keysDeleted, registryEntryRemoved, kept}`.
 It removes the module's registry entry (when the server uses the registry,
 that is when no `--loadModule` is given), then, unless `keepData` is `true`,
 deletes the module's `ctx.redis` keys (every key under its
@@ -173,7 +173,12 @@ deletes the module's `ctx.redis` keys (every key under its
 with `keepData`) and
 `<moduleDataPath>/<name>`, never following links. A reload or an upgrade
 keeps both. It never removes the module's
-code under `--modulePath`. Errors:
+code under `--modulePath`. It removes only directories the runtime made
+(the security model's ["Only what the runtime made is deleted"](security-model.md)):
+`kept` lists, as paths under `--moduleDataPath`, each one it found there but
+did not make, and so kept (a session's partition is named by its
+`<name>/sessions` directory, never by its id); `dataDeleted` is `true` only
+when `<moduleDataPath>/<name>` is gone. Errors:
 
 | Code | When |
 |---|---|
