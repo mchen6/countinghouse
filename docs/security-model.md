@@ -1620,6 +1620,12 @@ and the short list of what the in-process sandbox cannot give.
   `enforce` a name there that is a link is refused outright, wherever it
   leads, and reported as `link-appeared` (not as an escape): such a link
   appeared in the race itself, and nothing legitimate needs one there.
+  A name that is a link to nothing when the broker checks it is refused
+  under `enforce` before the open (reported as `link-dangling`): opening it
+  would follow it wherever it leads, outside the namespace, or to a file a
+  host process points it at in between, before anything could judge that.
+  Under `audit` it is reported and opened as before. A module that wants a
+  file there writes the target, or makes its link again.
 - **Host paths leak in one place.** For a CommonJS file imported directly by
   an ES module, Node 24 gives `__filename` and stack frames the host path.
 - **Descriptor and handle adoption is refused only under `enforce`.**

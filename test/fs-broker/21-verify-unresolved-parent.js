@@ -170,26 +170,38 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
     } finally { await t.done(); }
   });
 
-  // (a dangling link checkHost saw, written through: where it leads must be
-  // in this root, as a file the open made -- a host's leading outside is
-  // refused on every platform, not by /proc's check alone: that one stood
-  // down here, as off Linux)
-  it('a write through a dangling host-made link leading outside is refused; one leading inside writes', async () => {
-    const t = await setup('enforce', () => {});
-    const realReadlink = fs.promises.readlink;
-    fs.promises.readlink = async function(p, o) {
-      if (String(p).startsWith('/proc/self/fd/')) throw Object.assign(new Error('stood down'), {code: 'ENOENT'});
-      return realReadlink.call(this, p, o);
-    };
+  // (ruled D1: a name that is a link to nothing when checkHost runs is
+  // refused under enforce before the open -- (a) leading outside, nothing is
+  // made there; (b) pointed in the race at a denied file in the root, it is
+  // never read -- reported link-dangling, its errno first)
+  it('an open of a link to nothing is refused under enforce before it follows: nothing made outside, no denied file read', async () => {
+    const t = await setup('enforce', (syscall, host, dirs) => {
+      // ((b): pointed, after the check, at the denied file)
+      if (syscall === 'open' && path.basename(host) === 'dangling-repointed') {
+        fs.unlinkSync(host);
+        fs.symlinkSync(path.join(dirs.data, 'denied-secret'), host);
+      }
+    }, null, ['denied-secret']);
     try {
       fs.symlinkSync(path.join(t.dirs.outside, 'made-by-link'), path.join(t.dirs.data, 'dangling-out'));
       await assert.rejects(t.broker.handle('open', ['/data/dangling-out', 'w']), enoent('/data/dangling-out'));
-      assert.ok(t.reports.includes('escape /data/dangling-out'), t.reports.join(', '));
+      assert.strictEqual(fs.existsSync(path.join(t.dirs.outside, 'made-by-link')), false, 'nothing made outside');
+      fs.symlinkSync(path.join(t.dirs.data, 'nothing-yet'), path.join(t.dirs.data, 'dangling-repointed'));
+      await assert.rejects(t.broker.handle('open', ['/data/dangling-repointed', 'r']), enoent('/data/dangling-repointed'));
+      for (const v of ['/data/dangling-out', '/data/dangling-repointed']) assert.ok(t.reports.includes(`link-dangling ENOENT ${v}`), t.reports.join(', '));
+      assert.strictEqual(t.broker.fds.size, 0);
+    } finally { await t.done(); }
+  });
+
+  it('audit reports an open of a link to nothing and opens it as before', async () => {
+    const t = await setup('audit', () => {});
+    try {
       fs.symlinkSync('made-inside', path.join(t.dirs.data, 'dangling-in'));
       const fd = await t.broker.handle('open', ['/data/dangling-in', 'w']);
       await t.broker.handle('close', [fd]);
       assert.ok(fs.existsSync(path.join(t.dirs.data, 'made-inside')));
-    } finally { fs.promises.readlink = realReadlink; await t.done(); }
+      assert.ok(t.reports.includes('link-dangling ENOENT /data/dangling-in'), t.reports.join(', '));
+    } finally { await t.done(); }
   });
 
   it('audit does not refuse it: the check after open is enforce-only, as before', async () => {
