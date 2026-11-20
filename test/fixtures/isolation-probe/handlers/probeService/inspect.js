@@ -180,6 +180,14 @@ const STEPS = {
         findOf(() => M.findPackageJSON('sshpk', {toString() { ran++; return __filename; }}))] : ['undefined', 'undefined', 'undefined'];
       out.push(direct.every((c) => c === 'ERR_INVALID_ARG_TYPE') && finds.every((f) => f === 'undefined') && ran === 0 ? 'same' : `nonString(${direct.join(',')} ${finds.join(',')} ran ${ran})`);
     }
+    // (the high review of #465, 6: a '#' require from a scope with no
+    // "imports" falls through to node_modules, as Node's CommonJS lookup
+    // does; one from a scope with "imports" is resolved there)
+    {
+      const fromSelfScope = require('../../lib/selfscope/req.js');
+      const hash = fromSelfScope('#hashpkg');
+      out.push(hash === 'hash' ? 'same' : `hashFallsThrough(${hash})`);
+    }
     // (#465's Fable pass, F2 and F3: a require whose parent is the root
     // itself -- createRequire('/app') -- is refused before Node, as a missing
     // name is, while createRequire('/app/'), a directory, still requires

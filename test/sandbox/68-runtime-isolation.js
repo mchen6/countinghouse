@@ -93,6 +93,12 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
         fs.writeFileSync(path.join(at, 'index.js'), 'module.exports = "dec";\n');
       }
     }
+    // (a '#' name required from a scope with no "imports": Node's
+    // CommonJS lookup falls through to node_modules, where this is)
+    fs.mkdirSync(path.join(probe, 'node_modules', '#hashpkg'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'node_modules', '#hashpkg', 'index.js'), 'module.exports = "hash";\n');
+    fs.mkdirSync(path.join(probe, 'lib', 'selfscope'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'lib', 'selfscope', 'req.js'), 'module.exports = (s) => { try { return require(s); } catch (e) { return String(e.code); } };\n');
     fs.mkdirSync(path.join(probe, 'node_modules', 'dep6'), {recursive: true});
     fs.writeFileSync(path.join(probe, 'node_modules', 'dep6', 'package.json'), JSON.stringify({name: 'dep6', exports: {'./*': './.%2*/.%2*/.%2*/isolation-probe.js'}}));
     fs.writeFileSync(path.join(spaced, 'package.json'), JSON.stringify({name: 'outer-self', exports: './isolation-probe.js'}));
@@ -242,7 +248,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
         // deep self-reference finds the one above it)
         assert.deepStrictEqual(plainControl, [path.join(spaced, 'isolation-probe.js'), path.join(spaced, 'isolation-probe.js')]);
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'cjsJudged'});
-        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
       });
       // (each layer past the judged _stat, alone: removing any one fails
       // this; POSIX, where a test makes a link without privileges)
