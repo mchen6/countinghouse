@@ -391,6 +391,52 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
         }
       });
 
+      // (the medium on round 2, 4) a burst of rereads is two reads at most:
+      // the one in flight, and one more for all asked meanwhile
+      it('rereads asked while one is in flight are one more read, not one each', async () => {
+        let release = null;
+        let reads = 0;
+        heldBack.resetForTests({aclAheadFn: () => { reads++; return reads === 1 ? new Promise((r) => { release = r; }) : Promise.resolve(); }});
+        try {
+          fs.writeFileSync(file, doc([{name: 'a', reason: 'credential'}]));
+          const first = heldBack.reread(RR);
+          await new Promise((r) => setImmediate(r));
+          fs.writeFileSync(file, doc([{name: 'c', reason: 'off'}]));
+          const burst = [heldBack.reread(RR), heldBack.reread(RR), heldBack.reread(RR)];
+          const waited = heldBack.ready();
+          release();
+          assert.deepStrictEqual(await Promise.all([first, ...burst]), [{}, {}, {}, {}]);
+          assert.deepStrictEqual([...(await waited).modules.keys()], ['c']);
+          assert.strictEqual(reads, 2, 'the one in flight, and one for the burst');
+        } finally {
+          heldBack.resetForTests();
+        }
+      });
+
+      // (the medium on round 2, 5) on Windows, a read whose ACL read ahead
+      // failed keeps the previous list (none before the first), so the next
+      // ready() reads again; the check itself is private-file's, stood in
+      // for here
+      it('a read whose ACL could not be read ahead is read again, never left empty for good', async () => {
+        const privateFile = require('../../lib/private-file');
+        const real = privateFile.readChecked;
+        let fail = true;
+        privateFile.readChecked = (...a) => (fail ? (() => { throw Object.assign(new Error('could not be checked ahead'), {aclAhead: true}); })() : real(...a));
+        heldBack.resetForTests();
+        try {
+          fs.writeFileSync(file, doc([{name: 'a', reason: 'credential'}]));
+          assert.strictEqual((await heldBack.ready()).modules.size, 0, 'nothing yet');
+          fail = false;
+          assert.deepStrictEqual([...(await heldBack.ready()).modules.keys()], ['a'], 'read again');
+          fail = true;
+          await assert.rejects(heldBack.reread(RR), failed);
+          assert.deepStrictEqual([...heldBack.list().modules.keys()], ['a'], 'the previous list kept');
+        } finally {
+          privateFile.readChecked = real;
+          heldBack.resetForTests();
+        }
+      });
+
       // (the high review of #490, 2) judged as ch-local's other private
       // files are: a regular file under one name, this user's alone
       it('a file others can read, a link or a second name: not used (empty), and reread says so', async function() {
