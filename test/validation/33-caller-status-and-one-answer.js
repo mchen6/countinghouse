@@ -16,6 +16,7 @@ const {CODES} = require('../../lib/error-catalogue');
 const visibility = require('../../lib/module-visibility');
 const verdict = require('../../lib/hidden-text-verdict');
 const Session = require('../../lib/session');
+const {preloadLibs} = require('../helpers/preload-libs');
 
 const LISTED = 'bbbbbbbb-0000-5000-8000-000000000001';
 const PART = 'bbbbbbbb-0000-5000-8000-000000000002';
@@ -29,6 +30,14 @@ const device = (name, role) => ({packageInfo: {name, countinghouse: role != null
 const MODULE_OF = {[LISTED]: 'listed-mod', [PART]: 'part-mod', [GONE_LATE]: 'gone-mod', [PER_SESSION]: 'session-mod'};
 
 describe('validation 33: one status rule; one answer for a name the caller can\'t use (post-rel caller 400)', () => {
+  // every lib a case or a hook below requires, loaded once, under its own
+  // bound: a first load (device-manager, then tool-registry and
+  // listing-scope from invokeJobsNow, the routes) ran past a case's 2 s
+  // timeout under load (test/helpers/preload-libs.js)
+  before(preloadLibs(['device-manager', 'job-control-common', 'countinghouse-interface', 'session-module-record',
+    'mcp/tool-registry', 'listing-scope', 'rate-limit-gate', 'routes/user', 'routes/invoke-action', 'routes/get-spec',
+    'routes/schema', 'routes/get-device-package-info', 'routes/add-job']));
+
   describe('statusOf and kindOf', () => {
     it('a catalogue code answers its row\'s status and kind', () => {
       assert.deepStrictEqual([statusOf(new CountinghouseError('ACTION_NOT_FOUND')), kindOf(new CountinghouseError('ACTION_NOT_FOUND'))], [404, 'caller']);
