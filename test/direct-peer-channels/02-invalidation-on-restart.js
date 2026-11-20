@@ -1,4 +1,5 @@
 const request = require('supertest');
+const {deviceIDForName} = require('../../lib/call-address');
 const {testPort} = require('../helpers/test-env');
 
 const url = `http://127.0.0.1:${testPort(9527)}`;
@@ -25,7 +26,7 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
 (global.COUNTINGHOUSE_TEST8_PARTS === true ? describe : describe.skip)('direct-peer-channels 02: port invalidation on module restart (D4) (a part of test/test8.js: run it, not this file alone)', function() {
   this.timeout(0);
 
-  const ECHO_DEVICE_CLIENT_ID = 'efefb416-bdc0-54eb-96a9-38f96f52779d'; // echo-device-client-module
+  const ECHO_DEVICE_CLIENT_ID = deviceIDForName('echo-device-client'); // echo-device-client-module
 
   function invoke(cb) {
     const t0 = Date.now();

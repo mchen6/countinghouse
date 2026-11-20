@@ -1,7 +1,7 @@
 // Times one in-process hop to perf-callee-demo. Used by perf/ to measure the
 // cross-worker call paths, so the timed region stays as tight as possible:
 // the client is resolved before the clock starts.
-const CALLEE_DEVICE_ID = 'fb9fbd3d-5860-538e-b0b7-9f5e34389577'; // perf-callee-demo
+const CALLEE_DEVICE_ID = '01080ae3-17af-5fa9-85ca-49cbe6f24f2d'; // perf-callee-demo
 const CALLEE_SERVICE   = 'urn:countinghouse-com:serviceID:perfCalleeService';
 
 function clientFor(ctx) {

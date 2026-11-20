@@ -1,4 +1,5 @@
 const request = require('supertest');
+const {deviceIDForName} = require('../../lib/call-address');
 const jsf     = require('json-schema-faker');
 const chalk   = require('chalk');
 const {testPort} = require('../helpers/test-env');
@@ -14,7 +15,7 @@ describe('test9: invoke specify incorrect input type', function() {
   const req = { serviceID: 'urn:countinghouse-com:serviceID:echoService', actionName: 'echo', input: 12345 };
 
   it('invoke without specifying input', (done) => {
-    request(url).post('/devices/c5284c70-ae5f-591c-b2f1-cf0b4ebd0767/invoke-action')
+    request(url).post(`/devices/${deviceIDForName('echo-device')}/invoke-action`)
     .set('X-CH-Key', 'aabbcc')
     .send(req)
     .expect('Content-Type', /[json | text]/)

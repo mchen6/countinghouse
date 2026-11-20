@@ -1,4 +1,5 @@
 const request = require('supertest');
+const {deviceIDForName} = require('../../lib/call-address');
 const waitForReady = require('../helpers/wait-for-ready');
 const {testPort, redisConnectionFor} = require('../helpers/test-env');
 const url = `http://127.0.0.1:${testPort(9527)}`;
@@ -35,7 +36,7 @@ module.exports = function (cp, isSingleThread) {
           });
 
           jobQueue.add('test1', {
-            deviceID: 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767',
+            deviceID: deviceIDForName('echo-device'),
             serviceID:'urn:countinghouse-com:serviceID:echoService',
             actionName: 'echo',
             input: {foo: [], bar: 'inputString'}

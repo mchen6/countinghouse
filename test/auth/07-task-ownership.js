@@ -1,4 +1,5 @@
 const fs      = require('fs');
+const {deviceIDForName} = require('../../lib/call-address');
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
@@ -33,7 +34,7 @@ const ECHO_TOOL = 'echo_device_echoservice_echo';
 // pre-installed-packages/composite-demo/device.js hardcodes its targets.
 // Declared here rather than at the foot of the file, where `var` hoisting
 // was the only thing making its use ~60 lines above the declaration work.
-const DEVICE_ID = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767';
+const DEVICE_ID = deviceIDForName('echo-device');
 
 // Deliberately given the SAME device access as alice. Ownership must not
 // fall out of device access -- if mallory could read alice's task merely by

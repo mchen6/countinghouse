@@ -4,6 +4,7 @@
 // and the answer names what is wrong by entry position, never by key. The
 // answer is counts only: {ok, entries, changed}.
 const assert  = require('assert');
+const {deviceIDForName} = require('../../lib/call-address');
 const fs      = require('fs');
 const os      = require('os');
 const path    = require('path');
@@ -17,7 +18,7 @@ const URL       = `http://127.0.0.1:${PORT}`;
 // message or a path.
 const ADMIN     = `k${require('crypto').randomBytes(12).toString('hex')}`;
 const ALICE     = `k${require('crypto').randomBytes(12).toString('hex')}`;
-const DEVICE_ID = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767';   // echo-device-module (see auth/07)
+const DEVICE_ID = deviceIDForName('echo-device');   // echo-device-module (see auth/07)
 const SERVICE   = 'urn:countinghouse-com:serviceID:echoService';
 
 const invokeAs = (key) => request(URL).post(`/devices/${DEVICE_ID}/invoke-action`).set('X-CH-Key', key)

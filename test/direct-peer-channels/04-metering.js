@@ -1,4 +1,5 @@
 const fs = require('fs');
+const {deviceIDForName} = require('../../lib/call-address');
 const {startServer, shutdownThenStop} = require('../helpers/sandbox-server');
 const request = require('supertest');
 const {testPort} = require('../helpers/test-env');
@@ -48,8 +49,8 @@ describe('direct-peer-channels 04: automatic metering on the direct path (D5)', 
     return shutdownThenStop(server, testPort(9527), 'aabbcc');
   });
 
-  const ECHO_DEVICE_CLIENT_ID = 'efefb416-bdc0-54eb-96a9-38f96f52779d'; // echo-device-client-module
-  const ECHO_DEVICE_ID        = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767'; // echo-device-module, called directly for the baseline below
+  const ECHO_DEVICE_CLIENT_ID = deviceIDForName('echo-device-client'); // echo-device-client-module
+  const ECHO_DEVICE_ID        = deviceIDForName('echo-device'); // echo-device-module, called directly for the baseline below
 
   function getBalance(cb) {
     request(url).get('/balance')
