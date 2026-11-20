@@ -27,7 +27,9 @@ const RUNTIMES = {
   b: {port: testPort(9796), module: path.join(ROOT, 'pre-installed-packages', 'echo-device-module'), device: 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767',
     serviceID: 'urn:countinghouse-com:serviceID:echoService', actionName: 'echo', input: {foo: [{item1: 'x'}], bar: 'y'}}
 };
-const LEGACY_SAID = /job queue: 1 job and 0 schedulers under the old shared prefix \{cdifJob\} were not moved to this server's queue; re-create them/g;
+// (the count is whatever this Redis holds under the old prefix: the job
+// seeded here at least)
+const LEGACY_SAID = /job queue: (\d+) jobs? and \d+ schedulers? under the old shared prefix \{cdifJob\} were not moved to this server's queue/g;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 describe('auth 56: each runtime\'s job queue is its own (B-j1)', function() {
@@ -90,10 +92,26 @@ describe('auth 56: each runtime\'s job queue is its own (B-j1)', function() {
       if (Object.values(seen).every((list) => list.every((s) => s === 'completed' || s === 'failed'))) break;
     }
     assert.deepStrictEqual(seen, {a: Array(8).fill('completed'), b: Array(8).fill('completed')});
+    // (the jobs' history is each server's own list too: one name, two
+    // servers, ids that now repeat across them)
+    for (const r of Object.values(RUNTIMES)) {
+      const h = await request(`http://127.0.0.1:${r.port}`).post(`/devices/${r.device}/get-job-history`).set('X-CH-Key', KEY).send({name: 'own-56-0'});
+      assert.strictEqual(h.status, 200, JSON.stringify(h.body));
+      const records = Array.isArray(h.body) ? h.body : [];
+      assert.ok(records.length >= 1, JSON.stringify(h.body));
+      assert.ok(records.every((x) => x.job != null && x.job.data != null && x.job.data.deviceID === r.device), JSON.stringify(records).slice(0, 800));
+    }
   });
 
   it('a job left under the old shared prefix is said once by each start, and left where it is', async () => {
-    for (const r of Object.values(RUNTIMES)) assert.strictEqual((r.server.output.match(LEGACY_SAID) || []).length, 1, r.server.output.slice(-2000));
+    // (said once its counts are read, after the start: waited for)
+    const once = new RegExp(LEGACY_SAID.source);
+    for (const r of Object.values(RUNTIMES)) {
+      for (const end = Date.now() + 15000; Date.now() < end && !once.test(r.server.output);) await sleep(100);
+      const said = [...r.server.output.matchAll(LEGACY_SAID)];
+      assert.strictEqual(said.length, 1, r.server.output.slice(-2000));
+      assert.ok(Number(said[0][1]) >= 1, said[0][0]);
+    }
     assert.strictEqual(await (await legacy.getJob(legacyJob.id)).getState(), 'waiting');
   });
 

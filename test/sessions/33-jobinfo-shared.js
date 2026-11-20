@@ -38,6 +38,7 @@ describe('sessions 33: a task\'s history record where nothing reads it (F1-5)', 
     options.singleIdentity = false;
     common.saveJobInfo(job(), 'completed');
     assert.strictEqual(pushed.length, 1);
-    assert.strictEqual(pushed[0][0], 'jobinfo:report');
+    // (this server's own list once an identity is set: B-j1; a bare process keeps the plain key)
+    assert.match(pushed[0][0], /^jobinfo:(\{chj-[0-9a-f]{16}\}:)?report$/);
   });
 });

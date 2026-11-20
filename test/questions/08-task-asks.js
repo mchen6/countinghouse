@@ -325,8 +325,11 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       // the job queue is this server's own, its prefix derived from the
       // identity secret (B-j1): initialized as a start does, in a directory
       // of this file's
-      identityDir = require('../helpers/test-tmp').mkdtemp('ch-q08-identity-');
-      require('../../lib/identity').initSync({moduleDataPath: identityDir});
+      // (only if no file before set it up: the process-wide secret is never swapped)
+      if (!require('../../lib/identity').ready()) {
+        identityDir = require('../helpers/test-tmp').mkdtemp('ch-q08-identity-');
+        require('../../lib/identity').initSync({moduleDataPath: identityDir});
+      }
       JobControl = require('../../lib/job-control');
     });
     after(() => {
