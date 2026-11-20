@@ -1068,8 +1068,10 @@ The refusal (`ERR_ACCESS_DENIED`) goes to your callback and to the
 request's `'error'` listeners, including one you add later. With neither,
 nothing is emitted, so a stream you piped it into is never ended. Listen
 for `'error'` when you stream. After `abort()`, nothing is delivered. A
-`URL` object given as `uri` leaves the stand-in's `uri` null; a string
-gives its parts.
+`URL` object given as `uri` leaves the stand-in's `uri` null. A string
+gives its parts, as an informational approximation of postman-request's
+own (`url.parse`'s fields), not an exact copy: `slashes` is always true,
+`auth` stays percent-encoded, and `href` is the string as given.
 
 **Self-contained.** Every dependency of your module, followed through the
 whole tree, must be installed inside the module's own directory. Install
