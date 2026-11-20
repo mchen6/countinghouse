@@ -196,6 +196,13 @@ const STEPS = {
       const hooked = base(() => require.resolve('#cond'));
       out.push(direct === hooked && /^cond-/.test(direct) ? 'same' : `conditions(${direct} / ${hooked})`);
     }
+    // (#465's Fable pass, F4: findPackageJSON of the module's own name,
+    // a self-reference through its "exports", answers its own package.json)
+    if (typeof(M.findPackageJSON) === 'function') {
+      let own;
+      try { own = String(M.findPackageJSON('isolation-probe/self-check', __filename)); } catch (e) { own = String(e.code); }
+      out.push(/\/app\/package\.json$|\\app\\package\.json$/.test(own) ? 'same' : `selfFind(${own})`);
+    } else out.push('same');
     // (#465's Fable pass, F2 and F3: a require whose parent is the root
     // itself -- createRequire('/app') -- is refused before Node, as a missing
     // name is, while createRequire('/app/'), a directory, still requires

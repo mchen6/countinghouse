@@ -183,6 +183,26 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
       write(path.join(root, 'node_modules', 'co_lon:pkg', 'package.json'), JSON.stringify({name: 'co_lon:pkg', exports: {'.': './i.js', './x': './x.js'}}));
       for (const spec of ['co_lon:pkg', 'co_lon:pkg/x', 'co_lon:pkg/nope']) cases.push({id: `colon ${spec}`, spec, parent, pkgDir: path.join(root, 'node_modules', 'co_lon:pkg')});
     }
+    // (package.json texts JSON.stringify can't write -- a key twice, an
+    // "exports" that is a string beginning with '{' or '[' -- read by the
+    // resolver as Node reads them; #465's Fable pass, F4)
+    for (const [name, text, files] of [
+      ['dupkeys', '{"name":"dupkeys","exports":"./first.js","exports":"./second.js"}', ['first.js', 'second.js']],
+      ['strobj', '{"name":"strobj","exports":"{\\"./x\\":\\"./y.js\\"}"}', ['y.js']],
+      ['strarr', '{"name":"strarr","exports":"[\\"./a.js\\"]"}', ['a.js']]
+    ]) {
+      write(path.join(root, 'node_modules', name, 'package.json'), text);
+      for (const f of files) write(path.join(root, 'node_modules', name, f), '');
+      for (const spec of [name, `${name}/x`]) cases.push({id: `raw ${name} ${spec}`, spec, parent, pkgDir: path.join(root, 'node_modules', name)});
+    }
+    // (and an "imports" that is a string spelling an object)
+    {
+      const dir = path.join(root, 'strimp');
+      write(path.join(dir, 'package.json'), '{"name":"strimp","imports":"{\\"#s\\":\\"./s.js\\"}"}');
+      write(path.join(dir, 's.js'), '');
+      write(path.join(dir, 'index.js'), '');
+      cases.push({id: 'raw strimp #s', spec: '#s', parent: path.join(dir, 'index.js')});
+    }
     // (a scope with an empty, '.' or '..' name part)
     for (const spec of ['@sc/..', '@sc/.', '@sc/']) cases.push({id: `scope part ${spec}`, spec, parent, stricter: true});
   });
