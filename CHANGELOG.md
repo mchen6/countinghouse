@@ -18,8 +18,9 @@ a seed under another project's registry. It is now a UUID v5 of the
 (`lib/call-address.js` `CH_DEVICE_NS`), so every ID changed. Grants that
 list specific device IDs must be regenerated (`'*'` grants are unaffected);
 a start logs, once per module, a grant that still names a loaded module's
-pre-8.0 ID, with the new one. Device logs stored under the old IDs are
-orphaned. The examples' `auth.json` files are regenerated, and the tests,
+pre-8.0 ID, with the new one (again after an auth reload). What is kept
+under a device ID is orphaned: device logs, and the metering's per-tool
+records (a per-tool free-call count or price record starts afresh). The examples' `auth.json` files are regenerated, and the tests,
 scripts and examples compute IDs with `deviceIDForName`.
 
 ### Changed — the usage report counts a cancelled call apart: `profile.cancelled`

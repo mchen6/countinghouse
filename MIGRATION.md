@@ -506,6 +506,7 @@ Device modules that reference `CdifUtil`, `CdifDevice`, or `CdifError` by name
   reassign the UUID of every existing device on upgrade, which is a far more
   disruptive break than the renames above, for no functional or user-visible
   benefit. It stays as-is intentionally.
+  (8.0 changed it after all: see the CHANGELOG and docs/upgrading-to-8.md.)
 - `error-info.zh-CN.json` (localized error messages) is kept, `zh-CN` is still
   available via `--locale zh-CN`. The default flipped to `en-US` afterward
   (commit `c95384b`); `error-info.en-US.json` has since reached full parity
@@ -551,3 +552,4 @@ likewise for `CdifDevice`/`CdifError`.)
 - Device UUID generation (`lib/countinghouse-device.js`, `UUID.v5` namespace seed)
   is still `https://registry.apemesh.com/packages/...` — untouched by either rename,
   intentionally, to avoid reassigning every existing device's persistent UUID.
+  (8.0 changed it after all: see the CHANGELOG and docs/upgrading-to-8.md.)
