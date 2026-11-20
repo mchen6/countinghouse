@@ -242,6 +242,11 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       else assert.ok(await waitFor({get output() { return server.output.slice(from); }}, /violation require json-stringify-safe/), server.output.slice(-1500));
     });
     if (mode === 'enforce') {
+      // (the compatibility PR: the reduced module's two statics, confined)
+      it('the reduced module\'s _nodeModulePaths and _resolveFilename: only inside the root, virtual answers, every refusal', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'reducedStatics'});
+        assert.strictEqual(detail(r), 'virtual none own refused refused refused same same same', JSON.stringify(r).slice(0, 1500));
+      });
       // (F4, #194's PR 3)
       it('import() from an ES module: a runtime file or a runtime-only package against a missing one, the same whole error', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'importOracle'});
@@ -259,7 +264,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
         // deep self-reference finds the one above it)
         assert.deepStrictEqual(plainControl, [path.join(spaced, 'isolation-probe.js'), path.join(spaced, 'isolation-probe.js')]);
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'cjsJudged'});
-        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
       });
       // (each layer past the judged _stat, alone: removing any one fails
       // this; POSIX, where a test makes a link without privileges)

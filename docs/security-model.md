@@ -172,6 +172,16 @@ default list (`require`, `node`, `node-addons`, `module-sync`). A plain
 | Disk quota | not counted | logged | enforced |
 | Lockdown, resource limits, clean environment | no | yes | yes |
 
+Under `off` and `audit`, Node's resolver internals and their host paths
+are module code's to see, as before: `Module._findPath` and
+`_resolveLookupPaths` (which a module may replace), a readable
+`Module._pathCache`, and a direct call made from inside a module's own
+patched internal. What a direct resolution made from the module's own
+virtual paths (a parent or base built from `__filename` or `__dirname`)
+answers or throws holds no host path there: an answer outside the module
+is not found, and any error is a plain not-found. Which calls are mapped
+is `lib/fs-broker/identity.js`'s `parentMapped` and `hostOf`.
+
 **On Windows** a module's files carry a drive (#195): the module sees them,
 its current directory and its stack frames as `<V>:\app\...`, V a drive
 letter the host does not have, picked once per process, because Node there
@@ -297,10 +307,12 @@ any module code). Stops:
   | --- | --- | --- | --- | --- |
   | `source-map-support`, `install()` | works | works | works | works |
   | `source-map-support`, `install({hookRequire: true})` | works | works | no hook (reported) | throws |
-  | `require-in-the-middle`, a `Hook` | works | works | throws | no hook |
-  | `resolve-from`, from `__dirname` | fails (works on Windows) | fails (works below Node 24.15) | fails (works below Node 24.15) | throws |
-  | `import-fresh`, a relative name | fails (works on Windows) | fails (works below Node 24.15) | fails (works below Node 24.15) | throws |
-  | `module-alias`, `addAlias` | no alias (works on Windows) | no alias | no alias | throws |
+  | `require-in-the-middle`, a `Hook` | works | works | throws | throws |
+  | `resolve-from`, from `__dirname` | works | works (not on Windows) | works (not on Windows) | works (not on Windows) |
+  | `import-fresh`, a relative name | works | works (not on Windows) | works (not on Windows) | works (not on Windows) |
+  | `import-fresh` or `resolve-from`, an absolute path from `__dirname` | works | works below Node 24.15 (Linux, macOS) | works below Node 24.15 (Linux, macOS) | works below Node 24.15 (Linux, macOS) |
+  | `module.findPackageJSON` from `__filename` | works | works | works | not in the reduced `module` |
+  | `module-alias`, `addAlias` | works | no alias | no alias | throws |
   | `process.emitWarning = fn` | works | works | works | works |
   | `process.emitWarning = null` | throws on the next call | throws on the next call | throws on the next call | warnings off |
   | `Object.defineProperty(process, 'emitWarning', ...)` | works | works | works | throws |
@@ -309,24 +321,32 @@ any module code). Stops:
   | `process.env = {...}`, `process.send = fn` | works | works | works | doesn't take (a TypeError in strict code) |
 
   Why:
-  - a module's own directory is virtual (`/app/...`) in every mode,
-    single-thread included, and these three hand a path made from it to
-    Node's resolver, which reads it as the host's own `/app`; on Windows
-    in single-thread mode it is `<V>:\app\...`, on a drive no host path is
-    on, and they work;
+  - a module's own directory is virtual (`/app/...`) in every mode on
+    Linux and macOS, single-thread included, and in a Windows worker
+    (`<V>:\app\...`); in single-thread mode on Windows it is its host
+    path. A parent a library makes from it (as
+    `resolve-from` and `import-fresh` do) reaches Node's resolver in its
+    host form, confined to the module's root: in a worker by the file
+    broker's mapping, which answers a module file by its virtual name (on
+    Linux and macOS; a Windows worker answers as before, not found); in
+    single-thread mode by the facade, through the root of the module that
+    called, answering the host path (development mode, no isolation; on
+    Windows, where a single-thread module's directory is its host path,
+    Node resolves from it as it is).
+    Under `enforce` the reduced `module` gives them `_nodeModulePaths` and
+    `_resolveFilename`, confined to the root, with every refusal `enforce`
+    has and never a host path;
   - in a worker a module's requires are resolved by the file broker with
     Node's own resolver, so `module-alias`'s replaced `_resolveFilename` is
-    never asked;
+    never asked: use relative requires instead;
   - under `audit` the loader's statics and `process.getBuiltinModule` are
     held, so a replacement is reported and never takes;
-  - under `enforce` the reduced `module` has no prototype, statics or
-    `_nodeModulePaths` to reach.
+  - under `enforce` the reduced `module` has no prototype or other statics
+    to replace.
 
   So a dependency that hooks the loader (`hookRequire`,
   `require-in-the-middle`) needs `--moduleSandbox off` or single-thread
-  mode, and one that resolves from the module's own directory
-  (`resolve-from`, `import-fresh`, `module-alias`) fails in every mode
-  until a module's own paths reach Node's resolver in their host form;
+  mode;
 - other routes to files: `module.enableCompileCache`, `process.report`'s
   file output and `process.setSourceMapsEnabled` are locked;
   `process.loadEnvFile` goes through the file broker. Of `process.report`'s
@@ -436,9 +456,11 @@ A module sees its own namespace, in every mode:
 request name differs from it is refused in every mode
 (`MODULE_NAME_MISMATCH`), so code cannot be loaded under another module's
 name to get its policy entry and data. `__filename`, `__dirname`,
-`require.resolve`, `require.cache` keys, `import.meta`, stack frames,
-`process.cwd()` (`/app`) and `os.tmpdir()` (`/tmp`) are virtual, and so are
-paths in results and errors. Ancestors of a root (`/`, `/var`) answer as
+`require.resolve`, `require.cache` keys, `import.meta`, a module's own stack
+frames, `process.cwd()` (`/app`) and `os.tmpdir()` (`/tmp`) are virtual, and
+so are paths in results and errors. Frames of the runtime's own files in a
+stack module code can read can still name the install directory (being
+fixed). Ancestors of a root (`/`, `/var`) answer as
 read-only directories that list only the way to the root. A declared path
 can never cover countinghouse's own directories (the install directory,
 `--modulePath`, `--moduleDataPath`, the auth and device-config paths, the
