@@ -1082,7 +1082,10 @@ logged and the request still goes ahead; only `enforce` refuses it. Under
 `agent`, `har` and similar) and checks every redirect.
 
 A refused `CHUtil.request` answers with a stand-in for postman-request's
-`Request`. It is never `undefined`, and its Request methods do nothing.
+`Request`, never `undefined`. Its methods send nothing but return what a
+`Request`'s would: `pipe(dest)` returns `dest`, `form()` a FormData,
+`form(fields)` and the builders the request, and `write` true. `abort()`
+sets `_aborted` and emits `'abort'`.
 The refusal (`ERR_ACCESS_DENIED`) goes to your callback and to the
 request's `'error'` listeners, including one you add later. With neither,
 nothing is emitted, so a stream you piped it into is never ended. Listen

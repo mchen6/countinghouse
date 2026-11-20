@@ -307,27 +307,44 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
         plain = {said: 'to ' + r12.uri.href, has: r12.headers.hasOwnProperty('h'), frozen: Object.isFrozen(r12.uri), json: typeof(r12.toJSON().headers.hasOwnProperty)};
       } catch (e) { plain = String(e.message); }
       // captureRejections honoured as a real emitter's
+      let fresh;
+      let r13;
       EE.captureRejections = true;
-      const fresh = new EE();
-      const r13 = CHUtil.request(url);
-      r13.on('error', () => {});
-      EE.captureRejections = false;
+      try {
+        fresh = new EE();
+        r13 = CHUtil.request(url);
+        r13.on('error', () => {});
+      } finally {
+        EE.captureRejections = false;
+      }
       const captureSym = Object.getOwnPropertySymbols(fresh).filter((k) => fresh[k] === true);
       const capture = captureSym.length > 0 && captureSym.every((k) => r13[k] === true);
+      // toJSON as postman-request's: the request's own headers as they are now
+      r12.headers.k = 'v';
+      const json = JSON.parse(JSON.stringify(r12));
+      const jsonShape = {uri: json.uri && json.uri.href, method: json.method, k: json.headers.k};
+      // the uri's fields as url.parse gives them: a written default port, an
+      // IPv6 hostname unbracketed, query and hash without their marks
+      const r14 = CHUtil.request('http://not-granted.example.invalid:80/p?q=1#f');
+      r14.on('error', () => {});
+      const r15 = CHUtil.request('http://[::1]:9/x');
+      r15.on('error', () => {});
+      const parse = {port: r14.uri.port, host: r14.uri.host, query: r14.uri.query, hash: r14.uri.hash, slashes: r14.uri.slashes, v6: r15.uri.hostname};
       // a uri whose href getter throws: refused, never a throw
       let hrefThrows;
       try {
         hrefThrows = await new Promise((resolve) => CHUtil.request({uri: {get href() { throw new Error('a module getter'); }}}, (e) => resolve(e.code)));
       } catch (e) { hrefThrows = 'threw: ' + e.message; }
       return {ran, viaCallback, piped, onceCalls, prependOnceCalls, after, viaForm, abortErr, aborted, uri: r4.uri && r4.uri.href, method: r4.method,
-        assigned, lateThenAbort, nested, removeRan, afterAbort, uriParts, urlToStringRan, urlObjectUri, afterRemoved, plain, capture, hrefThrows};
+        assigned, lateThenAbort, nested, removeRan, afterAbort, uriParts, urlToStringRan, urlObjectUri, afterRemoved, plain, capture, hrefThrows, jsonShape, parse};
     `);
     assert.deepStrictEqual(out, {ran: 0, viaCallback: 'ERR_ACCESS_DENIED', piped: 'dest', onceCalls: 1, prependOnceCalls: 1, after: 0, viaForm: 'ERR_ACCESS_DENIED',
       abortErr: 0, aborted: 1, uri: 'http://not-granted.example.invalid/x', method: 'POST',
       assigned: true, lateThenAbort: 0, nested: 'ERR_ACCESS_DENIED', removeRan: 0, afterAbort: {aborted: true},
       uriParts: {host: 'not-granted.example.invalid', path: '/p?q=1', protocol: 'http:'}, urlToStringRan: 1, urlObjectUri: null,
       afterRemoved: 'ERR_ACCESS_DENIED', plain: {said: 'to http://not-granted.example.invalid/u', has: true, frozen: false, json: 'function'}, capture: true,
-      hrefThrows: 'ERR_ACCESS_DENIED'}, JSON.stringify(out));
+      hrefThrows: 'ERR_ACCESS_DENIED', jsonShape: {uri: 'http://not-granted.example.invalid/u', method: 'GET', k: 'v'},
+      parse: {port: '80', host: 'not-granted.example.invalid:80', query: 'q=1', hash: '#f', slashes: true, v6: '::1'}}, JSON.stringify(out));
   }));
 
   // the stand-in's method list can't drift from postman-request's Request
