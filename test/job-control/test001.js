@@ -40,15 +40,14 @@ module.exports = function (cp, isSingleThread) {
             return done();
           });
 
-          jobQueue.add('test1', {
+          // the events stream is read before the job is added: a quick job's
+          // completion is never missed (the high review of #463)
+          queueEvents.waitUntilReady().then(() => jobQueue.add('test1', {
             deviceID: 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767',
             serviceID:'urn:countinghouse-com:serviceID:echoService',
             actionName: 'echo',
             input: {foo: [], bar: 'inputString'}
-          }).then((job) => {
-          }).catch((err) => {
-            console.log(`job add error:${err.message}`);
-          });
+          })).catch((err) => done(new Error(`job add error: ${err.message}`)));
       });
     });
   });
