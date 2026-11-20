@@ -9,8 +9,8 @@
 // deviceIDs are deterministic (UUIDv5 of a fixed namespace + the target
 // module's api.json friendlyName -- see lib/countinghouse-device.js), so they
 // can be computed offline rather than discovered at runtime.
-const ECHO_DEVICE_ID      = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767'; // echo-device-module ("echo-device")
-const TRANSFORM_DEVICE_ID = 'a53ef5c7-cc2f-5264-9811-44f1611685ee'; // transform-demo
+const ECHO_DEVICE_ID      = 'e18f97d6-340a-5517-be3a-91820edc1075'; // echo-device-module ("echo-device")
+const TRANSFORM_DEVICE_ID = 'e66f514d-b9d7-5096-831a-d99ff2d0f015'; // transform-demo
 
 const ECHO_SERVICE      = 'urn:countinghouse-com:serviceID:echoService';
 const TRANSFORM_SERVICE = 'urn:countinghouse-com:serviceID:transformService';

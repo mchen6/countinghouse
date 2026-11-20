@@ -1,4 +1,5 @@
 const fs      = require('fs');
+const {deviceIDForName} = require('../../lib/call-address');
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 const {toolErrorCode} = require('../helpers/tool-result');
@@ -38,7 +39,7 @@ const BURST = 8;
 // echo-device-module's deviceID is deterministic (UUID.v5 over a fixed
 // namespace and the module's friendlyName -- lib/call-address.js), the same
 // way test/auth/07-task-ownership.js hardcodes it.
-const DEVICE_ID = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767';
+const DEVICE_ID = deviceIDForName('echo-device');
 
 function authConfig() {
   const config = {};

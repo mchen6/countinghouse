@@ -31,10 +31,10 @@ narrowing the scan to repository source is the right response to it.
 # auth.json: the caller is granted the composite device ONLY.
 # The composing module's identity is granted the three inner devices.
 {
-  "reviewer-demo-key":      {"userName": "reviewer",             "devices": ["51b0d6ac-7a77-5083-8476-26a9be96a101"]},
-  "repo-review-internal":   {"userName": "repo-review-internal", "devices": ["1359302a-e4fe-5c14-853b-f83638e8ca01",
-                                                                            "7d4e06e9-0742-556b-a7f2-a32aee36e2e7",
-                                                                            "01919ef1-dd71-5d42-99ce-98decb9a2408"]}
+  "reviewer-demo-key":      {"userName": "reviewer",             "devices": ["227c7bea-87f8-5dfa-b9de-a4dd7eaedffd"]},
+  "repo-review-internal":   {"userName": "repo-review-internal", "devices": ["a052935d-adee-5295-b83f-a4b0eadbb2e7",
+                                                                            "8983b0e7-85d7-5d11-9ae0-68e4692756c5",
+                                                                            "f805d22c-79ff-5409-8e24-6c8b1f34f237"]}
 }
 ```
 

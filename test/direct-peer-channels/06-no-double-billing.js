@@ -1,4 +1,5 @@
 const {startServer, shutdownThenStop} = require('../helpers/sandbox-server');
+const {deviceIDForName} = require('../../lib/call-address');
 const request = require('supertest');
 const {testPort} = require('../helpers/test-env');
 
@@ -21,8 +22,8 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
 // incompatible with test8.js's shared server -- see that file's
 // STANDALONE_ONLY_PEER_CHANNEL_TESTS comment for why these can never run
 // concurrently with it or with each other).
-const COMPOSITE_DEVICE_ID = '6042a93c-06b1-54b5-a62d-a68c15f1ce1e'; // composite-demo
-const ECHO_DEVICE_ID      = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767'; // echo-device-module, called directly for the outer-charge baseline
+const COMPOSITE_DEVICE_ID = deviceIDForName('composite-demo'); // composite-demo
+const ECHO_DEVICE_ID      = deviceIDForName('echo-device'); // echo-device-module, called directly for the outer-charge baseline
 const INTERNAL_API_KEY    = 'composite-demo-internal'; // composite-demo/device.js's fixed internal identity
 
 function loadModuleArgs() {

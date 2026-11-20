@@ -1,4 +1,5 @@
 const fs = require('fs');
+const {deviceIDForName} = require('../../lib/call-address');
 const {startServer, shutdownThenStop} = require('../helpers/sandbox-server');
 const request = require('supertest');
 const {testPort} = require('../helpers/test-env');
@@ -37,7 +38,7 @@ describe('direct-peer-channels 05: backpressure queueing is correct, not just fa
     return shutdownThenStop(server, testPort(9527), null);
   });
 
-  const CALLER_DEVICE_ID = '13793b1a-132d-5a03-a46b-2e0bb72d0d82'; // perf-caller-demo
+  const CALLER_DEVICE_ID = deviceIDForName('perf-caller-demo'); // perf-caller-demo
 
   it('a burst of concurrent calls well above the cap all complete correctly, none dropped', (done) => {
     const TOTAL = 20; // 10x the cap of 2

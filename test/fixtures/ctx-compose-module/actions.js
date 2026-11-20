@@ -4,7 +4,7 @@
 //
 // The caller therefore does not need a grant to echo-device-module, but still
 // pays for the hop it caused.
-const ECHO_DEVICE_ID = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767';
+const ECHO_DEVICE_ID = 'e18f97d6-340a-5517-be3a-91820edc1075';
 const ECHO_SERVICE   = 'urn:countinghouse-com:serviceID:echoService';
 
 module.exports = {

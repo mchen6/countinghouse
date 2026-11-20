@@ -45,6 +45,7 @@
 // across runs the same way. A failed call is counted by error code and left
 // out of the samples rather than ending the run.
 const fs    = require('fs');
+const {deviceIDForName} = require('../lib/call-address');
 const os    = require('os');
 const path  = require('path');
 const spawn = require('child_process').spawn;
@@ -73,10 +74,10 @@ const handlers = {
   cluster: leaf(require(path.join(EXAMPLE, 'error-cluster', 'handlers', 'clusterService', 'cluster.js')))
 };
 
-const TRIAGE_DEVICE  = 'dad07d2a-9d65-5ef5-af59-05c0160c5fdc';
-const READ_DEVICE    = 'fd0eafbd-20da-53e6-9302-681687350a3b';
-const REDACT_DEVICE  = 'b5048beb-2128-52c0-9cd4-42669f57090f';
-const CLUSTER_DEVICE = '9f9aab37-b175-5286-81c3-68bdd24bd4f7';
+const TRIAGE_DEVICE  = deviceIDForName('log-triage');
+const READ_DEVICE    = deviceIDForName('log-read');
+const REDACT_DEVICE  = deviceIDForName('pii-redact');
+const CLUSTER_DEVICE = deviceIDForName('error-cluster');
 
 const TOOLS = {
   triage:  'log_triage_triageservice_triage',

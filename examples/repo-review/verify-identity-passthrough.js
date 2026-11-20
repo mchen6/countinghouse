@@ -4,6 +4,7 @@
 // and multi-tenant, because under --debug every key resolves to an admin
 // session and neither half of the authorize/bill split is observable.
 const assert  = require('assert');
+const {deviceIDForName} = require('../../lib/call-address');
 const fs      = require('fs');
 const path    = require('path');
 const exec    = require('child_process').exec;
@@ -20,10 +21,10 @@ const CALLER      = `caller-4hop-${process.pid}`;
 const AS_IDENTITY     = 'repo-review-internal';
 const AS_IDENTITY_KEY = 'repo-review-internal-demo-key-not-secret';
 
-const REVIEW_DEVICE = '51b0d6ac-7a77-5083-8476-26a9be96a101';
-const SCAN_DEVICE   = '1359302a-e4fe-5c14-853b-f83638e8ca01';
-const DETECT_DEVICE = '7d4e06e9-0742-556b-a7f2-a32aee36e2e7';
-const AUDIT_DEVICE  = '01919ef1-dd71-5d42-99ce-98decb9a2408';
+const REVIEW_DEVICE = deviceIDForName('repo-review');
+const SCAN_DEVICE   = deviceIDForName('repo-scan');
+const DETECT_DEVICE = deviceIDForName('secret-detect');
+const AUDIT_DEVICE  = deviceIDForName('dep-audit');
 
 // The caller is granted the composite device ONLY. If authorization used the
 // caller's identity, every inner hop would fail; if it uses the module's, they
