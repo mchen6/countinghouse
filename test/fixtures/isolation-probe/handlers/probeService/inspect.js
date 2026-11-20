@@ -148,6 +148,11 @@ const STEPS = {
     const deep = require('../../lib/deep/a/b/c/self.js');
     out.push(deep('isolation-probe/self-check') === 'counted' ? 'same' : `ownSelf(${deep('isolation-probe/self-check')})`);
     same('outerSelf', deep('outer-self').split('outer-self').join('PKG'), deep('no-such-outer').split('no-such-outer').join('PKG'));
+    // (a require by CommonJS's own test: '..foo/...' is a relative path,
+    // which loads; 'a:b/...' a bare name, whose climbing subpath is refused
+    // as any bare name's is)
+    out.push(o(() => require('..foo/../../../lib/stat-count.js'), 'x') === 'found' ? 'same' : `dotdotRelative(${o(() => require('..foo/../../../lib/stat-count.js'), 'x').slice(0, 200)})`);
+    same('urlishClimb', o(() => require('a:b/../../lib/stat-count.js'), 'a:b'), o(() => require('nosuchdep/../../lib/stat-count.js'), 'nosuchdep'));
     // (a bare name with a ':' URL parsing rejects -- bare to Node -- above
     // the root against a missing one, by import, findPackageJSON and
     // require; POSIX, where a file name can hold one)
