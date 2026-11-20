@@ -16,7 +16,8 @@ A call cancelled while it ran (M19) was counted among the report's errors.
 It is no error: `countinghouse_usage_report` (and `countinghouse-usage`)
 now count such calls in `profile.cancelled`, and leave them, and the
 server calls the cancel aborted (`CALL_TOKEN_INVALID`), out of
-`profile.errors`.
+`profile.errors`. A task cancelled with `tasks/cancel` while its run ran
+is such a call: its run's record says `cancelled`, whatever the run's end.
 
 ### Removed — the pack form, `--packsRoot`, a ceiling's `packs`, `fallbackEnv`
 
