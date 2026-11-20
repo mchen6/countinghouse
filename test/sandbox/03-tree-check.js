@@ -32,7 +32,7 @@ describe('sandbox 03: tree checks', () => {
       'node_modules/a/node_modules/c/package.json': {name: 'c'},
       'node_modules/b/package.json': {name: 'b', dependencies: {a: '1'}}
     });
-    assert.deepStrictEqual(checkTree(d), {problems: [], warnings: [], dirLinks: [], brokenLinks: [], manifestLinks: [], outsideMains: []});
+    assert.deepStrictEqual(checkTree(d), {problems: [], warnings: [], dirLinks: [], brokenLinks: [], manifestLinks: [], outsideMains: [], duplicateKeys: []});
   });
 
   it('a dependency whose package.json is a directory has none, as for Node (the high review of #452)', () => {
@@ -59,6 +59,17 @@ describe('sandbox 03: tree checks', () => {
     fs.mkdirSync(path.join(d, 'node_modules'));
     fs.symlinkSync(outside, path.join(d, 'node_modules', 'ext'));
     assert.match(checkTree(d).problems.join('\n'), /"ext".*outside the module/);
+  });
+
+  // (the high review of #465, round 3: a package.json writing one of
+  // Node's resolution keys twice is reported -- refused under enforce --
+  // since JSON.parse keeps the last copy and Node's reader may keep another)
+  it('reports a package.json that writes "imports", "exports", "name", "main" or "type" twice', () => {
+    const d = mk({'package.json': '{"name":"m","version":"1.0.0"}',
+      'lib/p/package.json': '{"name":"p","imports":{"#b":"./b.js"},"imports":null}',
+      'lib/q/package.json': '{"name":"q","exports":"./a.js","type":"module","exports":"./b.js","type":"commonjs"}',
+      'lib/r/package.json': '{"name":"r","nested":{"imports":1,"imports":2}}'});
+    assert.deepStrictEqual(checkTree(d).duplicateKeys.sort(), ['lib/p/package.json\'s "imports"', 'lib/q/package.json\'s "exports"', 'lib/q/package.json\'s "type"'].sort());
   });
 
   it('reports native code: .node files, binding.gyp, gypfile', () => {
@@ -102,7 +113,7 @@ describe('sandbox 03: tree checks', () => {
     fs.symlinkSync('./nowhere', path.join(d, 'dangling'));
     // (inside: no problem of its own; a link to a directory is listed, for
     // the refusal under enforce below)
-    assert.deepStrictEqual(checkTree(d), {problems: [], warnings: [], dirLinks: ['alias'], brokenLinks: ['dangling'], manifestLinks: [], outsideMains: []});
+    assert.deepStrictEqual(checkTree(d), {problems: [], warnings: [], dirLinks: ['alias'], brokenLinks: ['dangling'], manifestLinks: [], outsideMains: [], duplicateKeys: []});
   });
 
   // The _stat PR (the reviewer's ruling): Node's ES resolver reads a
