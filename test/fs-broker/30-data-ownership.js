@@ -85,7 +85,7 @@ describe('fs-broker 30: the runtime deletes only directories it made', () => {
     ownership.resetForTests();
     await walk.emptyTmp(m2.tmp, {holder: m2.root, base: store, say: (t) => said.push(t)});
     assert.strictEqual(said.length, 1);
-    assert.match(said[0], /is reached through a link \(.*m2\), and the runtime never empties or removes anything through one/);
+    assert.match(said[0], /is reached through a link \(.*m2\): a module's data directory can't be a symlink \(use a bind mount\)/);
     assert.doesNotMatch(said[0], /delete .*countinghouse-owned/);
     // and an @scope that is a link
     const s = await moduleData.ensureDirs(store, '@real/p');
@@ -96,15 +96,22 @@ describe('fs-broker 30: the runtime deletes only directories it made', () => {
     assert.ok(survived(path.join(s.tmp, 'live')));
   });
 
-  // the reviewer's high on #467, 1 and 2: birth is compared only where both
-  // sides have one; a probe that fails is not remembered
-  it('a recorded birth of 0 (birth times not real there) compares dev and ino only; a failed probe is asked again', async () => {
-    const d = await moduleData.ensureDirs(path.join(base, 'store'), 'm');
+  // the reviewer's high on #467: a '0' entry (recorded where birth times
+  // aren't real) owns by dev and ino only where they still aren't; where they
+  // are, it is unknown, never owned, so it can't claim a reused inode (round
+  // 3, 6). A probe that fails is not remembered (round 2, 1).
+  it('a recorded birth of 0 owns by dev and ino only where birth times are not real; where they are, it owns nothing; a failed probe is asked again', async () => {
+    const store = path.join(base, 'store');
+    const d = await moduleData.ensureDirs(store, 'm');
     const marker = path.join(d.root, ownership.MARKER);
     const doc = JSON.parse(fs.readFileSync(marker, 'utf8'));
     doc.dirs.tmp.birth = '0';
     fs.writeFileSync(marker, JSON.stringify(doc), {mode: 0o600});
-    assert.strictEqual(await ownership.ownedDir(d.root, 'tmp', d.tmp, path.join(base, 'store')), true);
+    const dev = String(fs.lstatSync(d.tmp, {bigint: true}).dev);
+    ownership.setBirthRealForTests(dev, true);
+    assert.strictEqual((await ownership.ownership(d.root, 'tmp', d.tmp, store)).state, 'unknown', 'a 0 entry where births are real');
+    ownership.setBirthRealForTests(dev, false);
+    assert.strictEqual(await ownership.ownedDir(d.root, 'tmp', d.tmp, store), true, 'a 0 entry where births are not real');
     ownership.resetForTests();
     assert.strictEqual(await ownership.birthIsReal(path.join(base, 'no-such-holder'), 'probe-dev'), null, 'a probe that cannot run');
     assert.strictEqual(typeof(await ownership.birthIsReal(d.root, 'probe-dev')), 'boolean', 'not remembered: asked again');
@@ -130,10 +137,11 @@ describe('fs-broker 30: the runtime deletes only directories it made', () => {
     fs.writeFileSync(marker, JSON.stringify(doc), {mode: 0o600});
     assert.strictEqual((await ownership.ownership(d.root, 'tmp', d.tmp, store)).state, 'owned');
     ownership.setBirthRealForTests(dev, false);
-    assert.strictEqual((await ownership.ownership(d.root, 'tmp', d.tmp, store)).state, 'unknown');
+    assert.strictEqual((await ownership.ownership(d.root, 'tmp', d.tmp, store)).state, 'unreadable');
     const said = [];
     assert.strictEqual(await walk.emptyTmp(d.tmp, {holder: d.root, base: store, say: (t) => said.push(t)}), false);
-    assert.match(said.join('\n'), /could not be checked now .* it is checked again at the next start/);
+    // (the high's round 3, 3: this host, and the recovery)
+    assert.match(said.join('\n'), /can't be checked on this host .* stop the runtime and delete .*\.countinghouse-owned to have it adopted again/);
   });
 
   it('a marker that is a link, not owner-only, too large or not its shape names nothing', async () => {
@@ -175,10 +183,48 @@ describe('fs-broker 30: the runtime deletes only directories it made', () => {
     assert.strictEqual(await ownership.codeInside(e.tmp, {folders: [path.join(base)]}), false, 'a folder around it is not code inside it');
   });
 
-  it('a fresh marker a crash left mid-write, or a birth-time probe, never keeps the holder from going', async () => {
+  // the reviewer's high on #467, round 3, 6: a removed directory's entry
+  // leaves the marker, so it can never name a later directory
+  it('when a directory is removed, the marker is rewritten without its entry', async () => {
+    const store = path.join(base, 'store');
+    const d = await moduleData.ensureDirs(store, 'm');
+    writeB(path.join(d.data, 'b'));
+    const kept = await ownership.removeOwned(d.root, d, store, null, {roots: [path.join(d.data, 'b')]});
+    assert.deepStrictEqual(kept, [d.data]);
+    assert.deepStrictEqual(Object.keys(await ownership.readMarker(d.root, store)), ['data'], 'the removed tmp\'s entry is gone');
+  });
+
+  // round 3, 4: a known root's link re-pointed since is seen at delete time
+  it('codeInside resolves each root afresh: a link re-pointed into the directory is seen', async () => {
+    const d = await moduleData.ensureDirs(path.join(base, 'store'), 'm');
+    const elsewhere = path.join(base, 'elsewhere');
+    fs.mkdirSync(elsewhere);
+    const link = path.join(base, 'module-link');
+    fs.symlinkSync(elsewhere, link, 'junction');
+    assert.strictEqual(await ownership.codeInside(d.tmp, {roots: [link]}), false);
+    writeB(path.join(d.tmp, 'b'));
+    fs.unlinkSync(link);
+    fs.symlinkSync(path.join(d.tmp, 'b'), link, 'junction');
+    assert.strictEqual(await ownership.codeInside(d.tmp, {roots: [link]}), true, 'the re-pointed link');
+    assert.strictEqual(await ownership.codeInside(d.tmp, {roots: [path.join(base, 'gone')]}), false, 'a root that is gone holds nothing');
+  });
+
+  // round 3, 1: a holder reached through a link never has its (the target's) marker removed
+  it('a holder reached through a link, with nothing in it: the marker it leads to is not removed', async () => {
+    const store = path.join(base, 'store');
+    const target = path.join(base, 'target');
+    fs.mkdirSync(target);
+    fs.writeFileSync(path.join(target, ownership.MARKER), '{"v": 1, "dirs": {}}', {mode: 0o600});
+    fs.mkdirSync(store);
+    fs.symlinkSync(target, path.join(store, 'm3'), 'junction');
+    const m3 = moduleData.dirsFor(store, 'm3');
+    assert.deepStrictEqual(await ownership.removeOwned(m3.root, m3, store), []);
+    assert.ok(fs.existsSync(path.join(target, ownership.MARKER)), 'removed through the link');
+  });
+
+  it('a fresh marker a crash left mid-write never keeps the holder from going', async () => {
     const d = await moduleData.ensureDirs(path.join(base, 'store'), 'm');
     fs.writeFileSync(path.join(d.root, `${ownership.MARKER}.0123456789ab`), '{}', {mode: 0o600});
-    fs.mkdirSync(path.join(d.root, `${ownership.MARKER}-probe-abc`));
     assert.deepStrictEqual(await ownership.removeOwned(d.root, d, path.join(base, 'store')), []);
     fs.rmdirSync(d.root);
   });

@@ -669,7 +669,13 @@ module's root and a session's root are never removed recursively, only by
 
 A marker is read, and a directory judged its own, only through real
 directories from `--moduleDataPath` down. A `<name>/` or `@scope` that is a
-link leads to another module's marker, which vouches for nothing there.
+link leads to another module's marker, which vouches for nothing there, so
+**a module's data directory can't be a symlink**. To put it on other
+storage, use a bind mount, or link `--moduleDataPath` itself. An uninstall
+refuses a module whose `<name>/` is reached through a link
+(`MODULE_DATA_NOT_DIRECTORY`). A `.countinghouse-owned-probe-*` directory
+in a module's `data` or `tmp` is the runtime's, briefly: it checks there
+whether the file system keeps real birth times.
 
 A directory made before this rule, by an earlier version, is adopted in any
 of these:
@@ -690,7 +696,11 @@ Adoption happens only when:
 
 A directory whose marker names another, changed since, is never adopted
 again: a mismatch is the sign that something other than the runtime changed
-it.
+it. When the runtime removes a directory, it rewrites the marker without
+that directory's entry. A birth time recorded on a host that can read them
+is never set aside for device and inode alone. A directory that can't be
+checked that way is kept, said with the same recovery: stop the runtime and
+delete the marker.
 
 Nothing about a package name or a file layout is read to decide. The
 throwaway `<moduleDataPath>/.validate` of a validation is not under this

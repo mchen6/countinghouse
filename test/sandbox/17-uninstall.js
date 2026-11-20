@@ -78,6 +78,24 @@ describe('sandbox 17: POST /uninstall-module', function() {
     assert.match(server.output, /fs-probe.*data was not made by this runtime \(no ownership mark for it\), so it is not removed/);
   });
 
+  // the reviewer's high on #467, round 3, 1: an @scope that is a link is
+  // refused before anything under it is touched -- its target's partitions
+  // and stray files included
+  it('an @scope that is a link: the uninstall is refused, and nothing under its target is touched', async () => {
+    server = await start();
+    const target = path.join(base, 'elsewhere');
+    const p = path.join(target, 'p');
+    const id = 'a'.repeat(32);
+    fs.mkdirSync(path.join(p, 'data'), {recursive: true});
+    fs.mkdirSync(path.join(p, 'sessions', id, 'data'), {recursive: true});
+    fs.writeFileSync(path.join(p, 'sessions', 'stray'), 'keep');
+    fs.writeFileSync(path.join(p, 'sessions', id, 'data', 'f'), 'keep');
+    fs.symlinkSync(target, path.join(store(), '@fake'), 'junction');
+    const r = await uninstall({name: '@fake/p'});
+    assert.strictEqual(r.body.code, 'MODULE_DATA_NOT_DIRECTORY', JSON.stringify(r.body));
+    for (const f of [path.join(p, 'sessions', 'stray'), path.join(p, 'sessions', id, 'data', 'f')]) assert.ok(fs.existsSync(f), `${f} removed through the link`);
+  });
+
   it('refuses a name that is not a package name, before building any path', async () => {
     server = await start();
     for (const name of ['../x', 'a/b/c', '', '..']) {
