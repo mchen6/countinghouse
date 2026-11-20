@@ -1,5 +1,6 @@
 const fs      = require('fs');
 const waitForReady = require('../helpers/wait-for-ready');
+const assert = require('assert');
 const request = require('supertest');
 const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
@@ -93,30 +94,31 @@ describe('auth 10: /balance and countinghouse_check_balance require a real apiKe
     });
   });
 
-  it('countinghouse_check_balance: an unknown key is refused', (done) => {
-    mcpCheckBalance(UNKNOWN, (err, res) => {
-      if (err) return done(err);
-      const r = res.body.result;
-      if (r == null || r.isError !== true) {
-        return done(new Error(`an unknown key must not get a balance, got: ${JSON.stringify(res.body)}`));
-      }
-      if (JSON.stringify(res.body).indexOf('"balance"') !== -1) {
-        return done(new Error(`balance leaked to an unknown key: ${JSON.stringify(res.body)}`));
-      }
-      return done();
+  // #458: a caller with no key or an unknown key gets its auth refusal
+  // (-32603) for every tool name it can't use, the runtime's own included,
+  // the same as for a name never registered: no balance, and no tool result
+  // that tells this tool apart
+  const unregistered = (key, cb) => request(url).post('/mcp').set('Content-Type', 'application/json')
+    .set(key != null ? {'X-CH-Key': key} : {})
+    .send({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'no_such_tool_anywhere', arguments: {}}})
+    .end(cb);
+  for (const [label, key] of [['an unknown key', UNKNOWN], ['no key at all', null]]) {
+    it(`countinghouse_check_balance: ${label} is refused as for any name, with no balance`, (done) => {
+      mcpCheckBalance(key, (err, res) => {
+        if (err) return done(err);
+        unregistered(key, (err2, other) => {
+          if (err2) return done(err2);
+          try {
+            assert.strictEqual(res.body.result, undefined, JSON.stringify(res.body));
+            assert.strictEqual(res.body.error.code, -32603, JSON.stringify(res.body));
+            assert.deepStrictEqual(res.body.error, other.body.error);
+            assert.strictEqual(JSON.stringify(res.body).indexOf('"balance"'), -1);
+          } catch (e) { return done(e); }
+          return done();
+        });
+      });
     });
-  });
-
-  it('countinghouse_check_balance: no key at all is refused', (done) => {
-    mcpCheckBalance(null, (err, res) => {
-      if (err) return done(err);
-      const r = res.body.result;
-      if (r == null || r.isError !== true) {
-        return done(new Error(`an anonymous caller must not get a balance, got: ${JSON.stringify(res.body)}`));
-      }
-      return done();
-    });
-  });
+  }
 
   it('the balance tool is still advertised in tools/list to a valid caller', (done) => {
     // the fix must not make the platform tool disappear -- it is the only
