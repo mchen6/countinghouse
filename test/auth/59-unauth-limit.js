@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const unauthLimit = require('../../lib/unauth-limit');
-const {createLimiter, addressKeyOf, keyResolvedBy, WINDOW_MS} = unauthLimit;
+const {createLimiter, addressKeyOf, prefixKeyOf, keyResolvedBy, WINDOW_MS, PREFIX_FACTOR, GLOBAL_FACTOR} = unauthLimit;
 const {deviceIDForName} = require('../../lib/call-address');
 const {testPort} = require('../helpers/test-env');
 
@@ -30,33 +30,68 @@ describe('auth 59: the limiter (lib/unauth-limit.js)', () => {
     assert.strictEqual(l.retryAfterMs('a'), 0, 'the oldest refusal has left the window');
   });
 
-  // the process cap (ten times an address's budget) applies only while the
-  // address table is full -- a spray over more addresses than it keeps --
-  // and then to every address, an unseen one too; otherwise an address
-  // under its own budget is never refused (the high review of #483, 1+3)
-  it('a spray cycling over more addresses than the table keeps is held to the process cap, and an address over budget does not come back under', () => {
-    const l = createLimiter({perMinute: 2, now: clock, maxAddresses: 5});
-    l.refused('over');
-    l.refused('over');
-    assert.ok(l.retryAfterMs('over') > 0);
+  // (the high review of #483, round 2, 2-4) three windows, each always
+  // applied: the address (IPv6 /64, IPv4 address), its prefix (IPv6 /48,
+  // IPv4 /24) at ten times, the process at a hundred times; no table-state
+  // switch, so no cliff below a full table, no lockout past it, and the
+  // table's eviction opens no hole
+  const v6 = (prefix48, i) => `${prefix48}:${(i % 65536).toString(16)}::1`;
+  const sprayed = (l, addresses) => {
     let taken = 0;
-    for (let i = 0; i < 500; i++) {
-      const a = `cycle-${i}`;
+    for (const raw of addresses) {
+      const a = addressKeyOf(raw);
       if (l.retryAfterMs(a) === 0) { l.refused(a); taken++; }
     }
-    assert.ok(taken <= 2 * 10, `${taken} lookups taken by a spray over 500 addresses (cap 20)`);
-    assert.ok(l.retryAfterMs('over') > 0, 'an address over its budget is still refused after the spray pushed it out of the table');
-    assert.ok(l.retryAfterMs('never-seen') > 0, 'while the table is full and the cap reached, an unseen address waits too');
+    return taken;
+  };
+
+  it('a spray over many /64s of one /48 is held to the prefix limit, below any table limit (no cliff)', () => {
+    const l = createLimiter({perMinute: 2, now: clock});
+    const taken = sprayed(l, Array.from({length: 9999}, (_, i) => v6('2001:db8:aa', i)));
+    assert.ok(taken <= 2 * PREFIX_FACTOR, `${taken} lookups over 9,999 /64s of one /48 (limit ${2 * PREFIX_FACTOR})`);
+    assert.strictEqual(sprayed(l, ['10.9.9.9']), 1, 'another client, elsewhere, is not refused');
   });
 
-  it('below a full table, a full process cap refuses no address under its own budget (valid keys do not share it)', () => {
-    const l = createLimiter({perMinute: 2, now: clock});
-    for (let i = 0; i < 10; i++) { l.refused(`bad-${i}`); l.refused(`bad-${i}`); }
-    assert.strictEqual(l.sizes().refusals, 20, 'the process cap is reached');
-    assert.strictEqual(l.retryAfterMs('fresh'), 0, 'a new client');
-    l.count('in-flight');
-    assert.strictEqual(l.retryAfterMs('in-flight'), 0, 'an address with one lookup in flight');
-    assert.ok(l.retryAfterMs('bad-0') > 0, 'an address over its own budget still waits');
+  it('a spray over many prefixes is held to the process limit; it is the one cost, and a key that resolved passes all three', () => {
+    const l = createLimiter({perMinute: 2, now: clock, maxAddresses: 50, maxPrefixes: 50});
+    const taken = sprayed(l, Array.from({length: 2000}, (_, i) => v6(`2001:db8:${(i + 1).toString(16)}`, 1)));
+    assert.ok(taken <= 2 * GLOBAL_FACTOR, `${taken} lookups over 2,000 /48s (limit ${2 * GLOBAL_FACTOR})`);
+    assert.ok(l.retryAfterMs(addressKeyOf('10.9.9.8')) > 0, 'the accepted cost: under a spray that fills the process limit, an unremembered client waits');
+    l.resolved('a-valid-key');
+    assert.strictEqual(l.resolvedLately('a-valid-key'), true, 'a key that resolved lately is let past every window (beforeLookup)');
+  });
+
+  it('below the process limit, a valid new client past a full table is not refused: the table is for memory only', () => {
+    const l = createLimiter({perMinute: 2, now: clock, maxAddresses: 20, maxPrefixes: 20});
+    // 40 prefixes, one lookup each: the tables are full, the process limit (200) is not
+    sprayed(l, Array.from({length: 40}, (_, i) => `10.${i + 20}.0.1`));
+    assert.strictEqual(l.sizes().addresses, 20);
+    for (let i = 0; i < 50; i++) assert.strictEqual(l.retryAfterMs(addressKeyOf(`172.16.${i}.1`)), 0, `never-seen client ${i}`);
+  });
+
+  it('an address pushed out of the table opens no hole: its prefix still holds what it held', () => {
+    const l = createLimiter({perMinute: 2, now: clock, maxAddresses: 3});
+    const taken = sprayed(l, Array.from({length: 600}, (_, i) => `10.200.0.${i % 250}`).concat(Array.from({length: 600}, (_, i) => `10.200.0.${i % 250}`)));
+    assert.ok(taken <= 2 * PREFIX_FACTOR, `${taken} lookups cycling over 250 addresses of one /24 with a table of 3 (limit ${2 * PREFIX_FACTOR})`);
+  });
+
+  it('emptied windows leave the table, in no reliance on its order', () => {
+    const l = createLimiter({perMinute: 2, now: clock, maxAddresses: 5});
+    for (let i = 0; i < 5; i++) l.refused(`10.${i + 50}.0.1`);
+    // the oldest is counted again: the Map's first is now a younger one
+    t += 5000;
+    l.refused('10.50.0.1');
+    // every window but 10.50.0.1's has emptied; a new address sweeps them
+    t += WINDOW_MS - 4000;
+    l.refused('10.99.0.1');
+    assert.strictEqual(l.sizes().addresses, 2, JSON.stringify(l.sizes()));
+  });
+
+  it('the prefixes: an IPv4 address\'s /24, an IPv6 /64\'s /48', () => {
+    assert.strictEqual(prefixKeyOf(addressKeyOf('10.1.2.3')), '10.1.2.0/24');
+    assert.strictEqual(prefixKeyOf(addressKeyOf('::ffff:10.1.2.3')), '10.1.2.0/24');
+    assert.strictEqual(prefixKeyOf(addressKeyOf('2001:db8:1:2::5')), '2001:db8:1::/48');
+    assert.strictEqual(prefixKeyOf('not-an-address'), 'not-an-address');
   });
 
   it('a counted lookup taken back (its key resolved) frees its place', () => {
@@ -133,6 +168,9 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
   before(() => { kept = scope.snapshot(); options.unauthRateLimit = 2; unauthLimit.resetForTests(); });
   after(() => { scope.restore(kept); unauthLimit.resetForTests(); });
   const {EventEmitter} = require('events');
+  // (a closure kept for later runs in the request's own async context, as a
+  // worker's message or a listener set up in it would)
+  const {AsyncResource} = require('async_hooks');
   // a request from `ip` carrying `key`: a fake res (an emitter, as express's
   // is), run through the middleware; fn runs inside it
   const request = (ip, key, fn) => {
@@ -147,22 +185,22 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
   const inRequest = (ip, key) => request(ip, key, () => unauthLimit.beforeLookup(key)).out;
 
   it('lookups begun at once take the budget before any answers; one whose key resolves gives its place back; outside a request nothing is limited', () => {
-    const a = inRequest('192.0.2.1', 'k-one');
-    const b = inRequest('192.0.2.1', 'k-two');
+    const a = inRequest('10.1.0.1', 'k-one');
+    const b = inRequest('10.1.0.1', 'k-two');
     assert.ok(a != null && b != null);
-    assert.strictEqual(inRequest('192.0.2.1', 'k-three'), null, 'two in flight fill a budget of two');
+    assert.strictEqual(inRequest('10.1.0.1', 'k-three'), null, 'two in flight fill a budget of two');
     a.resolved();
-    const c = inRequest('192.0.2.1', 'k-three');
+    const c = inRequest('10.1.0.1', 'k-three');
     assert.ok(c != null, 'a resolved key frees its place');
     b.refused();
     c.refused();
-    assert.strictEqual(inRequest('192.0.2.1', 'k-four'), null);
-    assert.ok(inRequest('192.0.2.1', 'k-one') != null, 'a key that resolved lately passes');
+    assert.strictEqual(inRequest('10.1.0.1', 'k-four'), null);
+    assert.ok(inRequest('10.1.0.1', 'k-one') != null, 'a key that resolved lately passes');
     assert.ok(unauthLimit.beforeLookup('k-five') != null, 'not in an HTTP request: no limit');
   });
 
   it('a key refused now leaves the set of keys that resolved: a revoked key is counted again (the high review of #483, 2)', () => {
-    const ip = '192.0.2.2';
+    const ip = '10.2.0.1';
     inRequest(ip, 'k-revoked').resolved();
     for (let i = 0; i < 2; i++) {
       const l = inRequest(ip, 'k-revoked');
@@ -175,7 +213,7 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
   // (the medium on round 1, 2) a provider that failed is not an answer: the
   // lookup counts, but a key that resolved is not forgotten for it
   it('a provider failure counts, but does not drop a valid key from those that resolved', () => {
-    const ip = '192.0.2.5';
+    const ip = '10.5.0.1';
     inRequest(ip, 'k-flaky').resolved();
     for (let i = 0; i < 3; i++) {
       const l = inRequest(ip, 'k-flaky');
@@ -189,7 +227,7 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
   // (the medium on round 1, 3 and 4) the request's store holds digests, not
   // keys; a key that resolved lately passes the gate in any header a route reads
   it('the request\'s store holds no raw key, and a resolved key in X-App-Key passes the gate behind a junk X-CH-Key', () => {
-    const ip = '192.0.2.6';
+    const ip = '10.6.0.1';
     const secret = 'k-raw-secret-0123456789';
     let seen = null;
     request(ip, secret, () => { seen = JSON.stringify(unauthLimit.requestStoreForTests()); return null; });
@@ -202,14 +240,40 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
     assert.strictEqual(passed, true, `the gate answered ${res.code}`);
   });
 
+  // (the high review of #483, round 2, 1) a client that resets its socket
+  // after sending a batch: the rest of it still counts
+  it('a request whose connection closes before its answer is still counted', () => {
+    const ip = '10.7.0.1';
+    const later = [];
+    const r = request(ip, 'k-reset', () => { later.push(AsyncResource.bind(() => unauthLimit.beforeLookup('k-reset'))); return null; });
+    r.res.emit('close');
+    for (let i = 0; i < 2; i++) { const l = later[0](); assert.ok(l != null); l.refused(); }
+    assert.strictEqual(inRequest(ip, 'k-reset-2'), null, 'the batch\'s lookups after the reset counted');
+  });
+
+  // (round 2, 8) a lookup with no key is the route reading none, whatever
+  // headers came: an empty X-CH-Key, a header /mcp does not read
+  it('a lookup with no key counts, though the request carried headers the route did not read', () => {
+    const ip = '10.8.0.1';
+    const {EventEmitter} = require('events');
+    for (let i = 0; i < 2; i++) {
+      const res = Object.assign(new EventEmitter(), {set() { return res; }, status(code) { res.code = code; return res; }, json() { return res; }});
+      unauthLimit.middleware()({ip, headers: {'x-app-key': 'not-read-by-mcp', 'x-ch-key': ''}, socket: {}}, res, () => {
+        // (lib/user-auth.js: no key is refused with no lookup)
+        unauthLimit.keyRefused(null);
+      });
+    }
+    assert.strictEqual(inRequest(ip, 'k-after'), null, 'both key-less lookups counted');
+  });
+
   // (the high review of #483, 4) the address is the request's own: a lookup
   // after its request has ended (a worker it spawned, a listener it set up),
   // or of another key than the request's (a change notice's re-listing for
   // another subscriber), is not counted against it
   it('a lookup made after its request ended, or of a key the request did not carry, is not counted against the request\'s address', () => {
-    const ip = '192.0.2.3';
+    const ip = '10.3.0.1';
     const later = [];
-    const r = request(ip, 'k-own', () => { later.push(() => unauthLimit.beforeLookup('k-own')); return null; });
+    const r = request(ip, 'k-own', () => { later.push(AsyncResource.bind(() => unauthLimit.beforeLookup('k-own'))); return null; });
     for (let i = 0; i < 3; i++) {
       const other = request(ip, 'k-own', () => unauthLimit.beforeLookup('another-tenants-key')).out;
       assert.ok(other != null);
@@ -226,7 +290,7 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
 
   it('a worker spawned while a request is served carries no address: its later messages are not counted against it', async () => {
     const {Worker} = require('worker_threads');
-    const ip = '192.0.2.4';
+    const ip = '10.4.0.1';
     let worker = null;
     const r = request(ip, 'k-spawner', () => {
       worker = unauthLimit.outsideRequest(() => new Worker('const {parentPort} = require("worker_threads"); parentPort.postMessage("hop"); parentPort.postMessage("hop"); parentPort.postMessage("hop");', {eval: true}));
@@ -315,6 +379,17 @@ describe('auth 59: a refusal met under way answers one shape on every route', fu
   });
 });
 
+// (the high review of #483, round 2, 7) every error the gateway answers by
+// its own message goes through identityRefusal, so the limit, wherever it
+// is met, answers in the one shape (rpcLimited)
+describe('auth 59: the gateway answers an error by one path', () => {
+  it('no JSON-RPC error is made from an error\'s message but by identityRefusal', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'lib', 'mcp', 'gateway.js'), 'utf8');
+    const direct = src.split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => /JSONRPC_INTERNAL_ERROR, *[A-Za-z]+\.message \|\|/.test(l));
+    assert.deepStrictEqual(direct.map(([n]) => n), [], direct.map(([n, l]) => `${n}: ${l.trim()}`).join('\n'));
+  });
+});
+
 // On running servers: an auth file with one key and the echo module.
 describe('auth 59: on a running server', function() {
   this.timeout(60000);
@@ -327,6 +402,8 @@ describe('auth 59: on a running server', function() {
   const providerCalls = () => (fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').split('\n').filter(Boolean).length : 0);
   // the provider's authenticate calls alone (the preload writes 'a' for one)
   const authenticateCalls = () => (fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').split('\n').filter((l) => l === 'a').length : 0);
+  // its listDevices calls ('l')
+  const listDevicesCalls = () => (fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').split('\n').filter((l) => l === 'l').length : 0);
   after(() => { for (const s of servers) stopServer(s); });
 
   const start = async (port, extra = []) => {
@@ -406,13 +483,13 @@ describe('auth 59: on a running server', function() {
     it('X-Forwarded-For names the client: another client behind the proxy has its own budget', async () => {
       for (let i = 0; i < 3; i++) await mcp(port, as('203.0.113.9', {'X-CH-Key': `unknown-${i}`}));
       assert.strictEqual((await mcp(port, as('203.0.113.9', {'X-CH-Key': 'unknown-3'}))).status, 429);
-      const other = await mcp(port, as('198.51.100.20', {'X-CH-Key': 'unknown-4'}));
+      const other = await mcp(port, as('10.120.0.1', {'X-CH-Key': 'unknown-4'}));
       assert.notStrictEqual(other.status, 429, 'another client behind the trusted proxy has its own budget');
     });
 
     it('requests sent at once cost no more lookups than the budget', async () => {
       const before = providerCalls();
-      const answers = await Promise.all(Array.from({length: 12}, (_, i) => mcp(port, as('198.51.100.30', {'X-CH-Key': `at-once-${i}`}))));
+      const answers = await Promise.all(Array.from({length: 12}, (_, i) => mcp(port, as('10.130.0.1', {'X-CH-Key': `at-once-${i}`}))));
       assert.ok(providerCalls() - before <= 3, `${providerCalls() - before} lookups for 12 requests at once`);
       assert.ok(answers.some((a) => a.status === 429 || a.body.includes('UNAUTH_RATE_LIMITED') || a.body.includes('Too many requests')), JSON.stringify(answers.map((a) => a.status)));
     });
@@ -420,7 +497,7 @@ describe('auth 59: on a running server', function() {
     it('a legacy batch of 32 calls under one unknown key costs no more lookups than the budget', async () => {
       const before = providerCalls();
       const batch = Array.from({length: 32}, (_, i) => ({jsonrpc: '2.0', id: i + 1, method: 'tools/call', params: {name: 'echo_device_echoservice_echo', arguments: {}}}));
-      const r = await send(port, '/mcp', batch, as('198.51.100.40', {'X-CH-Key': 'batch-unknown'}));
+      const r = await send(port, '/mcp', batch, as('10.140.0.1', {'X-CH-Key': 'batch-unknown'}));
       assert.strictEqual(r.status, 200, r.body);
       assert.ok(providerCalls() - before <= 3, `${providerCalls() - before} lookups for a batch of 32`);
       const answers = JSON.parse(r.body);
@@ -436,18 +513,18 @@ describe('auth 59: on a running server', function() {
         }).on('error', reject);
       });
       // the valid key first, from this client: it resolves (remembered)
-      const first = await get(as('198.51.100.50', {'X-CH-Key': KEY}));
+      const first = await get(as('10.150.0.1', {'X-CH-Key': KEY}));
       assert.strictEqual(first.status, 200, first.body);
       const before = providerCalls();
       for (let i = 0; i < 3; i++) {
-        const r = await get(as('198.51.100.50', {'X-CH-Key': `dl-unknown-${i}`}));
+        const r = await get(as('10.150.0.1', {'X-CH-Key': `dl-unknown-${i}`}));
         assert.deepStrictEqual([r.status, r.body], [200, '[]']);
       }
-      const limited = await get(as('198.51.100.50', {'X-CH-Key': 'dl-unknown-3'}));
+      const limited = await get(as('10.150.0.1', {'X-CH-Key': 'dl-unknown-3'}));
       assert.strictEqual(limited.status, 429, limited.body);
       assert.ok(Number(limited.retryAfter) >= 1);
       assert.strictEqual(providerCalls() - before, 3, 'one lookup each, none once limited');
-      const mine = await get(as('198.51.100.50', {'X-CH-Key': KEY}));
+      const mine = await get(as('10.150.0.1', {'X-CH-Key': KEY}));
       assert.strictEqual(mine.status, 200, 'a key that resolved lately still lists, over its address\'s budget');
       assert.ok(JSON.parse(mine.body).length > 0, mine.body);
     });
@@ -461,26 +538,32 @@ describe('auth 59: on a running server', function() {
     const list = (headers) => send(port, '/mcp', {jsonrpc: '2.0', id: 1, method: 'tools/list', params: {}}, headers);
     const before = authenticateCalls();
     for (let i = 0; i < 5; i++) {
-      const r = await list({'X-Forwarded-For': '198.51.100.60'});
+      const r = await list({'X-Forwarded-For': '10.160.0.1'});
       assert.strictEqual(r.status, 200, r.body);
     }
     assert.strictEqual(authenticateCalls(), before, 'a keyless tools/list looks no key up');
     for (let i = 0; i < 3; i++) {
       const at = authenticateCalls();
-      const r = await list({'X-Forwarded-For': '198.51.100.61', 'X-CH-Key': `list-unknown-${i}`});
+      const read = listDevicesCalls();
+      const r = await list({'X-Forwarded-For': '10.161.0.1', 'X-CH-Key': `list-unknown-${i}`});
       assert.strictEqual(r.status, 200, `list ${i + 1}: ${r.body}`);
       assert.ok(!r.body.includes('Too many requests'), `list ${i + 1}: ${r.body}`);
       assert.strictEqual(authenticateCalls() - at, 1, `list ${i + 1}: one lookup`);
+      // (round 2, 5) and no grants read for a key that did not resolve
+      assert.strictEqual(listDevicesCalls() - read, 0, `list ${i + 1}: the grants of a key that did not resolve were read`);
     }
-    assert.strictEqual((await list({'X-Forwarded-For': '198.51.100.61', 'X-CH-Key': 'list-unknown-3'})).status, 429, 'three lists spent a budget of three');
+    assert.strictEqual((await list({'X-Forwarded-For': '10.161.0.1', 'X-CH-Key': 'list-unknown-3'})).status, 429, 'three lists spent a budget of three');
   });
 
   it('a start with a bad --unauthRateLimit or --trustProxy is refused (exit 2)', async () => {
     for (const [flag, value] of [['--unauthRateLimit', '-1'], ['--unauthRateLimit', 'x'], ['--trustProxy', 'true'], ['--trustProxy', '10.0.0.1/40'],
-      ['--trustProxy', '0.0.0.0/0'], ['--trustProxy', '::/0'], ['--trustProxy', '11']]) {
+      ['--trustProxy', '0.0.0.0/0'], ['--trustProxy', '::/0'], ['--trustProxy', '11'],
+      // (round 2, 6) one the parse takes and Express cannot compile: exit 2 with the refusal, never a stack trace
+      ['--trustProxy', '::1.2.3.4/96']]) {
       const s = await startServer(testPort(9701), ['--workerThread', flag, value], {expectExit: true});
       assert.strictEqual(s.exitCode, 2, `${flag} ${value}: ${s.output.slice(-400)}`);
       assert.ok(s.output.includes(flag), s.output.slice(-400));
+      assert.ok(!/\n\s+at /.test(s.output), `a stack trace: ${s.output.slice(-400)}`);
     }
   });
 
