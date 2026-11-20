@@ -38,19 +38,26 @@ const LIBRARIES = ['resolve-from', 'import-fresh', 'source-map-support', 'module
 //   enforce the reduced `module` has no prototype or statics to replace.
 // (resolve-from and import-fresh: a module's virtual parent reaches Node in
 // its host form, confined to the module's root, in every mode -- C-compat;
-// on Windows, in single-thread mode, module-alias's alias works too: the
-// module's own directory is <V>:\app\..., a drive no host path is on, #195)
-const WIN = process.platform === 'win32';
+// in single-thread mode module-alias's alias works too: an absolute /app
+// path, mapped by the facade, as on Windows, where the module's own
+// directory is <V>:\app\..., a drive no host path is on, #195)
 const TABLE = [
   ['resolve-from', 'works', 'works', 'works', 'works'],
   ['import-fresh', 'works', 'works', 'works', 'works'],
   // (Node's own entry points with a relative request from a module's own
   // file, asked directly: C-compat, items 4 and 5)
-  ['findPackageJSON relative', 'works', 'works', 'works', 'works'],
+  // (under enforce the reduced module has no findPackageJSON)
+  ['findPackageJSON relative', 'works', 'works', 'works', 'not in module'],
+  ['findPackageJSON directory base', 'works', 'works', 'works', 'not in module'],
+  ['import-fresh absolute', 'works', 'works', 'works', 'works'],
+  ['resolve-from absolute', 'works', 'works', 'works', 'works'],
   ['_resolveFilename relative', 'works', 'works', 'works', 'works'],
   ['source-map-support', 'works', 'works', 'works', 'works'],
   ['source-map-support hookRequire', 'works', 'works', 'no hook', 'threw TypeError'],
-  ['module-alias', WIN ? 'works' : 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'threw TypeError'],
+  // (single-thread: its alias, an absolute /app path, is mapped through
+  // the calling module's root by the facade -- C-compat -- as it already
+  // was on Windows)
+  ['module-alias', 'works', 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'threw TypeError'],
   // (under enforce the reduced module's confined _resolveFilename (C-compat)
   // takes it past its own abort, onto a Module.prototype there is none of:
   // it throws at new Hook(), as under audit -- ruled R1)

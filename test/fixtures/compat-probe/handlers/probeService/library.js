@@ -65,9 +65,32 @@ const STEPS = {
   // package.json, and the file a relative require names)
   'findPackageJSON relative': () => {
     const find = require('module').findPackageJSON;
-    if (typeof(find) !== 'function') return 'works';
+    if (typeof(find) !== 'function') return 'not in module';
     const found = find('../../lib/target.js', path.join(__dirname, 'library.js'));
     return typeof(found) === 'string' && path.basename(found) === 'package.json' ? 'works' : `answered ${typeof(found) === 'string' ? 'another file' : String(found)}`;
+  },
+  // (the module's own directory as the base, with its trailing separator,
+  // and the module's root itself)
+  'findPackageJSON directory base': () => {
+    const find = require('module').findPackageJSON;
+    if (typeof(find) !== 'function') return 'not in module';
+    const own = (f) => typeof(f) === 'string' && path.basename(f) === 'package.json';
+    const a = find('./', `${__dirname}${path.sep}`);
+    const b = find('./', `${path.dirname(path.dirname(__dirname))}${path.sep}`);
+    return own(a) && own(b) && a === b ? 'works' : `answered ${String(a)} ${String(b)}`;
+  },
+  // (an absolute request built from __dirname, as import-fresh and
+  // resolve-from's callers often pass one)
+  'import-fresh absolute': () => {
+    const fresh = require('import-fresh');
+    const a = fresh(path.join(__dirname, '..', '..', 'lib', 'counter.js'));
+    a();
+    const b = fresh(path.join(__dirname, '..', '..', 'lib', 'counter.js'));
+    return a !== b && b() === 1 ? 'works' : 'a cached copy';
+  },
+  'resolve-from absolute': () => {
+    const found = require('resolve-from')(__dirname, path.join(__dirname, '..', '..', 'lib', 'target'));
+    return /[\\/]target\.js$/.test(found) ? 'works' : 'answered another file';
   },
   '_resolveFilename relative': () => {
     const file = path.join(__dirname, 'library.js');

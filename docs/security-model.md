@@ -300,7 +300,9 @@ any module code). Stops:
   | `require-in-the-middle`, a `Hook` | works | works | throws | throws |
   | `resolve-from`, from `__dirname` | works | works | works | works |
   | `import-fresh`, a relative name | works | works | works | works |
-  | `module-alias`, `addAlias` | no alias (works on Windows) | no alias | no alias | throws |
+  | `import-fresh` or `resolve-from`, an absolute path from `__dirname` | works | works | works | works |
+  | `module.findPackageJSON` from `__filename` | works | works | works | not in the reduced `module` |
+  | `module-alias`, `addAlias` | works | no alias | no alias | throws |
   | `process.emitWarning = fn` | works | works | works | works |
   | `process.emitWarning = null` | throws on the next call | throws on the next call | throws on the next call | warnings off |
   | `Object.defineProperty(process, 'emitWarning', ...)` | works | works | works | throws |
