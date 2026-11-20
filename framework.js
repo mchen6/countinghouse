@@ -241,6 +241,15 @@ if (options.debug === true && options.debugKey == null && !bindAddress.isLoopbac
 
 // --hardened: run the real server as a child under --permission. The child
 // sees process.permission and falls through to normal startup.
+// The identity secret and the server id beside it (lib/private-file.js):
+// on Windows their owner and ACL checks read from one PowerShell run.
+function prefetchOwnFileAcls() {
+  const privateFile = require('./lib/private-file');
+  const dir = privateFile.ownDir(options);
+  if (dir == null) return;
+  privateFile.prefetchAcls([require('./lib/identity').SECRET_FILE, require('./lib/server-id').SERVER_ID_FILE].map((f) => require('path').join(dir, f)));
+}
+
 if (options.hardened === true && process.permission == null) {
   if (options.workerThread !== true) {
     console.error('--hardened needs --workerThread: module workers are what it protects the process from');
@@ -281,11 +290,14 @@ if (options.hardened === true && process.permission == null) {
     if (drive != null) process.env.COUNTINGHOUSE_VIRTUAL_DRIVE = drive;
   }
   // On Windows the child cannot run the PowerShell the identity secret's
-  // ACL check needs: it is created and checked here (lib/identity.js
-  // prepareForHardened)
+  // and the server id's ACL checks need: they are created and checked here
+  // (lib/identity.js, lib/server-id.js prepareForHardened)
   if (process.platform === 'win32') {
     try {
+      // (both files' owners and ACLs in one PowerShell run)
+      prefetchOwnFileAcls();
       require('./lib/identity').prepareForHardened(options);
+      require('./lib/server-id').prepareForHardened(options);
     } catch (e) {
       console.error(e.message);
       process.exit(2);
@@ -409,7 +421,12 @@ logger.I('countinghouse@' + packageJson.version + ' start with options:' + JSON.
 // file others can read, or a file and a variable that differ refuse startup.
 var identity = require('./lib/identity');
 try {
+  // on Windows, both files' owners and ACLs in one PowerShell run
+  prefetchOwnFileAcls();
   identity.initSync(options);
+  // this server's own id, beside the secret (lib/server-id.js): its job
+  // queue's prefix and job history keys
+  require('./lib/server-id').initSync(options);
 } catch (e) {
   console.error(e.message);
   process.exit(2);
@@ -534,7 +551,10 @@ function deniedResolved() {
 }
 
 var denied = deniedResolved();
-identityReady.then(function() { return denied.then(serve); }, function(e) {
+// the job queue's server id claimed, or refused (exit 2) before anything is
+// served (lib/server-claim.js; the Redis runner's only)
+var claimDecided = (options.workerThread === true && options.store !== 'local') ? require('./lib/store').jobs.claimServerId().decided : Promise.resolve();
+identityReady.then(function() { return Promise.all([denied, claimDecided]).then(serve); }, function(e) {
   // (the provider's own reason, when this is lib/auth's guard answering in
   // the catalogue's words with the provider's error as its cause; else the
   // error's own message: the Reviewer's high review of #448, 8)

@@ -795,7 +795,8 @@ caller as its opaque id (`ctx.caller = {id, isAdmin}`), and a composing
 module's binding stays on the main thread. Every loaded module runs as that
 identity, which is not admin. The runtime's caller id for it comes from the
 identity secret, `<storePath>/.identity-secret` (0600, in the always-denied
-set; the store directory is a path no module may declare), and the fixed
+set with the server id beside it, `.server-id`, which names the runtime's job
+queue; the store directory is a path no module may declare), and the fixed
 source `local`, so it survives a restart while the key changes per
 process. A multi-tenant `--store local` server keeps its secret under
 `<moduleDataPath>`, so moving to the local store changes no user's id.
@@ -897,8 +898,9 @@ conditional access rule, which the ACL's rules do not list, fails closed.
 On Windows, `--hardened` cannot verify the ceiling, so no loosening is
 allowed: the permission model refuses the PowerShell the ACL check needs, the
 ceiling reads as one that cannot be trusted, and it fails closed. (The
-identity secret is checked by the `--hardened` parent before it relaunches
-under the permission model; the child takes that same file only, unchanged.)
+identity secret, and the server id beside it, are checked by the
+`--hardened` parent before it relaunches under the permission model; the
+child takes those same files only, unchanged.)
 
 In a shared runtime, every call of a session is held to the tighter of the
 runtime's default and the ceiling, whether or not the session set a value of

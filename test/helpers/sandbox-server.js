@@ -36,7 +36,7 @@ function startServer(port, args, opts) {
       const timer = setTimeout(() => {
         stopServer(server);
         reject(new Error(`server did not exit; last output: ${server.output.slice(-2000)}`));
-      }, 20000);
+      }, opts.exitWithinMs != null ? opts.exitWithinMs : 20000);
       server.on('exit', (code) => { clearTimeout(timer); server.exitCode = code; resolve(server); });
       return;
     }

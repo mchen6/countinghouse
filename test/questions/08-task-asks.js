@@ -317,13 +317,29 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     const {redisUrlFor} = require('../helpers/test-env');
     let saved;
     let JobControl;
+    let serverIdDir = null;
     before(function() {
       if (process.env.CH_TEST_REDIS_URL == null || process.env.CH_TEST_REDIS_URL === '') this.skip();
       saved = {workerThread: options.workerThread, redisUrl: options.redisUrl};
       Object.assign(options, {workerThread: true, redisUrl: redisUrlFor()});
+      // the job queue is this server's own, named by its server id (B-j1):
+      // made as a start makes it, in a directory of this file's, and the
+      // process left with none again after (only if it had none before)
+      if (!require('../../lib/server-id').ready()) {
+        serverIdDir = require('../helpers/test-tmp').mkdtemp('ch-q08-server-id-');
+        require('../../lib/server-id').initSync({moduleDataPath: serverIdDir});
+      }
       JobControl = require('../../lib/job-control');
     });
-    after(() => { if (saved != null) Object.assign(options, saved); });
+    after(async () => {
+      if (saved != null) Object.assign(options, saved);
+      // the server id's claim its runner made (B-j1), released
+      if (JobControl != null && JobControl.claim != null) { await JobControl.claim.stop(); JobControl.claim = null; }
+      if (serverIdDir != null) {
+        require('../../lib/server-id').reset();
+        require('../helpers/test-tmp').remove(serverIdDir);
+      }
+    });
 
     // the record's take and the caps' reserve as scripts on Redis
     describe('the record on Redis', () => {

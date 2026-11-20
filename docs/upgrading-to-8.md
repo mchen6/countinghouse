@@ -660,6 +660,41 @@ says how to write a module for this.
 
 ## What operators get
 
+- **Each runtime's job queue is its own.** Its BullMQ prefix is the
+  server's own id (`{chj-<16 hex>}`), random, made at the first start and
+  kept beside the data as `.server-id` (in `--moduleDataPath`, or
+  `--storePath` in the single-identity profile; mode 0600), so two runtimes
+  on one Redis no longer take each other's jobs. It does not follow the
+  identity secret: rotating the secret keeps the queue. A data directory
+  restored without its `.server-id` is a new server, with a new queue; so
+  is every start on a data directory that does not persist (a container
+  with no volume for it), even with the secret given in
+  `COUNTINGHOUSE_IDENTITY_SECRET`: keep `--moduleDataPath` (`--storePath`
+  in the single-identity profile) on storage that outlives a restart.
+  One live runtime per server id on a Redis: a start whose id another live
+  runtime holds (two runtimes on one data directory, or a directory or
+  image copied with its `.server-id`) is refused, exit 2, naming the
+  holder, before it serves; give each server its own data directory, or
+  remove `.server-id` from the copy. A claim whose holder is gone is taken
+  over: at once when it was a process of this host that has ended, else
+  once it goes a heartbeat (about 12 s) without renewal, so a replaced pod
+  waits that long before it serves. (ch-local's runtimes share a data
+  directory with `--store local`, which has no Redis queue and makes no
+  claim; nor does a `--stdio` runtime, one session whose queue is its
+  process's own, `{chj-<server id>-<8 hex>}`, so several MCP clients each
+  spawning one on the default data directory run side by side.) The start
+  whose scan finds no old job history records that in
+  Redis (`countinghouse:legacy-jobs-none`, db 5), and later starts no longer
+  scan for it; the old jobs and schedulers are a few cheap reads, counted
+  at every start. Jobs
+  and schedulers queued before the upgrade, under the old shared
+  `{cdifJob}`, are not moved: the start logs how many, once, and leaves them;
+  re-create any you still want once no older runtime serves that prefix.
+- **Old job history is not carried over.** A job's history is now the
+  server's own (`jobinfo:{chj-<server id>}:<name>`; a `--stdio` runtime
+  without `--port` keeps none); the lists 7.x kept under
+  `jobinfo:<name>` are not read (the start's line counts them). Purge them as
+  below once no older runtime uses them.
 - **The module registry is opt-in: `--moduleRegistry`.** A start with no
   `--loadModule` no longer reads the CDIF-era registry database
   (`lib/device-db`, `sqlite3`) or loads modules from it: it loads nothing,
@@ -806,14 +841,16 @@ examples show the shape.
 - The secret behind every id is generated at first start in
   `<moduleDataPath>/.identity-secret` (0600), or given in
   `COUNTINGHOUSE_IDENTITY_SECRET`. Back it up with the auth config: a new
-  secret changes every id.
+  secret changes every id. Back up `.server-id` beside it too: a new one is
+  a new job queue.
 - Purge the job history 7.x kept in Redis db 5: its `jobinfo:*` lists
   hold callers' raw keys. In 8.0 a module's `ctx.redis` can no longer reach
   them, since every module's keys live in its own namespace (`m:` plus the
   URI-encoded module name), and new records name their owner by the caller id, but the old
   lists stay until removed:
-  `redis-cli -n 5 --scan --pattern 'jobinfo:*' | xargs -r redis-cli -n 5 del`
-  (a job's history then starts afresh).
+  `redis-cli -n 5 --scan --pattern 'jobinfo:*' | grep -v '^jobinfo:{chj-' | while IFS= read -r k; do redis-cli -n 5 del "$k"; done`
+  (8.0's own lists, `jobinfo:{chj-...}:<name>`, are kept; a 7.x
+  job's history is gone).
 - A module still reads files and environment outside its namespace under
   `--moduleSandbox audit` and `off` (the always-denied set aside), so keys
   in such files are within its reach there: run `enforce` for tenants you do

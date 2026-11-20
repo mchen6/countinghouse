@@ -124,12 +124,14 @@ describe('auth 50: the single-identity profile (LM1 B4)', function() {
     }
   });
 
-  it('the identity secret under <storePath> is always denied to modules', () => {
+  it('the identity secret and the server id under <storePath> are always denied to modules', () => {
     const out = child(`
       const {deniedPathsFor} = lib('fs-broker/denied');
       return deniedPathsFor({store: 'local', singleIdentity: true, storePath: '/s/store', moduleDataPath: '/s/module_data', authConfigPath: null});
     `);
     assert.ok(out.includes('/s/store/.identity-secret'), JSON.stringify(out));
+    // (B-j1: the id that names the runtime's job queue)
+    assert.ok(out.includes('/s/store/.server-id'), JSON.stringify(out));
   });
 });
 

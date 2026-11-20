@@ -10,6 +10,29 @@ the auth config.
 
 ## Unreleased
 
+### Fixed — each runtime's job queue is its own
+
+Every runtime opened its BullMQ job queue under one prefix, `{cdifJob}`, so
+two runtimes on one Redis took each other's jobs (a job for a module only
+one of them loaded ran on the other and failed). The prefix is now the
+server's own, `{chj-<server id>}`: a random 16-hex id made at its first
+start and kept beside its data (`<moduleDataPath>/.server-id`, or
+`<storePath>/` in the single-identity profile; mode 0600, one name only,
+checked as the identity secret is, and in the always-denied set). The same
+across restarts and a rotated identity secret; another for a server with its
+own data directory. A runtime claims its id on Redis before it takes a job:
+a start that finds the id held by another live runtime (two runtimes on one
+data directory, or a directory copied with its `.server-id`) is refused,
+exit 2, saying so, before it serves; one whose holder has ended, or stops
+renewing for a heartbeat, is taken over. A `--stdio` runtime is one
+session: its queue is its process's own (`{chj-<server id>-<8 hex>}`), and
+it makes no claim, so several on one data directory run side by side,
+keeps no job history (nothing could read it), and its finished jobs are
+removed three hours after they finish. A server's job history is its
+own too, under `jobinfo:{chj-<server id>}:<name>`. Jobs and schedulers left under
+`{cdifJob}`, and the history kept under the old unscoped `jobinfo:<name>`
+keys, are not moved or read: a start counts them read-only, says how many in
+one line, once, and leaves them. Old job history is not carried over.
 ### Fixed — one shared-runtime session's stalling inputs no longer throttle the others
 
 The validator pool holds an input's stalls against its caller, and after

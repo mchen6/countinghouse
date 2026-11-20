@@ -10,6 +10,7 @@ const request = require('supertest');
 const {Queue} = require('bullmq');
 const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
 const {testPort, redisConnectionFor} = require('../helpers/test-env');
+const {prefixFor} = require('../helpers/job-queue');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {deviceIDForName} = require('../../lib/call-address');
 
@@ -33,7 +34,7 @@ describe('auth 25: repeatable job schedulers are per owner', function() {
     }));
     server = await startServer(testPort(9670), ['--workerThread', '--authConfigPath', authPath, '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'job-snoop')]);
-    queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: redisConnectionFor(11)});
+    queue = new Queue('job-queue', {prefix: prefixFor(path.join(base, 'store')), connection: redisConnectionFor(11)});   // this server's own queue (B-j1)
   });
   after(async () => {
     for (const s of await queue.getJobSchedulers(0, -1)) if (String(s.key || s.id).includes(NAME)) await queue.removeJobScheduler(s.key || s.id);

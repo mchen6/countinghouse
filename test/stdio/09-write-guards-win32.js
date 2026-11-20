@@ -61,6 +61,37 @@ describe('stdio 09: the write guards with the host\'s path rules (issue #40, rou
   });
 
   describe('every OS: real paths through the host\'s realpath', () => {
+    // B-j1: the server id is guarded as the secret is, its directories
+    // included (lib/fs-broker/denied.js OWN_FILES): a module with a writable
+    // declared directory above it cannot rename one away and back
+    it('the server id in a declared rw directory: the file and every directory above it are EACCES to rename; a write and a hard link to it too', async () => {
+      const base = tmp.mkdtemp('ch-guard-');
+      try {
+        const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp'), decl: path.join(base, 'decl')};
+        Object.values(dirs).forEach((x) => fs.mkdirSync(x));
+        const own = path.join(dirs.decl, 'srv', 'data');
+        fs.mkdirSync(own, {recursive: true});
+        const serverId = path.join(own, '.server-id');
+        fs.writeFileSync(serverId, '0123456789abcdef', {mode: 0o600});
+        const ns = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [{path: dirs.decl, access: 'rw'}], protectedPaths: []});
+        await ns.prepare();
+        const broker = new FsBroker({name: 'm', mode: 'audit', namespace: ns, cwd: '/app', denied: new DeniedSet([serverId])});
+        try {
+          await assert.rejects(broker.handle('rename', [own, path.join(dirs.decl, 'moved')]), {code: 'EACCES'});
+          await assert.rejects(broker.handle('rename', [path.join(dirs.decl, 'srv'), path.join(dirs.decl, 'moved2')]), {code: 'EACCES'});
+          await assert.rejects(broker.handle('rename', [serverId, path.join(dirs.decl, 'id')]), {code: 'EACCES'});
+          await assert.rejects(broker.handle('writeFile', [serverId, 'ffffffffffffffff']), {code: 'EACCES'});
+          await assert.rejects(broker.handle('link', [serverId, path.join(dirs.decl, 'hard')]), {code: 'EACCES'});
+          assert.strictEqual(fs.readFileSync(serverId, 'utf8'), '0123456789abcdef');
+          assert.deepStrictEqual(fs.readdirSync(dirs.decl), ['srv']);
+        } finally {
+          await broker.closeAll();
+        }
+      } finally {
+        tmp.remove(base);
+      }
+    });
+
     it('a guard named through a symlinked parent matches the real directories', async function() {
       const base = tmp.mkdtemp('ch-guard-');
       try {
