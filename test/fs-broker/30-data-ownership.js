@@ -109,7 +109,8 @@ describe('fs-broker 30: the runtime deletes only directories it made', () => {
     fs.writeFileSync(marker, JSON.stringify(doc), {mode: 0o600});
     const dev = String(fs.lstatSync(d.tmp, {bigint: true}).dev);
     ownership.setBirthRealForTests(dev, true);
-    assert.strictEqual((await ownership.ownership(d.root, 'tmp', d.tmp, store)).state, 'unknown', 'a 0 entry where births are real');
+    // (lasting, so 'unreadable': said with the recovery, never "checked again")
+    assert.strictEqual((await ownership.ownership(d.root, 'tmp', d.tmp, store)).state, 'unreadable', 'a 0 entry where births are real');
     ownership.setBirthRealForTests(dev, false);
     assert.strictEqual(await ownership.ownedDir(d.root, 'tmp', d.tmp, store), true, 'a 0 entry where births are not real');
     ownership.resetForTests();
@@ -192,6 +193,31 @@ describe('fs-broker 30: the runtime deletes only directories it made', () => {
     const kept = await ownership.removeOwned(d.root, d, store, null, {roots: [path.join(d.data, 'b')]});
     assert.deepStrictEqual(kept, [d.data]);
     assert.deepStrictEqual(Object.keys(await ownership.readMarker(d.root, store)), ['data'], 'the removed tmp\'s entry is gone');
+  });
+
+  // the medium on the high's round 3, 2: a probe that can't run in the
+  // directory (a module made it 0500) runs in --moduleDataPath, same device
+  it('a probe that can\'t run in the directory runs in the data root on the same device', async function() {
+    if (process.platform === 'win32' || process.getuid() === 0) return this.skip();
+    const store = path.join(base, 'store');
+    const d = await moduleData.ensureDirs(store, 'm');
+    ownership.resetForTests();
+    fs.chmodSync(d.data, 0o500);
+    try {
+      assert.strictEqual((await ownership.ownership(d.root, 'data', d.data, store)).state, 'owned');
+    } finally {
+      fs.chmodSync(d.data, 0o700);
+    }
+  });
+
+  // the medium on the high's round 3, 3: outside --hardened, a root that
+  // can't be resolved (a loop) is taken as given, not as holding code
+  it('a root that is a link loop is taken as given: it holds no code here', async function() {
+    if (process.platform === 'win32') return this.skip();
+    const d = await moduleData.ensureDirs(path.join(base, 'store'), 'm');
+    const loop = path.join(base, 'loop');
+    fs.symlinkSync(loop, loop);
+    assert.strictEqual(await ownership.codeInside(d.tmp, {roots: [loop]}), false);
   });
 
   // round 3, 4: a known root's link re-pointed since is seen at delete time
