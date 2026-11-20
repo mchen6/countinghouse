@@ -113,7 +113,7 @@ const STEPS = {
     const look = (e) => {
       const text = [String(e && e.message), String(e && e.stack), JSON.stringify((e && e.requireStack) || [])].join('\n');
       for (const m of text.matchAll(/(?:^|[\s'"(\[,])((?:[A-Za-z]:)?[\\/][^\s'"():,\]]*)/g)) {
-        const own = /[\\/]handlers[\\/]probeService([\\/]|$)/.test(m[1]);
+        const own = /[\\/](handlers[\\/]probeService|compat-probe)([\\/]|$)/.test(m[1]);
         if (own && !/^([\\/]app([\\/]|$)|[A-Z]:\\app(\\|$))/.test(m[1])) host.push(m[1]);
       }
     };
@@ -123,8 +123,16 @@ const STEPS = {
       () => R._resolveFilename(asked, new Proxy({filename: __filename, paths: []}, {}))
     ];
     let threw = 0;
-    for (const t of tries) { try { t(); } catch (e) { threw++; look(e); } }
-    return threw === tries.length ? (host.length === 0 ? 'clean' : `named ${host.length} other`) : `${tries.length - threw} answered`;
+    let unnamed = 0;
+    for (const t of tries) {
+      try { t(); } catch (e) {
+        threw++;
+        look(e);
+        if (!String(e && e.message).split('\n')[0].includes(`'${asked}'`)) unnamed++;
+      }
+    }
+    if (threw !== tries.length) return `${tries.length - threw} answered`;
+    return host.length === 0 && unnamed === 0 ? 'clean' : `named ${host.length} other, ${unnamed} not as asked`;
   },
   '_resolveFilename relative': () => {
     const file = path.join(__dirname, 'library.js');

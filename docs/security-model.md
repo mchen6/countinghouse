@@ -441,9 +441,11 @@ A module sees its own namespace, in every mode:
 request name differs from it is refused in every mode
 (`MODULE_NAME_MISMATCH`), so code cannot be loaded under another module's
 name to get its policy entry and data. `__filename`, `__dirname`,
-`require.resolve`, `require.cache` keys, `import.meta`, stack frames,
-`process.cwd()` (`/app`) and `os.tmpdir()` (`/tmp`) are virtual, and so are
-paths in results and errors. Ancestors of a root (`/`, `/var`) answer as
+`require.resolve`, `require.cache` keys, `import.meta`, a module's own stack
+frames, `process.cwd()` (`/app`) and `os.tmpdir()` (`/tmp`) are virtual, and
+so are paths in results and errors. Frames of the runtime's own files in a
+stack module code can read can still name the install directory (being
+fixed). Ancestors of a root (`/`, `/var`) answer as
 read-only directories that list only the way to the root. A declared path
 can never cover countinghouse's own directories (the install directory,
 `--modulePath`, `--moduleDataPath`, the auth and device-config paths, the
