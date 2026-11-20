@@ -205,7 +205,8 @@ mode). Under `--enable-source-maps`, a stack is not source-mapped. A
 frame with no file -- a module's own `eval` or `new Function`, a
 builtin's -- answers `getThis()` and `getFunction()` with `undefined`.
 On Windows a stack or a message spells the runtime's files
-`countinghouse:\lib\x.js` (`process.argv` with `/`).
+`countinghouse:\lib\x.js` (a file URL's form, and `process.argv`,
+with `/`).
 `util.getCallSite` (Node 22's deprecated alias) gives no deprecation
 warning, and `util.getCallSites(200)` gives at most 199 frames.
 

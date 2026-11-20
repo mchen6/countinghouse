@@ -885,23 +885,37 @@ const STEPS = {
         counts = `${util.getCallSites(2).length === Math.min(2, depth)} ${util.getCallSites({}).length === ten} ${util.getCallSites(undefined, {}).length === ten} ${util.getCallSites().length === ten} ${ownFirst(util.getCallSites(3))}`;
         let refused = 'no';
         try { util.getCallSites(null, {}); } catch (e) { refused = String(e.code); }
-        counts += ` ${refused}`;
+        let refused2 = 'no';
+        try { util.getCallSites({}, {}); } catch (e) { refused2 = String(e.code); }
+        counts += ` ${refused} ${refused2}`;
       } catch (e) { counts = `threw ${e.code}`; }
-      out.push(counts === 'true true true true true ERR_INVALID_ARG_TYPE' ? 'counts' : `counts(${counts})`);
+      out.push(counts === 'true true true true true ERR_INVALID_ARG_TYPE ERR_INVALID_ARG_TYPE' ? 'counts' : `counts(${counts})`);
     } else out.push('counts');
     const saved2 = Error.prepareStackTrace;
     try {
       let evalFn = null;
+      let evalSeen = false;
       let kept = null;
       Error.prepareStackTrace = (e, f) => {
         kept = f;
-        for (const site of f) if (site.isEval() && site.getFileName() == null && evalFn == null) evalFn = site.getFunction();
+        for (const site of f) {
+          if (site.isEval() && site.getFileName() == null && !evalSeen) { evalSeen = true; evalFn = site.getFunction(); }
+        }
         return 'x';
       };
       // (a frame with no file -- a new Function's -- answers no function:
       // ruled M-eval, a listed limit)
       new Function('return new Error("e").stack')();
-      out.push(evalFn == null ? 'eval-none' : 'eval-function');
+      out.push(!evalSeen ? 'eval-unseen' : evalFn == null ? 'eval-none' : 'eval-function');
+      // (a file only like the root's -- '/apps-...' is not '/app' -- is no
+      // file of the module's: its frame answers no function)
+      let near = 'unseen';
+      Error.prepareStackTrace = (e, f) => {
+        for (const site of f) if (site.getFileName() === '/apps-not-the-root/x.js') near = site.getFunction() === undefined ? 'boundary' : 'boundary-function';
+        return 'x';
+      };
+      require('vm').runInThisContext('(function near() { return new Error("n").stack; })()', {filename: '/apps-not-the-root/x.js'});
+      out.push(near);
       // (frames kept from one stack, handed to the formatter again with a
       // function of the module's assigned: read as frames, never wrapped twice)
       Error.prepareStackTrace = (e, f) => f.map((site) => String(site.getFileName())).join(',');
