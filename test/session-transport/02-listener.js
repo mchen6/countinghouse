@@ -9,6 +9,7 @@ const os = require('os');
 const path = require('path');
 const net = require('net');
 const handshake = require('../../lib/session-transport/handshake');
+const frames = require('../../lib/session-transport/frames');
 const {createRegistry} = require('../../lib/session-transport/registry');
 const {createListener} = require('../../lib/session-transport/listener');
 const shim = require('./helpers/shim');
@@ -163,16 +164,24 @@ describe('session-transport 02: the listener and the registry', function() {
         assert.ok(await c.json('P') != null, `PROVE ${i}`);
         conns.push(c);
       }
-      // the newest in the pool: refused (an unknown protocol), its socket in
-      // its 1 s grace when the 65th arrives
-      const refused = await shim.connect(sock);
-      refused.send('H', {protocol: 99, nc: handshake.newChallenge().toString('base64')});
-      assert.ok(await refused.json('R') != null, 'REFUSED');
+      // the newest in the pool: refused (an unknown protocol), its REFUSED
+      // read; a half-open client that never ends its side, so its socket
+      // stays in the server's 1 s grace when the 65th arrives
+      const refused = net.createConnection({path: sock, allowHalfOpen: true});
+      let gotRefused = false;
+      refused.on('error', () => {});
+      refused.on('data', () => { gotRefused = true; });
+      await new Promise((r) => refused.once('connect', r));
+      refused.write(frames.encode('H', JSON.stringify({protocol: 99, nc: handshake.newChallenge().toString('base64')})));
+      assert.ok(await until(() => gotRefused, 2000), 'REFUSED');
       const newest = await shim.connect(sock);
       newest.send('H', {protocol: 1, nc: handshake.newChallenge().toString('base64')});
+      // (taken only by evicting the refused one: every other was read; a
+      // half-open client sees no close of its own, so that is the proof)
       assert.ok(await newest.json('P') != null, 'the new one is taken, the refused one evicted');
       assert.ok(conns.every((c) => !c.closed()), 'every one whose bytes were read is kept');
-      for (const c of conns.concat([refused, newest])) c.end();
+      for (const c of conns.concat([newest])) c.end();
+      refused.destroy();
     });
 
     it('closes one silent past its deadline, and the pool is empty again', async() => {
