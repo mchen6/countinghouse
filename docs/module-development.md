@@ -1093,7 +1093,15 @@ for `'error'` when you stream. After `abort()`, nothing is delivered. A
 `URL` object given as `uri` leaves the stand-in's `uri` null. A string
 gives its parts, as an informational approximation of postman-request's
 own (`url.parse`'s fields), not an exact copy: `slashes` is always true,
-`auth` stays percent-encoded, and `href` is the string as given.
+`auth` stays percent-encoded, `href` is the string as given, and a
+backslash form (`http:\\host:8080/`) has the port URL reads, where
+`url.parse` reads none.
+
+Under `audit` a request goes ahead whatever its target, and what is reported
+is what is sent, as under `enforce`. The target is read once (an object
+`uri` by its `href`, never by its own host fields), and what is handed on is
+its normalised href. A target that can't be read or parsed is reported
+invalid, and nothing is sent.
 
 **Self-contained.** Every dependency of your module, followed through the
 whole tree, must be installed inside the module's own directory. Install
