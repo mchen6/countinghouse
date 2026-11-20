@@ -214,6 +214,23 @@ describe('auth 56: one live runtime per server id (round 2, 3)', function() {
     assert.strictEqual(JSON.parse(await kv.get(keyFor(p))).pid, process.pid);
   });
 
+  it('a held claim keeps no process alive: one whose work is done exits, its claim held (it lapses)', async () => {
+    // (the hang of #463's first round 2 CI: a test run ended its tests and
+    // stayed up an hour on the claim's connection)
+    const lib = (m) => JSON.stringify(path.join(ROOT, 'lib', m));
+    const p = prefix();
+    const r = require('child_process').spawnSync(process.execPath, ['-e', `
+      const clients = require(${lib('store')}).createStore({store: 'redis', redisUrl: ${JSON.stringify(redisUrlFor())}}).jobClients;
+      // (its own work keeps it up until the claim is held: as a server's listener does)
+      const work = setInterval(() => {}, 1000);
+      require(${lib('server-claim')}).claim(clients, ${JSON.stringify(p)}, {renewMs: 200, ttlMs: 2000}).held.then(() => { process.stdout.write('held'); clearInterval(work); });`],
+    {encoding: 'utf8', timeout: 15000});
+    assert.strictEqual(r.signal, null, `killed at the timeout: still alive (${r.stderr})`);
+    assert.strictEqual(r.stdout, 'held', r.stderr);
+    assert.ok(JSON.parse(await kv.get(keyFor(p))).pid > 0, 'its claim was made');
+    await kv.del(keyFor(p));
+  });
+
   it('a holder that renews is alive, whatever its host and pid -- this very host and pid too (two containers, each pid 1) -- and refuses', async () => {
     const p = prefix();
     const twin = {host: os.hostname(), pid: process.pid, nonce: 'twin', since: 'now'};

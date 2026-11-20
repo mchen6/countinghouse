@@ -210,6 +210,8 @@ describe('mcp-contract 17: stored values, in-process (M6)', function() {
       } finally {
         jobControl.setCompletionHook(null);
         await Promise.allSettled([jobControl.worker, jobControl.queueEvents, jobControl.jobQueue].filter((x) => x != null).map((x) => x.close()));
+        // and the server id's claim it made (B-j1), released
+        if (jobControl.claim != null) { await jobControl.claim.stop(); jobControl.claim = null; }
       }
     });
   });

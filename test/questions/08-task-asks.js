@@ -331,8 +331,10 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       }
       JobControl = require('../../lib/job-control');
     });
-    after(() => {
+    after(async () => {
       if (saved != null) Object.assign(options, saved);
+      // the server id's claim its runner made (B-j1), released
+      if (JobControl != null && JobControl.claim != null) { await JobControl.claim.stop(); JobControl.claim = null; }
       if (serverIdDir != null) {
         require('../../lib/server-id').reset();
         require('../helpers/test-tmp').remove(serverIdDir);
