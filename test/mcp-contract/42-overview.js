@@ -391,6 +391,25 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
         }
       });
 
+      // (the reviewer, on #490's Windows stdio leg) with no --heldBackFile,
+      // nothing is read and no ACL is asked for: start, ready and list alike
+      it('no --heldBackFile: no read and no ACL read ahead, whatever is asked', async () => {
+        let asked = 0;
+        const was = options.heldBackFile;
+        options.heldBackFile = null;
+        heldBack.resetForTests({aclAheadFn: () => { asked++; return Promise.resolve(); }});
+        try {
+          heldBack.start();
+          assert.strictEqual((await heldBack.ready()).modules.size, 0);
+          assert.strictEqual(heldBack.list().modules.size, 0);
+          await assert.rejects(heldBack.reread(RR), failed);
+          assert.strictEqual(asked, 0);
+        } finally {
+          options.heldBackFile = was;
+          heldBack.resetForTests();
+        }
+      });
+
       // (the medium on round 2, 4) a burst of rereads is two reads at most:
       // the one in flight, and one more for all asked meanwhile
       it('rereads asked while one is in flight are one more read, not one each', async () => {
