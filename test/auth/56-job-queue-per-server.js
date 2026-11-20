@@ -123,9 +123,12 @@ describe('auth 56: each runtime\'s job queue is its own (B-j1)', function() {
     const dataDir = path.join(dir, 'store');
     fs.mkdirSync(dataDir, {recursive: true, mode: 0o700});
     fs.writeFileSync(path.join(dataDir, '.server-id'), fs.readFileSync(path.join(RUNTIMES.a.dataDir, '.server-id')), {mode: 0o600});
+    // (refused once its claim's holder is seen to renew: a heartbeat, 10 s, and more)
     const c = await startServer(PORT_C, ['--workerThread', '--authProvider', 'file', '--authConfigPath', auth,
-      '--moduleDataPath', dataDir, '--loadModule', RUNTIMES.b.module], {expectExit: true});
+      '--moduleDataPath', dataDir, '--loadModule', RUNTIMES.b.module], {expectExit: true, exitWithinMs: 45000});
     assert.strictEqual(c.exitCode, 2, c.output.slice(-2000));
+    // refused before it served: it never said it was ready
+    assert.ok(!/countinghouse ready/.test(c.output), c.output.slice(-2000));
     assert.match(c.output, /another server is using this data directory's server id \(.*\.server-id\): .* pid \d+ \(since .*\) holds its claim on Redis; give each server its own --moduleDataPath/);
   });
 
@@ -171,31 +174,74 @@ describe('auth 56: one live runtime per server id (round 2, 3)', function() {
   this.timeout(30000);
   const os = require('os');
   const {claim, keyFor} = require('../../lib/server-claim');
+  // (a heartbeat of 300 ms, a claim of 1 s: the watch takes a heartbeat and
+  // its slack, here 500 ms)
+  const FAST = {renewMs: 300, ttlMs: 1000, retryMs: 100, watchSlackMs: 200};
   let kv = null;
-  const prefix = `{chj-${crypto.randomBytes(8).toString('hex')}}`;
+  const prefix = () => `{chj-${crypto.randomBytes(8).toString('hex')}}`;
+  const made = [];
   before(() => { kv = new (require('ioredis'))(redisConnectionFor(11)); });
-  after(async () => { if (kv != null) { await kv.del(keyFor(prefix)).catch(() => {}); kv.disconnect(); } });
+  after(async () => {
+    for (const c of made) await c.stop().catch(() => {});
+    if (kv != null) kv.disconnect();
+  });
 
-  it('a claim left by a process of this host that is gone is taken over', async () => {
-    const dead = require('child_process').spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], {encoding: 'utf8'});
-    const pid = Number(dead.stdout);
-    await kv.set(keyFor(prefix), JSON.stringify({host: os.hostname(), pid, nonce: 'gone', since: 'then'}), 'PX', 30000);
-    const c = claim(clientsOn(redisUrlFor()), prefix, {onRefused: () => assert.fail('refused')});
+  it('a claim nobody renews (a crash, a replaced pod: any host, any pid) is taken over after one heartbeat', async () => {
+    const p = prefix();
+    const stale = {host: 'another-host', pid: 1, nonce: 'gone', since: 'then'};
+    await kv.set(keyFor(p), JSON.stringify(stale), 'PX', 30000);
+    const c = claim(clientsOn(redisUrlFor()), p, Object.assign({onRefused: () => assert.fail('refused')}, FAST));
+    made.push(c);
     await c.held;
-    assert.strictEqual(JSON.parse(await kv.get(keyFor(prefix))).pid, process.pid);
+    assert.strictEqual(JSON.parse(await kv.get(keyFor(p))).pid, process.pid);
+    await c.decided;
     await c.stop();
-    assert.strictEqual(await kv.get(keyFor(prefix)), null, 'released at stop');
+    assert.strictEqual(await kv.get(keyFor(p)), null, 'released at stop');
   });
 
-  it('one held by a live holder elsewhere refuses, naming it', async () => {
-    const other = {host: `elsewhere-${process.pid}`, pid: 1, nonce: 'live', since: 'now'};
-    await kv.set(keyFor(prefix), JSON.stringify(other), 'PX', 30000);
-    const refused = await new Promise((resolve) => { claim(clientsOn(redisUrlFor()), prefix, {onRefused: resolve}); });
-    assert.deepStrictEqual(refused, other);
-    assert.deepStrictEqual(JSON.parse(await kv.get(keyFor(prefix))), other, 'left as it was');
+  it('a holder of this host and pid namespace whose pid is gone (a kill, a crash) is taken over at once, without the watch', async () => {
+    const p = prefix();
+    const dead = require('child_process').spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], {encoding: 'utf8'});
+    let ns = null;
+    try { ns = fs.readlinkSync('/proc/self/ns/pid'); } catch (e) { ns = null; }
+    await kv.set(keyFor(p), JSON.stringify({host: os.hostname(), pid: Number(dead.stdout), pidns: ns, nonce: 'killed', since: 'then'}), 'PX', 30000);
+    // (no watch: a heartbeat of 20 s here would time the case out)
+    const c = claim(clientsOn(redisUrlFor()), p, Object.assign({onRefused: () => assert.fail('refused')}, FAST, {renewMs: 20000}));
+    made.push(c);
+    const t0 = Date.now();
+    await c.held;
+    assert.ok(Date.now() - t0 < 2000, `${Date.now() - t0} ms`);
+    assert.strictEqual(JSON.parse(await kv.get(keyFor(p))).pid, process.pid);
   });
 
-  it('a count that found nothing before is not made again: the flag in the kv stops the look', async () => {
+  it('a holder that renews is alive, whatever its host and pid -- this very host and pid too (two containers, each pid 1) -- and refuses', async () => {
+    const p = prefix();
+    const twin = {host: os.hostname(), pid: process.pid, nonce: 'twin', since: 'now'};
+    await kv.set(keyFor(p), JSON.stringify(twin), 'PX', 1000);
+    const beat = setInterval(() => { kv.pexpire(keyFor(p), 1000).catch(() => {}); }, 150);
+    try {
+      const refused = await new Promise((resolve) => { made.push(claim(clientsOn(redisUrlFor()), p, Object.assign({onRefused: resolve}, FAST))); });
+      assert.deepStrictEqual(refused, twin);
+      assert.deepStrictEqual(JSON.parse(await kv.get(keyFor(p))), twin, 'left as it was');
+    } finally {
+      clearInterval(beat);
+      await kv.del(keyFor(p));
+    }
+  });
+
+  it('a claim lost while this one\'s lapsed pauses the worker (onLost), and its return resumes it (onRegained)', async () => {
+    const p = prefix();
+    const events = [];
+    const c = claim(clientsOn(redisUrlFor()), p, Object.assign({onLost: (h) => events.push(['lost', h.nonce]), onRegained: () => events.push(['regained'])}, FAST));
+    made.push(c);
+    await c.held;
+    // another runtime takes it while this one's heartbeat is away
+    await kv.set(keyFor(p), JSON.stringify({host: 'other', pid: 2, nonce: 'thief', since: 'now'}), 'PX', 600);
+    for (const end = Date.now() + 5000; Date.now() < end && !events.some((e) => e[0] === 'regained');) await new Promise((r) => setTimeout(r, 50));
+    assert.deepStrictEqual(events, [['lost', 'thief'], ['regained']]);
+  });
+
+  it('a history SCAN that found none is not made again: the flag in the kv stops it; the jobs are still counted', async () => {
     const LOG = require('../../lib/logger');
     const saved = {W: LOG.W, E: LOG.E};
     const said = [];
@@ -203,13 +249,16 @@ describe('auth 56: one live runtime per server id (round 2, 3)', function() {
     const kv5 = new (require('ioredis'))(redisConnectionFor(5));
     const legacy = new Queue('job-queue', {prefix: '{cdifJob}', connection: redisConnectionFor(11)});
     const job = await legacy.add(`legacy-56f-${process.pid}`, {left: true});
+    const history = `jobinfo:legacy-56f-${process.pid}`;
     try {
+      await kv5.lpush(history, '{}');
       await kv5.set(LEGACY_NONE, 'set by this test');
       assert.strictEqual(await require('../../lib/job-control').countLegacy(clientsOn(redisUrlFor())), true);
-      assert.deepStrictEqual(said, []);
+      assert.strictEqual(said.length, 1, JSON.stringify(said));
+      assert.match(said[0], /job queue: [1-9]\d* jobs? and \d+ schedulers? under the old shared prefix .* and 0 job histories under/);
     } finally {
       Object.assign(LOG, saved);
-      await kv5.del(LEGACY_NONE);
+      await kv5.del(LEGACY_NONE, history);
       kv5.disconnect();
       await job.remove().catch(() => {});
       await legacy.close();

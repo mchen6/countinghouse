@@ -551,7 +551,10 @@ function deniedResolved() {
 }
 
 var denied = deniedResolved();
-identityReady.then(function() { return denied.then(serve); }, function(e) {
+// the job queue's server id claimed, or refused (exit 2) before anything is
+// served (lib/server-claim.js; the Redis runner's only)
+var claimDecided = (options.workerThread === true && options.store !== 'local') ? require('./lib/store').jobs.claimServerId().decided : Promise.resolve();
+identityReady.then(function() { return Promise.all([denied, claimDecided]).then(serve); }, function(e) {
   // (the provider's own reason, when this is lib/auth's guard answering in
   // the catalogue's words with the provider's error as its cause; else the
   // error's own message: the Reviewer's high review of #448, 8)
