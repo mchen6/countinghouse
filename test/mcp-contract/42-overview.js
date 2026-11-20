@@ -131,9 +131,15 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.ok(w != null && w.byTheModule === undefined && w.tools.length === 1, JSON.stringify(tight.packs.map((p) => p.name)));
     });
 
-    it('the answer is what its output schema says', () => {
+    // (ajv loaded and the schema compiled first, unhurried: a first require
+    // of it takes most of a second, and more on a busy machine)
+    let validate = null;
+    before(function() {
+      this.timeout(60000);
       const Ajv = require('ajv/dist/2020');
-      const validate = new Ajv({strict: false}).compile(overview.OUTPUT_SCHEMA);
+      validate = new Ajv({strict: false}).compile(overview.OUTPUT_SCHEMA);
+    });
+    it('the answer is what its output schema says', () => {
       const tools = Array.from({length: overview.MAX_TOOLS + 1}, (_, i) => `demo_${i}`);
       for (const data of [overview.build({version: '1', settingsProfile: true, packs: [pack({tools, examples: ['Do it']}), pack({name: 'b', module: 'b', loaded: false, held: null})]}),
         overview.build({version: '1', packs: []}), overview.build({version: '1', settingsProfile: true, packs: [], recordUnreadable: true}),
