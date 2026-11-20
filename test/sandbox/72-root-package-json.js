@@ -3,10 +3,13 @@
 // The one native read on a bare require's path -- trySelf's walk up from
 // the parent's file (lib/fs-broker/identity.js, above requireRequest) --
 // stops there at the latest, so a module whose root has none never loads,
-// by either route: the start list's check (any mode), and -- for a load
-// after start, where worker-thread mode skips the main thread's own read --
-// the module sandbox's own refusal under enforce. (fs-broker 24: the module
-// can't take its package.json away once loaded.)
+// by either route: the start list's check (any mode), and, for a load after
+// start, the module sandbox's own configuration under enforce
+// (lib/module-sandbox-config.js reads the package.json on the main thread,
+// before any worker: MODULE_SANDBOX_REFUSED). These pin the premise, the
+// runtime's; the bound itself is Node's (identity.js, above
+// requireRequest). (fs-broker 24: the module can't take its package.json
+// away once loaded.)
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -20,8 +23,8 @@ describe('sandbox 72: a module root with no package.json never loads (C-bare R0)
   let base = null;
   afterEach(() => { stopServer(server); server = null; if (base) fs.rmSync(base, {recursive: true, force: true}); base = null; });
 
-  // (a load after start, by the admin route: worker-thread mode skips the
-  // main thread's own package.json read there)
+  // (a load after start, by the admin route, as the runtime runs one:
+  // worker-thread mode, enforce)
   it('a load after start of a root with no package.json is refused, with its package.json it loads', async () => {
     base = mkdtemp('root-pkg-');
     const mods = {};
