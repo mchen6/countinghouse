@@ -36,9 +36,8 @@ const ALICE = `alice-key-15-${process.pid}`;
 const LIMIT = 2;
 const BURST = 8;
 
-// echo-device-module's deviceID is deterministic (UUID.v5 over a fixed
-// namespace and the module's friendlyName -- lib/call-address.js), the same
-// way test/auth/07-task-ownership.js hardcodes it.
+// echo-device-module's deviceID: deviceIDForName of its friendlyName
+// (lib/call-address.js), the one derivation.
 const DEVICE_ID = deviceIDForName('echo-device');
 
 function authConfig() {

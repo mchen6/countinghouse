@@ -63,13 +63,16 @@ describe('call-address: deviceID derivation (8.0: countinghouse\'s own namespace
     return names;
   };
 
-  it('no pre-8.0 device ID of any friendlyName in the repo is left in lib, test, examples, perf, pre-installed-packages or adaptive-test', () => {
+  it('no pre-8.0 device ID of any friendlyName in the repo is left anywhere but the history (docs, CHANGELOG, MIGRATION)', () => {
     const {pre8DeviceIDForName} = require('../../lib/pre-8-device-ids');
     const names = friendlyNames();
     assert.ok(names.has('echo-device') && names.has('repo-scan'), `the specs were read: ${names.size} names`);
     const old = new Map([...names].map((n) => [pre8DeviceIDForName(n), n]));
     const found = [];
-    for (const f of tracked(['lib', 'test', 'examples', 'perf', 'pre-installed-packages', 'adaptive-test']).filter((n) => n !== 'lib/pre-8-device-ids.js')) {
+    // every tracked file but the history (docs/, the CHANGELOG, MIGRATION.md)
+    // and the one file that derives the old IDs
+    const history = (n) => n.startsWith('docs/') || n === 'CHANGELOG.md' || n === 'MIGRATION.md' || n === 'lib/pre-8-device-ids.js';
+    for (const f of tracked(['.']).filter((n) => !history(n))) {
       let text;
       try { text = fs.readFileSync(path.join(ROOT, f), 'utf8'); } catch (e) { continue; }
       for (const m of text.matchAll(/[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}/g)) if (old.has(m[0])) found.push(`${f}: ${old.get(m[0])}`);
