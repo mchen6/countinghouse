@@ -15,8 +15,14 @@ you have to do. What the sandbox does and does not protect is in
   registry URL. Grants that list specific device IDs (an auth file's
   `devices`, a sqlite provider's `user_devices`) must be regenerated: a
   grant of `'*'` is unaffected. At start, a grant that still names a loaded
-  module's pre-8.0 ID is logged once, with its new ID. A device's log
-  stored under its old ID is left where it is and no longer read. Composite
+  module's pre-8.0 ID is logged once, with its new ID (at start, and again
+  after the auth configuration is reloaded). What is kept under a device
+  ID is left where it is and no longer read: a device's log, and the
+  metering's per-tool records (a tool is `<deviceID>/<service>/<action>`
+  there: a per-tool free-call count or price record starts afresh, and a
+  report spanning the upgrade shows a tool under both IDs). A job queued
+  before the upgrade carries its old device ID; it is in the old shared
+  queue, which 8.0 does not run (see the job queue entry). Composite
   modules address their callees by name (`<module>/<service>.<action>`) and
   are unaffected; one that hard-codes a callee's device ID must take the
   new one.
