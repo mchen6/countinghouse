@@ -29,6 +29,7 @@ const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../help
 const {toolOutput} = require('../helpers/tool-result');
 const {deviceIDForName} = require('../../lib/call-address');
 const {testPort, redisConnectionFor} = require('../helpers/test-env');
+const {prefixFor} = require('../helpers/job-queue');
 
 const hex = () => crypto.randomBytes(6).toString('hex');
 const VIA   = 'token_forge_forgeservice_viacall';
@@ -341,7 +342,7 @@ describe('composition 18: jobs, by their owner\'s identity', function() {
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath, '--mcpToolCallCost', '1',
       '--moduleDataPath', path.join(base, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'job-snoop')]);
     // the server's Redis (test/helpers/test-env.js)
-    queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: redisConnectionFor(11)});
+    queue = new Queue('job-queue', {prefix: prefixFor(path.join(base, 'store')), connection: redisConnectionFor(11)});   // this server's own queue (B-j1)
   });
   after(async () => {
     for (const s of await queue.getJobSchedulers(0, -1)) if (String(s.key || s.id).includes(NAME)) await queue.removeJobScheduler(s.key || s.id);

@@ -20,7 +20,7 @@ describe('validation 09: run-local refuses a test with its own Redis client on a
 
   it('flags an object connection on 6379, or on a loopback host with no port (6379 is the default)', () => {
     for (const line of [
-      "queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: {db: 11, host: '127.0.0.1', port: 6379}});",
+      "queue = new Queue('job-queue', {prefix: prefixFor(dir), connection: {db: 11, host: '127.0.0.1', port: 6379}});",
       "const connection = {db: 11, port: 6379, host: '127.0.0.1'};",
       "q = new QueueEvents('job-queue', {connection: {host: 'localhost', port: 6379}});",
       "q = new Queue('job-queue', {connection: {host: '::1', port: '6379'}});",
@@ -34,7 +34,7 @@ describe('validation 09: run-local refuses a test with its own Redis client on a
 
   it('passes a connection from the helper, and 6379 as data that is not a client', () => {
     for (const line of [
-      "queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: redisConnectionFor(11)});",
+      "queue = new Queue('job-queue', {prefix: prefixFor(dir), connection: redisConnectionFor(11)});",
       "const connection = redisConnectionFor(11);",
       "const REDIS = {endpoints: [{host: '127.0.0.1', port: 6379}], socketPaths: []};",
       "const debug = {debug: true, port: 6379, redisEndpoint: {host: '127.0.0.1', port: 6379}};",

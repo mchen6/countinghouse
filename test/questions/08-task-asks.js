@@ -317,13 +317,22 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     const {redisUrlFor} = require('../helpers/test-env');
     let saved;
     let JobControl;
+    let identityDir = null;
     before(function() {
       if (process.env.CH_TEST_REDIS_URL == null || process.env.CH_TEST_REDIS_URL === '') this.skip();
       saved = {workerThread: options.workerThread, redisUrl: options.redisUrl};
       Object.assign(options, {workerThread: true, redisUrl: redisUrlFor()});
+      // the job queue is this server's own, its prefix derived from the
+      // identity secret (B-j1): initialized as a start does, in a directory
+      // of this file's
+      identityDir = require('../helpers/test-tmp').mkdtemp('ch-q08-identity-');
+      require('../../lib/identity').initSync({moduleDataPath: identityDir});
       JobControl = require('../../lib/job-control');
     });
-    after(() => { if (saved != null) Object.assign(options, saved); });
+    after(() => {
+      if (saved != null) Object.assign(options, saved);
+      require('../helpers/test-tmp').remove(identityDir);
+    });
 
     // the record's take and the caps' reserve as scripts on Redis
     describe('the record on Redis', () => {
