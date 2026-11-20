@@ -193,6 +193,52 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
     } finally { await t.done(); }
   });
 
+  // (the medium review of 6c55f584: copyfile's source refused as an open's
+  // is; an exclusive create follows no link, EEXIST as ever, unreported;
+  // a missing source still fails on the source)
+  it('D1 by copyfile and by exclusive creates: the source refused, an exclusive create EEXIST, a missing source named', async () => {
+    const t = await setup('enforce', () => {});
+    try {
+      fs.symlinkSync(path.join(t.dirs.outside, 'secret'), path.join(t.dirs.data, 'src-link'));
+      fs.unlinkSync(path.join(t.dirs.outside, 'secret'));
+      fs.writeFileSync(path.join(t.dirs.data, 'plain'), 'p');
+      await assert.rejects(t.broker.handle('copyFile', ['/data/src-link', '/data/out']), (e) => e.code === 'ENOENT');
+      assert.ok(t.reports.includes('link-dangling ENOENT /data/src-link'), t.reports.join(', '));
+      fs.symlinkSync('nothing-here', path.join(t.dirs.data, 'lock'));
+      await assert.rejects(t.broker.handle('open', ['/data/lock', 'wx']), (e) => e.code === 'EEXIST');
+      await assert.rejects(t.broker.handle('copyFile', ['/data/plain', '/data/lock', fs.constants.COPYFILE_EXCL]), (e) => e.code === 'EEXIST');
+      assert.ok(!t.reports.includes('link-dangling ENOENT /data/lock'), t.reports.join(', '));
+      await assert.rejects(t.broker.handle('copyFile', ['/data/missing', '/data/lock']), (e) => e.code === 'ENOENT' && e.path === '/data/missing');
+    } finally { await t.done(); }
+  });
+
+  // (descriptors: every refused open closes its own exactly once -- the
+  // process's own count the same after as before, on Linux, where it can be
+  // read)
+  it('refused opens leave the process\'s descriptors as they were', async function() {
+    if (process.platform !== 'linux') return this.skip();
+    const count = () => fs.readdirSync('/proc/self/fd').length;
+    const t = await setup('enforce', (syscall, host, dirs) => {
+      if (syscall === 'open' && path.basename(host) === 'planted') fs.symlinkSync(path.join(dirs.outside, 'secret'), host);
+      if (syscall === 'open' && path.basename(path.dirname(host)) === 'late') fs.symlinkSync(dirs.outside, path.dirname(host));
+    });
+    try {
+      fs.mkdirSync(path.join(t.dirs.data, 'adir'));
+      fs.symlinkSync(path.join(t.dirs.outside, 'nope'), path.join(t.dirs.data, 'dangling'));
+      const before = count();
+      for (let i = 0; i < 3; i++) {
+        await assert.rejects(t.broker.handle('open', ['/data/planted', 'r']));
+        fs.unlinkSync(path.join(t.dirs.data, 'planted'));
+        await assert.rejects(t.broker.handle('open', ['/data/late/secret', 'r']));
+        fs.unlinkSync(path.join(t.dirs.data, 'late'));
+        await assert.rejects(t.broker.handle('open', ['/data/adir', 'r+']));
+        await assert.rejects(t.broker.handle('open', ['/data/dangling', 'w']));
+      }
+      assert.strictEqual(count(), before);
+      assert.strictEqual(t.broker.fds.size, 0);
+    } finally { await t.done(); }
+  });
+
   it('audit reports an open of a link to nothing and opens it as before', async () => {
     const t = await setup('audit', () => {});
     try {
