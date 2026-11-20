@@ -17,6 +17,8 @@ const path = require('path');
 const {spawn} = require('child_process');
 const handshake = require('../../lib/session-transport/handshake');
 const shim = require('../session-transport/helpers/shim');
+// (one copy: the runtime's listening tell, null if it exited first)
+const {listening} = require('./helpers/per-session');
 
 const ROOT = path.join(__dirname, '..', '..');
 const FRAMEWORK = path.join(ROOT, 'framework.js');
@@ -72,14 +74,6 @@ function runtime(home, extra = []) {
 const secretOf = (r) => {
   try { return handshake.parseSecret(fs.readFileSync(path.join(r.run, 'secret'), 'utf8')); } catch (e) { return null; }
 };
-// the runtime's own 'listening' tell (after its start's checks), not its
-// socket file and secret: a first connect raced those (ECONNREFUSED), the
-// flake seen four times on 11-17, as session-runtime 01, 03, 10 and 11
-// found; or its exit
-const listening = async(r) => {
-  await until(async() => (r.told.some((m) => m.type === 'listening') && secretOf(r) != null) || r.code !== undefined);
-  return secretOf(r);
-};
 let nextSeq = 1;
 async function request(c, method, params, meta) {
   const seq = nextSeq++;
@@ -109,7 +103,7 @@ describe('session-runtime 04: tasks by key and session, spawned (shared runtime 
 
   it('a session\'s tasks are its own: another session\'s id is one never issued, in both eras', async() => {
     r = runtime(home, ['--loadModule', scenario(home)]);
-    await listening(r);
+    assert.ok(await listening(r) != null, `the runtime is not listening (exit ${r.code}): ${(r.err || '').slice(-1500)}`);
     const secret = secretOf(r);
     const open = async() => { try { return await shim.session(r.socket, secret); } catch (e) { throw new Error(`${e.message}\n${r.err.slice(-2000)}`); } };
     const a = await open();
@@ -174,7 +168,7 @@ describe('session-runtime 04: tasks by key and session, spawned (shared runtime 
 
   it('A says bye with a task under way: it runs to its end (cooperative), and B\'s own task completes (B5 Task 4)', async() => {
     r = runtime(home, ['--loadModule', scenario(home)]);
-    await listening(r);
+    assert.ok(await listening(r) != null, `the runtime is not listening (exit ${r.code}): ${(r.err || '').slice(-1500)}`);
     const secret = secretOf(r);
     const a = await shim.session(r.socket, secret);
     const b = await shim.session(r.socket, secret);

@@ -13,6 +13,8 @@ const path = require('path');
 const {spawn} = require('child_process');
 const handshake = require('../../lib/session-transport/handshake');
 const shim = require('../session-transport/helpers/shim');
+// (one copy: the runtime's listening tell, null if it exited first)
+const {listening} = require('./helpers/per-session');
 
 const ROOT = path.join(__dirname, '..', '..');
 const FRAMEWORK = path.join(ROOT, 'framework.js');
@@ -66,14 +68,6 @@ function runtime(home, args) {
 const secretOf = (r) => {
   try { return handshake.parseSecret(fs.readFileSync(path.join(r.run, 'secret'), 'utf8')); } catch (e) { return null; }
 };
-// the runtime's own 'listening' tell (after its start's checks), not its
-// socket file and secret: a first connect raced those (ECONNREFUSED), the
-// flake seen four times on 11-17, as session-runtime 01, 03, 10 and 11
-// found; or its exit
-const listening = async(r) => {
-  await until(async() => (r.told.some((m) => m.type === 'listening') && secretOf(r) != null) || r.code !== undefined);
-  return secretOf(r);
-};
 
 // a session: answers by seq, notifications in order
 let nextSeq = 1;
@@ -118,7 +112,7 @@ describe('session-runtime 12: a session\'s task listen is agreed and told only i
 
   it('two sessions listen for both tasks: each is agreed its own, and told its own completion only', async() => {
     r = runtime(home, ['--loadModule', scenario(home)]);
-    await listening(r);
+    assert.ok(await listening(r) != null, `the runtime is not listening (exit ${r.code}): ${(r.err || '').slice(-1500)}`);
     const open = async() => { try { return session((await shim.session(r.socket, secretOf(r))).c); } catch (e) { throw new Error(`${e.message}\n${r.err.slice(-2000)}`); } };
     const a = await open();
     const b = await open();

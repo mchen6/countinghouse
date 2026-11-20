@@ -21,6 +21,8 @@ const path = require('path');
 const {spawn} = require('child_process');
 const handshake = require('../../lib/session-transport/handshake');
 const shim = require('../session-transport/helpers/shim');
+// (one copy: the runtime's listening tell, null if it exited first)
+const {listening} = require('./helpers/per-session');
 
 const ROOT = path.join(__dirname, '..', '..');
 const FRAMEWORK = path.join(ROOT, 'framework.js');
@@ -86,14 +88,6 @@ function runtime(home, modulesRoot) {
 const secretOf = (r) => {
   try { return handshake.parseSecret(fs.readFileSync(path.join(r.run, 'secret'), 'utf8')); } catch (e) { return null; }
 };
-// the runtime's own 'listening' tell (after its start's checks), not its
-// socket file and secret: a first connect raced those (ECONNREFUSED), the
-// flake seen four times on 11-17, as session-runtime 01, 03, 10 and 11
-// found; or its exit
-const listening = async(r) => {
-  await until(async() => (r.told.some((m) => m.type === 'listening') && secretOf(r) != null) || r.code !== undefined);
-  return secretOf(r);
-};
 let nextSeq = 1;
 async function request(c, method, params = {}) {
   const seq = nextSeq++;
@@ -126,7 +120,7 @@ describe('session-runtime 08: a pack turned off while its module restarts after 
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sr08-'));
     const pack = crashyPack(home);
     r = runtime(home, pack.root);
-    assert.ok(await listening(r) != null, `never listened: ${r.err.slice(-1500)}`);
+    assert.ok(await listening(r) != null, `the runtime is not listening (exit ${r.code}): ${(r.err || '').slice(-1500)}`);
     const s = await shim.session(r.socket, secretOf(r));
     if (s.c != null) conns.push(s.c);
     assert.ok(s.welcome != null, JSON.stringify(s.refused));
