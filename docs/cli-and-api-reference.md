@@ -132,6 +132,8 @@ HMAC of the auth entry's stable `id` field, else of its API key, under the
 server's identity secret: 64 hex characters in
 `<moduleDataPath>/.identity-secret` (mode 0600, generated on first start)
 or in `COUNTINGHOUSE_IDENTITY_SECRET`. Changing the secret changes every id.
+(Beside it, `.server-id` is the server's own random id, which names its job
+queue and job history in Redis; the secret's rotation leaves it.)
 See [authentication.md](authentication.md#the-opaque-user-id).
 
 **`POST /reload-auth`** re-reads the auth configuration without a restart,

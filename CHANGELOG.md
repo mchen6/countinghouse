@@ -15,11 +15,16 @@ the auth config.
 Every runtime opened its BullMQ job queue under one prefix, `{cdifJob}`, so
 two runtimes on one Redis took each other's jobs (a job for a module only
 one of them loaded ran on the other and failed). The prefix is now the
-server's own, `{chj-<16 hex>}`, derived from its identity secret: the same
-across restarts, another for a server with its own data directory. Jobs and
-schedulers left under `{cdifJob}` are not moved; a start says how many,
-once, and leaves them. A new identity secret is a new queue: jobs queued
-under the old one are no longer run.
+server's own, `{chj-<server id>}`: a random 16-hex id made at its first
+start and kept beside its data (`<moduleDataPath>/.server-id`, or
+`<storePath>/` in the single-identity profile; mode 0600, checked as the
+identity secret is, and in the always-denied set). The same across restarts
+and a rotated identity secret; another for a server with its own data
+directory. Its job history is its own too, under
+`jobinfo:{chj-<server id>}:<name>`. Jobs and schedulers left under
+`{cdifJob}`, and the history kept under the old unscoped `jobinfo:<name>`
+keys, are not moved or read: a start counts them read-only, says how many in
+one line, once, and leaves them. Old job history is not carried over.
 
 ### Removed — the pack form, `--packsRoot`, a ceiling's `packs`, `fallbackEnv`
 
