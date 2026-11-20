@@ -16,12 +16,19 @@ A device's ID was a UUID v5 of `https://registry.apemesh.com/packages/<friendlyN
 a seed under another project's registry. It is now a UUID v5 of the
 `friendlyName` in countinghouse's own namespace, fixed for good
 (`lib/call-address.js` `CH_DEVICE_NS`), so every ID changed. Grants that
-list specific device IDs must be regenerated (`'*'` grants are unaffected);
-a start logs, once per module, a grant that still names a loaded module's
-pre-8.0 ID, with the new one (again after an auth reload). What is kept
-under a device ID is orphaned: device logs, and the metering's per-tool
-records (a per-tool free-call count or price record starts afresh). The examples' `auth.json` files are regenerated, and the tests,
+list specific device IDs must be regenerated, in an auth file, sqlite or
+CouchDB (`'*'` grants are unaffected); a start logs, once per module, an
+auth-file or sqlite grant that still names a loaded module's pre-8.0 ID,
+with the new one (again after an auth reload; CouchDB's are not checked).
+What is kept under a device ID is orphaned: device logs, and the
+metering's per-tool records and a CouchDB user's `priceRecord` (free calls
+left on them are lost unless rewritten under the new IDs). Pending jobs and
+repeatable schedulers made before the upgrade name the old IDs: remove them
+and add them again. Module code that declares its calls names them, never
+an ID (composite-demo, perf-caller-demo and a test fixture now ctx.call by
+name). The examples' `auth.json` files are regenerated, and the tests,
 scripts and examples compute IDs with `deviceIDForName`.
+
 ### Fixed — one shared-runtime session's stalling inputs no longer throttle the others
 
 The validator pool holds an input's stalls against its caller, and after
