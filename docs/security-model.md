@@ -201,7 +201,13 @@ binary's install path (e.g. under the user's home with nvm); Node's own
 spawns read it. A module's own `vm` realm, with a `prepareStackTrace` of
 its own there, sees the runtime's file paths in its raw stack frames;
 never a receiver or a function of the runtime's (its files are strict
-mode). Under `--enable-source-maps`, a stack is not source-mapped.
+mode). Under `--enable-source-maps`, a stack is not source-mapped. A
+frame with no file -- a module's own `eval` or `new Function`, a
+builtin's -- answers `getThis()` and `getFunction()` with `undefined`.
+On Windows a stack or a message spells the runtime's files
+`countinghouse:\lib\x.js` (`process.argv` with `/`).
+`util.getCallSite` (Node 22's deprecated alias) gives no deprecation
+warning, and `util.getCallSites(200)` gives at most 199 frames.
 
 **On Windows** a module's files carry a drive (#195): the module sees them,
 its current directory and its stack frames as `<V>:\app\...`, V a drive

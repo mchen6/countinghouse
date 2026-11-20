@@ -878,10 +878,16 @@ const STEPS = {
     } else out.push('alias');
     if (typeof(util.getCallSites) === 'function') {
       let counts;
+      // (relative to this stack's depth: all of it, then 10 of it at most)
       try {
-        counts = `${util.getCallSites(200).length > 10} ${util.getCallSites(2).length} ${util.getCallSites({}).length} ${util.getCallSites(undefined, {}).length} ${ownFirst(util.getCallSites(3))}`;
+        const depth = util.getCallSites(200).length;
+        const ten = Math.min(10, depth);
+        counts = `${util.getCallSites(2).length === Math.min(2, depth)} ${util.getCallSites({}).length === ten} ${util.getCallSites(undefined, {}).length === ten} ${util.getCallSites().length === ten} ${ownFirst(util.getCallSites(3))}`;
+        let refused = 'no';
+        try { util.getCallSites(null, {}); } catch (e) { refused = String(e.code); }
+        counts += ` ${refused}`;
       } catch (e) { counts = `threw ${e.code}`; }
-      out.push(counts === 'true 2 10 10 true' ? 'counts' : `counts(${counts})`);
+      out.push(counts === 'true true true true true ERR_INVALID_ARG_TYPE' ? 'counts' : `counts(${counts})`);
     } else out.push('counts');
     const saved2 = Error.prepareStackTrace;
     try {
@@ -892,13 +898,10 @@ const STEPS = {
         for (const site of f) if (site.isEval() && site.getFileName() == null && evalFn == null) evalFn = site.getFunction();
         return 'x';
       };
+      // (a frame with no file -- a new Function's -- answers no function:
+      // ruled M-eval, a listed limit)
       new Function('return new Error("e").stack')();
-      out.push(evalFn != null ? 'eval-own' : 'eval-none');
-      // (an eval whose origin names a path only like the root's -- /app as
-      // part of a longer name -- is no frame of the module's)
-      evalFn = null;
-      require('vm').runInThisContext('new Function("return new Error(\'f\').stack")()', {filename: '/apps-not-the-root/x.js'});
-      out.push(evalFn == null ? 'eval-other' : 'eval-other-own');
+      out.push(evalFn == null ? 'eval-none' : 'eval-function');
       // (frames kept from one stack, handed to the formatter again with a
       // function of the module's assigned: read as frames, never wrapped twice)
       Error.prepareStackTrace = (e, f) => f.map((site) => String(site.getFileName())).join(',');

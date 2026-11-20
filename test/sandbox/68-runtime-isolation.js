@@ -250,7 +250,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       });
       it('stack edges: a vm realm sees no runtime receiver; a chained prepareStackTrace; no builtin frame\'s receiver; util.getCallSites virtual; _initPaths', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'stackEdges'});
-        assert.strictEqual(detail(r), 'vm-no-receivers chained builtin-no-this callsites-virtual initPaths alias counts eval-own eval-other rewrapped', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'vm-no-receivers chained builtin-no-this callsites-virtual initPaths alias counts eval-none rewrapped', JSON.stringify(r).slice(0, 1500));
       });
       it('process.argv is a frozen copy: node, then the runtime\'s worker by its virtual name', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'argv'});
