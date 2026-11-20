@@ -15,13 +15,13 @@ const {DeniedSet} = require('../../lib/fs-broker/denied');
 async function setup(mode, afterCheck, quota, deniedNames) {
   const base = mkdtemp('broker-fb2-');
   const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp'),
-    outside: path.join(base, 'outside'), ro: path.join(base, 'ro')};
+    outside: path.join(base, 'outside'), ro: path.join(base, 'ro'), rw: path.join(base, 'rw')};
   Object.values(dirs).forEach((d) => fs.mkdirSync(d));
   fs.writeFileSync(path.join(dirs.outside, 'secret'), 'no');
   fs.writeFileSync(path.join(dirs.ro, 'config'), 'ro');
   fs.writeFileSync(path.join(dirs.data, 'denied-secret'), 'denied');
   const namespace = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp,
-    declared: [{path: dirs.ro, access: 'r'}], protectedPaths: []});
+    declared: [{path: dirs.ro, access: 'r'}, {path: dirs.rw, access: 'rw'}], protectedPaths: []});
   await namespace.prepare();
   const reports = [];
   const broker = new FsBroker({name: 'm', mode: mode, namespace: namespace, cwd: '/',
@@ -335,8 +335,9 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
 
   // (the medium review of b0076daf: 1, a closeAll during the O_TRUNC
   // truncate -- the open still answers EIO, never registered; 2, a file that
-  // appeared in the race with more than one link -- a hard link to a
-  // protected file, matched by its path alone -- refused for writing; 3,
+  // appeared in the race with more than one link refused for writing, the
+  // general rule that covers a hard link to a file protected by its path
+  // alone (a pin record), whatever file it is; 3,
   // copyfile's source swapped for a link after the check -- never followed;
   // 4, copyfile onto an in-root link to a file -- its quota from that file)
   it('the open path\'s last gaps: closeAll mid-truncate, a hard link appeared, copyfile\'s source, copyfile\'s old size', async function() {
@@ -398,6 +399,22 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
         assert.strictEqual(quota.entries, 3);
       } finally { await t.done(); }
     }
+  });
+
+  // (the medium review of 9d16b00b: copyfile onto a link into a declared rw
+  // root, which the quota doesn't count -- the size there is never given
+  // back from /data's count)
+  it('copyfile onto a link into an uncounted root gives back nothing it never counted', async () => {
+    const quota = new Quota({maxBytes: 1 << 20, maxEntries: 100, enforce: true, report: () => {}, bytes: 10, entries: 2});
+    const t = await setup('enforce', () => {}, quota);
+    try {
+      fs.writeFileSync(path.join(t.dirs.rw, 'big'), 'b'.repeat(1000));
+      fs.writeFileSync(path.join(t.dirs.data, 'small'), 's'.repeat(10));
+      fs.symlinkSync(path.join(t.dirs.rw, 'big'), path.join(t.dirs.data, 'l2'));
+      await t.broker.handle('copyFile', ['/data/small', '/data/l2']).catch(() => {});
+      assert.ok(quota.bytes >= 10, `never under what /data holds: ${quota.bytes}`);
+      assert.ok(quota.entries >= 2, `entries ${quota.entries}`);
+    } finally { await t.done(); }
   });
 
   // (ruled R-a, and the medium review of 5df938b7: where the check saw a
