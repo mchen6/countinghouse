@@ -19,7 +19,7 @@ describe('test8: invoke specify incorrect input type', function() {
     .set('X-CH-Key', 'aabbcc')
     .send(req)
     .expect('Content-Type', /[json | text]/)
-    .expect(500, (err, res) => {
+    .expect(400, (err, res) => {
       if (err) return done(err);
       if (res.body.code !== 'INPUT_DATA_VALIDATION_FAIL') {
         console.error(chalk.white.bgRed.bold(`Request:${JSON.stringify(req)}`));

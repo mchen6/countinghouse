@@ -2218,7 +2218,10 @@ these are the checks that predate them and still apply:
   [`authentication.md`](authentication.md) for how to configure each one).
   Every entry path in `docs/cross-cutting-matrix.md`'s table
   that checks `userAuth` denies a caller that isn't explicitly granted
-  the target `deviceID` (`USER_HAS_NO_DEVICE`), via one of three pluggable
+  the target `deviceID` (`USER_HAS_NO_DEVICE`; a REST device route answers
+  it as it answers a device that isn't there or isn't listed, one
+  `MODULE_NOT_LISTED` 404, so no caller can probe which modules exist), via
+  one of three pluggable
   backends: `FileAuthProvider` (default, a JSON file), `SqliteAuthProvider`,
   or `CouchDBAuthProvider` (needs a real CouchDB instance, `nano` no
   longer a hard dependency). This is caller-identity authorization, not

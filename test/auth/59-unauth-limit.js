@@ -207,7 +207,7 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
   // a request from `ip` carrying `key`: a fake res (an emitter, as express's
   // is), run through the middleware; fn runs inside it
   const request = (ip, key, fn) => {
-    const res = Object.assign(new EventEmitter(), {headers: {}, set(name, value) { res.headers[name] = value; return res; }, status(code) { res.code = code; return res; }, json() { return res; }});
+    const res = Object.assign(new EventEmitter(), {headers: {}, set(name, value) { res.headers[name] = value; return res; }, setHeader(name, value) { res.headers[name] = value; }, status(code) { res.code = code; return res; }, json() { return res; }});
     let out = null;
     unauthLimit.middleware()({ip, headers: key != null ? {'x-ch-key': key} : {}, socket: {}}, res, () => { out = fn(); });
     if (res.code != null) assert.strictEqual(res.code, 429);
@@ -230,6 +230,42 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
     assert.strictEqual(inRequest('10.1.0.1', 'k-four'), null);
     assert.ok(inRequest('10.1.0.1', 'k-one') != null, 'a key that resolved lately passes');
     assert.ok(unauthLimit.beforeLookup('k-five') != null, 'not in an HTTP request: no limit');
+  });
+
+  // #482, merging #483 (the medium on the merge, 2): the refusal's hint is
+  // the limiter's own wait, under way (user-auth's refusal()) and at the
+  // gate alike, never the 1 s floor when the limiter computed more
+  it('the refusal carries the limiter\'s own wait as its hint, under way and at the gate: a full window says about a minute', () => {
+    const {retryAfterOf} = require('../../lib/countinghouse-error');
+    // (an address of its own: the file's tests share the limiter)
+    const ip = '10.31.0.1';
+    inRequest(ip, 'k-good').resolved();
+    inRequest(ip, 'k-bad-1').refused();
+    inRequest(ip, 'k-bad-2').refused();
+    // under way: a request whose key resolved lately passes the gate, and a
+    // lookup it makes for another key is refused with the limiter's wait
+    const underWay = request(ip, 'k-good', () => unauthLimit.refusal()).out;
+    const hint = retryAfterOf(underWay);
+    assert.ok(Number.isInteger(hint) && hint > 50 && hint <= 60, `the limiter's wait, about 60 s: ${hint}`);
+    // at the gate: a key that never resolved is refused before any route,
+    // its Retry-After the same wait
+    const gated = request(ip, 'k-new', () => { throw new Error('let through'); });
+    assert.strictEqual(gated.res.code, 429);
+    const header = Number(gated.res.headers['Retry-After']);
+    assert.ok(header > 50 && header <= 60, `the gate's Retry-After is the limiter's wait: ${header}`);
+  });
+
+  // (the medium on the merge, 9) only the limiter's own answer is sent as its
+  // 429: an error that merely carries the code (a resource read's, copied
+  // from a tool result) is answered as it was made
+  it('an answer is the limit\'s 429 only by the limiter\'s own JSON-RPC code, not by the code its data carries', () => {
+    const sent = [];
+    const res = {set() { return res; }, status(c) { sent.push(c); return res; }, json() { return res; }};
+    const carried = {jsonrpc: '2.0', id: 3, error: {code: -32603, message: 'x', data: {'countinghouse/code': 'UNAUTH_RATE_LIMITED'}}};
+    assert.strictEqual(unauthLimit.answerRpcLimited(res, carried), false);
+    const own = unauthLimit.rpcLimited(3, unauthLimit.refusal());
+    assert.strictEqual(unauthLimit.answerRpcLimited(res, own), true);
+    assert.deepStrictEqual(sent, [429]);
   });
 
   it('a key refused now leaves the set of keys that resolved: a revoked key is counted again (the high review of #483, 2)', () => {
@@ -268,7 +304,7 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
     inRequest(ip, secret).resolved();
     for (let i = 0; i < 2; i++) inRequest(ip, `junk-${i}`).refused();
     let passed = false;
-    const res = Object.assign(new (require('events').EventEmitter)(), {set() { return res; }, status(code) { res.code = code; return res; }, json() { return res; }});
+    const res = Object.assign(new (require('events').EventEmitter)(), {set() { return res; }, setHeader() {}, status(code) { res.code = code; return res; }, json() { return res; }});
     unauthLimit.middleware()({ip, headers: {'x-ch-key': 'junk-first', 'x-app-key': secret}, socket: {}}, res, () => { passed = true; });
     assert.strictEqual(passed, true, `the gate answered ${res.code}`);
   });
@@ -352,7 +388,7 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
     const ip = '10.8.0.1';
     const {EventEmitter} = require('events');
     for (let i = 0; i < 2; i++) {
-      const res = Object.assign(new EventEmitter(), {set() { return res; }, status(code) { res.code = code; return res; }, json() { return res; }});
+      const res = Object.assign(new EventEmitter(), {set() { return res; }, setHeader() {}, status(code) { res.code = code; return res; }, json() { return res; }});
       unauthLimit.middleware()({ip, headers: {'x-app-key': 'not-read-by-mcp', 'x-ch-key': ''}, socket: {}}, res, () => {
         // (lib/user-auth.js: no key is refused with no lookup)
         unauthLimit.keyRefused(null);
@@ -459,15 +495,19 @@ describe('auth 59: a refusal met under way answers one shape on every route', fu
     const run = spawnSync(process.execPath, [path.join(__dirname, '..', 'fixtures', 'unauth-limited-routes.js')], {encoding: 'utf8', timeout: 25000});
     assert.strictEqual(run.status, 0, run.stderr);
     const answers = JSON.parse(run.stdout);
+    // (every error answer's shape, its kind the row's: #482, merging #483)
     for (const a of answers.slice(0, 4)) {
-      assert.deepStrictEqual([a.path, a.status, JSON.parse(a.body).code], [a.path, 429, 'UNAUTH_RATE_LIMITED'], a.body);
+      assert.deepStrictEqual([a.path, a.status, JSON.parse(a.body).code, JSON.parse(a.body).kind], [a.path, 429, 'UNAUTH_RATE_LIMITED', 'caller'], a.body);
       assert.ok(Number(a.retryAfter) >= 1, `${a.path}: Retry-After ${a.retryAfter}`);
     }
     const single = answers[4];
     assert.strictEqual(single.status, 429, single.body);
     assert.ok(Number(single.retryAfter) >= 1, String(single.retryAfter));
     const one = JSON.parse(single.body);
-    assert.deepStrictEqual([one.id, one.error.code, one.error.data.code], [7, -32000, 'UNAUTH_RATE_LIMITED'], single.body);
+    assert.deepStrictEqual([one.id, one.error.code, one.error.data['countinghouse/code']], [7, -32000, 'UNAUTH_RATE_LIMITED'], single.body);
+    // (its data every rate-limit error's: the kind, and the hint the
+    // Retry-After header says: #482, merging #483)
+    assert.deepStrictEqual([one.error.data['countinghouse/kind'], String(one.error.data['countinghouse/retryAfter'])], ['caller', String(single.retryAfter)], single.body);
     // (the medium on round 1, 5) a job's owner check met by the limit is retried, never failed for good
     const job = spawnSync(process.execPath, ['-e', `
       const path = require('path');
@@ -483,10 +523,10 @@ describe('auth 59: a refusal met under way answers one shape on every route', fu
     assert.strictEqual(batched.status, 200, batched.body);
     assert.ok(Number(batched.retryAfter) >= 1, `a batch with a limited message carries Retry-After: ${batched.retryAfter}`);
     const [m] = JSON.parse(batched.body);
-    assert.deepStrictEqual([m.id, m.error.code, m.error.data.code], [8, -32000, 'UNAUTH_RATE_LIMITED'], batched.body);
+    assert.deepStrictEqual([m.id, m.error.code, m.error.data['countinghouse/code']], [8, -32000, 'UNAUTH_RATE_LIMITED'], batched.body);
     assert.strictEqual(m.error.message, one.error.message);
     // a tools/list met by the limit under way: the same shape
-    assert.deepStrictEqual([answers[6].status, JSON.parse(answers[6].body).error.data.code], [429, 'UNAUTH_RATE_LIMITED'], answers[6].body);
+    assert.deepStrictEqual([answers[6].status, JSON.parse(answers[6].body).error.data['countinghouse/code']], [429, 'UNAUTH_RATE_LIMITED'], answers[6].body);
     // (the last-round high on #483, 2) the provider's own failure is answered,
     // never listed as no key (an empty list a client would keep)
     const down = spawnSync(process.execPath, [path.join(__dirname, '..', 'fixtures', 'unauth-limited-routes.js'), 'SYSTEM_ERROR_USERDB_NA'], {encoding: 'utf8', timeout: 25000});
@@ -573,7 +613,7 @@ describe('auth 59: on a running server', function() {
       assert.strictEqual(a.body, answers[0].body, 'one body whatever the key or the tool named');
     }
     const body = JSON.parse(answers[0].body);
-    assert.deepStrictEqual([body.id, body.error.data.code], [null, 'UNAUTH_RATE_LIMITED']);
+    assert.deepStrictEqual([body.id, body.error.data['countinghouse/code']], [null, 'UNAUTH_RATE_LIMITED']);
     assert.ok(!answers[0].body.includes('unknown-again'));
     const r = await rest(port, {'X-CH-Key': 'unknown-again'});
     assert.strictEqual(r.status, 429, r.body);

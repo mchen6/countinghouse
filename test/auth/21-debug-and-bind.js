@@ -89,9 +89,10 @@ describe('auth 21: --debug, the default bind address and text/plain', function()
       req.on('error', reject);
       req.end(body);
     });
-    // 403 is the auth refusal; past auth the route answers its own way
-    assert.strictEqual(await status('wrong'), 403, 'a wrong key must be refused');
-    assert.notStrictEqual(await status('12345'), 403, 'the digit key must pass auth');
+    // 401 is the auth refusal (an unknown key: post-rel caller 400); past
+    // auth the route answers its own way
+    assert.strictEqual(await status('wrong'), 401, 'a wrong key must be refused');
+    assert.notStrictEqual(await status('12345'), 401, 'the digit key must pass auth');
   });
 
   it('does not parse a text/plain body as JSON', async () => {

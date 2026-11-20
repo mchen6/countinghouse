@@ -63,8 +63,11 @@ describe('sessions 31: a per-session module\'s worker is its call\'s session\'s 
     const gone = await workerFor(A, {hop: true});
     assert.strictEqual(gone.err.code, 'DEVICE_NOT_FOUND');
     assert.ok(!gone.err.message.includes(D), gone.err.message);
-    assert.strictEqual((await workerFor(null)).err.code, 'DEVICE_NOT_FOUND');
-    assert.ok((await workerFor(null)).err.message.includes(D), 'a client\'s call names the device it asked for, as for one unknown');
+    // (no session at all: a REST call, which only a session's MCP calls can
+    // stand in for; REST's one answer for a device it can't use, naming
+    // nothing: #482's high, 3)
+    assert.strictEqual((await workerFor(null)).err.code, 'MODULE_NOT_LISTED');
+    assert.ok(!(await workerFor(null)).err.message.includes(D), 'the one answer names no device');
   });
 
   // the review of #367's /code-review: a spawn given up on because the
@@ -132,19 +135,22 @@ describe('sessions 31: a per-session module\'s worker is its call\'s session\'s 
 
   // the review of #367 (2): as the B3 check's refusal is, so a job whose
   // session has ended (or has none) is not retried in shared mode
-  it('a job\'s run whose session has ended, or has none, is a device not hosted, tagged after discovery: not retried', async () => {
+  // (a run with no session at all: the one answer a sessionless call gets,
+  // MODULE_NOT_LISTED, not retried; #482's high, round 2, 6)
+  it('a job\'s run whose session has ended is a device not hosted, tagged after discovery; one with none is the one answer; neither retried', async () => {
     dm.allDevicesLoaded = true;
     const {notRetried} = require('../../lib/job-control-common');
     const realShared = sessions.shared;
     sessions.shared = () => true;
     try {
       live.delete(A);
-      for (const extra of [{session: A}, {}]) {
-        const err = await new Promise((resolve) => dm.invokeJobsNow(D, SVC, 'touch', {}, 'j1', (e) => resolve(e), () => false, extra));
-        assert.strictEqual(err.code, 'DEVICE_NOT_FOUND', JSON.stringify(extra));
-        assert.strictEqual(err.afterDiscovery, true);
-        assert.strictEqual(notRetried(err.code, err), true);
-      }
+      const ended = await new Promise((resolve) => dm.invokeJobsNow(D, SVC, 'touch', {}, 'j1', (e) => resolve(e), () => false, {session: A}));
+      assert.strictEqual(ended.code, 'DEVICE_NOT_FOUND');
+      assert.strictEqual(ended.afterDiscovery, true);
+      assert.strictEqual(notRetried(ended.code, ended), true);
+      const none = await new Promise((resolve) => dm.invokeJobsNow(D, SVC, 'touch', {}, 'j1', (e) => resolve(e), () => false, {}));
+      assert.strictEqual(none.code, 'MODULE_NOT_LISTED');
+      assert.strictEqual(notRetried(none.code, none), true);
     } finally {
       sessions.shared = realShared;
     }

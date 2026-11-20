@@ -12,7 +12,10 @@ require(path.join(ROOT, 'lib/cli-options')).setOptions({});
 require.cache[require.resolve(path.join(ROOT, 'lib/user-auth'))] = {
   id: 'user-auth-stub', loaded: true,
   // (argv[2]: the code every lookup answers; the limit's by default)
-  exports: (req, res, deviceID, appKey, serviceID, actionName, localCB, callback) => callback(new CountinghouseError(process.argv[2] || 'UNAUTH_RATE_LIMITED'))
+  // (the limit's refusal as lib/user-auth.js makes it: with the limiter's own
+  // retry hint, unauth-limit refusal(); any other code as the provider's)
+  exports: (req, res, deviceID, appKey, serviceID, actionName, localCB, callback) => callback(process.argv[2] != null
+    ? new CountinghouseError(process.argv[2]) : require(path.join(ROOT, 'lib/unauth-limit')).refusal())
 };
 const express = require('express');
 const app = express();

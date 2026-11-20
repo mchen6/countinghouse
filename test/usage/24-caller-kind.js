@@ -92,8 +92,10 @@ for (const variant of VARIANTS) {
       for (const action of Object.keys(HANDLERS)) {
         const r = (await mcp('tools/call', {name: TOOL(action), arguments: {}})).result;
         assert.strictEqual(r.isError, true, JSON.stringify(r));
-        // nothing new on the wire: the kind is the usage record's only
-        assert.deepStrictEqual(Object.keys(r._meta), ['countinghouse/code'], JSON.stringify(r));
+        // the kind beside the code (post-rel caller 400: countinghouse/kind,
+        // as REST's body names it)
+        assert.deepStrictEqual(Object.keys(r._meta), ['countinghouse/code', 'countinghouse/kind'], JSON.stringify(r));
+        if (action === 'badInput') assert.strictEqual(r._meta['countinghouse/kind'], 'caller');
       }
       await waitFor(async () => Object.keys(HANDLERS).every((a) => records(usageDir).some((r) => r.tool === TOOL(a))), 10000, 'the Out records');
       for (const [action, code] of Object.entries(EXPECTED)) {

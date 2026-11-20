@@ -60,7 +60,7 @@ describe('sessions 32: no direct peer channel to a per-session module (R1 Task 5
     const savedAuth = require.cache[authPath];
     const savedBroker = require.cache[brokerPath];
     const CountinghouseError = require('../../lib/countinghouse-error').CountinghouseError;
-    require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: (a, b, c, d, e, f, g, cb) => cb(new CountinghouseError('DENY_DEVICE_ACCESS'))};
+    require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: (a, b, c, d, e, f, g, cb) => cb(new CountinghouseError('USER_HAS_NO_DEVICE'))};
     delete require.cache[brokerPath];
     const told = [];
     try {
@@ -77,7 +77,7 @@ describe('sessions 32: no direct peer channel to a per-session module (R1 Task 5
     }
     assert.strictEqual(told.length, 1, JSON.stringify(told));
     assert.strictEqual(told[0][0], 'deny');
-    assert.strictEqual(told[0][1].errCode, 'DENY_DEVICE_ACCESS', JSON.stringify(told[0][1]));
+    assert.strictEqual(told[0][1].errCode, 'USER_HAS_NO_DEVICE', JSON.stringify(told[0][1]));
     assert.strictEqual(told[0][1].route, undefined, 'no route before the access check');
   });
 

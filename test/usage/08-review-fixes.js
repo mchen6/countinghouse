@@ -110,7 +110,9 @@ describe('usage: the review fixes of #59', () => {
     const invokeAction = require('../../lib/routes/invoke-action');
     const seen = [];
     const cdif = {
-      deviceManager: {deviceMap: {}, moduleManager: null},
+      // (a device a module serves: invoke-action now refuses one it can't
+      // use before dispatching, post-rel caller 400)
+      deviceManager: {deviceMap: {d1: {packageInfo: {name: 'usage-08-module', countinghouse: {}}}}, moduleManager: null},
       invokeDeviceAction: (deviceID, serviceID, actionName, args) => { seen.push(args); finish(); }
     };
     const router = invokeAction(null, cdif);

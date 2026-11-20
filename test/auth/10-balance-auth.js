@@ -60,7 +60,7 @@ describe('auth 10: /balance and countinghouse_check_balance require a real apiKe
   });
 
   it('GET /balance: an unknown key is refused (was: 200 with a balance)', (done) => {
-    request(url).get('/balance').set('X-CH-Key', UNKNOWN).expect(403, (err, res) => {
+    request(url).get('/balance').set('X-CH-Key', UNKNOWN).expect(401, (err, res) => {
       if (err) return done(err);
       if (res.body.code !== 'SYSTEM_ERROR_UNKNOWN_USER') {
         return done(new Error(`expected SYSTEM_ERROR_UNKNOWN_USER, got: ${JSON.stringify(res.body)}`));
@@ -73,7 +73,7 @@ describe('auth 10: /balance and countinghouse_check_balance require a real apiKe
   });
 
   it('GET /balance: no key at all is refused', (done) => {
-    request(url).get('/balance').expect(403, (err, res) => {
+    request(url).get('/balance').expect(401, (err, res) => {
       if (err) return done(err);
       if (res.body.balance !== undefined) {
         return done(new Error(`anonymous caller must not learn a balance: ${JSON.stringify(res.body)}`));

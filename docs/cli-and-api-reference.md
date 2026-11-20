@@ -111,6 +111,18 @@ modules see their own code at. Install it elsewhere (e.g.
 | `POST /devices/:deviceID/{add,get,remove}-job`, `get-job-history` | Platform | Job control predating the MCP Tasks extension; still available for non-MCP callers. Scoped to the caller's own jobs, same ownership rule `tasks/*` applies. `add-job`'s `opts` takes `name`, `attempts` (1 to 10), `delay`, `timeout` (a whole number of milliseconds, at least 1; anything else is `ADD_JOB_ERROR`) and `repeat` (`every`, in whole milliseconds of at least 1000, or `cron`; optional `limit`); a job is authorized again each time it runs. |
 | `POST /load-module`, `/unload-module`, `/restart-module`, `/reload-module`, `/uninstall-module`, `/reload-auth`, `/shutdown`, `/get-module-device-list` | Platform, **admin key required** | Module lifecycle and operational surface. Gated per request on the caller's apiKey having `admin` — see [Admin keys](authentication.md#admin-keys). Not `--debug`-gated: `--debug` bypasses the check like it bypasses every other one, but is not how you configure access to these. |
 
+**MCP error answers.** A tool error result (`isError: true`) carries in its
+`_meta` the error's `countinghouse/code` (the catalogue code, or a module's
+own) and `countinghouse/kind`: who should act, `caller`, `module`,
+`runtime` or `operator`, as a REST error body's `kind` says it. A
+rate-limit refusal adds `countinghouse/retryAfter`: when to retry, in whole
+seconds, the limiter's own, within its window (a REST 429 or 503 says the
+same in `Retry-After`). It appears only where a limiter wrote it: an error
+a module passes on from a part's call is the module's answer (kind
+`module`) and carries none. A JSON-RPC rate-limit error (`tools/list`,
+`prompts/list`, `completion/complete`, a resource read) carries the same
+three keys in its `error.data`.
+
 **Module names.** A load (`/load-module`, `countinghouse_load_module`, `--loadModule`, the registry at startup, restarts) must use the module's package.json name; any other name is refused with `MODULE_NAME_MISMATCH`. `POST /load-module` may leave `name` out, and then uses the package.json name.
 
 **`sandbox` key on `POST /get-module-device-list`.** With the module sandbox
