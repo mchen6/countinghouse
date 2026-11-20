@@ -1624,13 +1624,17 @@ and the short list of what the in-process sandbox cannot give.
   under `enforce` before the open (reported as `link-dangling`): opening it
   would follow it wherever it leads, outside the namespace, or to a file a
   host process points it at in between, before anything could judge that.
-  Under `audit` it is reported, and a creating write through it refused (no
-  write under `audit` leaves the module's own area); a read finds nothing,
-  as before. A module that wants a file there writes the target, or makes
+  Writes through a dangling link are refused under `audit` and `enforce`
+  alike (reported as `link-dangling`; `audit` previews `enforce`, and no
+  write under it leaves the module's own area); a read finds nothing, as
+  before. A module that wants a file there writes the target, or makes
   its link again. Where the broker saw no link at a name -- nothing there,
   or a plain file -- the open passes `O_NOFOLLOW`, so a link a host process
   puts there in between is never followed: the open fails, nothing is
-  created, and it is reported as `link-appeared`. Windows has no
+  created, and it is reported as `link-appeared`. Where it reached a file
+  through a link, the open goes to that file's real path, never through
+  the link again; and where it saw a file, the open never creates one, so
+  a parent or a link changed in between makes nothing anywhere. Windows has no
   `O_NOFOLLOW`: there the checks after the open stand alone, refusing the
   descriptor, and a file such an open created where the link led can stay.
 - **Host paths leak in one place.** For a CommonJS file imported directly by

@@ -274,7 +274,7 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
       if (syscall === 'open' && path.basename(host) === 'hard') fs.linkSync(path.join(dirs.data, 'denied-secret'), host);
     }, null, ['denied-secret']);
     try {
-      await assert.rejects(t.broker.handle('open', ['/data/hard', 'r']), (e) => e.code === 'EACCES' || e.code === 'ENOENT');
+      await assert.rejects(t.broker.handle('open', ['/data/hard', 'r']), (e) => e.code === 'EACCES' && e.path === '/data/hard');
       assert.ok(t.reports.includes('denied /data/hard'), t.reports.join(', '));
       assert.strictEqual(t.broker.fds.size, 0);
     } finally { await t.done(); }
@@ -318,13 +318,52 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
 
   // (#466's second high round, 6: an open that completes after closeAll
   // closes its descriptor and answers EIO, never registered)
-  it('an open completing after closeAll is closed and answers EIO', async () => {
+  it('an open completing after closeAll is closed, truncates nothing, and answers EIO', async () => {
     const t = await setup('enforce', (syscall, host) => {
       if (syscall === 'open' && path.basename(host) === 'late-close') t.broker.closeAll();
     });
+    const count = () => (process.platform === 'linux' ? fs.readdirSync('/proc/self/fd').length : 0);
     try {
-      fs.writeFileSync(path.join(t.dirs.data, 'late-close'), 'x');
-      await assert.rejects(t.broker.handle('open', ['/data/late-close', 'r']), (e) => e.code === 'EIO');
+      fs.writeFileSync(path.join(t.dirs.data, 'late-close'), 'kept');
+      const before = count();
+      await assert.rejects(t.broker.handle('open', ['/data/late-close', 'w']), (e) => e.code === 'EIO');
+      assert.strictEqual(t.broker.fds.size, 0);
+      assert.strictEqual(count(), before, 'its descriptor closed');
+      assert.strictEqual(fs.readFileSync(path.join(t.dirs.data, 'late-close'), 'utf8'), 'kept', 'nothing truncated');
+    } finally { await t.done(); }
+  });
+
+  // (ruled R-a, and the medium review of 5df938b7: where the check saw a
+  // file -- through an in-root link it followed, or plain with a parent --
+  // the open never creates: a link re-pointed outside, or a parent swapped
+  // for a link outside, in between, makes nothing there)
+  it('a seen link re-pointed, or a parent swapped, after the check creates nothing outside: the approved file opens, or nothing', async function() {
+    if (fs.constants.O_NOFOLLOW === undefined) return this.skip();
+    const t = await setup('enforce', (syscall, host, dirs) => {
+      if (syscall !== 'open') return;
+      if (path.basename(host) === 'seen-link') {
+        fs.unlinkSync(host);
+        fs.symlinkSync(path.join(dirs.outside, 'via-link'), host);
+      }
+      if (path.basename(path.dirname(host)) === 'sub') {
+        fs.renameSync(path.dirname(host), path.join(dirs.data, 'sub-moved'));
+        fs.symlinkSync(dirs.outside, path.dirname(host));
+      }
+    });
+    try {
+      fs.writeFileSync(path.join(t.dirs.data, 'real'), 'real');
+      fs.symlinkSync(path.join(t.dirs.data, 'real'), path.join(t.dirs.data, 'seen-link'));
+      // (the real file the check approved is what opens: the re-pointed
+      // link is never followed)
+      const fd = await t.broker.handle('open', ['/data/seen-link', 'a']);
+      await t.broker.handle('write', [fd, Buffer.from('+'), null]);
+      await t.broker.handle('close', [fd]);
+      assert.strictEqual(fs.readFileSync(path.join(t.dirs.data, 'real'), 'utf8'), 'real+');
+      assert.strictEqual(fs.existsSync(path.join(t.dirs.outside, 'via-link')), false, 'nothing made through the re-pointed link');
+      fs.mkdirSync(path.join(t.dirs.data, 'sub'));
+      fs.writeFileSync(path.join(t.dirs.data, 'sub', 'f'), 'f');
+      await assert.rejects(t.broker.handle('open', ['/data/sub/f', 'a']));
+      assert.strictEqual(fs.existsSync(path.join(t.dirs.outside, 'f')), false, 'nothing made through the swapped parent');
       assert.strictEqual(t.broker.fds.size, 0);
     } finally { await t.done(); }
   });
