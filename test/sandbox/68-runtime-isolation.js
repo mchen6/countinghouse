@@ -248,6 +248,10 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'hostChannels', needles: [probe, ROOT]});
         assert.strictEqual(detail(r), 'none', JSON.stringify(r).slice(0, 1500));
       });
+      it('stack edges: a vm realm sees no runtime receiver; a chained prepareStackTrace; no builtin frame\'s receiver; util.getCallSites virtual; _initPaths', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'stackEdges'});
+        assert.strictEqual(detail(r), 'vm-no-receivers chained builtin-no-this callsites-virtual initPaths', JSON.stringify(r).slice(0, 1500));
+      });
       it('process.argv is a frozen copy: node, then the runtime\'s worker by its virtual name', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'argv'});
         assert.strictEqual(detail(r), '["node","countinghouse:/lib/lean-worker.js"] frozen', JSON.stringify(r).slice(0, 1500));

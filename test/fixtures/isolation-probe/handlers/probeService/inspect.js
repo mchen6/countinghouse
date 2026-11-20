@@ -830,6 +830,44 @@ const STEPS = {
     const runtime = files.filter((f) => f.startsWith('countinghouse:')).length;
     return `${bad.length === 0 ? 'virtual' : `host(${bad.slice(0, 3).join('|')})`} ${objects === 0 ? 'no-objects' : 'objects'} ${custom && viaFn.length > 0 ? 'custom' : 'not-custom'} ${runtime > 0 ? 'runtime-frames' : 'no-runtime-frames'}`;
   },
+  // (C-lows, the medium's round: a vm realm's own prepareStackTrace sees
+  // raw frames -- the runtime's files by path, never a receiver or a
+  // function of the runtime's (its files are strict); an assigned function
+  // that calls the one it replaced; a frame of no file of the module's
+  // answers no receiver; util.getCallSites names no host file;
+  // Module._initPaths is no throw)
+  stackEdges: () => {
+    const out = [];
+    const vm = require('vm');
+    const raw = vm.runInNewContext(`Error.prepareStackTrace = (e, f) => f.map((s) => [String(s.getFileName()), s.getThis() !== undefined, s.getFunction() !== undefined]); new Error().stack`);
+    const runtimeFrames = raw.filter(([f]) => !/^(\/app(\/|$)|[A-Z]:\\app(\\|$)|node:|undefined$|evalmachine)/.test(f));
+    out.push(runtimeFrames.some(([, t, fn]) => t || fn) ? 'vm-receivers' : 'vm-no-receivers');
+    const saved = Error.prepareStackTrace;
+    try {
+      const prev = Error.prepareStackTrace;
+      Error.prepareStackTrace = (e, f) => (prev != null ? prev(e, f) : 'none');
+      let s;
+      try { s = String(new Error('chained').stack); } catch (e) { s = `threw ${e.name}`; }
+      out.push(/^Error: chained\n {4}at /.test(s) ? 'chained' : `chained(${s.slice(0, 80)})`);
+      let builtinThis = null;
+      let found = false;
+      Error.prepareStackTrace = (e, f) => {
+        for (const site of f) {
+          if (/forEach/.test(String(site.getFunctionName()))) { found = true; builtinThis = site.getThis(); }
+        }
+        return 'x';
+      };
+      [1].forEach(() => new Error('b').stack);
+      out.push(!found ? 'builtin-none' : builtinThis === undefined ? 'builtin-no-this' : 'builtin-this');
+    } finally { Error.prepareStackTrace = saved; }
+    const util = require('util');
+    if (typeof(util.getCallSites) === 'function') {
+      const names = util.getCallSites().map((c) => String(c.scriptName));
+      out.push(names.every((n) => /^(\/app(\/|$)|[A-Z]:\\app(\\|$)|node:|countinghouse:|$)/.test(n)) ? 'callsites-virtual' : `callsites-host`);
+    } else out.push('callsites-virtual');
+    try { module.constructor._initPaths(); out.push('initPaths'); } catch (e) { out.push(`initPaths-${e.name}`); }
+    return out.join(' ');
+  },
   // (C-lows d: process.argv as module code reads it under enforce)
   argv: () => {
     let pushed = false;

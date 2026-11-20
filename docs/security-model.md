@@ -187,16 +187,21 @@ Under `enforce`, no host path of the runtime's own reaches module code
 either: every stack it can read (`e.stack`, `Error.captureStackTrace`, a
 `Error.prepareStackTrace` of its own) names the runtime's frames
 `countinghouse:/lib/...` (a hoisted dependency's
-`countinghouse:/node_modules/<name>/...`), and a frame of the runtime's
-answers `getThis()` and `getFunction()` with nothing; reading
+`countinghouse:/node_modules/<name>/...`; a linked install's files too),
+`util.getCallSites()` names them so, and only a frame of the module's own
+files answers `getThis()` and `getFunction()`; reading
 `Error.prepareStackTrace` gives the runtime's formatter, while what module
-code assigns is what formats its stacks. `module.constructor.globalPaths`
-is an empty, frozen list, and `process.argv` a frozen copy,
-`['node', 'countinghouse:/lib/lean-worker.js']`. A warning Node's own
-resolution step would give is not given to module code. Known limit:
-`process.execPath` (and `process.argv0`) can name the Node binary's
-install path (e.g. under the user's home with nvm); Node's own spawns read
-it.
+code assigns is what formats its stacks (one that calls the function it
+replaced gets the default text). `module.constructor.globalPaths` is an
+empty, frozen list (`_initPaths()` does nothing), and `process.argv` a
+frozen copy, `['node', 'countinghouse:/lib/lean-worker.js']`. A warning
+Node's own resolution step would give is not given to module code.
+Known limits: `process.execPath` (and `process.argv0`) can name the Node
+binary's install path (e.g. under the user's home with nvm); Node's own
+spawns read it. A module's own `vm` realm, with a `prepareStackTrace` of
+its own there, sees the runtime's file paths in its raw stack frames;
+never a receiver or a function of the runtime's (its files are strict
+mode). Under `--enable-source-maps`, a stack is not source-mapped.
 
 **On Windows** a module's files carry a drive (#195): the module sees them,
 its current directory and its stack frames as `<V>:\app\...`, V a drive
