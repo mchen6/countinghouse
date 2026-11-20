@@ -276,6 +276,21 @@ it), SIGINT (Ctrl-C), or SIGTERM on Linux and macOS. On Windows a kill
 the writes since the last scheduled one are lost there: up to about half a
 second of metering and five seconds of `ctx.redis` data.
 
+A clean stop also ends, in the usage records, every call still running: a
+tools/call not yet answered and a task's pass its job runner was running
+are each recorded as a cancelled call (nothing sent, the time it had run).
+A stopped task's job, under Redis, is BullMQ's to run again: its lock runs
+out (30 seconds) and a worker's stall check (every 30 seconds) runs it again
+as a call of its own, charged again if it succeeds. A job stopped twice in
+its life is failed (BullMQ's `maxStalledCount` of 1, kept so a job is not
+charged again and again). Under `--store local` the queue is in memory and
+ends with the process. SIGTERM ends the process with status
+143 (SIGINT with 0, as before; under systemd, `SuccessExitStatus=143` makes
+it a clean stop, as the unit in the security model has it); work that was waiting on something
+asynchronous when the signal came (a charge still waiting for the store's
+lock, a result not yet written back to Redis) is lost, as it was when the
+signal ended the process outright.
+
 ## Without a container
 
 The same layers on a plain host: a dedicated user, systemd's sandboxing and

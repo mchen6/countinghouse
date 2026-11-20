@@ -573,6 +573,52 @@ describe('mcp-contract 26: module resources (M7)', function() {
     });
   }
 
+  // B-shutdown-usage (the high review of #488, 2): a call begun and answered
+  // before it was sent is ended in the record then -- never left open for
+  // the stop to end, dated at the stop
+  it('a module run that throws before it is sent ends its usage record then, an internal error', async () => {
+    require('../../lib/mcp/tool-registry').forgetGrants();
+    const broken = Object.assign({}, ci, {invokeDeviceAction: () => { throw new Error('boom'); }});
+    usageSeen.length = 0;
+    const LOG = require('../../lib/logger');
+    const realE = LOG.E;
+    LOG.E = () => undefined;
+    try {
+      await new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'notes_svc_save', arguments: {}}}, broken, KEY_A, () => resolve(), {}));
+    } finally {
+      LOG.E = realE;
+    }
+    const outs = usageSeen.filter((e) => e.out != null).map((e) => e.out);
+    assert.strictEqual(usageSeen.filter((e) => e.begin != null).length, 1, JSON.stringify(usageSeen));
+    assert.deepStrictEqual(outs.map((o) => [o.outcome, o.code, o.bytes]), [['error', 'SYSTEM_ERROR', 0]], JSON.stringify(outs));
+  });
+
+  it('a call cancelled after it began, before it is sent, ends its usage record then, cancelled', async () => {
+    require('../../lib/mcp/tool-registry').forgetGrants();
+    const registry = require('../../lib/mcp/tool-registry');
+    const realSchema = registry.outputSchemaForCall;
+    let release = null;
+    registry.outputSchemaForCall = (...a) => { release = () => realSchema(...a); };
+    let registered = null;
+    const opts = {cancellable: (fn) => { registered = fn; return () => { registered = null; }; }};
+    usageSeen.length = 0;
+    invoked.length = 0;
+    try {
+      const answered = new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'notes_svc_save', arguments: {}}}, ci, KEY_A, (err, resp, info) => resolve({resp, info}), opts));
+      const end = Date.now() + 5000;
+      while (release == null && Date.now() < end) await new Promise((r) => setTimeout(r, 10));
+      assert.ok(release != null && registered != null, 'the call never reached its schema read');
+      registered();
+      release();
+      await answered;
+    } finally {
+      registry.outputSchemaForCall = realSchema;
+    }
+    assert.deepStrictEqual(invoked, [], 'nothing was sent');
+    const outs = usageSeen.filter((e) => e.out != null).map((e) => e.out);
+    assert.deepStrictEqual(outs.map((o) => [o.outcome, o.bytes]), [['cancelled', 0]], JSON.stringify(usageSeen));
+  });
+
   it('a reserved name and a name never registered answer a cancel during the gate\'s read alike', async () => {
     const reserved = await during('countinghouse_check_balance', KEY_A, {}, {nth: 1});
     const never = await during('no_such_tool_anywhere', KEY_A, {}, {nth: 1});

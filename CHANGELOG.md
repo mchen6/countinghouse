@@ -10,6 +10,34 @@ the auth config.
 
 ## Unreleased
 
+### Added — requests whose API key doesn't resolve are limited per address
+
+An unauthenticated loop cost one auth-provider lookup per request, with
+nothing in its way. Now at most `--unauthRateLimit` (30) lookups of keys
+that don't resolve a minute per client address (IPv6 by its /64; each
+counted while in flight, a legacy batch's each; ten times that per IPv6
+/48 or IPv4 /24, a hundred times that across the process) are made; past
+any of them the address is answered 429
+`UNAUTH_RATE_LIMITED` with `Retry-After`, before any lookup, the same answer
+whatever was wrong with the key and whatever was named. `/device-list` now
+resolves its key first (an unknown key still lists nothing). A key that resolved
+lately still passes, until it is refused. Only a request's own lookups
+count against its address (a worker it happened to start does not).
+`--trustProxy` names the proxies whose `X-Forwarded-For` is
+believed (none by default: only behind a proxy you control; at most an
+IPv4 /8 and an IPv6 /32 together). HTTP only.
+### Fixed — a call still running at a stop is recorded, cancelled
+
+A clean stop left the usage record of every call still running begun and
+never ended: the local job runner dropped its pass's call on close, the
+BullMQ runner had no close at all, and SIGTERM ended the process before any
+exit handler ran. Now the job runners end their running passes, and then
+every call still open, a tools/call not yet answered included, is recorded
+as a cancelled call (nothing sent, the time it had run), in one synchronous
+sequence at exit that runs before the local store's last write. SIGTERM
+ends the process through it, with status 143; SIGINT's status is unchanged
+(0).
+
 ### Fixed — each runtime's job queue is its own
 
 Every runtime opened its BullMQ job queue under one prefix, `{cdifJob}`, so
