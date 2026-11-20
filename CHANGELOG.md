@@ -10,6 +10,15 @@ the auth config.
 
 ## Unreleased
 
+### Fixed — one shared-runtime session's stalling inputs no longer throttle the others
+
+The validator pool holds an input's stalls against its caller, and after
+three in five minutes refuses that caller's calls to the module
+(`VALIDATION_CALLER_THROTTLED`). In a shared runtime every session is the
+one local user's, one caller id, so one session's stalling inputs throttled
+every session. There the caller is now the caller and its session; over
+HTTP and `--stdio` it is the caller id, as before.
+
 ### Changed — the usage report counts a cancelled call apart: `profile.cancelled`
 
 A call cancelled while it ran (M19) was counted among the report's errors.
