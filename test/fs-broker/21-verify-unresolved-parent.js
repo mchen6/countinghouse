@@ -422,7 +422,7 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
 
   // (the medium review of 4ac385de: the module's own O_NOFOLLOW on an
   // in-root link answers ELOOP, as on master -- never the link's target)
-  it('an open with the module\'s own O_NOFOLLOW on an in-root link answers ELOOP', async function() {
+  it('an open with the module\'s own O_NOFOLLOW on an in-root link answers ELOOP, as master does', async function() {
     if (fs.constants.O_NOFOLLOW === undefined) return this.skip();
     const t = await setup('enforce', () => {});
     try {
@@ -435,6 +435,32 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
       fs.symlinkSync(path.join(t.dirs.data, 'nothing'), path.join(t.dirs.data, 'lock'));
       await assert.rejects(t.broker.handle('open', ['/data/lock', fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_NOFOLLOW]), (e) => e.code === 'ELOOP');
       assert.ok(!t.reports.some((r) => r.startsWith('link-appeared') || r.startsWith('link-dangling')), t.reports.join(', '));
+      assert.strictEqual(t.broker.fds.size, 0);
+    } finally { await t.done(); }
+  });
+
+  // (the medium review of 2fd8af4f: a link that appears after the check is
+  // reported as link-appeared whether the module asked O_NOFOLLOW -- its
+  // ELOOP passed on -- or not -- ENOENT; and where the check reached a file
+  // through a link, the real file becoming a link is one too)
+  it('a link that appeared after the check is reported, with the module\'s O_NOFOLLOW or without, at the name or at the real path', async function() {
+    if (fs.constants.O_NOFOLLOW === undefined) return this.skip();
+    const t = await setup('enforce', (syscall, host, dirs) => {
+      if (syscall !== 'open') return;
+      if (path.basename(host) === 'appears') fs.symlinkSync(path.join(dirs.data, 'other'), host);
+      if (path.basename(host) === 'via') {
+        fs.unlinkSync(path.join(dirs.data, 'realfile'));
+        fs.symlinkSync(path.join(dirs.data, 'other'), path.join(dirs.data, 'realfile'));
+      }
+    });
+    try {
+      fs.writeFileSync(path.join(t.dirs.data, 'other'), 'o');
+      await assert.rejects(t.broker.handle('open', ['/data/appears', fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW]), (e) => e.code === 'ELOOP');
+      assert.ok(t.reports.includes('link-appeared /data/appears'), t.reports.join(', '));
+      fs.writeFileSync(path.join(t.dirs.data, 'realfile'), 'r');
+      fs.symlinkSync(path.join(t.dirs.data, 'realfile'), path.join(t.dirs.data, 'via'));
+      await assert.rejects(t.broker.handle('open', ['/data/via', 'r']), enoent('/data/via'));
+      assert.ok(t.reports.includes('link-appeared /data/via'), t.reports.join(', '));
       assert.strictEqual(t.broker.fds.size, 0);
     } finally { await t.done(); }
   });
