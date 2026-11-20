@@ -15,7 +15,6 @@ const path = require('path');
 const {redisUrlFor} = require('../helpers/test-env');
 
 const options = require('../../lib/cli-options');
-// set again before this file's tests: a folder run requires every file first
 const OPTIONS = {redisUrl: redisUrlFor(), debug: true, listPageSize: 250};
 // (set in the describe's before(), the process's put back in its after():
 // never at load, which every file of a folder run would see -- B-loadopts)

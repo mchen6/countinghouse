@@ -28,7 +28,6 @@ fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']},
   [KEY_ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
 
 const options = require('../../lib/cli-options');
-// set again before this file's tests: a folder run requires every file first
 const OPTIONS = {redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10, workerThread: true};
 // (set in the describe's before(), the process's put back in its after():
 // never at load, which every file of a folder run would see -- B-loadopts)

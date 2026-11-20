@@ -25,10 +25,9 @@ const KEY_B = `test-b-${'b'.repeat(24)}`;
 fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['alpha', 'beta'], admin: true}, [KEY_B]: {userName: 'b', devices: ['beta']}}));
 
 const options = require('../../lib/cli-options');
-// Set again before this file's tests, with the auth provider routed to this
-// file's keys (as mcp-contract 09 does): a folder run (CI, the pre-commit
-// hook) requires every file first, and the process's one provider is built
-// from whichever file asked first.
+// Set in this file's before(), with the auth provider routed to this file's
+// keys (as mcp-contract 09 does): the process's one provider is built from
+// whichever file asked first.
 const OPTIONS = {redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10};
 // (set in the describe's before(), the process's put back in its after():
 // never at load, which every file of a folder run would see -- B-loadopts)

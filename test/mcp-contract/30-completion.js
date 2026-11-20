@@ -23,7 +23,6 @@ const COLOURS_ID = require('../../lib/call-address').deviceIDForName('colours');
 fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: [COLOURS_ID]}}));
 
 const options = require('../../lib/cli-options');
-// set again before this file's tests: a folder run requires every file first
 const OPTIONS = {redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10};
 // (set in the describe's before(), the process's put back in its after():
 // never at load, which every file of a folder run would see -- B-loadopts)
