@@ -868,14 +868,20 @@ const STEPS = {
     try { module.constructor._initPaths(); out.push('initPaths'); } catch (e) { out.push(`initPaths-${e.name}`); }
     // (the round's second medium: Node 22's alias; Node's counts; an eval's
     // frame of the module's own; frames handed back to the formatter)
+    // (the first site is this probe's own frame: no frame of the runtime's
+    // before it; exact counts. On a Node with no alias: said so.)
+    const ownFirst = (sites) => sites.length > 0 && /inspect\.js$/.test(String(sites[0].scriptName));
     if (typeof(util.getCallSite) === 'function') {
-      const names = util.getCallSite().map((c) => String(c.scriptName));
-      out.push(names.every((n) => /^(\/app(\/|$)|[A-Z]:\\app(\\|$)|node:|countinghouse:|$)/.test(n)) ? 'alias-virtual' : 'alias-host');
-    } else out.push('alias-virtual');
+      const sites = util.getCallSite();
+      const names = sites.map((c) => String(c.scriptName));
+      out.push(ownFirst(sites) && names.every((n) => /^(\/app(\/|$)|[A-Z]:\\app(\\|$)|file:|node:|countinghouse:|$)/.test(n)) ? 'alias' : `alias(${names.slice(0, 2).join('|')})`);
+    } else out.push('alias');
     if (typeof(util.getCallSites) === 'function') {
       let counts;
-      try { counts = `${util.getCallSites(200).length <= 200} ${util.getCallSites(2).length <= 2} ${util.getCallSites({}).length <= 10}`; } catch (e) { counts = `threw ${e.code}`; }
-      out.push(counts === 'true true true' ? 'counts' : `counts(${counts})`);
+      try {
+        counts = `${util.getCallSites(200).length > 10} ${util.getCallSites(2).length} ${util.getCallSites({}).length} ${util.getCallSites(undefined, {}).length} ${ownFirst(util.getCallSites(3))}`;
+      } catch (e) { counts = `threw ${e.code}`; }
+      out.push(counts === 'true 2 10 10 true' ? 'counts' : `counts(${counts})`);
     } else out.push('counts');
     const saved2 = Error.prepareStackTrace;
     try {
@@ -888,6 +894,11 @@ const STEPS = {
       };
       new Function('return new Error("e").stack')();
       out.push(evalFn != null ? 'eval-own' : 'eval-none');
+      // (an eval whose origin names a path only like the root's -- /app as
+      // part of a longer name -- is no frame of the module's)
+      evalFn = null;
+      require('vm').runInThisContext('new Function("return new Error(\'f\').stack")()', {filename: '/apps-not-the-root/x.js'});
+      out.push(evalFn == null ? 'eval-other' : 'eval-other-own');
       // (frames kept from one stack, handed to the formatter again with a
       // function of the module's assigned: read as frames, never wrapped twice)
       Error.prepareStackTrace = (e, f) => f.map((site) => String(site.getFileName())).join(',');
