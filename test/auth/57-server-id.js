@@ -100,5 +100,77 @@ describe('auth 57: the server id (B-j1)', () => {
     assert.deepStrictEqual(fs.readdirSync(dir), ['.server-id']);
   });
 
+  it('a file with a second name (a hard link) is refused: one name only', function() {
+    if (!POSIX) this.skip();
+    const dir = tmp.mkdtemp('ch-auth-57-');
+    fs.writeFileSync(path.join(dir, '.server-id'), crypto.randomBytes(8).toString('hex'), {mode: 0o600});
+    fs.linkSync(path.join(dir, '.server-id'), path.join(dir, 'alias'));
+    assert.throws(() => serverId.initSync({moduleDataPath: dir}), (e) => e.code === 'SERVER_ID_INVALID' && /has 2 names \(hard links\)/.test(e.message));
+  });
+
+  it('a start that lost the race waits for the winner to finish publishing (its temporary name still there), then takes its id', function() {
+    if (!POSIX) this.skip();
+    const privateFile = require('../../lib/private-file');
+    const dir = tmp.mkdtemp('ch-auth-57-');
+    const file = path.join(dir, '.server-id');
+    const winner = crypto.randomBytes(8).toString('hex');
+    const theirTmp = `${file}.999999.tmp`;
+    const real = privateFile.createPrivate;
+    privateFile.createPrivate = () => {
+      // the winner has linked its file and not yet removed its temporary name;
+      // it does so a moment later, in a process of its own
+      fs.writeFileSync(theirTmp, winner, {mode: 0o600});
+      fs.linkSync(theirTmp, file);
+      require('child_process').spawn(process.execPath, ['-e', `setTimeout(() => require('fs').unlinkSync(${JSON.stringify(theirTmp)}), 150)`], {stdio: 'ignore'});
+      return false;
+    };
+    try {
+      serverId.initSync({moduleDataPath: dir});
+    } finally {
+      privateFile.createPrivate = real;
+    }
+    assert.strictEqual(serverId.get(), winner);
+  });
+
+  it('on a file system without hard links it is made by an exclusive create, never over a file there', () => {
+    const privateFile = require('../../lib/private-file');
+    const spec = {what: 'the test file', form: /^[0-9a-f]{16}$/, formText: '16 hex characters', variable: 'X', refuse: (m) => new Error(m)};
+    const dir = tmp.mkdtemp('ch-auth-57-');
+    const file = path.join(dir, '.server-id');
+    const realLink = fs.linkSync;
+    fs.linkSync = () => { throw Object.assign(new Error('no links here'), {code: 'ENOTSUP'}); };
+    try {
+      assert.strictEqual(privateFile.createPrivate(dir, file, 'aaaaaaaaaaaaaaaa', spec, '--moduleDataPath'), true);
+      assert.strictEqual(privateFile.createPrivate(dir, file, 'bbbbbbbbbbbbbbbb', spec, '--moduleDataPath'), false);
+    } finally {
+      fs.linkSync = realLink;
+    }
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), 'aaaaaaaaaaaaaaaa');
+    assert.deepStrictEqual(fs.readdirSync(dir), ['.server-id']);
+    if (POSIX) assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600);
+  });
+
+  it('a temporary name that cannot be removed once the file is published is logged with its path, never the start\'s end', () => {
+    const privateFile = require('../../lib/private-file');
+    const LOG = require('../../lib/logger');
+    const spec = {what: 'the test file', form: /^[0-9a-f]{16}$/, formText: '16 hex characters', variable: 'X', refuse: (m) => new Error(m)};
+    const dir = tmp.mkdtemp('ch-auth-57-');
+    const file = path.join(dir, '.server-id');
+    const said = [];
+    const saved = LOG.W;
+    const realUnlink = fs.unlinkSync;
+    LOG.W = (m) => said.push(String(m));
+    fs.unlinkSync = (p) => { if (String(p).endsWith('.tmp')) throw Object.assign(new Error('busy'), {code: 'EBUSY'}); return realUnlink(p); };
+    try {
+      assert.strictEqual(privateFile.createPrivate(dir, file, 'cccccccccccccccc', spec, '--moduleDataPath'), true);
+    } finally {
+      fs.unlinkSync = realUnlink;
+      LOG.W = saved;
+    }
+    const tmpName = `${file}.${process.pid}.tmp`;
+    assert.ok(said.some((m) => m.includes(tmpName) && /second name of the file published beside it/.test(m)), JSON.stringify(said));
+    fs.unlinkSync(tmpName);
+  });
+
   tmp.hooks();
 });
