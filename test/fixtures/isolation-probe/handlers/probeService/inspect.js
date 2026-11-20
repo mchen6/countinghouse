@@ -188,6 +188,14 @@ const STEPS = {
       const hash = fromSelfScope('#hashpkg');
       out.push(hash === 'hash' ? 'same' : `hashFallsThrough(${hash})`);
     }
+    // (the high review of #465, 5: '#cond' by a direct call and by the
+    // hook, the same target, as Node's own CommonJS conditions pick it)
+    {
+      const base = (fn) => { try { return path.basename(String(fn())); } catch (e) { return String(e.code); } };
+      const direct = base(() => M._resolveFilename('#cond', module));
+      const hooked = base(() => require.resolve('#cond'));
+      out.push(direct === hooked && /^cond-/.test(direct) ? 'same' : `conditions(${direct} / ${hooked})`);
+    }
     // (#465's Fable pass, F2 and F3: a require whose parent is the root
     // itself -- createRequire('/app') -- is refused before Node, as a missing
     // name is, while createRequire('/app/'), a directory, still requires

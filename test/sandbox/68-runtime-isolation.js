@@ -120,7 +120,11 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     const probePkg = JSON.parse(fs.readFileSync(path.join(probe, 'package.json'), 'utf8'));
     probePkg.exports = {'./self-check': './lib/stat-count.js', './link-self': './lib/link-self.js', './link-none': './lib/link-none.js',
       './link-self2': './lib/link-self2.js', './link-none2': './lib/link-none2.js'};
-    probePkg.imports = Object.assign({}, probePkg.imports, {'#sibclimb': 'sibpkg/../../isolation-probe/lib/bare-target.mjs',
+    // (the high review of #465, 5: a '#' mapping by conditions, answered
+    // alike by a direct call, which takes Node's own CommonJS conditions,
+    // and by the require hook)
+    for (const f of ['cond-ms.js', 'cond-req.js', 'cond-def.js']) fs.writeFileSync(path.join(probe, 'lib', f), `module.exports = ${JSON.stringify(f)};\n`);
+    probePkg.imports = Object.assign({}, probePkg.imports, {'#cond': {'module-sync': './lib/cond-ms.js', require: './lib/cond-req.js', default: './lib/cond-def.js'},'#sibclimb': 'sibpkg/../../isolation-probe/lib/bare-target.mjs',
       '#nosibclimb': 'nosuchsib/../../isolation-probe/lib/bare-target.mjs',
       '#builtin': {node: 'node:crypto', default: './lib/bare-target.mjs'}, '#bare': 'crypto', '#fallback': ['https://x.invalid/a.js', './lib/bare-target.mjs'],
       '#emptyArr': {node: [], default: './lib/bare-target.mjs'}, '#badFirst': ['./lib/../lib/bare-target.mjs', './lib/bare-target.mjs'],
@@ -248,7 +252,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
         // deep self-reference finds the one above it)
         assert.deepStrictEqual(plainControl, [path.join(spaced, 'isolation-probe.js'), path.join(spaced, 'isolation-probe.js')]);
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'cjsJudged'});
-        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
       });
       // (each layer past the judged _stat, alone: removing any one fails
       // this; POSIX, where a test makes a link without privileges)
