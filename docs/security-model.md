@@ -172,6 +172,16 @@ default list (`require`, `node`, `node-addons`, `module-sync`). A plain
 | Disk quota | not counted | logged | enforced |
 | Lockdown, resource limits, clean environment | no | yes | yes |
 
+Under `off` and `audit`, Node's resolver internals and their host paths
+are module code's to see, as before: `Module._findPath` and
+`_resolveLookupPaths` (which a module may replace), a readable
+`Module._pathCache`, and a direct call made from inside a module's own
+patched internal. What a direct resolution made from the module's own
+virtual paths (a parent or base built from `__filename` or `__dirname`)
+answers or throws holds no host path there: an answer outside the module
+is not found, and any error is a plain not-found. Which calls are mapped
+is `lib/fs-broker/identity.js`'s `parentMapped` and `hostOf`.
+
 **On Windows** a module's files carry a drive (#195): the module sees them,
 its current directory and its stack frames as `<V>:\app\...`, V a drive
 letter the host does not have, picked once per process, because Node there
@@ -298,9 +308,9 @@ any module code). Stops:
   | `source-map-support`, `install()` | works | works | works | works |
   | `source-map-support`, `install({hookRequire: true})` | works | works | no hook (reported) | throws |
   | `require-in-the-middle`, a `Hook` | works | works | throws | throws |
-  | `resolve-from`, from `__dirname` | works | works | works | works |
-  | `import-fresh`, a relative name | works | works | works | works |
-  | `import-fresh` or `resolve-from`, an absolute path from `__dirname` | works | works below Node 24.15 | works below Node 24.15 | works below Node 24.15 |
+  | `resolve-from`, from `__dirname` | works | works (not on Windows) | works (not on Windows) | works (not on Windows) |
+  | `import-fresh`, a relative name | works | works (not on Windows) | works (not on Windows) | works (not on Windows) |
+  | `import-fresh` or `resolve-from`, an absolute path from `__dirname` | works | works below Node 24.15 (Linux, macOS) | works below Node 24.15 (Linux, macOS) | works below Node 24.15 (Linux, macOS) |
   | `module.findPackageJSON` from `__filename` | works | works | works | not in the reduced `module` |
   | `module-alias`, `addAlias` | works | no alias | no alias | throws |
   | `process.emitWarning = fn` | works | works | works | works |
@@ -311,13 +321,18 @@ any module code). Stops:
   | `process.env = {...}`, `process.send = fn` | works | works | works | doesn't take (a TypeError in strict code) |
 
   Why:
-  - a module's own directory is virtual (`/app/...`) in every mode,
-    single-thread included. A parent a library makes from it (as
+  - a module's own directory is virtual (`/app/...`) in every mode on
+    Linux and macOS, single-thread included, and in a Windows worker
+    (`<V>:\app\...`); in single-thread mode on Windows it is its host
+    path. A parent a library makes from it (as
     `resolve-from` and `import-fresh` do) reaches Node's resolver in its
     host form, confined to the module's root: in a worker by the file
-    broker's mapping, which answers a module file by its virtual name; in
+    broker's mapping, which answers a module file by its virtual name (on
+    Linux and macOS; a Windows worker answers as before, not found); in
     single-thread mode by the facade, through the root of the module that
-    called, answering the host path (development mode, no isolation).
+    called, answering the host path (development mode, no isolation; on
+    Windows, where a single-thread module's directory is its host path,
+    Node resolves from it as it is).
     Under `enforce` the reduced `module` gives them `_nodeModulePaths` and
     `_resolveFilename`, confined to the root, with every refusal `enforce`
     has and never a host path;

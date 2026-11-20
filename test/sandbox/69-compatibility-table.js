@@ -23,11 +23,15 @@ const LIBRARIES = ['resolve-from', 'import-fresh', 'source-map-support', 'module
 // [the use, its outcome in single-thread mode, then in a worker under off,
 // audit, enforce]. Why each fails is in docs/security-model.md's table:
 // - resolve-from, import-fresh: they hand Node's resolver a parent made from
-//   the module's own directory, which is virtual (/app/...) in every mode,
-//   single-thread included; it reaches Node in its host form (the file
+//   the module's own directory, which is virtual on POSIX in every mode
+//   (/app/...), single-thread included, and in a Windows worker
+//   (<V>:\app\...); on POSIX it reaches Node in its host form (the file
 //   broker's mapping in a worker, the single-thread facade's by the calling
 //   module there), and under enforce the reduced `module` has confined
-//   _nodeModulePaths and _resolveFilename, so they work in every mode;
+//   _nodeModulePaths and _resolveFilename, so they work in every mode on
+//   POSIX; a Windows worker answers as on master (not found, below); in
+//   single-thread mode on Windows a module's __dirname is its host path (no
+//   virtual directory there), so they work as in plain Node;
 // - module-alias: in a worker a module's requires are resolved by the file
 //   broker with Node's own resolver, so its replaced _resolveFilename is
 //   never asked (F4-1): use relative requires;
@@ -37,30 +41,73 @@ const LIBRARIES = ['resolve-from', 'import-fresh', 'source-map-support', 'module
 //   a worker, whose resolution is the file broker's own (F4-1); under
 //   enforce the reduced `module` has no prototype or statics to replace.
 // (resolve-from and import-fresh: a module's virtual parent reaches Node in
-// its host form, confined to the module's root, in every mode -- C-compat;
-// in single-thread mode module-alias's alias works too: an absolute /app
-// path, mapped by the facade, as on Windows, where the module's own
-// directory is <V>:\app\..., a drive no host path is on, #195)
+// its host form, confined to the module's root, in every mode on POSIX --
+// C-compat; not yet in a Windows worker;
+// in single-thread mode module-alias's alias works too: on POSIX an
+// absolute /app path, mapped by the facade; on Windows a host path, as a
+// module's __dirname is there)
 // (a direct Module._resolveFilename with an absolute /app request is not
 // mapped in a worker, as on master (ruled: cut from C-compat; the mapping
 // that shares the hook's own code is a later row): below Node 24.15 the
 // resolve shim runs identity's hook for the call, which maps it; from 24.15
 // on Node reads the literal /app)
+// (Windows, ruled: items 1-3 work on POSIX; a Windows worker answers as
+// on master -- resolve-from and import-fresh from __dirname not found --
+// pinned as master's, not as working (Windows module-path compatibility is
+// its own later row). In single-thread mode on Windows a module's
+// __dirname is its host path -- no virtual directory there -- so its
+// answers are host paths equal to what it joined from __dirname. Below
+// Node 24.15 in a Windows worker, unverified: not asserted.)
+const WIN = process.platform === 'win32';
 const {NEEDS_RESOLVE_SHIM} = require('../../lib/node-version');
-const ABSOLUTE = NEEDS_RESOLVE_SHIM ? 'works' : 'threw MODULE_NOT_FOUND';
+const ABSOLUTE = NEEDS_RESOLVE_SHIM ? (WIN ? null : 'works') : 'threw MODULE_NOT_FOUND';
+const WIN_WORKER = WIN ? 'threw MODULE_NOT_FOUND' : 'works';
 const TABLE = [
-  ['resolve-from', 'works', 'works', 'works', 'works'],
-  ['import-fresh', 'works', 'works', 'works', 'works'],
+  ['resolve-from', 'works', WIN_WORKER, WIN_WORKER, WIN_WORKER],
+  ['import-fresh', 'works', WIN_WORKER, WIN_WORKER, WIN_WORKER],
   // (Node's own entry points with a relative request from a module's own
   // file, asked directly: C-compat, items 4 and 5)
   // (under enforce the reduced module has no findPackageJSON)
-  ['findPackageJSON relative', 'works', 'works', 'works', 'not in module'],
+  // (single-thread answers host paths on POSIX; on Windows __dirname is a
+  // host path there, so the very path)
+  ['findPackageJSON relative', WIN ? 'works' : 'works (host path)', 'works', 'works', 'not in module'],
   ['findPackageJSON directory base', 'works', 'works', 'works', 'not in module'],
   ['import-fresh absolute', 'works', ABSOLUTE, ABSOLUTE, ABSOLUTE],
-  // (single-thread mode answers host paths, development mode; a worker
-  // never names a host path to module code)
-  ['resolve-from absolute', 'works (host path)', ABSOLUTE, ABSOLUTE, ABSOLUTE],
-  ['resolve-from absolute, missing', 'threw MODULE_NOT_FOUND, named otherwise', 'threw MODULE_NOT_FOUND, as asked', 'threw MODULE_NOT_FOUND, as asked', 'threw MODULE_NOT_FOUND, as asked'],
+  // (#480's high, round 1: no host path of the module's in what a worker
+  // answers or throws, in a worker in every mode (single-thread mode,
+  // which answers host paths, unasserted for the missing request; a
+  // base climbing out of /app names no host path in single-thread, off and
+  // audit -- enforce's module has no findPackageJSON); a lookup path
+  // climbing out of /app reaches
+  // nothing outside in single-thread mode, where it is mapped; the
+  // trailing separator under enforce; a locked Error.stackTraceLimit in
+  // single-thread mode)
+  ['resolve-from missing, every path in its error virtual', null, 'clean', 'clean', 'clean'],
+  ['findPackageJSON, a base climbing out of /app', 'clean', 'clean', 'clean', 'not in module'],
+  // (single-thread only: in a worker an answer outside the module is not
+  // found whatever the lookup paths, so those cells would assert nothing)
+  ['a lookup path climbing out of /app', 'threw MODULE_NOT_FOUND', null, null, null],
+  // (enforce only: elsewhere the module's `module` is Node's own, whose list
+  // is never empty, so the cell would assert nothing)
+  ['_nodeModulePaths, a trailing separator', null, null, null, 'works'],
+  // (single-thread only: no worker code reads either on this path, and
+  // enforce refuses to redefine them)
+  ['resolve-from, stackTraceLimit not writable', 'works', null, null, null],
+  // (single-thread: no caller found, nothing mapped, the literal /app not
+  // found on POSIX; on Windows __dirname is a host path, found)
+  ['resolve-from, prepareStackTrace not writable', WIN ? 'works' : 'threw MODULE_NOT_FOUND', null, null, null],
+  // (single-thread on Windows: __dirname is a host path, plain Node, not
+  // asserted)
+  ['findPackageJSON, the root as its base', WIN ? null : 'clean', 'clean', 'clean', 'not in module'],
+  // (off and audit, ruled: a mapped call's answer outside the module is
+  // nothing; single-thread mode answers host paths, development mode)
+  ['findPackageJSON, a bare name found beside the module', null, 'clean', 'clean', 'not in module'],
+  ['a direct request climbing out of the module', null, 'threw MODULE_NOT_FOUND', 'threw MODULE_NOT_FOUND', 'threw MODULE_NOT_FOUND'],
+  // (single-thread mode answers host paths, development mode -- on Windows
+  // the very path joined from __dirname, a host path there, so 'works'; a
+  // worker never names a host path to module code)
+  ['resolve-from absolute', WIN ? 'works' : 'works (host path)', ABSOLUTE, ABSOLUTE, ABSOLUTE],
+  ['resolve-from absolute, missing', WIN ? 'threw MODULE_NOT_FOUND, as asked' : 'threw MODULE_NOT_FOUND, named otherwise', 'threw MODULE_NOT_FOUND, as asked', 'threw MODULE_NOT_FOUND, as asked', 'threw MODULE_NOT_FOUND, as asked'],
   // (enforce only: none of the module's own files named by its host path
   // in any part of the error, by any route; the other modes have no
   // isolation, and Node's own stack and message name host files there, by
@@ -136,6 +183,13 @@ describe('sandbox 69: the compatibility table (loader-related libraries, per --m
     probe = path.join(home, 'compat-probe');
     fs.cpSync(FIXTURE, probe, {recursive: true});
     copyClosure(LIBRARIES, probe);
+    // (a package beside the module's directory, outside it: no lookup path
+    // of the module's may reach it)
+    fs.mkdirSync(path.join(home, 'node_modules', 'outside-compat-dep'), {recursive: true});
+    fs.writeFileSync(path.join(home, 'node_modules', 'outside-compat-dep', 'index.js'), 'module.exports = 1;\n');
+    // (a package.json beside it: a findPackageJSON base climbing out of
+    // /app must never find it)
+    fs.writeFileSync(path.join(home, 'package.json'), JSON.stringify({name: 'outside-compat-home'}));
   });
   after(() => fs.rmSync(home, {recursive: true, force: true}));
 

@@ -67,7 +67,13 @@ const STEPS = {
     const find = require('module').findPackageJSON;
     if (typeof(find) !== 'function') return 'not in module';
     const found = find('../../lib/target.js', path.join(__dirname, 'library.js'));
-    return typeof(found) === 'string' && path.basename(found) === 'package.json' ? 'works' : `answered ${typeof(found) === 'string' ? 'another file' : String(found)}`;
+    // (the module's own package.json exactly as the module names it, by its
+    // __dirname; its host path is told apart, as single-thread mode
+    // answers; never the one planted beside the module -- not read back:
+    // single-thread mode's fs maps /tmp, where the test's directory may be)
+    if (found === path.join(path.dirname(path.dirname(__dirname)), 'package.json')) return 'works';
+    if (typeof(found) === 'string' && /[\\/]ch-sb-69-[^\\/]+[\\/]compat-probe[\\/]package\.json$/.test(found)) return 'works (host path)';
+    return `answered ${typeof(found) === 'string' ? 'another file' : String(found)}`;
   },
   // (the module's own directory as the base, with its trailing separator,
   // and the module's root itself)
@@ -95,6 +101,96 @@ const STEPS = {
     const found = require('resolve-from')(__dirname, path.join(__dirname, '..', '..', 'lib', 'target'));
     if (found === path.join(__dirname, '..', '..', 'lib', 'target.js')) return 'works';
     return /[\\/]target\.js$/.test(found) && !found.startsWith(path.join(__dirname, '..', '..')) ? 'works (host path)' : 'answered another file';
+  },
+  // (#480's high, round 1: what a library's resolution from __dirname
+  // answers or throws names no host path of the module's -- a missing
+  // relative request, a findPackageJSON base climbing out of /app -- in a
+  // worker in any mode)
+  'resolve-from missing, every path in its error virtual': () => {
+    try { require('resolve-from')(__dirname, './no-such-compat-file'); return 'found'; } catch (e) {
+      const text = [String(e && e.message), String(e && e.stack), JSON.stringify((e && e.requireStack) || [])].join('\n');
+      return /[\\/]compat-probe([\\/]|$)/.test(text) ? 'names a host path' : 'clean';
+    }
+  },
+  'findPackageJSON, a base climbing out of /app': () => {
+    const find = require('module').findPackageJSON;
+    if (typeof(find) !== 'function') return 'not in module';
+    let got;
+    // (one level up: mapped raw, it would be the directory beside the
+    // module's, where the test plants a package.json)
+    try { got = String(find('./', '/app/../')); } catch (e) { got = `${e.code} ${e.message}`; }
+    return /[\\/]compat-probe([\\/]|$)|ch-sb-69-/.test(got) ? 'names a host path' : 'clean';
+  },
+  // (a lookup path climbing out of /app is no lookup path of the module's:
+  // a package planted beside the module's directory is not found by it)
+  'a lookup path climbing out of /app': () => {
+    try {
+      require('module')._resolveFilename('outside-compat-dep', {id: __filename, filename: __filename, paths: ['/app/../node_modules']});
+      return 'found';
+    } catch (e) { return said(e); }
+  },
+  // (Node's own lookup paths for the module's own directory, given with
+  // its trailing separator)
+  '_nodeModulePaths, a trailing separator': () => {
+    const list = require('module')._nodeModulePaths(`${__dirname}${path.sep}`);
+    return Array.isArray(list) && list.length > 0 ? 'works' : 'none';
+  },
+  // (a module that made Error.stackTraceLimit non-writable: a library's
+  // resolution from __dirname still works)
+  'resolve-from, stackTraceLimit not writable': () => {
+    const was = Object.getOwnPropertyDescriptor(Error, 'stackTraceLimit');
+    try { Object.defineProperty(Error, 'stackTraceLimit', {value: 10, writable: false, configurable: true}); } catch (e) { /* held (enforce) */ }
+    try {
+      const found = require('resolve-from')(__dirname, '../../lib/target');
+      return /[\\/]target\.js$/.test(found) ? 'works' : 'answered another file';
+    } finally {
+      try { Object.defineProperty(Error, 'stackTraceLimit', was); } catch (e) { /* held */ }
+    }
+  },
+  // (a module that made Error.prepareStackTrace non-writable: no
+  // TypeError from the runtime's own code -- single-thread mode then finds
+  // no caller and maps nothing, so the literal /app is not found on POSIX)
+  'resolve-from, prepareStackTrace not writable': () => {
+    const was = Object.getOwnPropertyDescriptor(Error, 'prepareStackTrace');
+    try { Object.defineProperty(Error, 'prepareStackTrace', {value: undefined, writable: false, configurable: true}); } catch (e) { /* held (enforce) */ }
+    try {
+      const found = require('resolve-from')(__dirname, '../../lib/target');
+      return /[\\/]target\.js$/.test(found) ? 'works' : 'answered another file';
+    } catch (e) { return said(e); } finally {
+      try { if (was != null) Object.defineProperty(Error, 'prepareStackTrace', was); else delete Error.prepareStackTrace; } catch (e) { /* held */ }
+    }
+  },
+  // (a direct relative request from the module's own file climbing out of
+  // the module, to the package.json planted beside it: not found, never its
+  // host path -- ruled: a mapped call answers nothing outside the module)
+  'a direct request climbing out of the module': () => {
+    try {
+      const found = require('module')._resolveFilename('../../../package.json', {id: __filename, filename: __filename, paths: []});
+      return /[\\/]compat-probe([\\/]|$)|ch-sb-69-/.test(found) ? 'found a host path' : `found ${path.basename(found)}`;
+    } catch (e) {
+      const text = [String(e && e.message), String(e && e.stack)].join('\n');
+      return /[\\/]compat-probe([\\/]|$)|ch-sb-69-/.test(text) ? `${said(e)}, naming a host path` : said(e);
+    }
+  },
+  // (findPackageJSON of a bare name from the module's own file: Node's
+  // walk climbs past the module's node_modules to the package planted
+  // beside it, whose host path is never the answer -- ruled: a mapped
+  // call's answer outside the module is nothing)
+  'findPackageJSON, a bare name found beside the module': () => {
+    const find = require('module').findPackageJSON;
+    if (typeof(find) !== 'function') return 'not in module';
+    let got;
+    try { got = String(find('outside-compat-dep', __filename)); } catch (e) { got = `${e.code} ${e.message}`; }
+    return /[\\/]compat-probe([\\/]|$)|ch-sb-69-/.test(got) ? 'names a host path' : 'clean';
+  },
+  // (findPackageJSON with the module's root itself as its base, a file:
+  // never the directory beside the module's)
+  'findPackageJSON, the root as its base': () => {
+    const find = require('module').findPackageJSON;
+    if (typeof(find) !== 'function') return 'not in module';
+    let got;
+    try { got = String(find('./', path.dirname(path.dirname(__dirname)))); } catch (e) { got = `${e.code} ${e.message}`; }
+    return /[\\/]compat-probe([\\/]|$)|ch-sb-69-/.test(got) ? 'names a host path' : 'clean';
   },
   'resolve-from absolute, missing': () => {
     const asked = path.join(__dirname, 'no-such-compat-file');
