@@ -236,7 +236,7 @@ describe('local-kv 05: a per-session module\'s partitions (R1)', () => {
       }
       const known = moduleData.sessionDirsFor(data, 'mod', B).data;
       writeB(path.join(known, 'b'));
-      const swept = await partition.sweep(data, kv, new Set(), {adoptAmong: [path.join(known, 'b')]});
+      const swept = await partition.sweep(data, kv, new Set(), {code: {roots: [path.join(known, 'b')]}});
       assert.deepStrictEqual(sorted(swept.removed), ['mod/a']);
       assert.deepStrictEqual(sorted(swept.kept), ['mod/b']);
       assert.ok(!fs.existsSync(moduleData.sessionDirsFor(data, 'mod', A).root), 'adopted and removed');

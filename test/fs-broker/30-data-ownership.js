@@ -82,6 +82,33 @@ describe('fs-broker 30: the runtime deletes only directories it made', () => {
     }
   });
 
+  it('a directory the runtime made that holds module code it knows is kept, never removed; one free of it is', async () => {
+    const d = await moduleData.ensureDirs(path.join(base, 'store'), 'm');
+    writeB(path.join(d.data, 'b'));
+    const said = [];
+    const kept = await ownership.removeOwned(d.root, d, (t) => said.push(t), {roots: [path.join(d.data, 'b')]});
+    assert.deepStrictEqual(kept, [d.data]);
+    assert.ok(survived(path.join(d.data, 'b')));
+    assert.ok(!fs.existsSync(d.tmp), 'its tmp, made here and holding none, removed');
+    assert.match(said.join('\n'), /holds module code this runtime knows, so it is not removed/);
+    // single-thread's emptying likewise (no broker judgement before it)
+    const e = await moduleData.ensureDirs(path.join(base, 'store'), 'n');
+    writeB(path.join(e.tmp, 'b'));
+    assert.strictEqual(await walk.emptyTmp(e.tmp, {holder: e.root, code: {roots: [path.join(e.tmp, 'b')]}}), false);
+    assert.ok(survived(path.join(e.tmp, 'b')));
+    // a --modulePath folder inside it counts too
+    assert.strictEqual(await ownership.codeInside(e.tmp, {folders: [path.join(e.tmp, 'b')]}), true);
+    assert.strictEqual(await ownership.codeInside(e.tmp, {folders: [path.join(base)]}), false, 'a folder around it is not code inside it');
+  });
+
+  it('a fresh marker a crash left mid-write, or a birth-time probe, never keeps the holder from going', async () => {
+    const d = await moduleData.ensureDirs(path.join(base, 'store'), 'm');
+    fs.writeFileSync(path.join(d.root, `${ownership.MARKER}.0123456789ab`), '{}', {mode: 0o600});
+    fs.mkdirSync(path.join(d.root, `${ownership.MARKER}-probe-abc`));
+    assert.deepStrictEqual(await ownership.removeOwned(d.root, d), []);
+    fs.rmdirSync(d.root);
+  });
+
   describe('at a spawn (createForWorker)', () => {
     const {createForWorker} = require('../../lib/fs-broker');
     const spawn = async (mode, extra = {}) => {

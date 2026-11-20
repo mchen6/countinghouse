@@ -678,6 +678,18 @@ throwaway `<moduleDataPath>/.validate` of a validation is not under this
 rule: the runtime makes it fresh, under a dot name no module's name can
 take.
 
+A directory the runtime made that holds module code it knows is kept too,
+since a module may have been loaded from inside another's `/data`. That
+covers a module root it knows, a `--loadModule` directory, or a
+`--modulePath` folder inside it.
+
+The marker names directories by their identity, so a copy names nothing.
+After `--moduleDataPath` is moved or restored (`rsync -a`, `cp -a`), or on a
+file system whose device numbers change across reboots, every directory
+there is kept and said. To have them adopted again, under the same
+conditions as an earlier version's, delete the `.countinghouse-owned`
+files with the runtime stopped.
+
 **7. `--hardened`.** Re-launches the server under Node's permission model
 (`--permission`) with read access to the install directory, `--modulePath`,
 `--moduleDataPath` and the configured config files, and write access to

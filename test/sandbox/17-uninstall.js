@@ -156,8 +156,9 @@ describe('sandbox 17: POST /uninstall-module', function() {
       (e) => (e ? reject(e) : db.run("INSERT INTO module_info(name, version, path, deviceList) VALUES ('ghost-mod', '1.0.0', '/nonexistent', '[]')",
         (e2) => (e2 ? reject(e2) : resolve())))));
     await new Promise((resolve) => db.close(resolve));
-    // (made as the runtime makes a module's data, so its own: A-overlap-rm)
-    await require('../../lib/module-data').ensureDirs(store(), 'ghost-mod');
+    // (by hand, as an install before ownership marks left it: adopted by the
+    // uninstall, no module's code being in or around it -- A-overlap-rm)
+    fs.mkdirSync(path.join(store(), 'ghost-mod', 'data'), {recursive: true});
     const first = await uninstall({name: 'ghost-mod'});
     assert.strictEqual(first.status, 200, JSON.stringify(first.body));
     assert.deepStrictEqual({removed: first.body.registryEntryRemoved, deleted: first.body.dataDeleted}, {removed: true, deleted: true});
