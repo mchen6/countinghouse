@@ -156,14 +156,13 @@ needs worker mode; without it the mode is `off`. countinghouse 8 needs Node
 22.16 or later. Below 24.15 a compatibility shim routes `require.resolve`
 through the sandbox's hooks (`lib/resolve-shim.js`); multi-tenant hosting of
 third-party modules should run 24.15 or later, where Node's own hook covers
-it. Below 24.15 a `require.resolve` (or `createRequire().resolve`) goes
-through the shim, whose hooks see Node's default CommonJS conditions
-(`require`, `node`, `node-addons`, `module-sync`) -- and so does a `#` name
-resolved under `enforce` before any plain `require` has brought Node's own
-list: under `--conditions`, `--no-addons` or
-`--no-experimental-require-module` such a name resolves an `"imports"`
-entry keyed on those as the default list picks it, still inside the
-module's root.
+it. Below 24.15, a `#` name resolved under `enforce` -- by `require` or
+`require.resolve` -- before any plain `require` has brought Node's own
+conditions uses Node's default CommonJS list (`require`, `node`,
+`node-addons`, `module-sync`); after that, Node's own. So, early on, under
+`--conditions`, `--no-addons` or `--no-experimental-require-module`, an
+`"imports"` entry keyed on those picks the target the default list picks,
+still inside the module's root.
 
 | | `off` | `audit` (default) | `enforce` |
 |---|---|---|---|
