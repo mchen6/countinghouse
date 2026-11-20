@@ -110,21 +110,36 @@ describe('session-transport 02: the listener and the registry', function() {
 
     // (F1-6: a full pre-auth pool refuses the NEW connection -- one in its
     // handshake is never evicted by a flood; each still has its deadline)
-    it('refuses the 65th pre-auth connection, keeping every one before it, and closes one silent past its deadline', async() => {
-      await start({listener: {preAuthMax: 64, preAuthDeadlineMs: 1500}});
+    it('refuses the 65th pre-auth connection; one in its handshake is kept, and welcomed', async() => {
+      await start({listener: {preAuthMax: 64, preAuthDeadlineMs: 20000}});
+      // the first, in its handshake: HELLO sent, PROVE back
+      const first = await shim.connect(sock);
+      const nc = handshake.newChallenge();
+      first.send('H', {protocol: 1, nc: nc.toString('base64')});
+      const prove = await first.json('P');
+      assert.ok(prove != null, 'PROVE');
       const conns = [];
-      for (let i = 0; i < 64; i++) conns.push(await shim.connect(sock));
-      await tick(50);
+      for (let i = 0; i < 63; i++) conns.push(await shim.connect(sock));
       const newest = await shim.connect(sock);
-      assert.ok(await until(() => newest.closed(), 500), 'the new one is refused');
-      assert.strictEqual(conns[0].closed(), false, 'the oldest is kept');
-      assert.ok(await until(() => conns[0].closed(), 3000), 'silent past the deadline: closed');
-      // (room again once the pool drains: a new one is taken)
-      assert.ok(await until(() => conns.every((c) => c.closed()), 3000));
+      assert.ok(await until(() => newest.closed(), 2000), 'the 65th is refused');
+      // the one in its handshake completes it
+      const ns = Buffer.from(prove.ns, 'base64');
+      first.send('A', {mc: handshake.clientMac(secret, 1, ns, nc).toString('base64')});
+      const w = await first.next(null);
+      assert.strictEqual(w != null ? w.kind : null, 'W', 'welcomed');
+      // its slot is free: a new one is taken -- its HELLO answered
       const later = await shim.connect(sock);
-      await tick(100);
-      assert.strictEqual(later.closed(), false, 'taken once there is room');
-      later.end();
+      later.send('H', {protocol: 1, nc: handshake.newChallenge().toString('base64')});
+      assert.ok(await later.json('P') != null, 'taken once there is room');
+      for (const c of conns.concat([first, later])) c.end();
+    });
+
+    it('closes one silent past its deadline, and the pool is empty again', async() => {
+      await start({listener: {preAuthMax: 64, preAuthDeadlineMs: 300}});
+      const c = await shim.connect(sock);
+      assert.ok(await until(() => c.closed(), 3000), 'silent past the deadline: closed');
+      // (no session held, none in pre-auth: the idle stop may drain)
+      assert.ok(await until(() => listener.drainIfIdle(), 3000), 'the pool emptied');
     });
   });
 

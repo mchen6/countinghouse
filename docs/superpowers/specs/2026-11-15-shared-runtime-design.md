@@ -671,7 +671,7 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
    - The `conditions` child runs as the user, from the paths in `shim.json`.
    - A same-user process that can rewrite `shim.json` can already change ch-local itself, so this adds nothing.
 5. **A module holding two sessions' calls at once** (it serves both) holds two hop tokens, and can make a hop with either, so with the other session's cap or timeout, and into the other session's worker of a per-session module (§4a), so with its state. The values stay within the ceiling, and a module already sees all of one user's data. A token or peer channel that outlives its session is refused like an unknown device.
-6. **On Windows, another user (local, or remote over SMB) can slow attaches, but can't lock them out. Availability only.**
+6. **On Windows, another user (local, or remote over SMB) can delay attaches, and while a flood holds every pre-auth slot it keeps a new shim out; it never breaks a handshake under way. Availability only.**
    - **What it can do:** list the pipe's name, and open read-only instances. Each holds a pre-auth slot for 2 s. Past 64, a new connection is refused, so a flood can delay a real shim's attach (the shim retries with jitter, for up to 20 s) but never breaks one mid-handshake. A flood that keeps all 64 slots filled for longer than that keeps a new shim out.
    - **What it can't do:**
      - send a byte: the client speaks first, and only the owner, Administrators and SYSTEM can write, so it never even sees a `PROVE`;

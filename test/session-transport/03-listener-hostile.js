@@ -331,11 +331,13 @@ describe('session-transport 03: the listener against hostile peers (#245 review)
       c.write(frames.encode('H', JSON.stringify({protocol: 2, nc: handshake.newChallenge().toString('base64')})));
       conns.push({c, closed: () => closed});
     }
-    // within the 1 s grace, the server holds at most 64: the newer ones were
-    // refused (counted server side: a half-open client sees no close)
+    // the server holds at most 64, counted server side (the first 64, refused
+    // their HELLO's bad proof by shut(), are half-open: their clients see no
+    // close within the grace); the newer ones were refused at once, closed
     await tick(300);
     const held = await new Promise((r) => listener.server.getConnections((e, n) => r(n)));
     assert.ok(held <= 64, `${held} held`);
+    assert.ok(await until(() => conns.slice(64).every((x) => x.closed()), 2000), 'the newer ones refused');
     for (const x of conns) x.c.destroy();
   });
 
