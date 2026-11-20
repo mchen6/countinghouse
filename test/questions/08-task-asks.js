@@ -309,7 +309,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     const fresh = await taskAsks.forRun(id(), {asks: true, asking: true, owner: 'owner-r', shownAs: 'm', rerun: true});
     assert.ok(fresh.skip !== true && moduleAsk.isState(fresh.state), JSON.stringify(fresh));
     assert.deepStrictEqual([fresh.state.unavailable.size, fresh.state.callRounds || 0], [0, 0]);
-    assert.deepStrictEqual(await taskAsks.forRun(id(), {asks: true, asking: true, owner: 'owner-r', shownAs: 'm'}), {skip: true});
+    assert.deepStrictEqual(await taskAsks.forRun(id(), {asks: true, asking: true, owner: 'owner-r', shownAs: 'm'}), {skip: true, gone: true});
   });
 
   // (#487's high, round 1: no room is unavailable at once and spends a
@@ -409,11 +409,18 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       const r = await beforeOf(jobData, t, {rerun: false});
       assert.ok(r.skip !== true && moduleAsk.isState(r.state), JSON.stringify(r));
     });
-    it('a run whose question still waits stays a skip whatever the tombstone read does', async () => {
+    it('a run whose question still waits stays a skip when the tombstone read fails', async () => {
       const t = id();
       assert.ok((await ask(t)).asked != null);
       tombstones.get = () => Promise.reject(new Error('tombstones down'));
       assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true});
+    });
+    // (its record gone -- a cancel took it -- and the tombstone unreadable:
+    // the run fails, never held as waiting)
+    it('a run whose record is gone rejects when the tombstone read fails', async () => {
+      const t = id();
+      tombstones.get = () => Promise.reject(new Error('tombstones down'));
+      await assert.rejects(beforeOf(jobData, t, {rerun: false}), /tombstones down/);
     });
     // (a cancel whose record removal failed: its question still shows
     // waiting, and its tombstone is read all the same -- ruled M2)
@@ -518,6 +525,20 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
         assert.ifError(err);
         assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
         assert.deepStrictEqual([log.started, log.completed[0][0], log.completed[0][1]], [[1, 2], 2, 'hold broken'], JSON.stringify(log));
+        exactlyOnce(log);
+        assert.ok(log.settled >= 1, `its question settled: ${JSON.stringify(log)}`);
+      } finally { done(api); }
+    });
+    // (a waiting skip within a run started again whose hold can't be made:
+    // the run fails with a call of its own, never left unsettled)
+    it(`${label}: a waiting skip whose hold can't be made fails the run with a call of its own; each call closed once`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true}), holdMs: () => { throw new Error('hold broken'); },
+          before: (b) => (b === 1 ? {state: moduleAsk.newState({askable: true, shownAs: 'm'})} : {skip: true})});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.deepStrictEqual([log.passes, log.completed[0][1]], [1, 'hold broken'], JSON.stringify(log));
         exactlyOnce(log);
       } finally { done(api); }
     });
