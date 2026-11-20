@@ -1,9 +1,9 @@
 # Lean worker: the measurement
 
 What `perf/lean-worker-perf.js` measures against the lean worker spec's targets
-(docs/superpowers/specs/2026-11-13-lean-worker-design.md), and the numbers so
-far. The "after" tables come with lean worker step 5, once steps 3 and 4 are
-on master.
+(docs/superpowers/specs/2026-11-13-lean-worker-design.md), and the numbers:
+the "before" points measured while it was built, and step 5's before and
+after, below.
 
 ## Method
 
@@ -99,6 +99,56 @@ enough to compare across commits.
 
 Each row is `--runs 3`. The final "before" for step 5 will be re-run with
 `--runs 5` or more, in several sessions, at the "after" stage.
+
+## Step 5: before and after (2026-11-20)
+
+`--runs 5`, in `scripts/run-in-docker.js` (Node 24, 2 CPUs, the container
+capped at 2 GB without swap), one step at a time. Each step was gated as
+above (no other container, at least 3 GB available, 30 s at least 90% idle),
+and watched while it ran: a step was aborted, and run again, if processes
+outside its container used more than 2.5 CPU-seconds in any 10 s. In the
+three kept, the most was 1.93. These are the first pack ready and worker
+boot figures quiet enough to compare across commits.
+
+| | before (c407bfc0, pack 1 0.4.0) | after (285a31a4, pack 1 0.4.0) | after, pack 1 0.5.0 |
+|---|---|---|---|
+| **pack ready** (target ≤ 5000 ms) | 7220 ms | **4064 ms** | 4466 ms |
+| **worker boot, median** (target ≤ 200 ms) | 554 ms | **214 ms** | 250 ms |
+| of it, the spawn walk | 20 ms | 11 ms | 11 ms |
+| **added RSS per worker, 1..N** (target ≤ 20 MB) | 43.4 MB | **21.3 MB** | 21.3 MB |
+| fixed RSS (the first worker's, once) | 70.3 MB | 103.8 MB | 102.1 MB |
+| RSS through 0 (old method) | 48.3 MB | 28.6 MB | 28.5 MB |
+| pack: RSS | 565.3 MB | 398.1 MB | 395.4 MB |
+| pack, single-threaded: ready, RSS | 1092 ms, 118.3 MB | 1175 ms, 121.4 MB | 1143 ms, 121.6 MB |
+
+The ladder, after (285a31a4, pack 1 0.4.0):
+
+| configuration | workers | ready | RSS | worker boot |
+|---|---|---|---|---|
+| 0 modules | 0 | 790 ms | 101.7 MB | |
+| 1 module | 1 | 1964 ms | 227.9 MB | 331 ms |
+| 3 modules | 3 | 2477 ms | 269.2 MB | 218 ms |
+| 5 modules | 5 | 3018 ms | 310 MB | 213 ms |
+| pack 1 | 9 | 4064 ms | 398.1 MB | 214 ms |
+
+- **The lean worker:** pack ready is 44% faster (7.2 → 4.1 s), the worker
+  boot median is 61% faster (554 → 214 ms), and the added RSS per worker is
+  halved (43.4 → 21.3 MB). Pack 1 0.5.0 adds about 0.4 s of ready time over
+  0.4.0, and nothing measurable in memory.
+- **Within target:** pack ready.
+- **Over target:**
+  - the worker boot median, 214–250 ms against 200 ms;
+  - the added RSS per worker, 21.3 MB against 20 MB.
+
+  The spawn walk is 11 ms of the boot. The rest is the worker's own start:
+  a new isolate, the runtime files it loads, and the lockdown. Which of
+  these to cut first is not measured yet; a profile of one worker's boot
+  would say. The likely levers are a compile cache for the files a worker
+  loads, fewer of them at boot, and a cheaper lockdown.
+- **The fixed RSS rose** (70 → 104 MB), while the per-worker slope halved:
+  more of the cost is now paid once, with the first worker, and less per
+  worker. It is not broken down here. At pack 1's 9 workers the total is
+  still 167 MB lower (565 → 398 MB).
 
 ## Per-session workers (shared runtime R1)
 
