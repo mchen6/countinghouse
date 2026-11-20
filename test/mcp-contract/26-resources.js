@@ -374,6 +374,67 @@ describe('mcp-contract 26: module resources (M7)', function() {
     assert.deepStrictEqual(billed, [], 'not billed');
   });
 
+  // the medium of #458's second round: a resource read whose session ends
+  // during its own userAuth is answered as an ended session's read is at the
+  // top of handleModuleResourceRead ("not found"), not a tools/call result
+  it('a resources/read whose session ends during its userAuth is "not found", and neither runs nor bills', async () => {
+    invoked.length = 0;
+    billed.length = 0;
+    require('../../lib/mcp/tool-registry').forgetGrants();
+    const sessions = require('../../lib/sessions');
+    const SID = 'r'.repeat(32);
+    const realGet = sessions.get;
+    let live = true;
+    sessions.get = (id) => (id === SID ? (live ? {id} : null) : realGet(id));
+    let n = 0;
+    const authenticate = provider.authenticate;
+    provider.authenticate = (...args) => {
+      const cb = args.pop();
+      const nth = ++n;
+      return authenticate(...args, (...answer) => { if (nth === 2) live = false; cb(...answer); });
+    };
+    try {
+      const req = {jsonrpc: '2.0', id: 1, method: 'resources/read', params: {uri: 'countinghouse://m/notes/notes/one'}};
+      const r = await new Promise((resolve) => gateway.handle(req, ci, KEY_A, (err, resp) => resolve(resp),
+        {session: {id: SID, client: {status: 'ok', conditions: 'no', repo: null}}}));
+      assert.deepStrictEqual(r.error, {code: -32602, message: 'Resource not found'}, JSON.stringify(r));
+    } finally {
+      provider.authenticate = authenticate;
+      sessions.get = realGet;
+    }
+    await new Promise((res) => setTimeout(res, 100));
+    assert.deepStrictEqual(invoked, [], 'not run');
+    assert.deepStrictEqual(billed, [], 'not billed');
+  });
+
+  // the medium of #458's second round: a key that is no admin's calling an
+  // authoring tool is answered as a name never registered with the flag on
+  // as with it off, and with no provider read more, so neither the answer
+  // nor its cost tells the flag
+  it('an authoring tool from a key that is no admin\'s: the same answer and the same provider reads, --authoringTools on or off', async () => {
+    const authenticate = provider.authenticate;
+    const listDevices = provider.listDevices;
+    const run = async(flag) => {
+      require('../../lib/mcp/tool-registry').forgetGrants();
+      options.setOptions(Object.assign({}, OPTIONS, {authoringTools: flag}));
+      let reads = 0;
+      provider.authenticate = (...args) => { reads++; return authenticate(...args); };
+      provider.listDevices = (...args) => { reads++; return listDevices(...args); };
+      try {
+        const r = await ask('tools/call', KEY_A, {name: 'countinghouse_validate_module', arguments: {path: '.'}});
+        return {r, reads};
+      } finally {
+        provider.authenticate = authenticate;
+        provider.listDevices = listDevices;
+        options.setOptions(OPTIONS);
+      }
+    };
+    const off = await run(false);
+    const on = await run(true);
+    assert.deepStrictEqual(on, off);
+    assert.deepStrictEqual(off.r.error, {code: -32602, message: 'unknown tool: countinghouse_validate_module'});
+  });
+
   it('the output\'s shape: a string as text (the schema\'s media type, else the declared one), a binary string as a blob, anything else as JSON', async () => {
     assert.deepStrictEqual((await read(KEY_A, 'countinghouse://m/notes/csv/x.csv')).result.contents, [{uri: 'countinghouse://m/notes/csv/x.csv', mimeType: 'text/csv', text: 'a,b'}]);
     assert.deepStrictEqual((await read(KEY_A, 'countinghouse://m/notes/cover/1')).result.contents, [{uri: 'countinghouse://m/notes/cover/1', mimeType: 'image/png', blob: PNG64}]);
