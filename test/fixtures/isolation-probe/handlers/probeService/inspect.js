@@ -194,7 +194,9 @@ const STEPS = {
       const base = (fn) => { try { return path.basename(String(fn())); } catch (e) { return String(e.code); } };
       const direct = base(() => M._resolveFilename('#cond', module));
       const hooked = base(() => require.resolve('#cond'));
-      out.push(direct === hooked && /^cond-/.test(direct) ? 'same' : `conditions(${direct} / ${hooked})`);
+      // (Node's own answer on every line here: require(esm) is on, so its
+      // CommonJS conditions hold 'module-sync', which comes first)
+      out.push(direct === 'cond-ms.js' && hooked === 'cond-ms.js' ? 'same' : `conditions(${direct} / ${hooked})`);
     }
     // (#465's Fable pass, F4: findPackageJSON of the module's own name,
     // a self-reference through its "exports", answers its own package.json)
