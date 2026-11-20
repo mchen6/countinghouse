@@ -1,5 +1,7 @@
 # log-triage — a second composite example, whose bill depends on its input
 
+> **Note (8.0):** the device-ID seed changed in 8.0, so the device IDs below are pre-8.0 ones; see `lib/call-address.js` (`deviceIDForName`).
+
 Roadmap item #6. Non-breaking, no platform code, a natural 7.1.0.
 
 Verified against `master` at `2de730b` on 2026-10-04, plus the two billing

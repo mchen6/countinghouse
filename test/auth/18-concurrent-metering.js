@@ -1,4 +1,5 @@
 const assert = require('assert');
+const {deviceIDForName} = require('../../lib/call-address');
 const util   = require('util');
 
 const RedisMeteringProvider = require('../../lib/metering/redis-provider');
@@ -82,7 +83,7 @@ describe('auth 18: RedisMeteringProvider.recordCall keeps every charge under con
   // Not a concurrency case: it pins the legacy-schema fallback, which the fix
   // moved across the same boundary as everything else and which had no test.
   it('still seeds a free-call quota from the legacy `devices` field, then charges once it is spent', async () => {
-    const DEVICE_ID  = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767';
+    const DEVICE_ID  = deviceIDForName('echo-device');
     const SERVICE_ID = 'urn:countinghouse-com:serviceID:echoService';
     const legacyTool = RedisMeteringProvider.encodeLegacyTool(DEVICE_ID, SERVICE_ID, 'echo');
 

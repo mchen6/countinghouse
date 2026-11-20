@@ -4,24 +4,17 @@
 //
 // The caller therefore does not need a grant to echo-device-module, but still
 // pays for the hop it caused.
-const ECHO_DEVICE_ID = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767';
-const ECHO_SERVICE   = 'urn:countinghouse-com:serviceID:echoService';
+// The hop by name (ctx.call), as package.json's "countinghouse.calls"
+// declares it: the runtime resolves it to its device.
+const ECHO = 'echo-device/echoService.echo';
 
 module.exports = {
   composeService: {
     compose: (input, ctx, callback) => {
-      ctx.serviceClient({deviceID: ECHO_DEVICE_ID, serviceID: ECHO_SERVICE},
-        (err, client) => {
-          if (err != null) return callback(err, null);
-
-          client.invoke({actionName: 'echo', input: {foo: [], bar: input.text}}, (iErr, data) => {
-            if (iErr != null) return callback(iErr, null);
-            return callback(null, {output: {
-              echoed:   (data != null && data.output != null) ? data.output.bar : null,
-              billedTo: ctx.caller.id
-            }});
-          });
-        });
+      ctx.call(ECHO, {foo: [], bar: input.text}).then((data) => callback(null, {output: {
+        echoed:   (data != null && data.output != null) ? data.output.bar : null,
+        billedTo: ctx.caller.id
+      }}), (err) => callback(err, null));
     }
   }
 };

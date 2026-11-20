@@ -8,13 +8,19 @@
 const assert = require('assert');
 const path   = require('path');
 
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 const moduleValidator = require('../../lib/module-validator');
 
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
 const fixture  = (name) => path.join(FIXTURES, name);
 
 describe('module-validator: a well-formed module', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   it('reports ok with no problems', (done) => {
     moduleValidator.validateModule(fixture('handler-map-convention'), (err, result) => {
       assert.ifError(err);
@@ -34,6 +40,9 @@ describe('module-validator: a well-formed module', () => {
 });
 
 describe('module-validator: handler-map mismatches', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   it('reports a handler service that api.json does not declare', (done) => {
     moduleValidator.validateModule(fixture('handler-map-unknown-service'), (err, result) => {
       assert.ifError(err);
@@ -78,6 +87,9 @@ describe('module-validator: handler-map mismatches', () => {
 });
 
 describe('module-validator: spec problems', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   it('reports a spec that fails the meta-schema, with the instance path', (done) => {
     moduleValidator.validateModule(fixture('invalid-spec-module'), (err, result) => {
       assert.ifError(err);
@@ -100,6 +112,9 @@ describe('module-validator: spec problems', () => {
 });
 
 describe('module-validator: one module format (lib/module-layout.js)', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   it('a main entry with no handlers/ directory is a "layout" problem with the load\'s code and text', (done) => {
     moduleValidator.validateModule(fixture('no-index-module'), (err, result) => {
       assert.ifError(err);
@@ -128,6 +143,9 @@ describe('module-validator: one module format (lib/module-layout.js)', () => {
 });
 
 describe('module-validator: countinghouse.calls', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   it('reports a malformed address', (done) => {
     moduleValidator.validateModule(fixture('bad-calls-module'), (err, result) => {
       assert.ifError(err);
@@ -169,6 +187,9 @@ describe('module-validator: countinghouse.calls', () => {
 });
 
 describe('module-validator: unusable input', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   it('errors when the directory does not exist', (done) => {
     moduleValidator.validateModule(fixture('no-such-module-anywhere'), (err) => {
       assert.ok(err != null, 'expected an error for a missing directory');
@@ -190,6 +211,9 @@ describe('module-validator: unusable input', () => {
 // stage=schemaSafety), validate reports too: an author must not learn of it
 // only when an operator's load fails. The same check, the same words.
 describe('module-validator: a schema.json the load refuses as unsafe', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   const fs = require('fs');
   const os = require('os');
   const schemaSafety = require('../../lib/schema-safety');

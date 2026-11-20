@@ -346,7 +346,11 @@ describe('remote 02: the allowance at start', function() {
 });
 
 describe('remote 02: countinghouse-validate reads the declaration', () => {
-  require('../../lib/cli-options').setOptions({workerThread: false});
+  // (set in before(), the process's put back after: B-loadopts-2)
+  const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   const moduleValidator = require('../../lib/module-validator');
   const withRemotes = (remotes) => {
     const dir = path.join(tmpDirs.mkdtemp('ch-remote-02v-'), 'm');

@@ -9,6 +9,31 @@ you have to do. What the sandbox does and does not protect is in
 
 ## Before you upgrade
 
+- **Every device ID changed.** A device's ID is now a UUID v5 of its
+  `friendlyName` in countinghouse's own namespace (`lib/call-address.js`
+  `deviceIDForName`); before 8.0 it was derived from another project's
+  registry URL. Grants that list specific device IDs (an auth file's
+  `devices`, a sqlite provider's `user_devices`, a CouchDB user's
+  `devices[].deviceID`) must be regenerated: a grant of `'*'` is
+  unaffected. A grant in an auth file or sqlite that still names a loaded
+  module's pre-8.0 ID is logged once, with its new ID (at start, and again
+  after the auth configuration is reloaded); CouchDB's grants are not
+  checked. What is kept under a device ID is left where it is and no longer
+  read: a device's log, and the metering's per-tool records (a tool is
+  `<deviceID>/<service>/<action>` there, and a CouchDB user's
+  `devices[].priceRecord` likewise). A per-tool price or free-call record
+  is not carried over: the free calls left on it are lost unless you
+  rewrite the record under the new ID, and a report spanning the upgrade
+  shows a tool under both IDs. A job or a repeatable scheduler created
+  before the upgrade names its device by the old ID: 8.0 does not run the
+  old shared queue it is in (see the job queue entry), and if one were run
+  it would reach no device (under a specific-ID grant it is refused, and a
+  refused scheduler is removed without a word). Remove pending jobs and
+  repeatable schedulers made before the upgrade and add them again after
+  it. Composite
+  modules address their callees by name (`<module>/<service>.<action>`) and
+  are unaffected; one that hard-codes a callee's device ID must take the
+  new one.
 - **If you run ch-local, or write a ceiling or a module's remote: what
   module-level configuration removed.**
   - The operator's ceiling (`/etc/countinghouse/ceiling.json`, or

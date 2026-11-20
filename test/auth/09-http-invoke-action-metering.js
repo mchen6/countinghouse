@@ -1,4 +1,5 @@
 const fs      = require('fs');
+const {deviceIDForName} = require('../../lib/call-address');
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 const redis   = require('redis');
@@ -27,7 +28,7 @@ const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-auth-09-${process.pid}.json`;
 
 const ALICE = `alice-key-09-${process.pid}`;
 
-const DEVICE_ID  = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767'; // echo-device-module, deterministic UUID.v5
+const DEVICE_ID  = deviceIDForName('echo-device'); // echo-device-module, deterministic UUID.v5
 const SERVICE_ID = 'urn:countinghouse-com:serviceID:echoService';
 const ACTION     = 'echo';
 const MCP_TOOL   = 'echo_device_echoservice_echo';

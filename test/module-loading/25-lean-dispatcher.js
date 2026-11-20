@@ -6,12 +6,18 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 
 const FIXTURE = path.join(__dirname, '..', 'fixtures', 'lean-answers');
 const SERVICE = 'urn:countinghouse-test:serviceID:answerService';
 
 describe('module-loading 25: the lean dispatcher (lean worker step 3)', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   // required where used, so each case fails on its own before it exists
   const dispatcher = () => require('../../lib/lean-dispatcher').createDispatcher({
     modulePath: FIXTURE, moduleName: 'lean-answers', spec: JSON.parse(fs.readFileSync(path.join(FIXTURE, 'api.json'), 'utf8'))});

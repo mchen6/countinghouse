@@ -25,6 +25,7 @@
 // handed, the callee fell back to the grant identity, and every hop was
 // charged to the module instead of the caller.
 const assert  = require('assert');
+const {deviceIDForName} = require('../../lib/call-address');
 const fs      = require('fs');
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
@@ -44,7 +45,7 @@ const AUTH_PATH = `/tmp/countinghouse-test-auth-13-${index}-${process.pid}.json`
 
 const CALLER       = `caller-13-${index}-${process.pid}`;
 const AS_IDENTITY  = 'ctx-compose-internal';   // must match the fixture's `as`
-const ECHO_DEVICE  = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767';
+const ECHO_DEVICE  = deviceIDForName('echo-device');
 
 // The caller is granted the composing device ONLY -- deliberately not echo.
 // If authorization used the caller's identity, the inner hop would fail; if it

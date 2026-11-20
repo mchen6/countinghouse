@@ -1,4 +1,5 @@
 const assert  = require('assert');
+const {deviceIDForName} = require('../../lib/call-address');
 const fs      = require('fs');
 const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
@@ -21,8 +22,8 @@ const url = `http://127.0.0.1:${PORT}`;
 // device's tools regardless of caller identity.
 const AUTH_CONFIG_PATH = '/tmp/countinghouse-test-auth-01.json';
 
-const ECHO_DEVICE_ID      = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767'; // echo-device-module
-const TRANSFORM_DEVICE_ID = 'a53ef5c7-cc2f-5264-9811-44f1611685ee'; // transform-demo
+const ECHO_DEVICE_ID      = deviceIDForName('echo-device'); // echo-device-module
+const TRANSFORM_DEVICE_ID = deviceIDForName('transform-demo'); // transform-demo
 
 const WILDCARD_KEY = 'wildcard-key';
 const SCOPED_KEY    = 'scoped-key'; // authorized for echo-device-module only

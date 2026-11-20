@@ -15,7 +15,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const options = require('../../lib/cli-options');
-options.setOptions({redisUrl: 'redis://127.0.0.1:1'});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 require('../../lib/logger').createLogger();
 const sessions = require('../../lib/sessions');
 const settings = require('../../lib/session-settings');
@@ -32,6 +35,9 @@ const MMP = require('../../lib/module-manager').prototype;
 const UNITS = {holdDiscovery: MMP.holdDiscovery, releaseDiscovery: MMP.releaseDiscovery, isHeld: MMP.isHeld, unitLoaded: MMP.unitLoaded, unitRegistration: MMP.unitRegistration, unitNote: MMP.unitNote};
 
 describe('sessions 19: ch-local\'s pack and module messages: every session is told (shared runtime B3, Task 6; M5a)', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); options.setOptions({redisUrl: 'redis://127.0.0.1:1'}); });
+  after(() => { restoreOptions(keptOptions); });
   const A = 'a'.repeat(32);
   const B = 'b'.repeat(32);
   const C = 'c'.repeat(32);

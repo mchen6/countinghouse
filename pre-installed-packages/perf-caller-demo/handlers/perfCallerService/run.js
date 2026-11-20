@@ -1,22 +1,8 @@
-// Times one in-process hop to perf-callee-demo. Used by perf/ to measure the
-// cross-worker call paths, so the timed region stays as tight as possible:
-// the client is resolved before the clock starts.
-const CALLEE_DEVICE_ID = 'fb9fbd3d-5860-538e-b0b7-9f5e34389577'; // perf-callee-demo
-const CALLEE_SERVICE   = 'urn:countinghouse-com:serviceID:perfCalleeService';
-
-function clientFor(ctx) {
-  return new Promise((resolve, reject) => {
-    ctx.serviceClient({deviceID: CALLEE_DEVICE_ID, serviceID: CALLEE_SERVICE},
-      (err, client) => (err != null) ? reject(err) : resolve(client));
-  });
-}
-
-function invoke(client, input) {
-  return new Promise((resolve, reject) => {
-    client.invoke({actionName: 'echoPayload', input: input},
-      (err, data) => (err != null) ? reject(err) : resolve(data));
-  });
-}
+// Times one in-process hop to perf-callee-demo, called by name (ctx.call), as
+// package.json's "countinghouse.calls" declares it: the runtime resolves it
+// to its device (a parse and a hash per call, inside the timed region, with
+// its client kept between calls).
+const CALLEE = 'perf-callee-demo/perfCalleeService.echoPayload';
 
 module.exports = async (input, ctx) => {
   if (input == null || typeof(input.payloadSizeBytes) !== 'number') {
@@ -25,16 +11,9 @@ module.exports = async (input, ctx) => {
 
   const data = 'x'.repeat(input.payloadSizeBytes);
 
-  let client;
-  try {
-    client = await clientFor(ctx);
-  } catch (e) {
-    return ctx.error('INNER_CALL_FAILED', e.message, {cause: e});
-  }
-
   const start = process.hrtime.bigint();
   try {
-    await invoke(client, {data: data});
+    await ctx.call(CALLEE, {data: data});
   } catch (e) {
     return ctx.error('INNER_CALL_FAILED', e.message, {cause: e});
   }

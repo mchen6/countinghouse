@@ -1,5 +1,6 @@
 
 const request = require('supertest');
+const {deviceIDForName} = require('../../lib/call-address');
 const waitForReady = require('../helpers/wait-for-ready');
 const benchrest = require('bench-rest');
 const {testPort} = require('../helpers/test-env');
@@ -12,7 +13,7 @@ module.exports = function (cp, isSingleThread) {
 
     const flow = {
       main: [
-        { post: `http://localhost:${testPort(9527)}/devices/c5284c70-ae5f-591c-b2f1-cf0b4ebd0767/invoke-action`,
+        { post: `http://localhost:${testPort(9527)}/devices/${deviceIDForName('echo-device')}/invoke-action`,
           json: {serviceID: 'urn:countinghouse-com:serviceID:echoService', actionName: 'echo', input: {foo: [], bar: 'vv'}},
           headers: {
             'X-CH-Key': 'aabbcc',

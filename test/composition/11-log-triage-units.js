@@ -24,16 +24,21 @@ async function handedBack(promise) {
 const EXAMPLE = path.join(__dirname, '..', '..', 'examples', 'log-triage');
 const gen     = require(path.join(EXAMPLE, 'generate-logs.js'));
 
+// each describe's own directory, made before it and removed after (in a
+// describe: a hook outside one runs around every file of a folder run,
+// validation 32)
 let tmpRoot = null;
-
-before(() => { tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'log-triage-units-')); });
-after(() => { fs.rmSync(tmpRoot, {recursive: true, force: true}); });
+function useTmpRoot() {
+  before(() => { tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'log-triage-units-')); });
+  after(() => { fs.rmSync(tmpRoot, {recursive: true, force: true}); });
+}
 
 function readAll(files) {
   return files.map((f) => fs.readFileSync(f, 'utf8')).join('');
 }
 
 describe('log-triage units: generate-logs', () => {
+  useTmpRoot();
   it('writes the requested number of files, named in order, with the requested line count', () => {
     const files = gen.generate({dir: path.join(tmpRoot, 'g1'), files: 3, lines: 50, seed: 1});
 
@@ -70,6 +75,7 @@ describe('log-triage units: generate-logs', () => {
 });
 
 describe('log-triage units: log-read', () => {
+  useTmpRoot();
   const list = withCtx(require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'list.js')));
   const read = withCtx(require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'read.js')));
 
@@ -175,6 +181,7 @@ describe('log-triage units: log-read', () => {
 });
 
 describe('log-triage units: pii-redact', () => {
+  useTmpRoot();
   const redact = withCtx(require(path.join(EXAMPLE, 'pii-redact', 'handlers', 'redactService', 'redact.js')));
 
   it('replaces each PII type with its tag and counts it', async () => {
@@ -306,6 +313,7 @@ describe('log-triage units: pii-redact', () => {
 });
 
 describe('log-triage units: error-cluster', () => {
+  useTmpRoot();
   const cluster = withCtx(require(path.join(EXAMPLE, 'error-cluster', 'handlers', 'clusterService', 'cluster.js')));
 
   const LINES = [

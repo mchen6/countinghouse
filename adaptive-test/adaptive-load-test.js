@@ -12,6 +12,7 @@ var getInputHashKey = function(deviceID, serviceID, actionName, input) {
 
 var noofConcurrentClients = 10000;
 var loadSaveFactor = 1;
+// 3a509370-...: a CDIF-era device outside this repo (its pre-8.0 ID); its 8.0 ID is deviceIDForName(<its friendlyName>), lib/call-address.js
 var workUrl = 'http://10.0.0.122:9527/devices/3a509370-6db9-5fd0-9e98-4a912810d805/invoke-action';
 
 //TODO: randomly choose payload / input key

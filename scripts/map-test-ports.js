@@ -78,7 +78,7 @@ function split(line) {
 const portIn = () => new RegExp(`(?<![\\w.$])(${PORT})(?!\\d)`, 'g');
 // A port in a string's or template's text: after a colon, a space, an = or
 // the text's start, and not followed by a word character or a hyphen, so a
-// UUID's or hash's group (a53ef5c7-cc2f-5264-9811-...) is never one.
+// UUID's or hash's group (e66f514d-b9d7-5096-831a-...) is never one.
 const portInText = () => new RegExp(`(?<=^|[:\\s=])(${PORT})(?![\\w-])`, 'g');
 
 // Code (no strings in it): a bare port becomes testPort(N), unless it is
