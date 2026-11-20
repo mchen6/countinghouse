@@ -136,6 +136,14 @@ function request(io, message, timeoutMs = 30000) {
         assert.strictEqual(r.code, 'ERR_ACCESS_DENIED', JSON.stringify(r));
         assert.deepStrictEqual(r.loaded, {request: atBoot});
       });
+
+      // the register's "post-rel request refusal shape" (from #425): with no
+      // callback the refused call answers a Request-like object, not
+      // undefined, so a module that streams gets the refusal, not a TypeError
+      it('a refused CHUtil.request with no callback answers a Request-like object: .pipe() does not throw, \'error\' gets the refusal', async () => {
+        const r = await probe({what: 'streamRefused', url: UNDECLARED});
+        assert.deepStrictEqual(r, {outcome: 'error', code: 'ERR_ACCESS_DENIED', shape: {object: true, on: true, pipe: true}, piped: true});
+      });
     }
 
     if (mode === 'audit') {
