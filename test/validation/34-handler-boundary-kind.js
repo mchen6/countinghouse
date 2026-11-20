@@ -75,7 +75,7 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
   // (the medium on round 2, 7: the module's answer, whatever its row says,
   // retryable too)
   it('a passed-on RUNTIME_BUSY is the module\'s answer: 500, kind module, not retryable, no hint', () =>
-    withServiceClient(partRefuses(setRetryAfter(new CountinghouseError('RUNTIME_BUSY'), 500)), async () => {
+    withServiceClient(partRefuses(setRetryAfter(new CountinghouseError('RUNTIME_BUSY'), 500, 1000)), async () => {
       const a = await answer(async() => { throw await callRefusal(); });
       assert.deepStrictEqual([...shape(a.err), a.err.retryable, retryAfterOf(a.err)], ['RUNTIME_BUSY', 500, 'module', false, undefined]);
       const crossed = CountinghouseError.fromReplyFields(CountinghouseError.replyFields(a.err));
@@ -116,7 +116,7 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
     }));
 
   it('a hop\'s RATE_LIMIT_EXCEEDED (the binding identity\'s budget, single-thread) is the composer\'s: 500, no retry hint', () =>
-    withServiceClient(partRefuses(setRetryAfter(new CountinghouseError('RATE_LIMIT_EXCEEDED'), 900)), async () => {
+    withServiceClient(partRefuses(setRetryAfter(new CountinghouseError('RATE_LIMIT_EXCEEDED'), 900, 1000)), async () => {
       const a = await answer(async() => { throw await callRefusal(); });
       assert.deepStrictEqual(shape(a.err), ['RATE_LIMIT_EXCEEDED', 500, 'module']);
       assert.strictEqual(retryAfterOf(a.err), undefined);
@@ -179,8 +179,13 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
 
   // #482's high, round 2, 3: the hint is the limiters' alone
   it('the retry hint is held privately, written only by a limiter, clamped to its window, never read from properties', () => {
-    const e = setRetryAfter(new CountinghouseError('RATE_LIMIT_EXCEEDED'), 1e30);
+    const e = setRetryAfter(new CountinghouseError('RATE_LIMIT_EXCEEDED'), 1e30, 1000);
     assert.strictEqual(retryAfterOf(e), 1, 'clamped to the 1 s window');
+    // (no window reported: no hint at all, never a wrong one; #482's high,
+    // round 3, 5)
+    for (const windowMs of [undefined, null, 0, -1, NaN, Infinity, '1000']) {
+      assert.strictEqual(retryAfterOf(setRetryAfter(new CountinghouseError('RATE_LIMIT_EXCEEDED'), 900, windowMs)), undefined, String(windowMs));
+    }
     const forged = new CountinghouseError('RATE_LIMIT_EXCEEDED');
     Object.defineProperty(forged, 'retryAfterMs', {value: 1e30, enumerable: true});
     const saved = Object.getOwnPropertyDescriptor(Error.prototype, 'retryAfterMs');
@@ -199,7 +204,7 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
   // #482's high, round 2, 7: one shape everywhere
   it('every rate-limited route\'s 429 carries Retry-After: the gate passes the limiter\'s refusal', async () => {
     const gate = require('../../lib/rate-limit-gate');
-    const cdif = {rateLimit: (k, cb) => cb(null, {limited: true, timeLeft: 600})};
+    const cdif = {rateLimit: (k, cb) => cb(null, {limited: true, timeLeft: 600, windowMs: 1000})};
     const got = await new Promise((resolve) => gate.check(cdif, 'k', (limited, refusal) => resolve({limited, refusal})));
     assert.strictEqual(got.limited, true);
     assert.deepStrictEqual([got.refusal.code, retryAfterOf(got.refusal)], ['RATE_LIMIT_EXCEEDED', 1]);
@@ -212,6 +217,15 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
     const long = {rateLimit: (k, cb) => cb(null, {limited: true, timeLeft: 45000, windowMs: 60000})};
     const got45 = await new Promise((resolve) => gate.check(long, 'k', (limited, refusal) => resolve(refusal)));
     assert.strictEqual(retryAfterOf(got45), 45);
+    // (a provider that reports no window: refused, with no Retry-After)
+    const unsaid = {rateLimit: (k, cb) => cb(null, {limited: true, timeLeft: 600})};
+    const bare = {};
+    const res2 = {setHeader: (k, v) => { bare[k] = v; }, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; }};
+    gate.guard(unsaid, {appKey: 'k'}, res2, () => { throw new Error('let through'); });
+    await new Promise((r) => setImmediate(r));
+    assert.deepStrictEqual([res2.code, bare['Retry-After'], res2.body.code], [429, undefined, 'RATE_LIMIT_EXCEEDED']);
+    // (the runtime-wide limiter's window is the store's constant)
+    assert.strictEqual(require('../../lib/store').GLOBAL_LIMIT_WINDOW_MS, 1000);
   });
 
   it('the local metering provider says its window with a refusal', async () => {
