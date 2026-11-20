@@ -79,7 +79,7 @@ describe('module-loading 02: with sqlite3 unloadable, the file backend still wor
           .end((err, res2) => {
             if (err) return done(err);
             const n2 = res2.body.result.tools.map((t) => { return t.name; });
-            if (JSON.stringify(n2.slice().sort()) !== JSON.stringify(['countinghouse_check_balance', 'countinghouse_usage_report'])) {
+            if (JSON.stringify(n2.slice().sort()) !== JSON.stringify(['countinghouse_check_balance', 'countinghouse_overview', 'countinghouse_usage_report'])) {
               return done(new Error(`per-apiKey filtering broken without sqlite3: ${JSON.stringify(n2)}`));
             }
             return done();
