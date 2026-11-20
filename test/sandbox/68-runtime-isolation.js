@@ -242,6 +242,11 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       else assert.ok(await waitFor({get output() { return server.output.slice(from); }}, /violation require json-stringify-safe/), server.output.slice(-1500));
     });
     if (mode === 'enforce') {
+      // (C-lows: Node's warnings as it resolves inside the root name no host path)
+      it('a warning Node emits resolving inside the root names no host path, by import and require', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'warningPaths'});
+        assert.match(detail(r), /^no-host /, JSON.stringify(r).slice(0, 1500));
+      });
       // (C-lows: Node's global lookup directories are none to module code)
       it('module.constructor.globalPaths is an empty, frozen list', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'globalPaths'});

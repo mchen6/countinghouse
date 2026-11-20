@@ -830,6 +830,24 @@ const STEPS = {
     const runtime = files.filter((f) => f.startsWith('countinghouse:')).length;
     return `${bad.length === 0 ? 'virtual' : `host(${bad.slice(0, 3).join('|')})`} ${objects === 0 ? 'no-objects' : 'objects'} ${custom && viaFn.length > 0 ? 'custom' : 'not-custom'} ${runtime > 0 ? 'runtime-frames' : 'no-runtime-frames'}`;
   },
+  // (C-lows: a warning Node emits as it resolves inside the root -- a
+  // pattern's empty segment, an invalid target's segment -- names no host
+  // path, by import and by require alike)
+  warningPaths: async () => {
+    const heard = [];
+    const listen = (w) => heard.push(`${w && w.code} ${String(w && w.message)}`);
+    process.on('warning', listen);
+    const tries = [];
+    for (const spec of ['#pat//x.mjs', '#badFirst', '#pat/./x.mjs']) {
+      try { await import(spec); tries.push('found'); } catch (e) { tries.push(String(e.code)); }
+      try { require(spec); tries.push('found'); } catch (e) { tries.push(String(e.code)); }
+    }
+    for (let i = 0; i < 3; i++) await new Promise((r) => setImmediate(r));
+    process.removeListener('warning', listen);
+    const paths = heard.join(' ').match(/(?:file:\/\/)?\/[^\s'"]+/g) || [];
+    const host = paths.filter((p) => !/^(file:\/\/)?\/([A-Za-z]:\/)?app(\/|$)/.test(p));
+    return host.length === 0 ? `no-host ${heard.length}` : `host(${heard.slice(0, 2).join(' | ').slice(0, 400)})`;
+  },
   // (C-lows: Node's global lookup directories, as module.constructor
   // exposes them -- the install's prefix and $HOME -- are none to module
   // code under enforce)
