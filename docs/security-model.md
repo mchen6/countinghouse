@@ -175,12 +175,28 @@ default list (`require`, `node`, `node-addons`, `module-sync`). A plain
 Under `off` and `audit`, Node's resolver internals and their host paths
 are module code's to see, as before: `Module._findPath` and
 `_resolveLookupPaths` (which a module may replace), a readable
-`Module._pathCache`, and a direct call made from inside a module's own
-patched internal. What a direct resolution made from the module's own
+`Module._pathCache`, a direct call made from inside a module's own
+patched internal, and the warnings Node's resolver gives (DEP0166, a
+deprecated double slash or segment, names the package.json's host path). What a direct resolution made from the module's own
 virtual paths (a parent or base built from `__filename` or `__dirname`)
 answers or throws holds no host path there: an answer outside the module
 is not found, and any error is a plain not-found. Which calls are mapped
 is `lib/fs-broker/identity.js`'s `parentMapped` and `hostOf`.
+
+Under `enforce`, no host path of the runtime's own reaches module code
+either: every stack it can read (`e.stack`, `Error.captureStackTrace`, a
+`Error.prepareStackTrace` of its own) names the runtime's frames
+`countinghouse:/lib/...` (a hoisted dependency's
+`countinghouse:/node_modules/<name>/...`), and a frame of the runtime's
+answers `getThis()` and `getFunction()` with nothing; reading
+`Error.prepareStackTrace` gives the runtime's formatter, while what module
+code assigns is what formats its stacks. `module.constructor.globalPaths`
+is an empty, frozen list, and `process.argv` a frozen copy,
+`['node', 'countinghouse:/lib/lean-worker.js']`. A warning Node's own
+resolution step would give is not given to module code. Known limit:
+`process.execPath` (and `process.argv0`) can name the Node binary's
+install path (e.g. under the user's home with nvm); Node's own spawns read
+it.
 
 **On Windows** a module's files carry a drive (#195): the module sees them,
 its current directory and its stack frames as `<V>:\app\...`, V a drive

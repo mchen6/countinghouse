@@ -242,6 +242,16 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       else assert.ok(await waitFor({get output() { return server.output.slice(from); }}, /violation require json-stringify-safe/), server.output.slice(-1500));
     });
     if (mode === 'enforce') {
+      // (C-lows d: no channel from a module object, nor process.argv, names
+      // the root's host path or the install directory)
+      it('no module-object channel and no process value names the root\'s host path or the install directory', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'hostChannels', needles: [probe, ROOT]});
+        assert.strictEqual(detail(r), 'none', JSON.stringify(r).slice(0, 1500));
+      });
+      it('process.argv is a frozen copy: node, then the runtime\'s worker by its virtual name', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'argv'});
+        assert.strictEqual(detail(r), '["node","countinghouse:/lib/lean-worker.js"] frozen', JSON.stringify(r).slice(0, 1500));
+      });
       // (C-lows: Node's warnings as it resolves inside the root name no host path)
       it('a warning Node emits resolving inside the root names no host path, by import and require', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'warningPaths'});

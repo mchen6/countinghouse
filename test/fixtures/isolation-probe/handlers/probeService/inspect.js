@@ -830,6 +830,64 @@ const STEPS = {
     const runtime = files.filter((f) => f.startsWith('countinghouse:')).length;
     return `${bad.length === 0 ? 'virtual' : `host(${bad.slice(0, 3).join('|')})`} ${objects === 0 ? 'no-objects' : 'objects'} ${custom && viaFn.length > 0 ? 'custom' : 'not-custom'} ${runtime > 0 ? 'runtime-frames' : 'no-runtime-frames'}`;
   },
+  // (C-lows d: process.argv as module code reads it under enforce)
+  argv: () => {
+    let pushed = false;
+    try { process.argv.push('x'); pushed = true; } catch (e) { /* frozen */ }
+    return `${JSON.stringify(process.argv)} ${pushed ? 'writable' : 'frozen'}`;
+  },
+  // (C-lows d, a report: every channel from a module object that could name
+  // the root's host path or the install directory, each listed by name with
+  // what it named; input.needles, the host paths to look for)
+  hostChannels: async (input) => {
+    const needles = Array.isArray(input && input.needles) ? input.needles.filter((n) => typeof(n) === 'string' && n.length > 1) : [];
+    const hits = [];
+    const look = (name, v) => {
+      let t;
+      try { t = typeof(v) === 'string' ? v : JSON.stringify(v, (k, x) => (typeof(x) === 'function' ? `fn ${x.name}` : x)); } catch (e) { t = `unreadable ${e && e.code}`; }
+      if (typeof(t) !== 'string') return;
+      for (const n of needles) if (t.includes(n) || t.includes(encodeURI(n))) { hits.push(`${name}=${t.slice(t.indexOf(n) - 20 < 0 ? 0 : t.indexOf(n) - 20, t.indexOf(n) + n.length + 40)}`); return; }
+    };
+    const safe = (name, fn) => { try { look(name, fn()); } catch (e) { look(`${name}!`, String(e && e.message) + String(e && e.stack)); } };
+    const modOf = (name, m) => {
+      if (m == null || typeof(m) !== 'object') return;
+      for (const k of ['id', 'filename', 'path', 'paths', 'loaded']) safe(`${name}.${k}`, () => m[k]);
+      safe(`${name}.parent`, () => (m.parent != null ? m.parent.filename : null));
+      safe(`${name}.children`, () => (Array.isArray(m.children) ? m.children.map((c) => [c.id, c.filename, c.path]) : null));
+    };
+    modOf('module', module);
+    safe('__filename', () => __filename);
+    safe('require.cache', () => Object.keys(require.cache));
+    for (const [k, m] of Object.entries(require.cache)) modOf(`cache[${k.slice(-24)}]`, m);
+    modOf('require.main', require.main);
+    modOf('process.mainModule', process.mainModule);
+    const C = module.constructor;
+    safe('Module._cache', () => Object.keys(C._cache || {}));
+    try { require('./node-version.js'); } catch (e) { /* none */ }
+    safe('Module._pathCache', () => C._pathCache);
+    safe('Module._findPath', () => C._findPath('./node-version.js', [__dirname]));
+    safe('Module._findPath(abs)', () => C._findPath(__filename, []));
+    safe('Module._nodeModulePaths', () => C._nodeModulePaths(__dirname));
+    safe('Module._resolveFilename', () => C._resolveFilename('./node-version.js', module));
+    safe('Module._resolveLookupPaths', () => (typeof(C._resolveLookupPaths) === 'function' ? C._resolveLookupPaths('x', module) : null));
+    safe('Module.globalPaths', () => C.globalPaths);
+    safe('require.resolve', () => require.resolve('./node-version.js'));
+    safe('require.resolve.paths', () => require.resolve.paths('x'));
+    safe('Module.prototype keys', () => Object.getOwnPropertyNames(C.prototype));
+    safe('process.argv', () => process.argv);
+    safe('process.execArgv', () => process.execArgv);
+    safe('process.cwd', () => process.cwd());
+    safe('process.env', () => process.env);
+    safe('process.title', () => process.title);
+    safe('workerData', () => require('worker_threads').workerData);
+    safe('process.report', () => (process.report != null && typeof(process.report.getReport) === 'function' ? process.report.getReport() : null));
+    safe('new Module', () => { const m = new C('x', module); return [m.id, m.path, m.paths]; });
+    safe('createRequire', () => require('module').createRequire(__filename).resolve('./node-version.js'));
+    let im = null;
+    try { im = await import('./node-version.js'); } catch (e) { look('import()!', String(e && e.message)); }
+    look('import() ns', im != null ? Object.keys(im) : null);
+    return hits.length === 0 ? 'none' : hits.join('\n');
+  },
   // (C-lows: a warning Node emits as it resolves inside the root -- a
   // pattern's empty segment, an invalid target's segment -- names no host
   // path, by import and by require alike)
