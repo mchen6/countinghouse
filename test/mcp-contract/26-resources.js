@@ -73,6 +73,10 @@ const invoked = [];
 // each call's ask state as the call path receives it: {action, askable}
 const asked = [];
 const billed = [];
+// what the runtime's own tools spend or read past their gates (#458's third high round)
+const spent = [];
+const loads = [];
+const balances = [];
 let limited = false;
 function buildInterface(devices = DEVICES) {
   const deviceMap = {};
@@ -83,9 +87,11 @@ function buildInterface(devices = DEVICES) {
     deviceMap[ID(name)] = {spec, packageInfo: {name, countinghouse: d.role != null ? {role: d.role} : {}}};
   }
   return {
-    deviceManager: {deviceMap, moduleManager: {unlisted: new Set(['ch-step-part'])}, getAllDeviceSpecs: () => specs},
+    deviceManager: {deviceMap, moduleManager: {unlisted: new Set(['ch-step-part']), loadModuleFromPath: (...a) => { loads.push(a[0]); a[3](new Error('not in this test')); }},
+      getAllDeviceSpecs: () => specs},
     getDeviceSchema(deviceID, p, session) { session.localCallback(null, SCHEMAS[p] || {type: 'object'}); },
-    rateLimit: (key, cb) => cb(null, {limited: limited}),
+    rateLimit: (key, cb) => { spent.push(key); cb(null, {limited: limited}); },
+    checkBalance: (key, cb) => { balances.push(key); cb(null, {balance: 1}); },
     recordCall(appKey, tool, cost, cb) { billed.push({appKey, tool, cost}); cb(null); },
     // the call path's one way into a module: a read reaches it as a call does
     invokeDeviceAction(deviceID, serviceID, actionName, args, session) {
@@ -433,6 +439,98 @@ describe('mcp-contract 26: module resources (M7)', function() {
     const on = await run(true);
     assert.deepStrictEqual(on, off);
     assert.deepStrictEqual(off.r.error, {code: -32602, message: 'unknown tool: countinghouse_validate_module'});
+  });
+
+  // #458's third high round: ONE cancellation for every name and one
+  // stillOpen check after every read. Each of the runtime's own tools, with
+  // a cancel during its own identity read, or its session ending there,
+  // spends, reads and writes nothing past it; a reserved name and a name
+  // never registered answer a cancel alike.
+  const BUILTINS = [
+    {name: 'countinghouse_check_balance', key: KEY_A, nothing: () => [spent, balances]},
+    {name: 'countinghouse_usage_report', key: KEY_A, nothing: () => [spent]},
+    {name: 'countinghouse_reload_auth', key: KEY_ADMIN, authoring: true, nothing: () => [reloads]},
+    {name: 'countinghouse_load_module', key: KEY_ADMIN, authoring: true, args: {path: '/nowhere', name: 'x'}, nothing: () => [loads]},
+    {name: 'countinghouse_settings', key: KEY_A, single: true, args: {action: 'set', name: 'requestTimeout', value: '20s'}, nothing: () => [settingsWrites()]}
+  ];
+  const reloads = [];
+  const SETTINGS = path.join(home, 'settings.json');
+  const settingsWrites = () => (fs.existsSync(SETTINGS) ? [fs.readFileSync(SETTINGS, 'utf8')] : []);
+  // a tools/call of name, its own identity read (the provider's nth
+  // authenticate) held: then cancelled, or its session ended
+  const during = async(name, key, args, {nth, end, single, authoring}) => {
+    require('../../lib/mcp/tool-registry').forgetGrants();
+    for (const a of [spent, balances, loads, reloads, invoked, billed]) a.length = 0;
+    fs.rmSync(SETTINGS, {force: true});
+    options.setOptions(Object.assign({}, OPTIONS, authoring ? {authoringTools: true} : {}));
+    // (the profile's fields are set as the start sets them, not through setOptions)
+    const savedProfile = {singleIdentity: options.singleIdentity, settingsFile: options.settingsFile};
+    if (single) Object.assign(options, {singleIdentity: true, settingsFile: SETTINGS});
+    const sessions = require('../../lib/sessions');
+    const SID = 'h'.repeat(32);
+    const realGet = sessions.get;
+    let live = true;
+    sessions.get = (id) => (id === SID ? (live ? {id} : null) : realGet(id));
+    let registered = null;
+    // (a cancel: no session, as over HTTP, so a set is the file's and is
+    // written; an ended session: the request's own)
+    const opts = Object.assign(end ? {session: {id: SID, client: {status: 'ok', conditions: 'no', repo: null}}} : {},
+      {cancellable: (fn) => { registered = fn; return () => { registered = null; }; }});
+    let held = null;
+    let n = 0;
+    const authenticate = provider.authenticate;
+    const reload = provider.reload;
+    provider.reload = (cb) => { reloads.push(1); return reload.call(provider, cb); };
+    provider.authenticate = (...a) => {
+      const cb = a.pop();
+      const k = ++n;
+      return authenticate(...a, (...answer) => {
+        if (k !== nth) return cb(...answer);
+        if (end) { live = false; return cb(...answer); }
+        held = () => cb(...answer);
+        return undefined;
+      });
+    };
+    try {
+      const got = new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name, arguments: args || {}}}, ci, key,
+        (err, resp, info) => resolve({resp, info}), opts));
+      if (!end) {
+        for (let w = 0; held == null && w < 400; w++) await new Promise((res) => setImmediate(res));
+        assert.ok(held != null, `${name}: its read is in flight`);
+        assert.strictEqual(typeof(registered), 'function', `${name}: registered`);
+        registered();
+        held();
+      }
+      const out = await got;
+      await new Promise((res) => setTimeout(res, 50));
+      return out;
+    } finally {
+      provider.authenticate = authenticate;
+      provider.reload = reload;
+      sessions.get = realGet;
+      options.setOptions(OPTIONS);
+      Object.assign(options, savedProfile);
+    }
+  };
+  for (const b of BUILTINS) {
+    // (the gate resolves the key first: the tool's own identity read is the second)
+    it(`${b.name}: cancelled during its own identity read, it spends, reads and writes nothing`, async () => {
+      const {resp, info} = await during(b.name, b.key, b.args, {nth: 2, single: b.single, authoring: b.authoring});
+      assert.strictEqual(resp, null, JSON.stringify(resp));
+      assert.deepStrictEqual(info, {cancelled: true});
+      assert.deepStrictEqual(b.nothing(), b.nothing().map(() => []));
+    });
+    it(`${b.name}: its session ending during its own identity read, it is answered as an ended session's and writes nothing`, async () => {
+      const {resp} = await during(b.name, b.key, b.args, {nth: 2, end: true, single: b.single, authoring: b.authoring});
+      assert.strictEqual(resp.result && resp.result._meta && resp.result._meta['countinghouse/code'], 'MODULE_NOT_LISTED', JSON.stringify(resp));
+      assert.deepStrictEqual(b.nothing(), b.nothing().map(() => []));
+    });
+  }
+  it('a reserved name and a name never registered answer a cancel during the gate\'s read alike', async () => {
+    const reserved = await during('countinghouse_check_balance', KEY_A, {}, {nth: 1});
+    const never = await during('no_such_tool_anywhere', KEY_A, {}, {nth: 1});
+    assert.deepStrictEqual(reserved, never);
+    assert.deepStrictEqual(never, {resp: null, info: {cancelled: true}});
   });
 
   it('the output\'s shape: a string as text (the schema\'s media type, else the declared one), a binary string as a blob, anything else as JSON', async () => {
