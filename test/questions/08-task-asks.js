@@ -213,13 +213,16 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     await taskAsks.remove(t);
   });
 
-  it('at most so many of an owner\'s tasks wait at once, and so many in all: one more asks no one (ASK_UNAVAILABLE at once)', async () => {
+  it('at most so many of an owner\'s tasks wait at once, and so many in all: one more is unavailable at once (#487\'s high, round 1)', async () => {
     const mine = [id(), id(), id()];
     for (const t of mine) assert.ok((await ask(t)).asked != null);
     // the owner is full: a new task of its starts with no one to ask, and a
-    // pass that asks anyway is unavailable and run again
+    // pass that asks anyway finds no room -- unavailable, a round, and the
+    // run starts again at once (as on master; the wait for room is cut)
     assert.deepStrictEqual(await taskAsks.forRun(id(), {asks: true, asking: false, owner: 'owner-1', shownAs: 'm'}), {state: null});
-    assert.deepStrictEqual(await ask(id()), {rerun: true});
+    const later = id();
+    assert.deepStrictEqual(await ask(later), {rerun: true});
+    assert.deepStrictEqual([(await taskAsks.get(later)).callRounds, (await taskAsks.get(later)).unavailable], [1, [KEY]]);
     // another owner still may, up to the total (5)
     const theirs = [id(), id()];
     for (const t of theirs) assert.ok((await ask(t, {owner: 'owner-2'})).asked != null);
@@ -228,6 +231,24 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     assert.strictEqual(await taskAsks.answer(mine[0], {q1: {action: 'decline'}}, {session: SESSION, ofAsker}), 'rerun');
     assert.ok((await ask(id(), {owner: 'owner-3'})).asked != null);
     for (const t of mine.concat(theirs)) await taskAsks.remove(t);
+  });
+
+  // (#487's high, round 1: a record that can't be read -- the store failed --
+  // rejects, in forRun and asked alike: never a fresh record, whose counts
+  // would start over)
+  it('a record that can\'t be read rejects forRun and asked, never a fresh record', async () => {
+    const broken = {get: (k, cb) => setImmediate(cb, new Error('store down'))};
+    const t = id();
+    taskAsks.configure({kv: () => broken});
+    try {
+      await assert.rejects(taskAsks.forRun(t, {asks: true, asking: true, owner: 'owner-r', shownAs: 'm', rerun: true}), /store down/);
+      await assert.rejects(taskAsks.asked(t, asking(), {owner: 'owner-r', session: null, ofAsker}), /store down/);
+      // (a task that can never ask -- not asking, or questions off -- reads
+      // nothing: the store's failure never fails it; #487's high, round 2)
+      assert.deepStrictEqual(await taskAsks.forRun(t, {asks: false, asking: false, owner: 'owner-r', shownAs: 'm'}), {state: null});
+    } finally {
+      taskAsks.configure({kv: () => kv});
+    }
   });
 
   // the review of #374: L1, L2, L3 (each a function of the kv it runs on, so
@@ -259,6 +280,66 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     });
   };
   reviewCases('');
+
+  // F2-2 (a security pass on asks and tasks): a question no form can be
+  // shown for, asked with another value each pass (so another key), counted
+  // no round, and the task re-ran for ever, unbilled. Each such pass is a
+  // round of the task's now: past its rounds, the handler's ctx.ask is
+  // ASK_UNAVAILABLE at once (module-ask's own decide), and it stops asking.
+  it('a question no form can be shown for, asked with another value each pass, stops within the task\'s rounds (module-ask\'s decide)', async () => {
+    const t = id();
+    made.add(t);
+    const spec = {device: {serviceList: {s: {actionList: [{name: 'a', questions: {confirm: {message: 'Go {v}?', schema: '/s/a/questions/confirm'}}}]}}}};
+    let passes = 0;
+    let stopped = null;
+    for (; passes < 4 * moduleAsk.MAX_CALL_ROUNDS; passes++) {
+      const run = await taskAsks.forRun(t, {asks: true, asking: passes > 0, owner: 'owner-8', shownAs: 'm'});
+      assert.ok(run.state != null, JSON.stringify(run));
+      try {
+        moduleAsk.decide({state: run.state, module: 'm', deviceID: 'd', serviceID: 's', actionName: 'a', spec}, 'confirm', {v: String(passes)});
+      } catch (e) {
+        if (e.code === 'ASK_UNAVAILABLE') { stopped = e.code; break; }
+        assert.strictEqual(e.code, 'ASK_PENDING');
+      }
+      assert.deepStrictEqual(await taskAsks.asked(t, run.state, {owner: 'owner-8', session: null, ofAsker: () => null}), {rerun: true});
+    }
+    assert.strictEqual(stopped, 'ASK_UNAVAILABLE', `still asking after ${passes} passes`);
+    assert.strictEqual(passes, moduleAsk.MAX_CALL_ROUNDS);
+    assert.ok((await taskAsks.get(t)).unavailable.length <= moduleAsk.MAX_CALL_ROUNDS, 'the record grows no further');
+  });
+
+  it('a pass of a run started again within itself whose record is missing asks afresh; an answered run\'s still runs nothing', async () => {
+    const fresh = await taskAsks.forRun(id(), {asks: true, asking: true, owner: 'owner-r', shownAs: 'm', rerun: true});
+    assert.ok(fresh.skip !== true && moduleAsk.isState(fresh.state), JSON.stringify(fresh));
+    assert.deepStrictEqual([fresh.state.unavailable.size, fresh.state.callRounds || 0], [0, 0]);
+    assert.deepStrictEqual(await taskAsks.forRun(id(), {asks: true, asking: true, owner: 'owner-r', shownAs: 'm'}), {skip: true, gone: true});
+  });
+
+  // (#487's high, round 1: no room is unavailable at once and spends a
+  // round, so a handler that asks under another key each pass, never given
+  // room, is bounded too: eight rounds, and nothing more is asked)
+  it('a handler changing its question\'s key each pass, never given room, is bounded: a round each pass, eight in all', async () => {
+    const owner = 'owner-keys';
+    for (let i = 0; i < 3; i++) await ask(id(), {owner});
+    const t = id();
+    made.add(t);
+    for (let round = 1; round <= 8; round++) {
+      const state = asking();
+      state.pending.key = `${'k'.repeat(42)}${round}`;
+      assert.deepStrictEqual(await taskAsks.asked(t, state, {owner, session: null, ofAsker}), {rerun: true});
+      assert.strictEqual((await taskAsks.get(t)).callRounds, round);
+    }
+    // past its eight rounds: its next pass asks nothing, a new key's
+    // question too (module-ask's own decide)
+    const next = await taskAsks.forRun(t, {asks: true, asking: true, owner, shownAs: 'm'});
+    assert.strictEqual(next.state.callRounds, 8);
+    const spec = {device: {serviceList: {s: {actionList: [{name: 'a', questions: {confirm: {message: 'Go {v}?', schema: '/s/a/questions/confirm'}}}]}}}};
+    const decided = (state) => { try { moduleAsk.decide({state, module: 'm', deviceID: 'd', serviceID: 's', actionName: 'a', spec}, 'confirm', {v: 'ninth'}); return 'answered'; } catch (e) { return e.code; } };
+    // (a control: the same question one round short still asks)
+    const short = await taskAsks.forRun(t, {asks: true, asking: true, owner, shownAs: 'm'});
+    short.state.callRounds = moduleAsk.MAX_CALL_ROUNDS - 1;
+    assert.deepStrictEqual([decided(short.state), decided(next.state)], ['ASK_PENDING', 'ASK_UNAVAILABLE']);
+  });
 
   it('a form that can\'t be shown (its asker gone): unavailable, and the run starts again', async () => {
     const t = id();
@@ -306,6 +387,376 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       for (const tok of issued) callTokens.drop(tok);
     }
   });
+
+  // (#487's high, round 1: the gateway's own before hook -- a run started
+  // again reads the task's tombstone after its record, and a read that
+  // fails, either, rejects: never a run as if nothing were known)
+  describe('the gateway\'s before hook', () => {
+    const tombstones = require('../../lib/task-tombstones');
+    const options = require('../../lib/cli-options');
+    let savedGet;
+    let saved;
+    before(() => { savedGet = tombstones.get; saved = {moduleQuestions: options.moduleQuestions}; options.moduleQuestions = true; });
+    after(() => { tombstones.get = savedGet; Object.assign(options, saved); });
+    // (no module loaded: the hook's target lookup finds none)
+    const cdif = {deviceManager: {getAllDeviceSpecs: () => ({})}};
+    const beforeOf = (jobData, t, run) => require('../../lib/mcp/gateway').jobHooks(cdif).ask.before(jobData, t, run);
+    const jobData = {era: 'modern', asks: true, asking: 1, deviceID: 'd', serviceID: 's', actionName: 'a'};
+    it('a run started again for a task cancelled meanwhile (its tombstone) runs nothing: {skip, cancelled}', async () => {
+      const t = id();
+      assert.ok((await ask(t)).asked != null);
+      await taskAsks.answer(t, {q1: {action: 'decline'}}, {session: SESSION, ofAsker});
+      tombstones.get = () => Promise.resolve({owner: 'o'});
+      assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true, cancelled: true});
+      tombstones.get = () => Promise.resolve(null);
+      const r = await beforeOf(jobData, t, {rerun: false});
+      assert.ok(r.skip !== true && moduleAsk.isState(r.state), JSON.stringify(r));
+    });
+    it('a run whose question still waits stays a skip when the tombstone read fails', async () => {
+      const t = id();
+      assert.ok((await ask(t)).asked != null);
+      tombstones.get = () => Promise.reject(new Error('tombstones down'));
+      assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true});
+    });
+    // (its record gone -- a cancel took it -- and the tombstone unreadable:
+    // the run fails, never held as waiting)
+    it('a run whose record is gone rejects when the tombstone read fails', async () => {
+      const t = id();
+      tombstones.get = () => Promise.reject(new Error('tombstones down'));
+      await assert.rejects(beforeOf(jobData, t, {rerun: false}), /tombstones down/);
+    });
+    // (a cancel whose record removal failed: its question still shows
+    // waiting, and its tombstone is read all the same -- ruled M2)
+    it('a run for a task cancelled while its question waits (the record left) runs nothing: {skip, cancelled}', async () => {
+      const t = id();
+      assert.ok((await ask(t)).asked != null);
+      tombstones.get = () => Promise.resolve({owner: 'o'});
+      assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true, cancelled: true});
+    });
+    // (a question past its wait, the tombstone read failing: it stays a
+    // skip, to end as ASK_EXPIRED as before)
+    it('a run whose question\'s wait is over stays a skip when the tombstone read fails', async () => {
+      const t = id();
+      assert.ok((await ask(t)).asked != null);
+      now += taskAsks.WAIT_MS + 1;
+      try {
+        tombstones.get = () => Promise.reject(new Error('tombstones down'));
+        assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true});
+      } finally { now -= taskAsks.WAIT_MS + 1; }
+    });
+    // (a real cancel takes the record and leaves the tombstone: the run
+    // started again finds neither question nor record, and is cancelled)
+    it('a run for a task whose cancel took its record (its tombstone left) runs nothing: {skip, cancelled}', async () => {
+      const t = id();
+      assert.ok((await ask(t)).asked != null);
+      await taskAsks.remove(t);
+      tombstones.get = () => Promise.resolve({owner: 'o'});
+      assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true, cancelled: true});
+    });
+    it('a tombstone that can\'t be read rejects; so does a record that can\'t be read', async () => {
+      const t = id();
+      assert.ok((await ask(t)).asked != null);
+      await taskAsks.answer(t, {q1: {action: 'decline'}}, {session: SESSION, ofAsker});
+      tombstones.get = () => Promise.reject(new Error('tombstones down'));
+      await assert.rejects(beforeOf(jobData, t, {rerun: false}), /tombstones down/);
+      tombstones.get = () => Promise.resolve(null);
+      taskAsks.configure({kv: () => ({get: (k, cb) => setImmediate(cb, new Error('store down'))})});
+      try {
+        await assert.rejects(beforeOf(jobData, t, {rerun: true}), /store down/);
+      } finally {
+        taskAsks.configure({kv: () => kv});
+      }
+    });
+  });
+
+  // A run started again within itself (a question no form could be shown
+  // for, or no room) runs its next pass at once, bounded by the run's time
+  // limit counted from its first pass (JOB_TIMEOUT), the same in both
+  // runners; each pass's usage call is closed, a failure between two passes
+  // gets a call of its own, and a task cancelled between two passes runs
+  // nothing more and opens no call (#487's high, round 1). `api` is the
+  // runner. Each asking pass takes 100 ms here, as a handler's would.
+  const waitOrders = (label, getApi, done = () => {}, stoppable = false) => {
+    // (every close of a call counted -- the end hook's, the completion
+    // hook's, and the asked hook's own when it answers {asked}, as the
+    // gateway's closes the call when it writes the question: exactlyOnce
+    // asserts each call opened was closed once; ruled M1)
+    const harness = (api, {timeout, answers, okAt, before = null, holdMs = () => 60000, authorize = null, askedMs = 0, startThrowsAt = null, attempts}) => {
+      const log = {started: [], ended: [], completed: [], at: [], passes: 0, settled: 0, closes: {}, reruns: [], sessions: [], cancelled: []};
+      const closed = (c) => { log.closes[c] = (log.closes[c] || 0) + 1; };
+      const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
+        invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
+          log.passes += 1;
+          if (okAt != null && log.passes >= okAt) return setImmediate(callback, null, {output: {done: true}});
+          asking(extraArgs.ask);
+          // (a worker told its run ended answers nothing more)
+          return setTimeout(() => { if (typeof(cancelled) !== 'function' || !cancelled()) callback(new CountinghouseError('ASK_PENDING')); }, 100);
+        }};
+      let k = 0;
+      api.authorizeRun = () => { k += 1; return authorize != null ? authorize(k) : Promise.resolve(); };
+      api.initJobProcess(ci);
+      let s = 0;
+      api.setStartHook((data, session) => {
+        s += 1;
+        log.sessions.push(session == null ? null : 'session');
+        if (s === startThrowsAt) throw new Error('start hook broken');
+        log.started.push(log.started.length + 1); log.at.push(Date.now()); return {usageCall: log.started.length};
+      });
+      // (a pass whose start hook threw has no call: its close is of none)
+      api.setEndHook((data, run, outcome) => { if (run.extra != null) closed(run.extra.usageCall); log.ended.push([run.extra != null ? run.extra.usageCall : null, outcome]); });
+      // (a stop's close: the cancel hook, B-shutdown-usage)
+      api.setCancelHook((data, run) => { if (run.extra != null) closed(run.extra.usageCall); log.cancelled.push(run.extra != null ? run.extra.usageCall : null); });
+      api.setCompletionHook((data, results, run) => {
+        if (run.extra != null) closed(run.extra.usageCall);
+        log.completed.push([run.extra != null ? run.extra.usageCall : null, run.error != null ? String(run.error.message).split(':')[0] : 'ok', Date.now()]);
+        return null;
+      });
+      let n = 0;
+      let b = 0;
+      api.setAskHooks({
+        before: (data, taskId, run) => { b += 1; log.reruns.push(run.rerun); return Promise.resolve(before != null ? before(b, run) : {state: moduleAsk.newState({askable: true, shownAs: 'm'})}); },
+        asked: (data, taskId, state, run) => {
+          n += 1;
+          const r = answers(n);
+          return new Promise((resolve) => setTimeout(resolve, askedMs)).then(() => {
+            if (r != null && r.asked != null) closed(run.extra.usageCall);
+            return r;
+          });
+        },
+        settled: () => { log.settled += 1; return Promise.resolve(); },
+        holdMs
+      });
+      return new Promise((resolve) => api.addJob({appKey: 'k', session: SESSION}, Object.assign({name: 'n', taskId: id(), era: 'modern', asks: true, timeout}, attempts != null ? {attempts} : {}), 'd', 's', 'a', {}, (err) => resolve({err, log})));
+    };
+    const until = async (check, ms = 10000) => {
+      for (const end = Date.now() + ms; Date.now() < end;) { if (await check()) return true; await new Promise((r) => setTimeout(r, 20)); }
+      return false;
+    };
+    const exactlyOnce = (log) => assert.deepStrictEqual(log.started.map((c) => [c, log.closes[c] || 0]), log.started.map((c) => [c, 1]), JSON.stringify(log));
+    it(`${label}: a failure after the question was written takes a call of its own; each call closed once`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, answers: () => ({asked: {round: 1}}), holdMs: () => { throw new Error('hold broken'); }});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.deepStrictEqual([log.started, log.completed[0][0], log.completed[0][1]], [[1, 2], 2, 'hold broken'], JSON.stringify(log));
+        exactlyOnce(log);
+        assert.ok(log.settled >= 1, `its question settled: ${JSON.stringify(log)}`);
+      } finally { done(api); }
+    });
+    // (a waiting skip within a run started again whose hold can't be made:
+    // the run fails with a call of its own, never left unsettled)
+    it(`${label}: a waiting skip whose hold can't be made fails the run with a call of its own; each call closed once`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true}), holdMs: () => { throw new Error('hold broken'); },
+          before: (b) => (b === 1 ? {state: moduleAsk.newState({askable: true, shownAs: 'm'})} : {skip: true})});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.deepStrictEqual([log.passes, log.completed[0][1]], [1, 'hold broken'], JSON.stringify(log));
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
+    it(`${label}: the run's limit -- JOB_TIMEOUT, counted from the first pass of the run started again, its failure a call of its own`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 500, answers: () => ({rerun: true})});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        const [call, outcome, at] = log.completed[0];
+        assert.strictEqual(outcome, 'JOB_TIMEOUT', JSON.stringify(log));
+        assert.ok(at - log.at[0] >= 450 && at - log.at[0] < 1500, `failed ${at - log.at[0]} ms after the first pass`);
+        // every pass's call closed as unavailable, and the failure's call is
+        // none of those closed
+        assert.ok(log.ended.length > 0 && log.ended.every(([, o]) => o === 'unavailable'), JSON.stringify(log.ended));
+        assert.ok(!log.ended.some(([c]) => c === call), `the failure's call ${call} was closed already: ${JSON.stringify(log)}`);
+        await new Promise((r) => setTimeout(r, 300));
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
+    it(`${label}: passes with no question shown run again at once, and the run completes`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, okAt: 4, answers: () => ({rerun: true})});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.deepStrictEqual([log.completed[0][1], log.ended.map(([, o]) => o), log.started.length], ['ok', ['unavailable', 'unavailable', 'unavailable'], 4], JSON.stringify(log));
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
+    it(`${label}: a before that fails (a store read) runs nothing; the run fails with a call of its own`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true}), before: () => Promise.reject(new Error('store down'))});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.deepStrictEqual([log.passes, log.started, log.completed[0][0], log.completed[0][1]], [0, [1], 1, 'store down'], JSON.stringify(log));
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
+    it(`${label}: a before that fails between two passes runs nothing more; the run fails with a call of its own`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true}),
+          before: (b) => (b === 1 ? {state: moduleAsk.newState({askable: true, shownAs: 'm'})} : Promise.reject(new Error('store down')))});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.deepStrictEqual([log.passes, log.ended, log.completed[0][0], log.completed[0][1]], [1, [[1, 'unavailable']], 2, 'store down'], JSON.stringify(log));
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
+    // (#487's high, round 2: one chain deadline, armed across the asked
+    // write and the steps before a pass is dispatched, in both runners)
+    it(`${label}: an asked write slower than the run's limit fails it JOB_TIMEOUT at the limit, never completed past it`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 300, askedMs: 1200, answers: () => ({rerun: true})});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.strictEqual(log.completed[0][1], 'JOB_TIMEOUT', JSON.stringify(log));
+        assert.ok(log.completed[0][2] - log.at[0] < 900, `failed ${log.completed[0][2] - log.at[0]} ms after the first pass`);
+        await new Promise((r) => setTimeout(r, 1400));
+        assert.strictEqual(log.passes, 1, JSON.stringify(log));
+        // (failed for good: its question, whatever the hook wrote, settled --
+        // once, after the hook's late write)
+        assert.strictEqual(log.settled, 1, `its question settled once: ${JSON.stringify(log)}`);
+      } finally { done(api); }
+    });
+    it(`${label}: a before slower than the run's limit, between two passes, fails it JOB_TIMEOUT and dispatches nothing more`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 400, answers: () => ({rerun: true}),
+          before: (b) => (b === 1 ? {state: moduleAsk.newState({askable: true, shownAs: 'm'})}
+            : new Promise((r) => setTimeout(r, 1200, {state: moduleAsk.newState({askable: true, shownAs: 'm'})})))});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.strictEqual(log.completed[0][1], 'JOB_TIMEOUT', JSON.stringify(log));
+        assert.ok(log.completed[0][2] - log.at[0] < 1000, `failed ${log.completed[0][2] - log.at[0]} ms after the first pass`);
+        await new Promise((r) => setTimeout(r, 1400));
+        assert.deepStrictEqual([log.passes, log.completed.length], [1, 1], JSON.stringify(log));
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
+    // (#487's high, round 2: the owner checked again before every pass of a
+    // run started again, in both runners; a refusal there fails the run with
+    // a call of its own)
+    it(`${label}: a pass of a run started again checks its owner again; a refusal fails the run with a call of its own`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true}),
+          authorize: (k) => (k === 1 ? Promise.resolve() : Promise.reject(Object.assign(new Error('REFUSED: the grant is gone'), {final: true, retry: false})))});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        await new Promise((r) => setTimeout(r, 300));
+        assert.deepStrictEqual([log.passes, log.completed.map(([c, o]) => [c, o])], [1, [[2, 'REFUSED']]], JSON.stringify(log));
+        exactlyOnce(log);
+        // (the refusal's call has the run's session, as its first pass's)
+        assert.deepStrictEqual(log.sessions, ['session', 'session'], JSON.stringify(log));
+      } finally { done(api); }
+    });
+    it(`${label}: a refusal that is no Error, on a run started again, fails it with its text`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true}),
+          authorize: (k) => (k === 1 ? Promise.resolve() : Promise.reject('REFUSED: plain text'))});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.deepStrictEqual(log.completed.map(([c, o]) => [c, o]), [[2, 'REFUSED']], JSON.stringify(log));
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
+    it(`${label}: the first pass's before is no run started again, whatever the owner check answers`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, okAt: 1, answers: () => ({rerun: true}), authorize: () => Promise.resolve(true)});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.deepStrictEqual(log.reruns, [false], JSON.stringify(log));
+      } finally { done(api); }
+    });
+    // (#487's high, round 2: a read that fails is retried as the job's
+    // attempts allow, a failure like any other)
+    it(`${label}: a before that fails is retried as the job's attempts allow`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, okAt: 1, attempts: 2, answers: () => ({rerun: true}),
+          before: (b) => (b === 1 ? Promise.reject(new Error('store down')) : {state: moduleAsk.newState({askable: true, shownAs: 'm'})})});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 2), JSON.stringify(log));
+        assert.deepStrictEqual(log.completed.map(([c, o]) => [c, o]), [[1, 'store down'], [2, 'ok']], JSON.stringify(log));
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
+    // (#487's high, round 2: a pass whose start hook throws has no call, never
+    // the last pass's, closed already)
+    it(`${label}: a pass whose start hook throws closes no earlier pass's call again`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, okAt: 3, startThrowsAt: 2, answers: () => ({rerun: true})});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        await new Promise((r) => setTimeout(r, 200));
+        assert.deepStrictEqual([log.started, log.completed[0][1]], [[1, 2], 'ok'], JSON.stringify(log));
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
+    // (#487 on #488: a stop -- the runner's close() -- ends a pass's call
+    // through the close-once helper: once, and none between two passes)
+    if (stoppable) {
+      it(`${label}: a stop during a pass's dispatch ends its call once, cancelled`, async () => {
+        const api = getApi();
+        try {
+          const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true})});
+          assert.ifError(err);
+          assert.ok(await until(() => log.passes === 1), JSON.stringify(log));
+          api.close();
+          await new Promise((r) => setTimeout(r, 400));
+          assert.deepStrictEqual([log.started, log.cancelled, log.passes], [[1], [1], 1], JSON.stringify(log));
+          exactlyOnce(log);
+        } finally { done(api); }
+      });
+      it(`${label}: a stop while the question is written ends the pass's call once; nothing more runs`, async () => {
+        const api = getApi();
+        try {
+          const {err, log} = await harness(api, {timeout: 5000, askedMs: 500, answers: () => ({rerun: true})});
+          assert.ifError(err);
+          assert.ok(await until(() => log.passes === 1), JSON.stringify(log));
+          await new Promise((r) => setTimeout(r, 250));
+          api.close();
+          await new Promise((r) => setTimeout(r, 700));
+          assert.deepStrictEqual([log.started, log.cancelled, log.passes, log.ended], [[1], [1], 1, []], JSON.stringify(log));
+          exactlyOnce(log);
+        } finally { done(api); }
+      });
+      it(`${label}: a stop between two passes closes no call again`, async () => {
+        const api = getApi();
+        try {
+          const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true}),
+            before: (b) => (b === 1 ? {state: moduleAsk.newState({askable: true, shownAs: 'm'})}
+              : new Promise((r) => setTimeout(r, 500, {state: moduleAsk.newState({askable: true, shownAs: 'm'})})))});
+          assert.ifError(err);
+          assert.ok(await until(() => log.ended.length === 1), JSON.stringify(log));
+          api.close();
+          await new Promise((r) => setTimeout(r, 800));
+          assert.deepStrictEqual([log.started, log.cancelled, log.passes, log.ended], [[1], [], 1, [[1, 'unavailable']]], JSON.stringify(log));
+          exactlyOnce(log);
+        } finally { done(api); }
+      });
+    }
+    it(`${label}: a task cancelled between two passes runs no next pass and opens no call`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true}),
+          before: (b) => (b === 1 ? {state: moduleAsk.newState({askable: true, shownAs: 'm'})} : {skip: true, cancelled: true})});
+        assert.ifError(err);
+        assert.ok(await until(() => log.ended.length === 1), JSON.stringify(log));
+        await new Promise((r) => setTimeout(r, 400));
+        assert.deepStrictEqual([log.passes, log.started, log.ended], [1, [1], [[1, 'unavailable']]], JSON.stringify(log));
+        assert.ok(log.settled >= 1, `its question settled: ${JSON.stringify(log)}`);
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
+  };
 
   // The BullMQ runner (the Redis store), against run-local's private Redis:
   // its asking pass completes the job, and BullMQ's completed event must not
@@ -406,6 +857,56 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       assert.ok(await until(() => jobSessions.forRun(t).session == null), 'forgotten once done');
     });
 
+    // F2-2's code review: BullMQ runs every pass within one run, so a pass
+    // with no form shown closes its usage call and the next pass starts its
+    // own; a wait for room's delay is kept before the next pass
+    // (no room at the run's start: the owner full, its first question has no
+    // one to ask -- the pass runs with no ask state, as on master; #487's
+    // high, round 1)
+    it('a task whose first question finds no room runs one pass with no one to ask (BullMQ)', async () => {
+      for (let i = 0; i < 3; i++) await ask(id(), {owner: 'owner-b'});
+      // (the handler, as one with no one to ask: ctx.ask is ASK_UNAVAILABLE,
+      // which it catches, and it completes)
+      const asks = [];
+      const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
+        invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
+          asks.push(extraArgs.ask == null ? null : 'a state');
+          return setImmediate(callback, null, {output: {done: true}});
+        }};
+      const started = [];
+      const ended = [];
+      const completed = [];
+      JobControl.authorizeRun = () => Promise.resolve();
+      JobControl.initJobProcess(ci);
+      JobControl.setStartHook(() => { started.push(started.length + 1); return {usageCall: started.length}; });
+      JobControl.setEndHook((data, run, outcome) => ended.push([run.extra.usageCall, outcome]));
+      JobControl.setCompletionHook((data, results, run) => { completed.push(run.extra.usageCall); return null; });
+      JobControl.setAskHooks({
+        before: (data, taskId) => taskAsks.forRun(taskId, {asks: data.asks === true, asking: data.asking != null, owner: 'owner-b', shownAs: 'm'}),
+        asked: (data, taskId, state, run) => taskAsks.asked(taskId, state, {owner: 'owner-b', session: run.session, ofAsker}),
+        settled: (data, taskId) => taskAsks.remove(taskId),
+        holdMs: () => 60000
+      });
+      try {
+        const t = id();
+        made.add(t);
+        const added = await new Promise((resolve) => JobControl.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: t, era: 'modern', asks: true}, 'd', 's', 'a', {}, (err, r) => resolve({err, r})));
+        assert.ifError(added.err);
+        const until = async (check, ms = 10000) => {
+          for (const end = Date.now() + ms; Date.now() < end;) { if (await check()) return true; await new Promise((r) => setTimeout(r, 25)); }
+          return false;
+        };
+        assert.ok(await until(() => completed.length === 1), JSON.stringify({started, ended, completed}));
+        assert.deepStrictEqual([started, ended, completed, asks], [[1], [], [1], [null]]);
+      } finally {
+        JobControl.setStartHook(null);
+        JobControl.setEndHook(null);
+        JobControl.setCompletionHook(null);
+      }
+    });
+
+    waitOrders('BullMQ', () => JobControl, (api) => { api.setStartHook(null); api.setEndHook(null); api.setCompletionHook(null); api.setCancelHook(null); });
+
     it('a run that times out (JOB_TIMEOUT) while its ask is being written leaves no record and no slot', async () => {
       const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
         invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
@@ -490,6 +991,172 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       // not waiting on a question any more: nothing to start again
       assert.strictEqual(await runner.rerunTask(t), false);
       runner.close();
+    });
+
+    // F2-2's code review: each pass has a usage call of its own. A pass that
+    // ended with no form shown is closed ('unavailable') before the next
+    // pass starts its own, so the work after it is counted and billed
+    it('a pass with no form shown closes its usage call, and the next pass starts its own (the local runner)', async () => {
+      let n = 0;
+      const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
+        invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
+          n += 1;
+          if (n === 1) { asking(extraArgs.ask); return setImmediate(callback, new CountinghouseError('ASK_PENDING')); }
+          return setImmediate(callback, null, {output: {done: true}});
+        }};
+      const runner = createRunner({jobTimeoutMs: 0});
+      runner.authorizeRun = () => Promise.resolve();
+      runner.initJobProcess(ci);
+      const started = [];
+      const ended = [];
+      const completed = [];
+      runner.setStartHook(() => { started.push(started.length + 1); return {usageCall: started.length}; });
+      runner.setEndHook((data, run, outcome) => ended.push([run.extra.usageCall, outcome]));
+      runner.setCompletionHook((data, results, run) => { completed.push(run.extra.usageCall); return null; });
+      runner.setAskHooks({
+        before: (data, taskId) => taskAsks.forRun(taskId, {asks: data.asks === true, asking: data.asking != null, owner: 'owner-u', shownAs: 'm'}),
+        asked: (data, taskId, state, run) => taskAsks.asked(taskId, state, {owner: 'owner-u', session: run.session, ofAsker: () => null}),
+        settled: (data, taskId) => taskAsks.remove(taskId),
+        holdMs: () => 60000
+      });
+      const t = id();
+      made.add(t);
+      const added = await new Promise((resolve) => runner.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: t, era: 'modern', asks: true}, 'd', 's', 'a', {}, (err, r) => resolve({err, r})));
+      assert.ifError(added.err);
+      assert.ok(await until(() => completed.length === 1), JSON.stringify({started, ended, completed}));
+      assert.deepStrictEqual([started, ended, completed], [[1, 2], [[1, 'unavailable']], [2]]);
+      runner.close();
+    });
+
+    // (no room at the run's start: the owner full, its first question has no
+    // one to ask -- the pass runs with no ask state, as on master; #487's
+    // high, round 1)
+    it('a task whose first question finds no room runs one pass with no one to ask (the local runner)', async () => {
+      for (let i = 0; i < 3; i++) await ask(id(), {owner: 'owner-d'});
+      // (the handler, as one with no one to ask: ctx.ask is ASK_UNAVAILABLE,
+      // which it catches, and it completes)
+      const asks = [];
+      const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
+        invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
+          asks.push(extraArgs.ask == null ? null : 'a state');
+          return setImmediate(callback, null, {output: {done: true}});
+        }};
+      const runner = createRunner({jobTimeoutMs: 0});
+      runner.authorizeRun = () => Promise.resolve();
+      runner.initJobProcess(ci);
+      const ended = [];
+      runner.setStartHook(() => ({usageCall: 1}));
+      runner.setEndHook((data, run, outcome) => ended.push(outcome));
+      runner.setAskHooks({
+        before: (data, taskId) => taskAsks.forRun(taskId, {asks: data.asks === true, asking: data.asking != null, owner: 'owner-d', shownAs: 'm'}),
+        asked: (data, taskId, state, run) => taskAsks.asked(taskId, state, {owner: 'owner-d', session: run.session, ofAsker}),
+        settled: (data, taskId) => taskAsks.remove(taskId),
+        holdMs: () => 60000
+      });
+      const t = id();
+      made.add(t);
+      const added = await new Promise((resolve) => runner.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: t, era: 'modern', asks: true}, 'd', 's', 'a', {}, (err, r) => resolve({err, r})));
+      assert.ifError(added.err);
+      assert.ok(await until(() => asks.length === 1), JSON.stringify(asks));
+      await new Promise((r) => setTimeout(r, 200));
+      assert.deepStrictEqual([asks, ended], [[null], []]);
+      runner.close();
+    });
+
+    waitOrders('the local runner', () => createRunner({jobTimeoutMs: 0}), (api) => api.close(), true);
+
+    // (the asked hook closes the pass's call when it writes the question; a
+    // throw after that fails the job with a call of its own, never on the
+    // closed one -- the medium of fe7c1d5e)
+    it('a throw after the question was written fails the job with a call of its own (the local runner)', async () => {
+      const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
+        invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
+          asking(extraArgs.ask);
+          return setImmediate(callback, new CountinghouseError('ASK_PENDING'));
+        }};
+      const runner = createRunner({jobTimeoutMs: 0});
+      runner.authorizeRun = () => Promise.resolve();
+      runner.initJobProcess(ci);
+      const started = [];
+      const completed = [];
+      runner.setStartHook(() => { started.push(started.length + 1); return {usageCall: started.length}; });
+      runner.setCompletionHook((data, results, run) => { completed.push([run.extra != null ? run.extra.usageCall : null, run.error != null ? 'failed' : 'ok']); return null; });
+      runner.setAskHooks({
+        before: () => Promise.resolve({state: moduleAsk.newState({askable: true, shownAs: 'm'})}),
+        asked: () => Promise.resolve({asked: {round: 1}}),
+        settled: () => Promise.resolve(),
+        holdMs: () => { throw new Error('hold broken'); }
+      });
+      try {
+        const added = await new Promise((resolve) => runner.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: id(), era: 'modern', asks: true}, 'd', 's', 'a', {}, (err, r) => resolve({err, r})));
+        assert.ifError(added.err);
+        assert.ok(await until(() => completed.length === 1), JSON.stringify({started, completed}));
+        assert.deepStrictEqual([started, completed], [[1, 2], [[2, 'failed']]]);
+      } finally { runner.close(); }
+    });
+
+    // (F2-2's medium: a session that ends while its pass's question is being
+    // written closes that pass's usage call, never leaves it open)
+    // (and when the hook closed nothing -- no question written -- only the
+    // runner can close the pass's call: as cancelled, whatever the hook
+    // answered, as the runner checks the session before the answer)
+    it('a session that ends while a pass whose question was not written is recorded closes its call as cancelled (the local runner)', async () => {
+      const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
+        invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
+          asking(extraArgs.ask);
+          return setImmediate(callback, new CountinghouseError('ASK_PENDING'));
+        }};
+      const runner = createRunner({jobTimeoutMs: 0});
+      runner.authorizeRun = () => Promise.resolve();
+      runner.initJobProcess(ci);
+      const ended = [];
+      runner.setStartHook(() => ({usageCall: 1}));
+      runner.setEndHook((data, run, outcome) => ended.push(outcome));
+      runner.setAskHooks({
+        before: () => Promise.resolve({state: moduleAsk.newState({askable: true, shownAs: 'm'})}),
+        asked: () => { runner.cancelSession(SESSION); return Promise.resolve({rerun: true}); },
+        settled: () => Promise.resolve(),
+        holdMs: () => 60000
+      });
+      try {
+        const added = await new Promise((resolve) => runner.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: id(), era: 'modern', asks: true}, 'd', 's', 'a', {}, (err, r) => resolve({err, r})));
+        assert.ifError(added.err);
+        assert.ok(await until(() => ended.length === 1), JSON.stringify(ended));
+        await new Promise((r) => setTimeout(r, 300));
+        assert.deepStrictEqual(ended, ['cancelled']);
+      } finally { runner.close(); }
+    });
+
+    it('a session that ends while the asking pass is written leaves no call open, closed once as asked (the local runner)', async () => {
+      const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
+        invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
+          asking(extraArgs.ask);
+          return setImmediate(callback, new CountinghouseError('ASK_PENDING'));
+        }};
+      const runner = createRunner({jobTimeoutMs: 0});
+      runner.authorizeRun = () => Promise.resolve();
+      runner.initJobProcess(ci);
+      // (the call's record kept as the usage counters keep it: the asked hook
+      // closes it as 'asked', as production's does once the question is
+      // written, and a close of a call already closed is nothing)
+      const started = [];
+      const closed = [];
+      const open = new Set();
+      const close = (call, outcome) => { if (open.delete(call)) closed.push([call, outcome]); };
+      runner.setStartHook(() => { started.push(started.length + 1); open.add(started.length); return {usageCall: started.length}; });
+      runner.setEndHook((data, run, outcome) => close(run.extra.usageCall, outcome));
+      runner.setAskHooks({
+        before: () => Promise.resolve({state: moduleAsk.newState({askable: true, shownAs: 'm'})}),
+        asked: (data, taskId, state, run) => { close(run.extra.usageCall, 'asked'); runner.cancelSession(SESSION); return Promise.resolve({asked: {round: 1}}); },
+        settled: () => Promise.resolve(),
+        holdMs: () => 60000
+      });
+      try {
+        const added = await new Promise((resolve) => runner.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: id(), era: 'modern', asks: true}, 'd', 's', 'a', {}, (err, r) => resolve({err, r})));
+        assert.ifError(added.err);
+        await new Promise((r) => setTimeout(r, 100));
+        assert.deepStrictEqual([started, closed, open.size], [[1], [[1, 'asked']], 0], JSON.stringify({started, closed}));
+      } finally { runner.close(); }
     });
 
     it('a session that ends while its task waits on a question takes the record with it (B5 Task 4\'s cancel)', async () => {
