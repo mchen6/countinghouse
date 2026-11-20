@@ -78,9 +78,17 @@ from a worker to the main thread.
   wants. Rejected.
 - A V8 compile cache (measured at 35-140 ms per worker, deferred in #123 for
   its trust surface).
-- A separate validation thread. Measured: it would add a copy and a round
-  trip that cost far more than the validation itself (1.2 s against 5 ms at
-  23 MB). Rejected.
+- Validation on the main thread, or in the module's own worker. The first
+  version of this design kept validation on the main thread and rejected a
+  separate validation thread, because a copy and a round trip cost far more
+  than the validation itself (1.2 s against 5 ms at 23 MB). #152's high
+  review reversed that: a module-authored schema's cost can't be bounded
+  beforehand, and on the main thread one slow schema stalls every module and
+  session. Validation runs in validator workers ([section 4](#4-the-modules-spec-on-the-main-thread-its-validation-in-validator-workers)).
+  The module's own worker is ruled out too: there a module can switch its
+  validation off (`test/sandbox/41`). The hops this costs per call are cut
+  by #224 (chained validation, after release 1), not by moving validation
+  back.
 
 ## Anti-goals
 
