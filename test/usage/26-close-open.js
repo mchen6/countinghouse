@@ -121,6 +121,45 @@ describe('usage 26: every open call is closed at exit, cancelled (B-shutdown-usa
     assert.ok(byCall.get(byModule.usageCall).bytesOut > 0, 'the error\'s text counted');
   });
 
+  // (the medium on #488's round 1) a task this process cancelled is
+  // recorded cancelled at a stop, though its tombstone was not yet read
+  it('a settled pass whose task this process cancelled is recorded cancelled, with what it sent', () => {
+    const u = createUsage({usageDir: null, pid: 1, startMs: 1});
+    const hooks = require('../../lib/usage/task').taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}), callerOf: () => 'c1', buildResult,
+      cancelledNow: (jobId) => jobId === 'task-7'});
+    const cancelled = hooks.start({apiKey: 'k'});
+    const kept = hooks.start({apiKey: 'k'});
+    hooks.answered({extra: cancelled, jobId: 'task-7'}, {n: 7});
+    hooks.failed({extra: kept, jobId: 'task-8'}, Object.assign(new Error('x'), {code: 'JOB_TIMEOUT'}));
+    assert.strictEqual(u.closeOpen(hooks.outcomeOf), 2);
+    const byCall = new Map(u.records().filter((r) => r.bytesOut !== undefined).map((r) => [r.call, r]));
+    assert.deepStrictEqual([byCall.get(cancelled.usageCall).outcome, byCall.get(cancelled.usageCall).bytesOut], ['cancelled', JSON.stringify({n: 7}).length]);
+    assert.deepStrictEqual([byCall.get(kept.usageCall).outcome, byCall.get(kept.usageCall).code], ['error', 'JOB_TIMEOUT']);
+  });
+
+  it('this process\'s cancels are known at once (lib/task-tombstones.js), before the store has the tombstone', () => {
+    const tombstones = require('../../lib/task-tombstones');
+    assert.strictEqual(tombstones.cancelledByThisProcess('t-usage-26'), false);
+    tombstones.put('t-usage-26', {owner: 'o', createdAt: 'x'}, 1000).catch(() => undefined);
+    assert.strictEqual(tombstones.cancelledByThisProcess('t-usage-26'), true);
+  });
+
+  // (the medium on #488's round 1) a pass recorded while its values were
+  // being stored: as its placement will send them (the planned placement)
+  it('a settled pass noted with its planned placement is recorded with its linked bytes', () => {
+    const u = createUsage({usageDir: null, pid: 1, startMs: 1});
+    const placedBuild = (err, results, placed) => (placed != null && placed.uris.big != null
+      ? {content: [{type: 'text', text: 'small'}, {type: 'resource_link', uri: placed.uris.big, name: 'big', size: 5000}]}
+      : {content: [{type: 'text', text: JSON.stringify(results)}]});
+    const hooks = require('../../lib/usage/task').taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}), callerOf: () => 'c1', buildResult: placedBuild});
+    const a = hooks.start({apiKey: 'k'});
+    hooks.answered({extra: a}, {big: 'x'.repeat(5000)});
+    hooks.answered({extra: a}, {big: 'x'.repeat(5000)}, {raw: {}, uris: {big: 'countinghouse://pending'}, error: null, entries: null});
+    u.closeOpen(hooks.outcomeOf);
+    const out = u.records().find((r) => r.call === a.usageCall);
+    assert.deepStrictEqual([out.outcome, out.bytesOut, out.linkedBytesOut], ['ok', 5, 5000]);
+  });
+
   it('one call that cannot be recorded leaves the rest to be', () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1});
     const calls = [1, 2, 3].map((i) => u.beginCall({module: 'm', tool: `t${i}`, caller: 'c'}));
