@@ -39,8 +39,10 @@ the way out — rather than stopping at the first. No Redis, no server.
 Exit codes are the contract: `0` clean, `1` problems found, `2` path unusable.
 `--json` emits the result as one JSON document for machine consumers.
 
-`--verifyModule` still exists for checking a module inside a running
-framework; it needs Redis and a booted server, which is why the CLI leads.
+To see a module load in a running framework, start it with `--loadModule`:
+a module that fails any check is refused and the log names the stage. No
+flag loads a module that fails its checks (8.0.0 removed `--verifyModule`,
+which did).
 
 ## From an agent
 
@@ -126,6 +128,37 @@ substitute for each other:
   or if the bound identity lacks a grant to a declared target. Load it (step
   5 of the loop) and check the server log before declaring the chain done.
 
+## Asking the user: ask first, act after
+
+A handler may put one of its action's declared questions to the user
+(`ctx.ask`, [module development](module-development.md#asking-the-user-ctxask)).
+The handler does not wait: with no answer yet it ends, the client shows the
+form, and the retry runs it again from the top. So the rule is one line,
+**ask first, act after**, and it is stated plainly because it costs money
+and can do damage:
+
+- **Every hop made before the ask is made again on the retry, and billed
+  again.** A handler that calls three parts and then asks pays for six part
+  calls when the user answers.
+- **A non-idempotent action before an ask happens twice.** A message sent,
+  a record written or a card charged before the ask is done on the first
+  run and again on the retry; if the user declines, the first one has still
+  happened.
+- **Neither validator can see it.** Whether a handler acts before it asks
+  is in its code, which `countinghouse_validate_module` does not analyse.
+  Review it.
+
+Over composition a part may ask too: its question goes to the user of the
+call that reached it, under the listed scenario's name (the part is never
+named to the client). The scenario's `ctx.call` then rejects with
+`ASK_PENDING`; let it pass, and on the retry both run again. The rule holds
+for the whole chain: a scenario that calls a part that asks should call it
+before anything it cannot do twice.
+
+The user reads a part's question under the scenario's name. So a scenario
+vouches for its parts' declared questions: review a part's `questions` when
+you review the scenario.
+
 ## Roles: scenarios and parts
 
 `package.json` `countinghouse.role` is `"scenario"` or `"part"`. Without a role,
@@ -149,6 +182,9 @@ a module is listed as it always was.
   (`PART_MISSING`) or when a bare name is already a listed tool's, a runtime
   built-in's or an earlier scenario's (`TOOL_NAME_TAKEN`). The log says which. Other modules load
   normally.
+- **A part two scenarios share is loaded once.** A runtime holds one version
+  of a module, so if they need it at different versions, the later scenario
+  is not loaded (`PART_VERSION_CONFLICT`).
 - **The single-identity profile** (`--store local` without
   `--authConfigPath`) lists only the scenarios' tools. The balance check and
   the authoring tools are not listed, and a call to them by name answers
@@ -161,14 +197,17 @@ a module is listed as it always was.
 
 Every `tools/call` on a listed module is counted at the runtime's boundary.
 - **In:** each call to a declared server, as lines and bytes read.
-- **Out:** the lines and bytes of the tool's own text result.
+- **Out:** the lines and bytes of the tool's own text result, and the
+  decoded bytes of its image, audio and inline resource blocks (`inlineBytesOut`),
+  and the bytes behind its resource links (`linkedBytesOut`).
 
 A scenario's result also carries a receipt. `_meta['countinghouse/receipt']`
 holds `{calls, linesIn, bytesIn, linesOut, bytesOut, servers}`, and a second
 text block holds its sentence, for example `read 48,210 lines (3.1 MB) in 14
 calls to github; 35 lines (2.4 KB) reached the model.`. `structuredContent` is
-your output exactly as validated, so a closed output schema stays the
-guarantee. A scenario's top-level output field named `receipt` is refused
+your output exactly as validated, except that an image or audio value is
+replaced by its reference (see module-development), so a closed output schema
+stays the guarantee. A scenario's top-level output field named `receipt` is refused
 `RECEIPT_RESERVED`, because there the name is the runtime's. Any other module's
 `receipt` field (a payments receipt, say) passes through untouched: the
 runtime adds no receipt to it.
@@ -193,7 +232,7 @@ Two limits, stated rather than enforced:
   cannot inflate anyone else's.
 
 `countinghouse_usage_report`, listed to every key, reports the same counts by
-tool, server, pack or module. A key sees its own calls; an admin sees every
+tool, server, scenario (the top-level module a call was made to) or module. A key sees its own calls; an admin sees every
 caller by opaque id. `since` and `until` set the window (`since: "all"`: from
 the first record; with no `since`, a plain key's window is the last 31 days
 and an admin's is everything). The headline is the period's totals, with the

@@ -1,3 +1,4 @@
+'use strict';
 // Brokered file operations from module workers share libuv's threadpool with
 // countinghouse's own DNS lookups, crypto and zlib. 16 threads unless the
 // operator chose otherwise; it must be set before the pool is first used.
@@ -38,6 +39,28 @@ if (options.stdioWithPort === true) {
   console.error('--stdio and --port: choose one');
   process.exit(2);
 }
+// --partDir (M4): parts of a start confined to --modulesRoot
+if (Array.isArray(options.partDir) && options.partDir.length > 0 && !(Array.isArray(options.modulesRoot) && options.modulesRoot.length > 0)) {
+  console.error('--partDir is only for a start given --modulesRoot');
+  process.exit(2);
+}
+// --sessionSocket (the shared runtime, C1): ch-local daemon's runtime
+{
+  var sessionRefusal = options.sessionSocketInvalid === true ? '--sessionSocket needs a path'
+    : options.sessionDirInvalid === true ? '--sessionDir needs a path'
+    : options.sessionDirNotDrive === true ? '--sessionDir on Windows must be a drive path (C:\\...), not a UNC or device path'
+      : options.sessionSocket == null ? (options.sessionDir != null ? '--sessionDir is only for --sessionSocket' : null)
+      : options.stdio === true ? '--stdio and --sessionSocket: choose one'
+        : options.sessionWithPort === true ? '--sessionSocket and --port: choose one'
+          : (process.platform === 'win32' && options.sessionDir == null) ? '--sessionSocket on Windows (a named pipe) needs --sessionDir, the directory of its secret'
+            : options.store !== 'local' ? '--sessionSocket needs --store local (the shared runtime is one per user, on ch-local\'s local store)'
+              : options.controlChannel !== 'ipc' ? '--sessionSocket needs --controlChannel ipc (ch-local daemon starts it so)'
+              : options.singleIdentity !== true ? '--sessionSocket is only for the single-identity profile (--store local, no --authConfigPath or --authProvider)' : null;
+  if (sessionRefusal != null) {
+    console.error(sessionRefusal);
+    process.exit(2);
+  }
+}
 // The single-identity profile: no direct peer channels (lib/local-profile.js).
 const profileRefusal = require('./lib/local-profile').profileStart(options);
 if (profileRefusal != null) {
@@ -60,11 +83,97 @@ if (options.mcpToolCallCostInvalid != null) {
     (typeof(badCost) === 'boolean' || badCost === '' ? 'no value' : JSON.stringify(String(badCost))) + ')');
   process.exit(2);
 }
+// #144: a load bound that is not a number of seconds > 0 (or one setTimeout
+// cannot hold) would end every load at once or never.
+if (options.moduleLoadTimeoutInvalid != null) {
+  var badLoad = options.moduleLoadTimeoutInvalid.value;
+  console.error('--moduleLoadTimeout must be a number of seconds > 0, at most 2147483 (got ' +
+    (typeof(badLoad) === 'boolean' || badLoad === '' ? 'no value' : JSON.stringify(String(badLoad))) + ')');
+  process.exit(2);
+}
 // RC1-min: a module cannot choose where a credential goes; the operator's
 // file does. One that cannot be read as {origin: [variable]} stops the start.
 if (options.remoteLimitInvalid != null) {
   console.error('--' + options.remoteLimitInvalid.name + ' must be a positive number (got ' +
     JSON.stringify(String(options.remoteLimitInvalid.value)) + ')');
+  process.exit(2);
+}
+// Lean worker step 1(b): the validator pool's size and deadline.
+if (options.validatorLimitInvalid != null) {
+  console.error('--' + options.validatorLimitInvalid.name + ' must be ' + options.validatorLimitInvalid.what + ' (got ' +
+    JSON.stringify(String(options.validatorLimitInvalid.value)) + ')');
+  process.exit(2);
+}
+// --moduleQuestions (ctx.ask): on or off, and nothing else
+if (options.moduleQuestionsInvalid != null) {
+  console.error('--' + options.moduleQuestionsInvalid.name + ' must be ' + options.moduleQuestionsInvalid.what + ' (got ' +
+    JSON.stringify(String(options.moduleQuestionsInvalid.value)) + ')');
+  process.exit(2);
+}
+// MCP completeness M5: the result store's limits.
+if (options.resourceLimitInvalid != null) {
+  console.error('--' + options.resourceLimitInvalid.name + ' must be ' + options.resourceLimitInvalid.what + ' (got ' +
+    JSON.stringify(String(options.resourceLimitInvalid.value)) + ')');
+  process.exit(2);
+}
+// MCP completeness M1: the size of a list's page.
+if (options.listPageSizeInvalid != null) {
+  console.error('--' + options.listPageSizeInvalid.name + ' must be ' + options.listPageSizeInvalid.what + ' (got ' +
+    JSON.stringify(String(options.listPageSizeInvalid.value)) + ')');
+  process.exit(2);
+}
+// R1: the per-session workers' cap.
+if (options.maxSessionWorkersInvalid != null) {
+  console.error('--' + options.maxSessionWorkersInvalid.name + ' must be ' + options.maxSessionWorkersInvalid.what + ' (got ' +
+    JSON.stringify(String(options.maxSessionWorkersInvalid.value)) + ')');
+  process.exit(2);
+}
+// --packsRoot went with the pack form (M6, #413 rev 3 section 16, rule 7):
+// ch-local passes --modulesRoot
+if (options.packsRootGiven === true) {
+  console.error('--packsRoot is no longer taken: the pack form is gone; ch-local passes --modulesRoot');
+  process.exit(2);
+}
+// In-place loading (--controlChannel, --modulesRoot) isn't
+// available under --hardened in this release: the relaunched child would
+// not reach the control channel, and its roots are not granted
+// (lib/hardened-launch.js grants --modulePath and --moduleDataPath), so it
+// would fail at its first read. Refused at the start, every in-place flag
+// given named, a bare or empty one included.
+if (options.hardened === true && Array.isArray(options.inPlaceFlagsGiven) && options.inPlaceFlagsGiven.length > 0) {
+  console.error('--' + options.inPlaceFlagsGiven.join(', --') + ': in-place loading isn\'t available under --hardened in this release');
+  process.exit(2);
+}
+// Packs in place (part 2): the control channel exists only between ch-local
+// start and the runtime it spawned, in the single-identity profile, over an
+// IPC fd.
+if (options.controlChannel != null) {
+  var controlRefusal = options.controlChannel !== 'ipc' ? 'takes ipc'
+    : options.singleIdentity !== true ? 'is only for the single-identity profile (ch-local start)'
+      : typeof(process.send) !== 'function' ? 'needs an IPC channel from the process that started this one' : null;
+  if (controlRefusal != null) {
+    console.error('--controlChannel ' + controlRefusal + ' (got ' + JSON.stringify(String(options.controlChannel)) + ')');
+    process.exit(2);
+  }
+}
+// --testLateLoads hands module code the runtime's modules (a test's probe,
+// #194): never with --hardened.
+if (options.testLateLoads === true && options.hardened === true) {
+  console.error('--testLateLoads is a test-only probe: it cannot be used with --hardened');
+  process.exit(2);
+}
+// --settingsFile names the file countinghouse_settings changes, and the tool
+// is served only in the single-identity profile (ch-local start): anywhere
+// else the flag would half-apply (its options.settingsTool on, the tool not
+// served, so a size cap's hint would name a tool that is not there).
+// Refused as --controlChannel and --sessionSocket are.
+if (options.settingsFileInvalid === true) {
+  console.error('--settingsFile needs a path (--settingsFile <file>)');
+  process.exit(2);
+}
+if (options.settingsFile != null && options.singleIdentity !== true) {
+  console.error('--settingsFile is only for the single-identity profile (ch-local start), where countinghouse_settings is served (got ' +
+    JSON.stringify(String(options.settingsFile)) + ')');
   process.exit(2);
 }
 // --remoteOriginMap moves where a credential goes, so it is honoured only
@@ -96,7 +205,12 @@ if (options.remoteOriginMapArg != null) {
 }
 if (options.remoteCredentials != null || process.argv.some((a) => a === '--remoteCredentials' || a.startsWith('--remoteCredentials='))) {
   try {
-    require('./lib/remote/credentials').configure(options.remoteCredentials);
+    const configuredFile = require('./lib/remote/credentials').configure(options.remoteCredentials);
+    // M6 (#413 rev 3 sections 6.5 and 16, rule 7): ch-local writes version 2;
+    // a runtime with a control channel takes no version 1 file
+    if (options.controlChannel != null && configuredFile.version !== 2) {
+      throw new Error('--remoteCredentials: a version 1 file is not taken with --controlChannel; it is version 2 (ch-local writes it)');
+    }
   } catch (e) {
     console.error(e.message);
     process.exit(2);
@@ -159,20 +273,54 @@ if (options.hardened === true && process.permission == null) {
     console.error(hardenedLaunch.refusalMessage(probe, hardenedLaunch.grantOverlaps(hardenedFlags), process.version));
     process.exit(2);
   }
+  // enforce on Windows: the virtual drive is picked here, where looking at
+  // drive letters is allowed, and handed to the child (#195;
+  // lib/fs-broker/virtual-drive.js)
+  if (options.moduleSandbox === 'enforce' && process.platform === 'win32') {
+    var drive = require('./lib/fs-broker/virtual-drive').pick();
+    if (drive != null) process.env.COUNTINGHOUSE_VIRTUAL_DRIVE = drive;
+  }
+  // On Windows the child cannot run the PowerShell the identity secret's
+  // ACL check needs: it is created and checked here (lib/identity.js
+  // prepareForHardened)
+  if (process.platform === 'win32') {
+    try {
+      require('./lib/identity').prepareForHardened(options);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(2);
+    }
+  }
   hardenedLaunch.relaunch(hardenedFlags, realpathRecorder.known());
   return;
 }
 // The relaunched --hardened server: the parent's real paths, before anything
 // here resolves a path (lib/hardened-realpaths.js).
 if (process.permission != null) require('./lib/hardened-realpaths').receive();
+// Under the permission model without that hand-over (node --permission by
+// hand, not --hardened): the links the install is reached through cannot be
+// looked for, and the start is refused rather than served without them.
+if (process.permission != null) {
+  var startProblem = require('./lib/hardened-launch').startProblem();
+  if (startProblem != null) {
+    console.error(startProblem);
+    process.exit(2);
+  }
+}
 
 var logger = require('./lib/logger');
-logger.createLogger(options.logStream);
+logger.createLogger();
 
 // Module sandbox mode checks. An explicit mode that cannot work is a startup
 // error; the default quietly downgrades (lib/cli-options.js).
 if (['off', 'audit', 'enforce'].indexOf(options.moduleSandbox) === -1) {
   console.error('--moduleSandbox must be one of off, audit, enforce (got "' + options.moduleSandbox + '")');
+  process.exit(2);
+}
+// enforce on Windows needs a drive letter for a module's files (#195,
+// lib/fs-broker/virtual-drive.js): with none free it refuses to start.
+if (options.moduleSandbox === 'enforce' && process.platform === 'win32' && require('./lib/fs-broker/virtual-drive').pick() == null) {
+  console.error('--moduleSandbox enforce needs a free drive letter on Windows for the modules\' files (none of D: to Z: is free); free one, or use --moduleSandbox audit');
   process.exit(2);
 }
 if (options.moduleSandbox !== 'off' && options.workerThread !== true) {
@@ -207,12 +355,34 @@ if (options.workerThread === true) {
   logger.I('file broker: up to ' + require('./lib/fs-broker/scheduler').FsScheduler.capFor(process.env.UV_THREADPOOL_SIZE) +
     ' module file operations in flight (UV_THREADPOOL_SIZE ' + process.env.UV_THREADPOOL_SIZE + ')');
 }
+// MCP completeness M6: the result store's effective limits (spec section 2)
+logger.I(require('./lib/store/blobs').describeLimits(options));
 
 if (options.modulePolicy != null) {
   try {
     require('./lib/module-policy').load(options.modulePolicy);
   } catch (e) {
     console.error(e.message);
+    process.exit(2);
+  }
+}
+
+// --moduleSettings: an operator's modules' settings (lib/module-settings.js),
+// read at each load; checked here, so a file that cannot be read stops the
+// start rather than refusing every module. ch-local's settings are its
+// --settingsFile's: one source or the other.
+if (options.moduleSettingsInvalid === true) {
+  console.error('--moduleSettings needs one path (--moduleSettings <file>, given once)');
+  process.exit(2);
+}
+if (options.moduleSettings != null) {
+  if (options.settingsFile != null) {
+    console.error('--moduleSettings and --settingsFile: choose one (ch-local\'s settings file holds its modules\' settings)');
+    process.exit(2);
+  }
+  const read = require('./lib/module-settings').readModuleSettings(options.moduleSettings);
+  if (read.problem != null) {
+    console.error(read.problem);
     process.exit(2);
   }
 }
@@ -282,18 +452,25 @@ try {
   process.exit(-1);
 }
 
+// With modules to load, the validators boot now, beside the rest of the main
+// thread's boot, not when the first module's spec is checked
+// (lib/validator-pool.js startEarly). Every synchronous refusal of the start
+// has run by here; the id index's (identityReady, below) is the one left.
+require('./lib/validator-pool').startEarly();
+
 // deviceDB (lib/device-db.js, sqlite3-backed) is only ever consulted by
-// ModuleManager.prototype.loadAllModules's registry-lookup branch, and
-// only when no --loadModule path was given (see that function's own
-// "in case loading local module, we won't read module info from DB"
-// early return) -- the --loadModule quickstart path never touches it.
+// ModuleManager.prototype.loadAllModules's registry-lookup branch, and only
+// under --moduleRegistry with no --loadModule path (options.usesModuleRegistry)
+// -- every other start, the --loadModule quickstart path and a start with no
+// module alike, never touches it.
 // Requiring sqlite3 unconditionally here loads its native binding on
 // every single startup regardless, which is unnecessary work for the
 // common case and the actual crash on a glibc too old for the current
 // prebuilt binary (ERR_DLOPEN_FAILED) -- gating the require itself,
 // not just the init() call, avoids that entirely for anyone who never
 // needed the registry DB in the first place.
-if (options.localModulePath == null) {
+// --moduleRegistry only: the registry is opt-in (lib/cli-options.js).
+if (options.usesModuleRegistry()) {
   require('./lib/device-db').init(options.modulePath);
 }
 
@@ -331,14 +508,41 @@ function serve() {
     const jobHooks = require('./lib/mcp/gateway').jobHooks(routeManager.cdifInterface);
     JobControl.setStartHook(jobHooks.start);
     JobControl.setCompletionHook(jobHooks.complete);
+    // a 2026-07-28 task's question (M22, lib/task-asks.js)
+    JobControl.setAskHooks(jobHooks.ask);
   }
 
   // routeManager.startServer();
-  mm.loadAllModules();
+  // Discovery starts once the server takes requests (RouteManager
+  // whenServing): over HTTP, listen() with a host binds only after resolving
+  // it, and a start with nothing to load finishes discovery at once, so
+  // "countinghouse ready" (which every waiter waits for) would otherwise come
+  // before the port is bound.
+  routeManager.whenServing(function() { mm.loadAllModules(); });
 }
 
-identityReady.then(serve, function(e) {
-  console.error('identity: the id index could not be built from --authProvider ' + options.authProvider + ': ' + e.message);
+// The Redis host name a module worker is denied is resolved before any module
+// loads, so its addresses are denied at the worker's handle guards too
+// (#207); bounded, never rejecting, and not under --moduleSandbox off. It
+// runs beside the id index, not after it. A later refresh that adds an
+// address tells every lockdown worker, a validation's too.
+function deniedResolved() {
+  if (options.moduleSandbox === 'off' || options.store === 'local') return Promise.resolve();
+  // (every lockdown worker is told by module-sandbox-config's own set:
+  // lib/module-manager.js tracks each at its set-options)
+  return require('./lib/module-sandbox-config').refreshDenied(options.redisUrl).then(function() {}, function() {});
+}
+
+var denied = deniedResolved();
+identityReady.then(function() { return denied.then(serve); }, function(e) {
+  // (the provider's own reason, when this is lib/auth's guard answering in
+  // the catalogue's words with the provider's error as its cause; else the
+  // error's own message: the Reviewer's high review of #448, 8)
+  // (as text, whatever it is, and one line: the medium on #448's second
+  // round, 4)
+  var guarded = e != null && e.code === 'SYSTEM_ERROR_USERDB_NA' && e.cause !== undefined;
+  var why = require('./lib/module-text').moduleLine(require('./lib/auth').reasonOf(guarded ? e.cause : e), 500);
+  console.error('identity: the id index could not be built from --authProvider ' + options.authProvider + ': ' + why);
   process.exit(2);
 });
 

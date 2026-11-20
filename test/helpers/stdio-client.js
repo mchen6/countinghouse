@@ -34,9 +34,29 @@ function withoutRedisNoise(err, max = 4000) {
 // timeoutMs), stop(lingerMs)}. `args` follow the entry; `env` is added to the
 // test's own. `lines` holds stdout's lines as written, a last one without
 // its newline included once stdout has closed.
-function startStdio(args, {env = {}} = {}) {
-  const child = spawn(process.execPath, [ENTRY, ...args], {env: {...process.env, ...env}, stdio: ['pipe', 'pipe', 'pipe']});
+// ipc: true opens the control channel's fd (packs in place, part 2):
+// io.control(msg) sends a request and resolves with the reply of its id.
+// entry: the stdio entry to run (default this checkout's), e.g. a copy
+// installed elsewhere; nodeArgs: Node's own flags before it (stdio 26)
+function startStdio(args, {env = {}, ipc = false, entry = ENTRY, nodeArgs = []} = {}) {
+  const child = spawn(process.execPath, [...nodeArgs, entry, ...args], {env: {...process.env, ...env}, stdio: ipc ? ['pipe', 'pipe', 'pipe', 'ipc'] : ['pipe', 'pipe', 'pipe']});
   const io = {child, err: '', lines: []};
+  if (ipc) {
+    const replies = new Map();
+    let nextControl = 1;
+    // what the runtime tells unasked (no id: ready, module-stopped, ...), in order
+    io.told = [];
+    child.on('message', (m) => {
+      if (m != null && m.id === undefined) io.told.push(m);
+      const r = (m != null) ? replies.get(m.id) : null;
+      if (r != null) { replies.delete(m.id); r(m); }
+    });
+    io.control = (msg) => new Promise((resolve) => {
+      const id = nextControl++;
+      replies.set(id, resolve);
+      child.send({...msg, id});
+    });
+  }
   const waiting = new Map();   // id -> {resolve, reject}
   let partial = '';
   let ended = null;
@@ -100,7 +120,15 @@ function startStdio(args, {env = {}} = {}) {
   return io;
 }
 
-const INITIALIZE = {jsonrpc: '2.0', method: 'initialize', params: {protocolVersion: '2026-07-28', capabilities: {}, clientInfo: {name: 'test', version: '0'}}};
+// The legacy handshake (2025-11-25: "An initialize request selects legacy
+// semantics"). A 2026-07-28 client sends no initialize: each request carries
+// MODERN_META instead (#229).
+const INITIALIZE = {jsonrpc: '2.0', method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'test', version: '0'}}};
+const MODERN_META = Object.freeze({
+  'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+  'io.modelcontextprotocol/clientCapabilities': {},
+  'io.modelcontextprotocol/clientInfo': {name: 'test', version: '0'}
+});
 
 // The first tool whose name matches `pattern`, asking tools/list (at least
 // once) every `everyMs` until `deadlineMs` has passed: null if none was
@@ -120,4 +148,4 @@ async function waitForTool(io, pattern, {deadlineMs = 60000, everyMs = 500} = {}
   return null;
 }
 
-module.exports = {startStdio, waitForTool, withoutRedisNoise, INITIALIZE};
+module.exports = {startStdio, waitForTool, withoutRedisNoise, INITIALIZE, MODERN_META};

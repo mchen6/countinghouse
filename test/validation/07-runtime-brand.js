@@ -22,6 +22,17 @@ function answer(invoke) {
   });
 }
 
+// A catalogue code a module put on its error (the back-sweep, 11-18): the
+// runtime's MODULE_CODE_RESERVED, naming it; kind module, 500, no retry
+function assertReserved(err, code) {
+  assert.strictEqual(err.code, 'MODULE_CODE_RESERVED');
+  assert.ok(String(err.message).includes(`runtime's own code ${code}`), err.message);
+  assert.strictEqual(err.origin, 'runtime');
+  assert.strictEqual(err.kind, 'module');
+  assert.strictEqual(err.retryable, false);
+  assert.strictEqual(err.httpStatus, 500);
+}
+
 function assertModuleSemantics(err) {
   assert.strictEqual(err.origin, 'module');
   assert.strictEqual(err.kind, 'module');
@@ -37,20 +48,24 @@ describe('validation 07: only the runtime issues runtime errors (d2b)', () => {
     assert.ok(!Object.values(CountinghouseError).includes(issue));
   });
 
-  it('a module error given a runtime origin and a catalogue code is the module\'s', async () => {
+  it('a module error given a runtime origin and a catalogue code is never the runtime\'s: MODULE_CODE_RESERVED', async () => {
     const a = await answer(() => {
       const e = CountinghouseError.module('X_FORGED', 'm');
       e.origin = 'runtime';
       e.code = 'MODULE_RELOADING';
       return e;
     });
-    assert.strictEqual(a.err.code, 'MODULE_RELOADING');
-    assertModuleSemantics(a.err);
+    assertReserved(a.err, 'MODULE_RELOADING');
   });
 
-  it('an error built through the constructor with a catalogue code is the module\'s', async () => {
+  it('an error built through the constructor with a catalogue code is never the runtime\'s: MODULE_CODE_RESERVED', async () => {
     const a = await answer(() => new CountinghouseError('MODULE_RELOADING'));
-    assert.strictEqual(a.err.code, 'MODULE_RELOADING');
+    assertReserved(a.err, 'MODULE_RELOADING');
+  });
+
+  it('an error built through the constructor with a code of the module\'s own is the module\'s', async () => {
+    const a = await answer(() => new CountinghouseError('SHAPE_GONE'));
+    assert.strictEqual(a.err.code, 'SHAPE_GONE');
     assertModuleSemantics(a.err);
   });
 
@@ -83,20 +98,21 @@ describe('validation 07: only the runtime issues runtime errors (d2b)', () => {
 });
 
 describe('validation 07: the debug API log line names a module code as the module\'s answer (d2b)', () => {
-  it('writes "the module\'s answer" for a module-origin catalogue code, "the runtime\'s" for an issued one', () => {
+  it('writes "the module\'s answer" for a module-origin code, "the runtime\'s" for an issued one', () => {
     // In a child process: lib/session.js opens a Redis client when loaded.
     const {spawnSync} = require('child_process');
     const lib = require('path').resolve(__dirname, '../../lib');
     const script = `
       const options = require(${JSON.stringify(`${lib}/cli-options`)});
       options.debug = true;
-      options.apiMonitor = false;
       const LOG = require(${JSON.stringify(`${lib}/logger`)});
       const {CountinghouseError, issue} = require(${JSON.stringify(`${lib}/countinghouse-error`)});
       const Session = require(${JSON.stringify(`${lib}/session`)});
       const lines = [];
       LOG.E = (line) => { lines.push(String(line && line.message != null ? line.message : line)); return line; };
-      const forged = CountinghouseError.answerable(new CountinghouseError('MODULE_RELOADING'));
+      // (a module's own code: a catalogue one would be MODULE_CODE_RESERVED,
+      // the runtime's)
+      const forged = CountinghouseError.answerable(new CountinghouseError('SHAPE_GONE'));
       Session.prototype.logAPICall.call({}, forged, null, null, true);
       Session.prototype.logAPICall.call({}, issue(new CountinghouseError('MODULE_RELOADING')), null, null, true);
       process.stdout.write(JSON.stringify(lines));
@@ -106,7 +122,7 @@ describe('validation 07: the debug API log line names a module code as the modul
     assert.strictEqual(run.status, 0, run.stderr);
     const lines = JSON.parse(run.stdout);
     assert.strictEqual(lines.length, 2, run.stdout);
-    assert.ok(lines[0].includes('MODULE_RELOADING (the module\'s answer)'), lines[0]);
+    assert.ok(lines[0].includes('SHAPE_GONE (the module\'s answer)'), lines[0]);
     assert.ok(lines[1].includes('MODULE_RELOADING (the runtime\'s)'), lines[1]);
   });
 });
@@ -153,22 +169,35 @@ describe('validation 07: the review of #45', () => {
     assert.strictEqual(CountinghouseError.answerable(handed).origin, 'runtime');
   });
 
+  // the review of 5b: `as` is refused whatever its value, so a 7.x module
+  // passing `as: ctx.caller.apiKey` (undefined in 8.0) fails loudly instead
+  // of running as its binding
+  it('ctx.serviceClient refuses `as` even when it is undefined', async () => {
+    const {buildCtx} = require('../../lib/handler-ctx');
+    const device = {_compositionSettled: true, _composition: {identity: '(bound)', allowed: {}, targets: []}};
+    const err = await new Promise((resolve) => buildCtx(device, {}, {}).serviceClient({deviceID: 'd', serviceID: 's', as: undefined}, (e) => resolve(e)));
+    assert.match(String(err && err.message), /remove `as`/);
+  });
+
   it('ctx.serviceClient issues the runtime refusals it hands the module', async () => {
-    const path = require('path');
-    const utilFile = path.resolve(__dirname, '../../lib/countinghouse-util.js');
-    const saved = require.cache[utilFile];
-    require.cache[utilFile] = {id: utilFile, filename: utilFile, loaded: true,
-      exports: {createServiceClient: (o, cb) => cb(new CountinghouseError('SERVICE_NOT_FOUND', o.serviceID))}};
+    // (the implementation handler-ctx holds, stubbed in place: a require.cache
+    // entry put there now is never read, the worker hardening's point; on this
+    // main thread nothing fixes its exports)
+    const impl = require('../../lib/countinghouse-util');
+    const saved = impl.createServiceClient;
+    impl.createServiceClient = (o, cb) => cb(new CountinghouseError('SERVICE_NOT_FOUND', o.serviceID));
     try {
       const {buildCtx} = require('../../lib/handler-ctx');
-      const ctx = buildCtx(null, {}, {});
-      const refusal = await new Promise((resolve) => ctx.serviceClient({deviceID: 'd', serviceID: 'bad', as: 'someone'}, (err) => resolve(err)));
+      // a bound module with its verdict in (R2-1 Task 5: no `as`; the hop
+      // authorizes as the binding)
+      const device = {_compositionSettled: true, _composition: {identity: '(bound)', allowed: {}, targets: []}};
+      const ctx = buildCtx(device, {}, {});
+      const refusal = await new Promise((resolve) => ctx.serviceClient({deviceID: 'd', serviceID: 'bad'}, (err) => resolve(err)));
       const a = await answer(() => refusal);
       assert.strictEqual(a.err.code, 'SERVICE_NOT_FOUND');
       assert.strictEqual(a.err.origin, 'runtime');
     } finally {
-      if (saved != null) require.cache[utilFile] = saved;
-      else delete require.cache[utilFile];
+      impl.createServiceClient = saved;
     }
   });
 });

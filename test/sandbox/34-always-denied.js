@@ -15,6 +15,7 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 const moduleValidator = require('../../lib/module-validator');
 
@@ -23,7 +24,10 @@ const SECRET_ENV = 'should-never-arrive';
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'deny-probe');
 const NAME    = 'deny-probe';
 const tool    = (a) => `deny_probe_probeservice_${a.toLowerCase()}`;
-const REDIS   = {host: '127.0.0.1', port: 6379};
+// the Redis the server uses (run-local's private one, or the system's in
+// CI): its endpoint is the one the sandbox always denies
+const REDIS   = (() => { const u = new URL(require('../helpers/test-env').redisUrlFor()); return {host: u.hostname, port: Number(u.port) || 6379}; })();
+const REDIS_AT = `${REDIS.host}:${REDIS.port}`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // A copy of the fixture whose declared rw directory is one the test owns
 // (the fixture's /opt path stands for "somewhere outside the namespace").
@@ -60,15 +64,18 @@ function world(tag) {
 }
 
 function start(port, w, mode, provider, authPath) {
-  return startServer(port, ['--workerThread', '--authProvider', provider || 'file', '--authConfigPath', authPath || w.authPath,
+  return startServer(port, ['--testLateLoads', '--workerThread', '--authProvider', provider || 'file', '--authConfigPath', authPath || w.authPath,
     '--moduleDataPath', w.store, '--moduleSandbox', mode, '--modulePolicy', w.policy, '--loadModule', w.fixture],
   {env: {COUNTINGHOUSE_API_KEY: SECRET_ENV}});
 }
 
+// (each start with the test's late-load probe, --testLateLoads: since
+// #194's PR 2 its fixtures reach a runtime object only through the
+// probe's hand-over, module code's own require.cache holding its own files)
 describe('sandbox 34: the always-denied set', function() {
   this.timeout(180000);
 
-  [['audit', 9680], ['enforce', 9681]].forEach(([mode, port]) => {
+  [['audit', testPort(9680)], ['enforce', testPort(9681)]].forEach(([mode, port]) => {
     describe(`${mode}`, () => {
       let w = null;
       let server = null;
@@ -141,7 +148,7 @@ describe('sandbox 34: the always-denied set', function() {
           const r = await mcpCall(port, ADMIN, tool(a), REDIS);
           assert.deepStrictEqual(toolOutput(r), {code: 'EACCES'}, `${a}: ${JSON.stringify(r)}`);
         }
-        await waitFor(() => /module sandbox: deny-probe violation [a-z-]+ 127\.0\.0\.1:6379/.test(server.output), 5000, 'a denial line for the Redis endpoint');
+        await waitFor(() => new RegExp(`module sandbox: deny-probe violation [a-z-]+ ${REDIS_AT}`).test(server.output), 5000, 'a denial line for the Redis endpoint');
         // The server's own port: not Redis, so audit lets it through.
         const own = await mcpCall(port, ADMIN, tool('connect'), {host: '127.0.0.1', port: port});
         assert.deepStrictEqual(toolOutput(own), {code: 'connected'}, JSON.stringify(own));
@@ -176,7 +183,7 @@ describe('sandbox 34: the always-denied set', function() {
     let sqlite3 = null;
     try { sqlite3 = require('sqlite3'); } catch (e) { sqlite3 = null; }
     const CLI = path.join(ROOT, 'bin', 'countinghouse-auth-sqlite.js');
-    const port = 9682;
+    const port = testPort(9682);
     let w = null;
     let server = null;
     before(async function() {
@@ -205,7 +212,7 @@ describe('sandbox 34: the always-denied set', function() {
   });
 
   describe('off decides nothing', () => {
-    const port = 9680;
+    const port = testPort(9680);
     let w = null;
     let server = null;
     before(async () => {

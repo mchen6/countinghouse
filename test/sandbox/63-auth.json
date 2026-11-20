@@ -1,0 +1,11 @@
+{
+  "port-probe-key": {
+    "userName": "port-probe",
+    "devices": ["*"]
+  },
+  "port-probe-caller-internal": {
+    "userName": "port-probe-caller-internal",
+    "devices": ["*"],
+    "runsModules": ["port-probe-caller"]
+  }
+}

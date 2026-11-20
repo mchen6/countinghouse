@@ -17,6 +17,13 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9720–9729 | A: RC1-min, step 3 onward |
 | 9730–9739 | B |
 | 9740–9749 | C |
+| 9750–9754 | A: lean worker step 3 |
+| 9755–9759 | C (2026-11-17) |
+| 9762–9769 | A: M3 credentials (2026-11-18) |
+| 9770–9779 | C (2026-11-17) |
+| 9790–9799 | B (2026-11-14) |
+| 9800–9809 | A: kind caller, usage 24 (2026-11-19) |
+| 10840–10849 | C: run-local with CH_TEST_PORT_BASE=10840, its servers and its private Redis (10849) (2026-11-16) |
 
 ## By file
 
@@ -46,7 +53,6 @@ one) as well as the ports it binds.
 | `test/auth/22-browser-origins.js` | 9665 |
 | `test/auth/24-job-ownership.js` | 9669 |
 | `test/auth/25-job-schedulers.js` | 9670 |
-| `test/auth/26-bson-preparse-auth.js` | 9662 |
 | `test/auth/30-no-keys-reach-modules.js` | 9631 |
 | `test/auth/31-identity.js` | 9646–9649 |
 | `test/auth/32-reload-auth.js` | 9628 |
@@ -57,6 +63,9 @@ one) as well as the ports it binds.
 | `test/auth/42-redis-down-answers.js` | 9652 |
 | `test/auth/44-cache-require-builtins.js` | 9653 |
 | `test/auth/45-retired-device-fields.js` | 9655 |
+| `test/auth/46-redis-down-binary-result.js` | 9667 (its Redis proxy: a free port each run) |
+| `test/auth/53-no-keys-reach-reads.js` | 9757 |
+| `test/auth/54-routes-listing-scope.js` | 9794 |
 | `test/benchmark/test001.js` | 9527 |
 | `test/benchmark/test002.js` | 9527 |
 | `test/composition/02-ctx-call.js` | 9556–9557, 9560 |
@@ -88,12 +97,24 @@ one) as well as the ports it binds.
 | `test/fs-broker/12-identity.js` | 9630 |
 | `test/fs-broker/13-collisions.js` | 9631 |
 | `test/fs-broker/14-hoisted-install.js` | 9633 |
+| `test/fs-broker/29-handle-stream-close.js` | 9758 |
 | `test/job-control/test001.js` | 9527 |
 | `test/load-module/test001.js` | 9527 |
 | `test/load-module/test002.js` | 9527 |
 | `test/mcp-contract/01-tools-list-unchanged.js` | 9531 |
 | `test/mcp-contract/06-output-schema-at-call-start.js` | 9612 |
 | `test/mcp-contract/07-error-shape.js` | 9656–9657 |
+| `test/mcp-contract/11-progress-e2e.js` | 9580 |
+| `test/mcp-contract/12-any-json-output.js` | 9581 |
+| `test/mcp-contract/14-handler-progress-e2e.js` | 9582 |
+| `test/mcp-contract/16-resources-read.js` | 9583, 9585 |
+| `test/mcp-contract/19-cancel-e2e.js` | 9587–9588 |
+| `test/mcp-contract/21-list-pages.js` | 9592 |
+| `test/mcp-contract/27-tasks-modern.js` | 9637, 9639, 9660 |
+| `test/mcp-contract/34-declared-text-cleaned.js` | 9755–9756 |
+| `test/mcp-contract/28-task-ask.js` | 9690–9692 |
+| `test/mcp-contract/36-sdk-feature-conformance.js` | (a free port, as 03) |
+| `test/mcp-contract/37-task-notifications.js` | 9671, 9672, 9673 |
 | `test/mcp-contract/capture-error-shape.js` | 9658–9659 |
 | `test/mcp-contract/capture-tools-list.js` | 9530 |
 | `test/module-authoring/03-authoring-tools-gating.js` | 9550–9552 |
@@ -111,6 +132,8 @@ one) as well as the ports it binds.
 | `test/module-loading/14-lifecycle.js` | 9634 |
 | `test/module-loading/15-reload-scenarios.js` | 9606 |
 | `test/module-loading/16-failed-reload-ends-worker.js` | 9632 |
+| `test/module-loading/27-lean-ctx-log.js` | 9753 |
+| `test/module-loading/28-lean-perf-harness.js` (perf/lean-worker-perf.js) | 9752 |
 | `test/remote/01-declaration.js` | 9688 |
 | `test/remote/02-credentials.js` | 9688–9689 |
 | `test/remote/03-client.js` | 9686–9687 |
@@ -118,6 +141,14 @@ one) as well as the ports it binds.
 | `test/remote/05-route.js` | 9688, 9720–9721 |
 | `test/remote/06-listing.js` | 9722–9723 |
 | `test/remote/07-counting.js` | 9728–9729 |
+| `test/remote/12-cancel-abort.js` | 9589 |
+| `test/remote/13-by-module.js` | 9762–9763 |
+| `test/remote/14-credential-env.js` | 9764–9765 |
+| `test/remote/15-pinned-remote.js` | 9766–9768 |
+| `test/module-loading/21-module-layout.js` | 9740–9741 |
+| `test/module-loading/33-registry-opt-in.js` | 9594 |
+| `test/module-loading/34-icon-reload-single-thread.js` | 9600 |
+| `test/module-loading/36-per-session-declaration.js` | 9729 |
 | `test/remote/08-origin-map.js` | 9744–9745, 9748 |
 | `test/remote/09-sandboxed-call.js` | 9746–9747 |
 | `test/remote/10-hardened-install.js` | 9699, 9726 |
@@ -125,7 +156,7 @@ one) as well as the ports it binds.
 | `test/sandbox/01-modes.js` | 9605 |
 | `test/sandbox/02-permissions.js` | 9606 |
 | `test/sandbox/04-load-time.js` | 9607 |
-| `test/sandbox/05-lockdown.js` | 9608–9610 |
+| `test/sandbox/05-lockdown.js` | 9608–9610, 9771–9773 |
 | `test/sandbox/07-restart.js` | 9611–9614 |
 | `test/sandbox/08-limits.js` | 9613 |
 | `test/sandbox/09-hardened.js` | 9614 |
@@ -139,19 +170,39 @@ one) as well as the ports it binds.
 | `test/sandbox/24-codes-after-worker-end.js` | 9613–9615 |
 | `test/sandbox/25-jobs-wait-through-reload.js` | 9621–9623 |
 | `test/sandbox/26-job-timeout.js` | 9624–9625, 9627 |
-| `test/sandbox/27-reload-during-discovery-bound.js` | 9637 |
 | `test/sandbox/28-crash-during-restart-discovery.js` | 9638 |
 | `test/sandbox/29-link-to-module-parent.js` | 9650 |
 | `test/sandbox/30-deviceonline-while-unloading.js` | 9640 |
+| `test/sandbox/45-load-bound.js` | 9734–9735 |
+| `test/sandbox/46-redis-namespace.js` | 9736–9737 |
+| `test/sandbox/47-redis-purge.js` | 9738 |
+| `test/sandbox/49-message-bound.js` | 9739 |
+| `test/sandbox/50-module-stdio.js` | 9790 |
+| `test/fixtures/server-left-behind/failing.js` (run by `test/validation/16-no-server-left.js`) | 9791 |
+| `test/sandbox/54-per-call-values.js` | 9792 |
+| `test/sandbox/57-session-caps.js` | none (a session socket in its home) |
+| `test/sandbox/59-protected-paths-denied.js` | 9796, 9797, 9798 |
+| `test/sandbox/60-audit-writes.js` | 9799 (audit, enforce and off, one after another) |
+| `test/sandbox/63-unlisted-part-restarting.js` | 9793 |
 | `test/sandbox/32-job-late-completion.js` | 9643 |
 | `test/sandbox/33-operator-actions-in-order.js` | 9644–9645 |
 | `test/sandbox/34-always-denied.js` | 9680–9682 |
 | `test/sandbox/35-enforce-tls.js` | 9683–9685 |
 | `test/sandbox/39-resolve-shim.js` | 9724–9725 |
+| `test/sandbox/41-main-thread-validation.js` | 9749 |
+| `test/sandbox/42-hop-results-transferred.js` | 9749 (after 41's server has stopped: one mocha process runs the folder's files one after another) |
+| `test/sandbox/48-hop-inputs-transferred.js` | 9749 (after 41's and 42's servers have stopped, as 42) |
+| `test/sandbox/49-peer-hops-validated.js` | 9749 (after 41's, 42's and 48's servers have stopped, as 42) |
+| `test/sandbox/43-lean-worker-files.js` | 9750 |
+| `test/sandbox/48-lean-lockdown.js` | 9751 |
+| `test/sandbox/66-no-late-runtime-loads.js` | 9775–9776 |
+| `test/sandbox/68-runtime-isolation.js` | 9759 |
+| `test/sandbox/69-compatibility-table.js` | 9777 |
 | `test/single-thread/01-facade.js` | 9636 |
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |
 | `test/stdio/03-module-data-dirs.js` | 9733 (a `--redisUrl` nothing listens on) |
+| `test/store/08-blob-options.js` | 9579 |
 | `test/test1.js` | 9527 |
 | `test/test2.js` | 9527 |
 | `test/test3.js` | 9527 |
@@ -175,9 +226,6 @@ one) as well as the ports it binds.
 | `test/unit/test014.js` | 9527 |
 | `test/unit/test015.js` | 9527 |
 | `test/unit/test016.js` | 9527 |
-| `test/unit/test017.js` | 9527 |
-| `test/unit/test018.js` | 9527 |
-| `test/unit/test019.js` | 9527 |
 | `test/unit/test020.js` | 9527 |
 | `test/unit/test021.js` | 9527 |
 | `test/unit/test022.js` | 9527 |
@@ -190,4 +238,8 @@ one) as well as the ports it binds.
 | `test/unit/test030.js` | 9527 |
 | `test/unit/test031.js` | 9527 |
 | `test/unit/test032.js` | 9527 |
+| `test/usage/24-caller-kind.js` | 9800, 9801, 9802 |
 | `test/validation/02-stray-output-rejected.js` | 9575 |
+| `test/validation/19-output-not-json.js` | 9576 |
+| `test/validation/20-output-not-json-hop.js` | 9577 |
+| `test/validation/20-output-not-json-hop.js` | 9578 |

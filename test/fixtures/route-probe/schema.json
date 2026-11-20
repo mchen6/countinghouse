@@ -4,7 +4,7 @@
   "type": "object",
   "probeService": {
     "attempt": {
-      "input": {"type": "object", "properties": {"what": {"type": "string"}, "target": {"type": "string"}}, "required": ["what", "target"]},
+      "input": {"type": "object", "properties": {"what": {"type": "string"}, "target": {"type": "string"}, "libFile": {"type": "string"}}, "required": ["what", "target"]},
       "output": {"type": "object", "properties": {"outcome": {"type": "string"}, "code": {"type": ["string", "null"]}}}
     }
   }

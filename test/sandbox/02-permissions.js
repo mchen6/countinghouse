@@ -7,6 +7,7 @@ const path   = require('path');
 const perms  = require('../../lib/module-permissions');
 const policy = require('../../lib/module-policy');
 const {startServer, stopServer} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 
 const pkg = (permissions) => ({name: 'm', version: '1.0.0', countinghouse: {permissions: permissions}});
 
@@ -129,6 +130,15 @@ describe('sandbox 02: narrowing by the operator policy', () => {
       {A: 'p', B: 's'});
   });
 
+  // M3 (#413 section 6.5): a name a credentials allowance reads is never
+  // copied from the server's environment; a policy value for it still is.
+  it('resolves env values with credential names: never from the server env, the override still given', () => {
+    assert.deepStrictEqual(
+      perms.resolveEnv(['A', 'B', 'C', 'COUNTINGHOUSE_X'], {B: 'p', COUNTINGHOUSE_X: 'p'}, {A: 's', B: 's', C: 's', COUNTINGHOUSE_X: 's'}, new Set(['A', 'B'])),
+      {B: 'p', C: 's'});
+    assert.deepStrictEqual(perms.credentialDeniedNames(['A', 'B', 'C', 'COUNTINGHOUSE_X'], {B: 'p'}, ['A', 'B', 'COUNTINGHOUSE_X']), ['A']);
+  });
+
   it('matches hosts and ports, with one-label wildcards', () => {
     const net = [{host: 'api.example.com', ports: [443]}, {host: '*.example.org', ports: null}];
     assert.strictEqual(perms.hostAllowed(net, 'API.example.com', 443), true);
@@ -219,7 +229,7 @@ describe('sandbox 02: the policy file', function() {
   it('stops startup on a missing policy file', async () => {
     let server = null;
     try {
-      server = await startServer(9606, ['--debug', '--workerThread', '--modulePolicy', path.join(dir, 'nope.json')], {expectExit: true});
+      server = await startServer(testPort(9606), ['--debug', '--workerThread', '--modulePolicy', path.join(dir, 'nope.json')], {expectExit: true});
       assert.strictEqual(server.exitCode, 2);
       assert.ok(server.output.includes('--modulePolicy'), server.output);
     } finally { stopServer(server); }

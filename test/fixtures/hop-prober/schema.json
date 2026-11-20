@@ -9,14 +9,10 @@
         "properties": {
           "deviceID": {
             "type": "string"
-          },
-          "as": {
-            "type": "string"
           }
         },
         "required": [
-          "deviceID",
-          "as"
+          "deviceID"
         ]
       },
       "output": {
@@ -29,15 +25,19 @@
         "properties": {
           "deviceID": {
             "type": "string"
-          },
-          "as": {
-            "type": "string"
           }
         },
         "required": [
-          "deviceID",
-          "as"
+          "deviceID"
         ]
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "callByName": {
+      "input": {
+        "type": "object"
       },
       "output": {
         "type": "object"

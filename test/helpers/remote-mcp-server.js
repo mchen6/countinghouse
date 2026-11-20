@@ -13,7 +13,8 @@
 //   slow        echo_text's answer after 3 s
 //
 // mode: 'ok' (default), '401' (every request), 'garbage' (200 with a body
-// that is not JSON-RPC), 'redirect' (302 to `redirectTo`), 'paged'
+// that is not JSON-RPC), 'redirect' (302 to `redirectTo`), 'redirect-same'
+// (307 to /moved on this server, which answers as 'ok'), 'paged'
 // (tools/list in pages of two), 'loopcursor' (every page names cursor "0"
 // next), '600', '404', '500', '503', '504' (that status on every
 // request), 'echo400' (400 whose body repeats the Authorization header's
@@ -51,7 +52,7 @@ function answer(name, args) {
 // setMode(mode), extraTools: []}>
 function startRemoteServer(port, opts) {
   const o = Object.assign({mode: 'ok', redirectTo: null}, opts);
-  const state = {headers: [], paths: [], calls: [], connections: 0, open: 0, sockets: new Set(), mode: o.mode, extraTools: []};
+  const state = {aborted: 0, cancelled: [], headers: [], paths: [], calls: [], connections: 0, open: 0, sockets: new Set(), mode: o.mode, extraTools: []};
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (d) => { body += d; });
@@ -60,6 +61,7 @@ function startRemoteServer(port, opts) {
       state.paths.push(req.url);
       if (state.mode === '401') { res.writeHead(401, {'content-type': 'text/plain'}); return res.end('unauthorized'); }
       if (state.mode === 'redirect') { res.writeHead(302, {location: o.redirectTo}); return res.end(); }
+      if (state.mode === 'redirect-same' && req.url !== '/moved') { res.writeHead(307, {location: `http://127.0.0.1:${port}/moved`}); return res.end(); }
       if (state.mode === 'garbage') { res.writeHead(200, {'content-type': 'application/json'}); return res.end('not json'); }
       if (/^\d{3}$/.test(state.mode)) { res.writeHead(Number(state.mode), {'content-type': 'text/plain'}); return res.end('status'); }
       if (state.mode === 'echo400') {
@@ -71,6 +73,8 @@ function startRemoteServer(port, opts) {
       try { message = body !== '' ? JSON.parse(body) : undefined; } catch (e) { res.writeHead(400); return res.end(); }
       const callName = (message != null && message.method === 'tools/call' && message.params != null) ? message.params.name : null;
       if (callName != null) state.calls.push(callName);
+      // a client's notifications/cancelled (M19: a cancelled call's remote call)
+      if (message != null && message.method === 'notifications/cancelled' && message.params != null) state.cancelled.push(message.params.requestId);
       const s = new Server({name: 'remote-test', version: '1.0.0'}, {capabilities: {tools: {}}});
       s.setRequestHandler(ListToolsRequestSchema, async (r) => {
         const all = TOOLS.concat(state.extraTools).map(tool);
@@ -84,7 +88,9 @@ function startRemoteServer(port, opts) {
       s.setRequestHandler(CallToolRequestSchema, async (r) => answer(r.params.name, r.params.arguments));
       const t = new StreamableHTTPServerTransport({sessionIdGenerator: undefined, enableJsonResponse: !SSE_TOOLS.has(callName)});
       await s.connect(t);
-      res.on('close', () => { t.close(); s.close(); });
+      // a request whose response closed before it was answered: aborted by
+      // the client (M19: a cancelled call's remote call)
+      res.on('close', () => { if (!res.writableEnded) state.aborted += 1; t.close(); s.close(); });
       t.handleRequest(req, res, message);
     });
   });
@@ -100,6 +106,8 @@ function startRemoteServer(port, opts) {
       headers: state.headers,
       paths: state.paths,
       calls: state.calls,
+      aborted: () => state.aborted,
+      cancelled: state.cancelled,
       connections: () => state.connections,
       open: () => state.open,
       sockets: () => new Set(state.sockets),

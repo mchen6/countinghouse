@@ -1,10 +1,17 @@
-// CHUtil.request loads its library on first use (reviewer, 2026-11-12; the
-// per-module split): postman-request, with soap since removed, was about a
-// fifth of every worker's boot, and a module in the current format rarely
-// uses it. A worker's boot does not load it; the first call loads it and
-// works, after the lockdown, and the lockdown's host check
-// still refuses an undeclared host, first call or not. In the worker under
-// enforce and audit, and in single-thread mode.
+// When CHUtil.request's library, postman-request (about 240 files), loads.
+// It used to load on first use in every mode (reviewer, 2026-11-12: a fifth
+// of every worker's boot, and a module in the current format rarely uses
+// it). Since #194's PR 1 nothing of the runtime's loads after a worker's
+// lockdown, so (ruling (b), the spec's Revision 6 item 11):
+// - a worker whose module declares `net` loads it at set-options, before
+//   the lockdown, under enforce and audit;
+// - a worker whose module declares no `net`: under enforce every request is
+//   refused before the library is reached, so it never loads; under audit
+//   the request is allowed and reported, and the library loads then, after
+//   the lockdown (audit isn't a boundary; the request carries only the
+//   module's own options);
+// - single-thread mode has no lockdown: still on first use.
+// The lockdown's host check refuses an undeclared host either way.
 //
 // The local stdio profile: no Redis, no fixed port. The stand-in is an
 // ephemeral loopback server; the undeclared host is under .invalid and only
@@ -18,18 +25,19 @@ const {spawn} = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
 const ENTRY = path.join(ROOT, 'bin', 'countinghouse-stdio.js');
-const MODULE = path.join(ROOT, 'test', 'fixtures', 'lazy-net-probe');
+const WITH_NET = path.join(ROOT, 'test', 'fixtures', 'lazy-net-probe');
+const NO_NET = path.join(ROOT, 'test', 'fixtures', 'lazy-net-probe-no-net');
 const UNDECLARED = 'http://lazy-40.invalid/';
 const KEY = 'sandbox-40-key';
 
-function start(home, extra) {
+function start(home, extra, MODULE) {
   // Every device for one key, as test/stdio/02 does, so the module's tool is listed.
   const auth = path.join(home, 'auth.json');
   fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'sandbox-40', devices: ['*']}}));
   // The operator approves the declared net permission (127.0.0.1): under
   // enforce an unapproved declaration is granted nothing.
   const policy = path.join(home, 'policy.json');
-  fs.writeFileSync(policy, JSON.stringify({modules: {'lazy-net-probe': {approve: 'as-declared'}}}));
+  fs.writeFileSync(policy, JSON.stringify({modules: {[path.basename(MODULE)]: {approve: 'as-declared'}}}));
   const child = spawn(process.execPath, [ENTRY, ...extra, '--authConfigPath', auth, '--modulePolicy', policy, '--store', 'local', '--storePath', path.join(home, 'store'),
     '--moduleDataPath', path.join(home, 'module_data'), '--modulePath', path.join(home, 'modules'), '--loadModule', MODULE],
   {env: {...process.env, COUNTINGHOUSE_API_KEY: KEY}, stdio: ['pipe', 'pipe', 'pipe']});
@@ -61,13 +69,28 @@ function request(io, message, timeoutMs = 30000) {
   });
 }
 
+// [where, flags, mode, module, loaded at boot]
+// (each start with the test's late-load probe, --testLateLoads: since
+// #194's PR 2 its fixtures reach a runtime object only through the
+// probe's hand-over, module code's own require.cache holding its own files)
 [
-  ['the worker under enforce', ['--workerThread', '--moduleSandbox', 'enforce'], 'enforce'],
-  ['the worker under audit', ['--workerThread', '--moduleSandbox', 'audit'], 'audit'],
-  ['single-thread mode', ['--no-workerThread'], 'off']
-].forEach(([where, flags, mode]) => {
+  ['the worker under enforce, net declared', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'enforce'], 'enforce', WITH_NET, true],
+  ['the worker under audit, net declared', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', WITH_NET, true],
+  ['single-thread mode', ['--no-workerThread'], 'off', WITH_NET, false],
+  ['the worker under enforce, no net declared', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'enforce'], 'enforce', NO_NET, false],
+  ['the worker under audit, no net declared', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', NO_NET, false],
+  // (the module sets Node's wrapper of a file's source first, or puts a
+  // Proxy in its place, or sets it from inside the late load through a
+  // module.require tracing subscriber: no window opens, or it closes, said,
+  // so the library's requires are each said; PR 3)
+  ['the worker under audit, no net declared, Module.wrap set first', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', NO_NET, false, 'patchWrap'],
+  ['the worker under audit, no net declared, a Proxy for Module.wrapper first', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', NO_NET, false, 'wrapperProxy'],
+  ['the worker under audit, no net declared, Module.wrap set inside the load', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', NO_NET, false, 'traceWrap']
+].forEach(([where, flags, mode, MODULE, atBoot, wrapFirst = null]) => {
   const refuses = (mode === 'enforce');
-  describe(`sandbox 40: CHUtil's HTTP helper loads on first use, in ${where}`, function() {
+  const declares = (MODULE === WITH_NET);
+  const name = path.basename(MODULE);
+  describe(`sandbox 40: when CHUtil's HTTP helper loads, in ${where}`, function() {
     this.timeout(120000);
     let home = null;
     let io = null;
@@ -80,8 +103,8 @@ function request(io, message, timeoutMs = 30000) {
       home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sb-40-'));
       server = await startStandIn();
       base = server.base;
-      io = start(home, flags);
-      await request(io, {jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2026-07-28', capabilities: {}, clientInfo: {name: 'test', version: '0'}}});
+      io = start(home, flags, MODULE);
+      await request(io, {jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'test', version: '0'}}});
       io.child.stdin.write(`${JSON.stringify({jsonrpc: '2.0', method: 'notifications/initialized'})}\n`);
       const deadline = Date.now() + 60000;
       while (tool == null && Date.now() < deadline) {
@@ -103,34 +126,66 @@ function request(io, message, timeoutMs = 30000) {
       return r.result.structuredContent != null ? r.result.structuredContent : JSON.parse(r.result.content[0].text);
     };
 
-    it('the module\'s boot does not load postman-request', async () => {
-      assert.deepStrictEqual((await probe({what: 'loaded'})).loaded, {request: false});
+    it(atBoot ? 'postman-request is loaded by the time module code runs (before the lockdown)' : 'the module\'s boot does not load postman-request', async () => {
+      assert.deepStrictEqual((await probe({what: 'loaded'})).loaded, {request: atBoot});
     });
 
     if (refuses) {
-      it('a first CHUtil.request to an undeclared host is still refused, and loads nothing', async () => {
+      it(`a CHUtil.request to an undeclared host is refused${atBoot ? '' : ', and loads nothing'}`, async () => {
         const r = await probe({what: 'request', url: UNDECLARED});
         assert.strictEqual(r.code, 'ERR_ACCESS_DENIED', JSON.stringify(r));
-        assert.deepStrictEqual(r.loaded, {request: false});
+        assert.deepStrictEqual(r.loaded, {request: atBoot});
       });
     }
 
     if (mode === 'audit') {
       // localhost is not the declared 127.0.0.1, and needs no lookup beyond the hosts file.
-      it('a first CHUtil.request to an undeclared host is still reported under audit, and allowed', async () => {
+      it(`a CHUtil.request to an undeclared host is reported under audit, and allowed${atBoot ? '' : ' (the library loads then, after the lockdown)'}`, async () => {
+        if (wrapFirst != null) assert.deepStrictEqual(await probe({what: wrapFirst}), {patched: true});
+        // (one file outside its root the module requires itself, first:
+        // the late load's sweep leaves it, the review of e0f39de9)
+        const own = (!atBoot && !wrapFirst) ? await probe({what: 'requireOutside'}) : null;
+        if (own != null) assert.strictEqual(own.count, 1, JSON.stringify(own));
         const r = await probe({what: 'request', url: `http://localhost:${server.port}/`});
         assert.notStrictEqual(r.code, 'ERR_ACCESS_DENIED', JSON.stringify(r));
+        const line = new RegExp(`${name} violation net localhost`);
         const deadline = Date.now() + 5000;
-        while (!/lazy-net-probe violation net localhost/.test(io.err) && Date.now() < deadline) await new Promise((res) => setTimeout(res, 50));
-        assert.match(io.err, /lazy-net-probe violation net localhost/);
-        assert.strictEqual(r.loaded.request, true);
+        while (!line.test(io.err) && Date.now() < deadline) await new Promise((res) => setTimeout(res, 50));
+        assert.match(io.err, line);
+        // (loaded before the lockdown: still in the probe's list; loaded now,
+        // late: moved out of the cache once loaded, so module code finds none
+        // of it, the review of e0f39de9)
+        assert.strictEqual(r.loaded.request, atBoot);
+        // (the library's own requires, in a late load the net reported, are
+        // the runtime's: said once, as that load, never one by one against
+        // the module; #434's review; but with Node's wrapper set by module
+        // code no window opens, and each is said)
+        if (!atBoot) {
+          const said = io.err.split('\n').filter((l) => l.includes(`${name} violation require`));
+          assert.ok(said.some((l) => /postman-request \(a load by the runtime after the lockdown\)/.test(l)), said.join('\n'));
+          if (wrapFirst != null) {
+            assert.ok(said.length > 2, `a window stayed open with Node's wrapper changed (${wrapFirst}):\n${said.join('\n')}`);
+            if (wrapFirst === 'traceWrap') assert.ok(said.some((l) => l.includes('Module.wrap set during the runtime\'s late load (its window closed)')), said.join('\n'));
+          } else {
+            // (the window's roots are postman-request's own closure: a
+            // hoisted supports-color, which debug requires undeclared, is
+            // outside it and said, in this dev tree or a project that has
+            // one; a standalone production install has none)
+            const library = said.filter((l) => !/violation require (supports-color|has-flag) /.test(l));
+            assert.ok(library.length <= 2, `the library's own requires said against the module:\n${library.join('\n')}`);
+          }
+          const left = await probe({what: 'outside'});
+          assert.deepStrictEqual(left, own != null ? own : {outside: [], count: 0});
+        }
       });
     }
 
-    it('the first CHUtil.request to a declared host works, and loads postman-request only then', async () => {
-      const r = await probe({what: 'request', url: `${base}/`});
-      assert.deepStrictEqual([r.outcome, r.status, r.body], ['ok', 200, 'ok'], JSON.stringify(r));
-      assert.deepStrictEqual(r.loaded, {request: true});
-    });
+    if (declares) {
+      it(`a CHUtil.request to a declared host works${atBoot ? '' : ', and loads postman-request only then'}`, async () => {
+        const r = await probe({what: 'request', url: `${base}/`});
+        assert.deepStrictEqual([r.outcome, r.status, r.body], ['ok', 200, 'ok'], JSON.stringify(r));
+        assert.deepStrictEqual(r.loaded, {request: true});
+      });
+    }
   });
 });

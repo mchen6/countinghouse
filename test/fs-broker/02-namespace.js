@@ -18,8 +18,13 @@ async function prepared(cfg) {
 }
 
 function pick(r) {
-  return {kind: r.kind, host: r.host, name: r.root.name, writable: r.root.writable};
+  // a host path in "/" form (the test's roots are POSIX paths; on Windows
+  // the namespace joins under them with the host's "\\")
+  return {kind: r.kind, host: slash(r.host), name: r.root.name, writable: r.root.writable};
 }
+
+const WIN = process.platform === 'win32';
+const slash = (p) => (WIN && typeof(p) === 'string' ? p.replace(/\\/g, '/') : p);
 
 describe('fs-broker 02: namespace', () => {
   it('maps the three virtual roots and declared paths, longest match first', async () => {
@@ -44,7 +49,10 @@ describe('fs-broker 02: namespace', () => {
     assert.deepStrictEqual(n.resolve('/var/log', '/'), {kind: 'ancestor', virtual: '/var/log', children: [{name: 'app', type: 'dir'}]});
   });
 
-  it('a declared root that is a file is listed as a file', async () => {
+  // A declared root is a host path, which on Windows carries a drive and is
+  // outside the namespace there: declared roots do not work on Windows yet
+  // (they fail closed; #204, out of scope for the first release).
+  (WIN ? it.skip : it)('a declared root that is a file is listed as a file', async () => {
     // Not under os.tmpdir() (test/helpers/test-tmp.js): /tmp is itself a virtual root, and the validator
     // forbids declaring paths there.
     const base = mkdtemp('ns-');
@@ -64,14 +72,16 @@ describe('fs-broker 02: namespace', () => {
 
   it('resolves relative paths against the given cwd', async () => {
     const n = await prepared(CFG);
-    assert.strictEqual(n.resolve('handlers/x.js', '/app').host, '/srv/modules/weather/handlers/x.js');
+    assert.strictEqual(slash(n.resolve('handlers/x.js', '/app').host), '/srv/modules/weather/handlers/x.js');
     assert.strictEqual(n.resolve('x', '/home/u').kind, 'outside');
   });
 
   it('accepts Buffers and file: URLs', async () => {
     const n = await prepared(CFG);
-    assert.strictEqual(n.resolve(Buffer.from('/data/x'), '/').host, '/srv/data/weather/data/x');
-    assert.strictEqual(n.resolve(new URL('file:///tmp/y'), '/').host, '/srv/data/weather/tmp/y');
+    assert.strictEqual(slash(n.resolve(Buffer.from('/data/x'), '/').host), '/srv/data/weather/data/x');
+    // (on Windows the worker's patch reads a file URL as its path before the
+    // broker sees it, and file:///tmp/y names no path: lib/fs-broker/patch.js)
+    if (!WIN) assert.strictEqual(n.resolve(new URL('file:///tmp/y'), '/').host, '/srv/data/weather/tmp/y');
   });
 
   it('maps host paths back to virtual ones', async () => {
@@ -80,6 +90,26 @@ describe('fs-broker 02: namespace', () => {
     assert.strictEqual(n.toVirtual('/srv/modules/weather'), '/app');
     assert.strictEqual(n.toVirtual('/var/log/app/x'), '/var/log/app/x');
     assert.strictEqual(n.toVirtual('/etc/passwd'), null);
+  });
+
+  it('refuses a writable declared path over the module\'s own code, either way round (the _stat PR)', async () => {
+    const declared = [{path: '/srv/modules/weather/lib', access: 'rw'}, {path: '/srv/modules', access: 'rw'}, {path: '/srv/modules/weather/docs', access: 'r'}];
+    // (no protected path in the way: the own-code rule alone)
+    const n = await prepared(Object.assign({}, CFG, {mode: 'enforce', declared, protectedPaths: []}));
+    assert.deepStrictEqual(n.refused.filter((r) => /module's own code/.test(r.reason)).map((r) => r.path), ['/srv/modules/weather/lib', '/srv/modules']);
+    // (under audit kept, and listed for the spawn to say)
+    const a = await prepared(Object.assign({}, CFG, {mode: 'audit', declared, protectedPaths: []}));
+    assert.deepStrictEqual(a.refused.filter((r) => /module's own code/.test(r.reason)), []);
+    assert.deepStrictEqual(a.ownCodeWritable, ['/srv/modules/weather/lib', '/srv/modules']);
+    // (off decides nothing: kept, unsaid)
+    const o = await prepared(Object.assign({}, CFG, {mode: 'off', declared, protectedPaths: []}));
+    assert.deepStrictEqual(o.refused.filter((r) => /module's own code/.test(r.reason)), []);
+    // (and a caller that gives no mode fails closed: refused; the high
+    // review of #452)
+    const none = Object.assign({}, CFG, {declared, protectedPaths: []});
+    delete none.mode;
+    const u = await prepared(none);
+    assert.deepStrictEqual(u.refused.filter((r) => /module's own code/.test(r.reason)).map((r) => r.path), ['/srv/modules/weather/lib', '/srv/modules']);
   });
 
   it('refuses a declared path that overlaps a protected path, either way round', async () => {

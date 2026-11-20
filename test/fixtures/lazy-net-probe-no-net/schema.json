@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "netService": {
+    "probe": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "what": {"type": "string", "enum": ["loaded", "request", "outside", "patchWrap", "requireOutside", "wrapperProxy", "traceWrap"]},
+          "url": {"type": "string"}
+        },
+        "required": ["what"]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "loaded": {"type": "object"},
+          "outcome": {"type": ["string", "null"]},
+          "code": {"type": ["string", "null"]},
+          "message": {"type": ["string", "null"]},
+          "status": {"type": ["integer", "null"]},
+          "body": {"type": ["string", "null"]},
+          "outside": {"type": "array"},
+          "count": {"type": "integer"},
+          "patched": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

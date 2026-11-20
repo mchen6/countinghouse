@@ -1,0 +1,14 @@
+{
+  "device": {
+    "friendlyName": "win-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "reports what a module sees of its own files, for #195",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {"name": "probe", "description": "Run every check of a module's own files and paths, and report each.", "input": {"schema": "/probeService/probe/input"}, "output": {"schema": "/probeService/probe/output"}}
+        ]
+      }
+    }
+  }
+}

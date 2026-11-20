@@ -23,8 +23,9 @@ const http   = require('http');
 const net    = require('net');
 const spawn  = require('child_process').spawn;
 const waitForReady = require('../helpers/wait-for-ready');
+const {testPort} = require('../helpers/test-env');
 
-const PORT    = 9531;
+const PORT    = testPort(9531);
 const ROOT    = path.join(__dirname, '..', '..');
 const PKG_DIR = path.join(ROOT, 'pre-installed-packages');
 const GOLDEN  = require('./tools-list.golden.json');

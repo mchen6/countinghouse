@@ -147,7 +147,7 @@ describe('handler-map: convention assembly', () => {
 
   it('returns null when there is no handlers/ directory', () => {
     assert.strictEqual(
-      handlerMap.loadConventionHandlers(path.join(root, 'handler-map-module'), require), null);
+      handlerMap.loadConventionHandlers(path.join(root, 'no-index-module'), require), null);
   });
 
   it('the assembled convention map validates against its own api.json', () => {

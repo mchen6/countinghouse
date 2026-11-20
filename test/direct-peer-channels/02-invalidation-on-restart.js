@@ -1,6 +1,7 @@
 const request = require('supertest');
+const {testPort} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/direct-peer-channels-design.md section 5, step 2's required test:
 // "调用进行中热重载目标模块 -> 调用方收到明确错误且下一次调用成功走新实例" (reload the
@@ -20,7 +21,8 @@ const url = 'http://127.0.0.1:9527';
 // therefore the expected steady-state result both before and after the
 // restart; PEER_GONE/DEVICE_NOT_FOUND appearing only *during* the restart
 // window is the actual signal this test is after.
-describe('direct-peer-channels 02: port invalidation on module restart (D4)', function() {
+// a part of test/test8.js, against its server: alone, skipped (#234)
+(global.COUNTINGHOUSE_TEST8_PARTS === true ? describe : describe.skip)('direct-peer-channels 02: port invalidation on module restart (D4) (a part of test/test8.js: run it, not this file alone)', function() {
   this.timeout(0);
 
   const ECHO_DEVICE_CLIENT_ID = 'efefb416-bdc0-54eb-96a9-38f96f52779d'; // echo-device-client-module
@@ -122,8 +124,8 @@ describe('direct-peer-channels 02: port invalidation on module restart (D4)', fu
         // online and confirm the channel transparently re-established
         // itself against it (D1's "对调用方模块代码完全透明"). Polled, not a
         // single fixed delay -- restart-module's own unload wait is
-        // ~4-5s, and module rediscovery afterward is a further fixed
-        // ~5s (sandbox.js's 'discover-device' handling), so the total
+        // ~4-5s, and the new worker's load (its device registered from
+        // the main thread's spec once it has loaded) follows, so the total
         // time before the new instance is actually queryable varies and
         // can comfortably exceed 10s under load.
         let finalAttemptsLeft = 20; // ~20s budget at 1s/attempt

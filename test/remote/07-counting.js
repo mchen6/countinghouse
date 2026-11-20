@@ -6,20 +6,20 @@
 // refused USAGE_CALL_FOREIGN, a finished one goes on and records nothing.
 const assert = require('assert');
 const fs     = require('fs');
-const os     = require('os');
 const path   = require('path');
 const wt     = require('worker_threads');
 const {ROOT} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {startRemoteServer} = require('../helpers/remote-mcp-server');
 const {createUsage} = require('../../lib/usage');
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 
-const REMOTE = 9728;
+const REMOTE = testPort(9728);
 const KEY = 'remote-counting-key';
 const TOKEN = `ghp_${'A'.repeat(36)}`;
 
 function probeAt(port) {
-  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-07-')), 'remote-probe');
+  const dir = path.join(tmpDirs.mkdtemp('ch-remote-07-'), 'remote-probe');
   fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'remote-probe'), dir, {recursive: true});
   const pkgPath = path.join(dir, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
@@ -27,6 +27,11 @@ function probeAt(port) {
   fs.writeFileSync(pkgPath, JSON.stringify(pkg));
   return dir;
 }
+
+// this file's temporary trees, in os.tmpdir() (a module a runtime loads
+// stays outside the runtime's tree) and removed (test/helpers/test-tmp.js
+// forFile); nothing left there
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-07'], {base: require('os').tmpdir()});
 
 describe('remote 07: usage records for remote calls, and the call id across every hop', function() {
   this.timeout(60000);
@@ -40,7 +45,7 @@ describe('remote 07: usage records for remote calls, and the call id across ever
   let u = null;
   before(async () => {
     cli.setOptions({workerThread: false, debug: true});
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-07a-')), 'remote-credentials.json');
+    const file = path.join(tmpDirs.mkdtemp('ch-remote-07a-'), 'remote-credentials.json');
     fs.writeFileSync(file, JSON.stringify({[`http://127.0.0.1:${REMOTE}`]: ['CH_TEST_REMOTE_TOKEN'], [`http://127.0.0.1:${REMOTE + 1}`]: ['CH_TEST_REMOTE_TOKEN']}));
     credentials.configure(file);
     process.env.CH_TEST_REMOTE_TOKEN = TOKEN;
@@ -120,7 +125,14 @@ describe('remote 07: usage records for remote calls, and the call id across ever
 
   describe('the call id across every hop', () => {
     const device = {moduleName: 'count-probe', deviceID: 'd-count', spec: {device: {friendlyName: 'count-probe'}}};
-    const outerArgs = (usageCall) => ({input: {}, ctx: {appKey: KEY}, usageCall: usageCall});
+    // a call on the main thread: its billing key rides on its args under
+    // the runtime's private Symbol (R2-1 Task 5), as countinghouse-interface
+    // attaches it
+    const outerArgs = (usageCall) => {
+      const args = {input: {}, ctx: {id: null, isAdmin: false}, usageCall: usageCall};
+      handlerCtx.attachBilling(args, {appKey: KEY});
+      return args;
+    };
 
     it('the call id is carried unchanged from the composite through the part to the remote', async () => {
       const id = u.beginCall({tool: 'outer'});
@@ -135,9 +147,10 @@ describe('remote 07: usage records for remote calls, and the call id across ever
       // where the hop must be among the module's declarations (R2-1 Task 4,
       // spec section 8): the composition declares it.
       device._composition = {identity: 'internal', allowed: {}, targets: ['d-part|svc|act']};
+      device._compositionSettled = true;
       let sent = null;
       device._ctxServiceClients = {'d-part|svc|internal': {invoke: (opts, cb) => { sent = opts; cb(null, {}); }, deviceID: 'd-part', serviceID: 'svc'}};
-      await new Promise((resolve, reject) => ctx.serviceClient({deviceID: 'd-part', serviceID: 'svc', as: 'internal'}, (err, client) =>
+      await new Promise((resolve, reject) => ctx.serviceClient({deviceID: 'd-part', serviceID: 'svc'}, (err, client) =>
         (err != null ? reject(err) : client.invoke({actionName: 'act', input: {}, usageCall: 999}, resolve))));
       assert.strictEqual(sent.usageCall, id);
       assert.strictEqual(sent.billingKey, KEY);
@@ -147,8 +160,8 @@ describe('remote 07: usage records for remote calls, and the call id across ever
       const ServiceClient = require('../../lib/service-client');
       const seen = {};
       const dm = {
-        sendActionInvokeMessageToParent: (appKey, billingKey, deviceID, serviceID, actionName, args) => { seen.routed = args; },
-        invokeActionViaPeerChannel: (appKey, billingKey, deviceID, serviceID, actionName, args) => { seen.peer = args; }
+        sendActionInvokeMessageToParent: (deviceID, serviceID, actionName, args) => { seen.routed = args; },
+        invokeActionViaPeerChannel: (deviceID, serviceID, actionName, args) => { seen.peer = args; }
       };
       const client = new ServiceClient({deviceManager: dm}, false, true, 'internal', 'd-part', 'svc', KEY);
       cli.setOptions({workerThread: false, debug: true, directPeerChannels: false});
@@ -156,8 +169,9 @@ describe('remote 07: usage records for remote calls, and the call id across ever
       cli.setOptions({workerThread: false, debug: true, directPeerChannels: true});
       client.invoke({actionName: 'act', input: {a: 1}, usageCall: 5}, () => {});
       cli.setOptions({workerThread: false, debug: true});
-      assert.deepStrictEqual(seen.routed, {input: {a: 1}, usageCall: 5});
-      assert.deepStrictEqual(seen.peer, {input: {a: 1}});
+      // (the service client's copies have no prototype, by design: compared by their fields)
+      assert.deepStrictEqual({...seen.routed}, {input: {a: 1}, usageCall: 5});
+      assert.deepStrictEqual({...seen.peer}, {input: {a: 1}});
     });
 
     it('a worker\'s remote message carries the id', async () => {
@@ -222,4 +236,5 @@ describe('remote 07: usage records for remote calls, and the call id across ever
       assert.deepStrictEqual(ins(), []);
     });
   });
+  tmpDirs.hooks();
 });

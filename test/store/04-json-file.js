@@ -196,8 +196,14 @@ describe('store 04: the review of B2', function() {
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'm.json'), 'utf8')), {k: 1});
   });
 
-  it('takes over an empty lock, and a live pid\'s lock, older than a write can take', () => {
-    for (const content of ['', JSON.stringify({pid: process.ppid, startMs: 1, at: Date.now() - 60000})]) {
+  // A lock is stale when its holder's process is gone, or when no holder is
+  // readable after STALE_MS (one still being written): never by its age
+  // alone, so a live writer held up past it (a slow fsync on a loaded
+  // machine, a debugger, a long GC pause) never has its lock taken while it
+  // writes, and two processes never write the file at once.
+  it('takes over an empty lock older than a write can take, and a dead pid\'s lock', () => {
+    const dead = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], {encoding: 'utf8'});
+    for (const content of ['', JSON.stringify({pid: Number(dead.stdout), startMs: 1, at: Date.now()})]) {
       const dir = tmpStore();
       const lock = path.join(dir, '.lock');
       fs.writeFileSync(lock, content);
@@ -207,6 +213,33 @@ describe('store 04: the review of B2', function() {
       f.set('k', 1);
       f.flush();
       assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'm.json'), 'utf8')), {k: 1}, `lock ${JSON.stringify(content)}`);
+    }
+  });
+
+  // A live holder's lock is taken over only past LIVE_STALE_MS (120 s), which
+  // no write reaches: a slow live writer keeps it, a hung one cannot stop
+  // the store's writes for good.
+  it('a live process\'s lock is not taken at 30 s old; at 121 s it is', async () => {
+    const live = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], {stdio: 'ignore'});
+    try {
+      for (const [ageS, taken] of [[30, false], [121, true]]) {
+        const dir = tmpStore();
+        const lock = path.join(dir, '.lock');
+        const held = JSON.stringify({pid: live.pid, startMs: 1, at: Date.now() - ageS * 1000});
+        fs.writeFileSync(lock, held);
+        const f = openJsonFile(path.join(dir, 'm.json'));
+        f.set('k', 1);
+        f.flush(); // a busy lock: waits LOCK_WAIT_MS, then warns and reschedules
+        if (taken) {
+          assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'm.json'), 'utf8')), {k: 1}, `${ageS} s: taken over and written`);
+        } else {
+          assert.strictEqual(fs.readFileSync(lock, 'utf8'), held, `${ageS} s: the live holder's lock is still its own`);
+          assert.ok(!fs.existsSync(path.join(dir, 'm.json')), `${ageS} s: nothing was written while it held the lock`);
+        }
+        f.close();
+      }
+    } finally {
+      live.kill('SIGKILL');
     }
   });
 
@@ -351,5 +384,189 @@ describe('store 04: the review of B2', function() {
     assert.strictEqual(a.data.k, undefined);
     a.reload();
     assert.strictEqual(a.data.k, 'from b');
+  });
+});
+
+// #150: a process that takes the lock again the moment it releases it
+// starved one waiting with a 10 ms retry past LOCK_WAIT_MS (seen on Windows
+// CI). A waiter announces itself, and the others yield to it, so once it
+// has announced the other process takes the lock at most once more before
+// the waiter has it (measured in holds, not the wall clock: below).
+describe('store 04: a waiter is not starved (#150)', function() {
+  this.timeout(60000);
+
+  // The mechanism, deterministically: an announced waiter is yielded to.
+  it('a fresh announcement by another live waiter is yielded to; a dead or old one is not', () => {
+    const dir = tmpStore();
+    const sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], {stdio: 'ignore'});
+    try {
+      const announce = (pid, ageMs) => fs.writeFileSync(path.join(dir, '.lock.waiting'),
+        JSON.stringify({pid: pid, startMs: 1, at: Date.now() - ageMs}));
+      // a live waiter that announced 1700 ms ago: yielded to until it is 2 s old
+      announce(sleeper.pid, 1700);
+      const t = Date.now();
+      withStoreLock(dir, () => {});
+      assert.strictEqual(withStoreLock.waited, true, 'did not yield');
+      assert.ok(Date.now() - t >= 200, `yielded only ${Date.now() - t} ms`);
+      // a dead one, and an old one, are not
+      const gone = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], {encoding: 'utf8'});
+      announce(Number(gone.stdout), 0);
+      withStoreLock(dir, () => {});
+      assert.strictEqual(withStoreLock.waited, false, 'yielded to a dead waiter');
+      announce(sleeper.pid, 5000);
+      withStoreLock(dir, () => {});
+      assert.strictEqual(withStoreLock.waited, false, 'yielded to an old announcement');
+      // one dated in the future (a clock stepped back since): not fresh
+      announce(sleeper.pid, -60000);
+      withStoreLock(dir, () => {});
+      assert.strictEqual(withStoreLock.waited, false, 'yielded to an announcement from the future');
+    } finally {
+      sleeper.kill();
+    }
+  });
+
+  it('a waiter announces itself while the lock is busy, and withdraws once it has the lock', async () => {
+    const dir = tmpStore();
+    const file = path.join(dir, 'm.json');
+    const holder = spawn(process.execPath, ['-e', `
+      const {withStoreLock} = require(${JSON.stringify(MOD)});
+      withStoreLock(${JSON.stringify(dir)}, () => { process.stdout.write('held'); const t = Date.now() + 400; while (Date.now() < t) { /* hold */ } });
+    `], {stdio: ['ignore', 'pipe', 'ignore']});
+    await new Promise((resolve) => holder.stdout.once('data', resolve));
+    const f = openJsonFile(file);
+    let seen = null;
+    const probe = setInterval(() => {
+      try { seen = seen || JSON.parse(fs.readFileSync(path.join(dir, '.lock.waiting'), 'utf8')); } catch (e) { /* not yet */ }
+    }, 20);
+    await new Promise((resolve, reject) => f.update('k', () => 1, (err) => (err ? reject(err) : resolve())));
+    clearInterval(probe);
+    f.close();
+    assert.ok(seen != null && seen.pid === process.pid, `no announcement seen: ${JSON.stringify(seen)}`);
+    assert.ok(!fs.existsSync(path.join(dir, '.lock.waiting')), 'the announcement was left behind');
+  });
+
+  // the review of #160: an announcement is withdrawn on every way out of a
+  // wait, a throw included; a wait that ends yielding says so
+  it('a wait that throws withdraws its announcement', async () => {
+    const dir = tmpStore();
+    const holder = spawn(process.execPath, ['-e', `
+      const {withStoreLock} = require(${JSON.stringify(MOD)});
+      withStoreLock(${JSON.stringify(dir)}, () => { process.stdout.write('held'); const t = Date.now() + 300; while (Date.now() < t) { /* hold */ } });
+    `], {stdio: ['ignore', 'pipe', 'ignore']});
+    await new Promise((resolve) => holder.stdout.once('data', resolve));
+    let calls = 0;
+    const realWrite = fs.writeFileSync;
+    fs.writeFileSync = function(file, ...rest) {
+      // the second attempt at the lock file fails with an I/O error
+      if (String(file).endsWith(`${path.sep}.lock`) && ++calls === 2) throw Object.assign(new Error('EIO: i/o error'), {code: 'EIO'});
+      return realWrite.call(this, file, ...rest);
+    };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}), /EIO/);
+    } finally {
+      fs.writeFileSync = realWrite;
+    }
+    assert.ok(!fs.existsSync(path.join(dir, '.lock.waiting')), 'the announcement was left behind');
+    await new Promise((resolve) => holder.on('exit', resolve));
+  });
+
+  // The message a wait ends with, decided where the wait ends (busyError),
+  // with no wait and no renewing: a fresh announcement by a live process
+  // and no lock held is a yield, named by the waiter's pid. (A wait of
+  // LOCK_WAIT_MS against an announcement a child kept renewing depended on
+  // the renewal's timing, and on Windows a rename over the file while it
+  // is read can fail: flaky on #165's CI.)
+  it('a wait that ends yielding to a waiter names the waiter, not a holder', () => {
+    const {busyError} = require(MOD);
+    const dir = tmpStore();
+    const sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], {stdio: 'ignore'});
+    try {
+      fs.writeFileSync(path.join(dir, '.lock.waiting'), JSON.stringify({pid: sleeper.pid, startMs: 1, at: Date.now()}));
+      const err = busyError({busy: true, refused: null}, dir);
+      assert.ok(err.message.includes(String(sleeper.pid)), err.message);
+      assert.doesNotMatch(err.message, /held by pid unknown/);
+    } finally {
+      sleeper.kill();
+    }
+  });
+
+  // Fairness, measured in the other process's holds, never the wall clock:
+  // a loaded runner stalls both processes alike (CI took 13 s for a 3 s
+  // hammer, and an update that succeeded took 2697 ms with the yield
+  // working), and a late retry timer lets a hammer whose own announcement
+  // the waiter yielded to take the lock freely until the waiter's next
+  // attempt, as designed. What the announcement promises is load-free: once
+  // the waiter has announced (the rename onto .lock.waiting), the other
+  // process begins at most one more hold -- one already past its yield
+  // check -- before the waiter has the lock. The hammer logs when each hold
+  // begins, the waiter when it announced and when it got the lock (inside
+  // fn), on one monotonic timeline; at most 3 holds (slack for the clock's
+  // resolution) may begin in between. With the yield disabled an update
+  // waited through 177 and 190 holds of its whole wait.
+  it('two processes hammering one key both finish, and once a waiter has announced the other takes the lock at most once more', async () => {
+    const dir = tmpStore();
+    const file = path.join(dir, 'm.json');
+    const run = (script) => new Promise((resolve, reject) => {
+      const p = spawn(process.execPath, ['-e', `const {openJsonFile, withStoreLock} = require(${JSON.stringify(MOD)});
+        const {performance: perfHooks} = require('perf_hooks');
+        const monotonic = () => perfHooks.timeOrigin + perfHooks.now();\n${script}`],
+        {stdio: ['ignore', 'pipe', 'pipe']});
+      let out = '';
+      let err = '';
+      p.stdout.on('data', (c) => { out += c; });
+      p.stderr.on('data', (c) => { err += c; });
+      p.on('exit', (code) => (code === 0 ? resolve(out) : reject(new Error(err || `exit ${code}`))));
+    });
+    // takes the lock again at once, each time holding it about 2 ms, and
+    // logs when each hold begins; a wait that ends yielding to a stalled
+    // waiter (its announcement still fresh) is counted, not a failure
+    const hammer = run(`
+      const end = Date.now() + 3000;
+      const holds = [];
+      let yielded = 0;
+      while (Date.now() < end) {
+        try {
+          withStoreLock(${JSON.stringify(dir)}, () => { holds.push(monotonic()); const t = Date.now() + 2; while (Date.now() < t) { /* hold */ } });
+        } catch (e) {
+          if (!/yielded to a waiting process/.test(e.message)) throw e;
+          yielded++;
+        }
+      }
+      process.stdout.write(JSON.stringify({holds, yielded}));
+    `);
+    // counts one key with update(), logging when it announced (if it had to)
+    // and when it got the lock
+    const waiter = run(`
+      const fs = require('fs');
+      let announced = null;
+      const rename = fs.renameSync;
+      fs.renameSync = function(from, to) {
+        const r = rename.apply(this, arguments);
+        if (String(to).endsWith('.lock.waiting') && announced == null) announced = monotonic();
+        return r;
+      };
+      const f = openJsonFile(${JSON.stringify(file)});
+      const waits = [];
+      const next = () => {
+        announced = null;
+        let got = null;
+        f.update('n', (v) => { got = monotonic(); return (v || 0) + 1; }, (err) => {
+          if (err) { process.stderr.write(err.message); process.exit(1); }
+          waits.push({announced, got});
+          if (waits.length < 40) return next();
+          f.close();
+          process.stdout.write(JSON.stringify(waits));
+        });
+      };
+      setTimeout(next, 100);
+    `);
+    const [{holds}, waits] = (await Promise.all([hammer, waiter])).map((out) => JSON.parse(out));
+    assert.ok(holds.length > 0, 'the hammer never took the lock');
+    // (the two contended: some updates had to announce, so the yield was tested)
+    const contended = waits.filter((w) => w.announced != null);
+    assert.ok(contended.length > 0, `no update had to announce (${holds.length} holds): nothing was tested`);
+    const after = contended.map((w) => holds.filter((h) => h >= w.announced && h < w.got).length);
+    assert.ok(Math.max(...after) <= 3, `once announced, an update waited through ${Math.max(...after)} of the other process's holds (${JSON.stringify(after)})`);
+    assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).n, 40);
   });
 });

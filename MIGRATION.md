@@ -98,6 +98,11 @@ is the fix for the "all composite billing shows up under one key" limitation
 A hop whose billing identity cannot be resolved is refused with
 `HOP_IDENTITY_UNRESOLVED` rather than metered for free.
 
+**In 8.0 this changes again:** `as` is refused, and a composing module's hops
+authorize as the operator's `runsModules` binding (by the module's
+package.json name); `ctx.caller` is `{id, isAdmin}`. See
+[docs/upgrading-to-8.md](docs/upgrading-to-8.md#modules-no-longer-receive-api-keys-r2-1).
+
 ### Error handling
 
 A typed error (`DeviceError`/`CHError`) keeps its own code whether you throw it

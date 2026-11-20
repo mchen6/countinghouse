@@ -1,0 +1,255 @@
+# Shared runtime R1: per-session modules. Implementation plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** revision 2, APPROVED by the Reviewer (#349) with rulings D1–D3 as proposed, plus conditions D2(a)/(b) and three additions (marked "Reviewer, #349" below). Written against master at 7d8af977. Build order: Tasks 1–3, then M16's plan while CI runs, then Tasks 4–7.
+
+**Goal:** A module that declares `"countinghouse": {"state": "per-session"}` gets, on the shared runtime, a worker of its own per session, and its store and files partitioned by session. Those partitions live as long as the session (they survive a runtime restart that restores it). Everything else stays as it is: shared modules, `--stdio`, and every listing and golden.
+
+**Architecture:**
+- **The declaration** is read on the main thread from the pinned `package.json` (`lib/manifest-pins.js`), as `countinghouse.calls` is.
+- **A per-session module is loaded without a worker.** At its load the main thread builds its spec (`lib/module-spec.js`, in a validator, as today) and registers a **listing record** in `deviceMap`: spec, `packageInfo`, `hostModuleName`, `perSession: true`, no worker. The listing readers (`lib/mcp/tool-registry.js`, `prompts.js`, `gateway.js`) need nothing else, so listings and goldens don't move.
+- **A new main-thread `lib/session-workers.js`** holds the per-session workers, keyed by (module name, session id). They're spawned through `ModuleManager.spawnModuleWorker` with a `session` option that only the main thread sees.
+- **Every dispatch site resolves the worker through one function**, `DeviceManager.prototype.workerFor(deviceID, sessionId, cb)`, before it sends anything: the call path, the routed hop, the device query, a job's run, and the peer broker. A shared module's entry answers itself, as today.
+- **A new `lib/session-partition.js`** owns the partitions' names, creation, removal and the sweep. Store keys go under `ms:<encoded name>:<session id>:`. Files go under `<moduleDataPath>/<name>/sessions/<session id>/{data,tmp}`.
+- **The registry says why a session ended** (`bye`, `window`, `closed`, and `unsettled`). A partition is removed on every end but `closed`.
+
+**Tech stack:** Node ≥ 22.16, mocha. C1's session transport (`lib/session-transport/*`), B1's `lib/sessions.js`, the fs broker (`lib/fs-broker`), `lib/redis-namespace.js`.
+
+**Spec:** `docs/superpowers/specs/2026-11-15-shared-runtime-design.md` (#236), §4a (all of it), §6 (the restored ids, the sweep's place), §9 residual 5, and its plan's R1.
+
+## Decisions (ruled on #349: all three as proposed)
+
+- **D1. The pin (spec correction).** §4a says the field is "pinned with the manifest like `role` and `sessionDefaults` (`manifestPins`)", and "a reload that changes it is refused like any other pinned field". On master, **`manifestPins` pins `countinghouse.calls` only** (its header says so). `role` isn't pinned, `sessionDefaults` exists nowhere in `lib/`, and no reload is refused for a manifest change. **Proposal:** `manifestPins` also keeps `countinghouse.state` (the operator's load takes the file; a supervised restart keeps the pin, as for `calls`). `reloadModule` refuses a load whose state differs from the loaded one, with a new code `MODULE_STATE_CHANGED` ("unload it first"), because a running module's workers and partitions can't change shape in place. `role` stays as it is (out of scope). **Ruled:** yes, and §4a's text is corrected in this PR so the spec matches the source.
+- **D2. The listing record.** A per-session module has no worker until a session calls it, so its `deviceMap` entry is the main thread's spec record, not a `WorkerMessage`. **Every site that sends to `deviceMap[id]` must go through `workerFor`.** On master there are 18 `deviceMap[` sites in `device-manager.js`, 5 in `peer-channel-broker.js` and 2 in `route-manager.js`; Task 5 lists each one and what it does. The alternative, a router object that impersonates a `WorkerMessage`, hides an async spawn behind sync-looking sends, so it's rejected. **Ruled:** yes, with two conditions. (a) In shared mode a per-session module reached at a dispatch site with no session id fails CLOSED: `DEVICE_NOT_FOUND`, the same bytes as an unknown device, never "use any worker". (b) Task 5's PR lists every converted site (18 + 5 + 2), and a test shows a per-session module is reached by the right session's worker through each of the call, the routed hop, the query, the job run and the peer broker.
+- **D3. Daemon-death notice.** §4a: after a daemon death "each reconnecting session is told 'per-session state was reset', as §6 tells loosenings". I'll hook the same place §6's loosening reset uses (`lib/session-state.js` and the restore's `reset` rows). If that path only covers restored sessions, a daemon death (nothing restored) needs a runtime-wide "reset at start" flag that the next new session's first result carries. Proposal: that flag, set when the sweep removed anything and no row was restored. **Ruled:** yes, both. The wording goes to the Reviewer with the en/zh review.
+
+## Rulings and findings while building (after revision 2's approval)
+
+Each was the Reviewer's ruling, given while the task was built.
+- **Task 4, #356's deep review**, all fixed and each with a test that fails on revert:
+  - session workers are held to `--moduleMessageRate`;
+  - a session spawn registers no remote, and reuses the record's sandbox config. Re-registering closed every session's remote clients, and a failed spawn unregistered them for all (shown live: REMOTE_UNREACHABLE);
+  - a stopping or spawning worker keeps its cap slot until it has ended, every stop settles only then, and an uninstall waits for every `name\0sid`;
+  - a given-up spawn answers `MODULE_UNLOADED`.
+  New codes, wording approved: `MODULE_SESSION_PAUSED` (paused for that session alone, back after the supervisor's window) and `SESSION_WORKER_ENDED` (retry; the fresh worker's in-memory state starts empty). The P2 reader table in #356 lists every module-map reader, including the readers the review found safe.
+- **Task 5:**
+  - no direct peer channel to a per-session module, **under any profile**. The shared runtime is the single-identity profile, where peer channels are off anyway, but the guarantee is kept structural rather than resting on that profile rule. In-process tests: sessions 32;
+  - the hop and the device query each check that the session is live, and each check is tested alone (sessions 31);
+  - `lib/` calls `this.workerFor`, and tests' stand-in device managers are given `workerFor` from the real class;
+  - the job run's session path is untested end to end until B5 Task 2 offers tasks on the shared runtime. A session-runtime case for it goes in B5 Task 2's follow-up.
+- **Task 6:**
+  - the reset notice is in the Reviewer's wording, en (notices are English-only, as session-state's restore notices are), with the reviewed zh kept in a comment;
+  - only the next session is told, because a swept session's user reconnects as a new session the runtime can't link to the old one;
+  - the local store's 5 s write-back (a runtime killed without a clean stop can lose the last 5 s of `ctx.redis` writes) is documented, with a register row.
+- **Task 7:**
+  - the docs quote the code's figures, and a test holds them to it (sessions 33): the crash window (`SUSPEND_AFTER` exits within `WINDOW_MS`, three within ten minutes) and the cap's default (16);
+  - the P3 proposal's "60 s" was wrong; the supervisor's window is ten minutes.
+- **B3's ceiling (#359):** once it merges, a session-packs case: a ceiling change that drops a pack stops that pack's per-session workers in every session that listed it only through the ceiling. The notice fires on the next ceiling read that finds a different key (the first read only sets it), so the test reads, changes the ceiling, and reads again.
+
+## Global constraints
+
+- **No session id reaches a module** (§4a): not in `options`, `workerData`, env, argv, an error's text, a log line the module sees, or a job's data. `hostSession` is a main-thread field on the `WorkerMessage`, like `hostModuleName`.
+- **Outside the shared runtime nothing changes.** Under `--stdio` a per-session module runs in its one worker on today's paths (`<name>/{data,tmp}`, `m:<name>:`) whatever it declares. On the HTTP profile its load is refused with `MODULE_NEEDS_SESSIONS`, naming the module.
+- **Not reachable is unknown** (B3's rule): a call with no session, a token or peer channel past its session's end, and a job whose session ended are answered as a device never hosted (`missingDeviceErrorForHop`: `DEVICE_NOT_FOUND`, no ID). Never a code that says the module exists.
+- **Prefixes never nest:** `ms:<enc(name)>:<sid>:` and `m:<enc(name)>:` each keep their trailing colon, and `<sid>` is exactly 32 lowercase hex characters (`lib/session-transport/restore.js` `SESSION_ID`). A purge of `ms:foo:` can't reach `ms:foobar:`, and nothing in `ms:` can be named from `m:`.
+- **Data paths:** `<moduleDataPath>/<name>/sessions/<sid>/{data,tmp}`, made 0700 by `lib/module-data.js`. The worker sees `/data` and `/tmp` as today. The broker maps them on the main thread, and the scrub strips the session root from paths and error texts.
+- **Lifetime:** removed when the session ends for good (`bye`, window expiry, or `unsettled`: a resume that never settles, which the registry forgets whole), never on `Registry.close()`. The restored ids keep their partitions. The sweep removes partitions whose session is neither restored nor open; it runs once the listener accepts, in the background (the reviewer's ruling of 11-17: a long sweep before listen() could run past restored sessions' reconnect windows).
+- **Limits:** `--maxSessionWorkers` (default 16, operator only; a session can't raise it). At the cap, the least recently used session worker with no call in flight gives up its slot, and its session is told "<module>'s in-memory state was reset; its files were kept". If none can, the call is refused `SESSION_WORKERS_BUSY` (retryable). Nothing is queued. The fs quota counts all of a module's partitions together.
+- **The cap never kills mid-call** (Reviewer, #349). LRU eviction takes only a worker with no call in flight and no live token issued to it (a hop's, a job's, a peer channel's). When every slot is busy, the call is `SESSION_WORKERS_BUSY` (retryable). Tested in Task 4.
+- **The memory cost is stated, and the cap is the operator's** (Reviewer, #349). The docs state the per-session cost as measured on #377: about 15 MB once plus about 24 MB per per-session worker × `--maxSessionWorkers` (16 by default: about 400 MB at most) above today's shared workers. (This plan first said ~14.5 MB per lean worker, from #177; the measurement replaced it.) The cap is a CLI flag only: never a setting a session can change in conversation, and not in the settings tool's allowlist.
+- **B3's session packs** (Reviewer, #349). A per-session module inside a this-session pack: its workers and partitions follow what the session lists (`lib/session-packs.js`). **The hook, agreed with B:** `sessionPacks.onChange(fn)` calls fn(sessionId) when that session's view may have changed, or fn(null) when every session's may have. Then for each of S's session workers, `sessionPacks.listsModule(S, moduleName) === false` stops the worker and keeps its partition (removed only at S's end). Never set membership: the view also moves with the global value, a session's own "off" of a global pack, and the ceiling. **A ceiling change fires too** (the Reviewer asked; B built it): `onChange(null)` when a ceiling read's key differs from the last one's (untrusted fires once, trusted again once more, the first read is silent). It's wired in production by `configureSessionPacks`, and lands in B3's follow-up PR (Tasks 8b and 9). In Task 4's test, configure session-packs with `onCeilingChange: settings.onCeilingChange` (`test/sessions/14` has the pattern). Task 5's dispatch check stays the backstop. **Ordering:** B3's Task 9 restores a session's packs at its own resume, not between `_restore` and listen, and reads no module data before listen. So the order is `_restore`, then the sweep, then `listener.listen()`.
+- **No idle stop.** A session worker stops only at its session's end, at the cap, on its module's reload or unload, or by crashing.
+- New error codes (`MODULE_NEEDS_SESSIONS`, `MODULE_STATE_INVALID`, `MODULE_STATE_CHANGED`, `SESSION_WORKERS_BUSY`) go into `lib/error-catalogue.js` with `en` and `zh` texts, and get their own wording review.
+- **Running tests:** one file at a time, under the suite lock, each in the 2 GB no-swap cap with MemAvailable ≥ 3 GB (the user's rule). Server files go through `node test/helpers/run-local.js`. No folder runs locally: the PR's CI is the gate. The memory baseline (§4a "to be measured") is a CI-only perf run, a register row, not part of these tasks.
+
+## Review focus
+
+1. **A shared module holding two sessions' calls** (§9 residual 5): a hop it makes must land in the worker of the session whose token it used, never the other's, including over a peer channel opened earlier under the other session's call (Task 5's hop-isolation case).
+2. **A crash of one session's worker:** the supervisor is keyed by module name (`this.supervisor.clear(name)`). A crash must restart (or end) only that (module, session) worker, never the listing record or another session's worker (Task 4's crash case).
+3. **Reload or unload of a per-session module:** every session's worker stops. The next call spawns one on the new code (reload) or is unknown (unload). Partitions are kept on reload and removed on uninstall, whose purge must cover `ms:<name>:` as well as `m:<name>:` (Task 3 and Task 4).
+4. **A session ending while its worker has a call in flight:** the call ends as a cancelled one does today (billed for what ran). The worker stops after it, and the partition is removed after the worker has stopped, never under it (Task 6).
+5. **The sweep and a resume racing:** the sweep keeps every session the registry holds as it reaches each partition (restored, or open now; a new session's id is random), so a resume during the sweep finds its partition (Task 6's restart case). It runs once the listener accepts, in the background (the reviewer, 11-17).
+
+---
+
+### Task 1: The declaration, its pin, and where it applies
+
+**Files:**
+- Create: `lib/module-state.js`
+- Modify: `lib/manifest-pins.js` (keep `countinghouse.state` with the calls), `lib/module-manager.js` (`loadModuleFromPath`, `reloadModule`, `spawnModuleWorker`), `lib/error-catalogue.js`
+- Test: `test/module-loading/36-per-session-declaration.js` (spawned server, `testPort`)
+
+**Interfaces:**
+- Produces: `stateOf(pkg) -> 'shared' | 'per-session'`, which throws `CountinghouseError('MODULE_STATE_INVALID', name, value)` for anything else; `perSessionModule(mm, name) -> boolean` (from the pin); `ModuleManager.prototype.isPerSession(name)`.
+
+- [ ] Write the failing tests: `"state": "per-session"` loads on the shared runtime and is listed as before (tools/list unchanged); `"state": "wobbly"` refuses the load naming `wobbly`; on the HTTP profile a per-session module's load is `MODULE_NEEDS_SESSIONS` naming the module; under `--stdio` it loads and runs on `<name>/data` and `m:<name>:`; a reload that flips `shared` ↔ `per-session` is `MODULE_STATE_CHANGED` and the loaded one keeps serving.
+- [ ] Run them: FAIL.
+- [ ] Implement `stateOf`, the pin and the three load-site checks. "Shared runtime" is `options.sessionSocket != null`, "stdio" is `options.stdio === true`, anything else is the HTTP profile.
+- [ ] Run: PASS. Commit.
+
+### Task 2: The registry says why a session ended
+
+**Files:**
+- Modify: `lib/session-transport/registry.js` (`_end(reason)`, `_forget(s, reason)`, `close()`, the `bye` and window callers), `lib/sessions.js` (passes it on)
+- Test: `test/session-transport/10-end-reasons.js` (server-free, the registry with a fake connection)
+
+**Interfaces:**
+- Produces: `session.emit('end', reason)` and `registry.emit('gone', id, reason)`, with `reason ∈ {'bye', 'window', 'closed'}` (a restored session never resumed ends `'window'`). Existing listeners that ignore the argument are unaffected.
+
+- [ ] Failing test: `bye` gives `'bye'`, a detach past `reconnectWindowMs` gives `'window'`, a restored row never resumed gives `'window'`, and `close()` gives `'closed'` for every session.
+- [ ] Implement. Run: PASS, and `test/session-transport/*` one file at a time still green. Commit.
+
+### Task 3: Partitions: names, creation, removal and the sweep
+
+**Files:**
+- Create: `lib/session-partition.js`
+- Modify: `lib/module-data.js` (`sessionDirsFor(dataRoot, name, sid)`, `ensureSessionDirs`), `lib/redis-namespace.js` (`sessionPrefixFor(name, sid)`; `unprefixError` takes either prefix), `lib/module-manager.js` `uninstallModule` (purges `ms:<enc(name)>:` too, and `<name>/sessions/`)
+- Test: `test/local-kv/05-session-partition.js` (server-free, the local kv and a temp data root)
+
+**Interfaces:**
+- Produces:
+  - `sessionPrefixFor(name, sid) -> 'ms:' + encodeURIComponent(name) + ':' + sid + ':'`, or null for a bad name or an id that isn't 32 hex characters;
+  - **As built (#353, after its review):**
+  - `partition.ensure(dataRoot, name, sid) -> Promise<{data, tmp}>`;
+  - `partition.remove(dataRoot, kv, name, sid) -> Promise<{keys, dirs}>`. It validates the name and id before any key, and refuses a link at `<@scope>`, `<name>` or `<name>/sessions` before any key;
+  - `partition.list(dataRoot, kv) -> Promise<{partitions: [{name, sessionId}], skipped: [{path, why}]}>`;
+  - `partition.sweep(dataRoot, kv, keep: Set) -> Promise<{removed, failed: [{name, sessionId, why}], skipped}>`. It throws unless `keep` is a Set, and it is **never fatal**: Task 6 logs `failed` and `skipped` and goes on to `listen()`.
+
+- [ ] Failing tests:
+  - two sessions' prefixes and dirs are distinct, and a third id's purge removes only its own;
+  - `ms:foo:` never matches `ms:foobar:`, and a name with `:` is encoded;
+  - an id that isn't 32 hex is refused (null);
+  - `remove` deletes keys and dirs, and is idempotent;
+  - `sweep(keep)` removes exactly the partitions not in `keep`;
+  - `uninstallModule` removes `m:` and every `ms:` of the module;
+  - `unprefixError` strips a session prefix.
+- [ ] Implement. Run: PASS (and `test/local-kv/03`, `04`: the existing namespace and purge pins). Commit.
+
+### Task 4: Session workers: spawn, cap, crash, reload
+
+**Rulings at build time (Reviewer, 2026-11-16, P1–P5; they amend this task and Task 5):**
+- **P1. The Task 4/5 boundary.** Task 4 builds the listing record: a shared-runtime load runs every spec check as today and starts no worker. It converts only the call path (`invokeDeviceActionNow`) to `workerFor`; Task 5 converts the rest. **Condition:** Task 4 tests that each path not yet converted to a per-session module fails CLOSED with a clean error (`DEVICE_NOT_FOUND` or similar), never a TypeError or a hang: a ctx.call hop, a peer channel, a job, resources/read, prompts/get, completion. Task 5 flips those cases to positive ones.
+- **P2. The record in `modules[name]`.** It's a `SessionModuleRecord`, not a WorkerMessage. Unload and reload branch on it: `stopModule(name)` (it awaits every session worker's exit), the devices marked ended, then today's purge. The module supervisor never tracks it. **Condition:** every reader of `modules[` / the module map is listed in the PR body as branched or shown fail-closed: packs-in-place, the supervisor, the peer broker, the settings and admin listings, tools/list and the resource caches, metrics, restartModule, uninstall.
+- **P3. Crashes.** No eager restart. A crash drops the (name, session) worker and frees its cap slot at once; the call in flight gets the crash's error, never a hang. That session's next call spawns a fresh worker and carries "in-memory state was reset". Repeated exits suspend that (name, session) only, by the supervisor's rule (3 exits in its window). **Test:** another session's worker is untouched by a neighbour's crash loop.
+- **P4. Spawn cost and lifecycle.** A session spawn reuses the record's `moduleSpec`; a session worker's exit doesn't release it, the record does at unload. The lifecycle lock is keyed `name\0sid`. **Race closed:** the record has a `closing` flag. A spawn checks it before it starts and again once its worker is ready (and stops the worker if set), so no worker outlives its module. **Test:** a call that starts during an unload ends refused or completed, and then there are zero session workers.
+- **P5. The fs quota.** One Quota per module, measured at its first session spawn over `<name>/sessions`, shared by its session workers (`createForWorker`'s `cfg.quota`), dropped with its last worker. The measure walks with lstat (never through a link), asynchronously and bounded, so a huge tree can't stall the main thread; its cost is noted in the PR. `ensureSessionDirs` refuses when `<name>` or `<name>/sessions` is a link.
+
+**Files:**
+- Create: `lib/session-workers.js`
+- Modify:
+  - `lib/module-manager.js`: `spawnModuleWorker(..., {session})`. The broker is built with the session's dirs (`createForWorker`'s data root from Task 3), `wm.hostSession = sid` is set main-side only, and the worker is NOT made `this.modules[name]`.
+  - `lib/device-manager.js`: `registerFromSpec` keeps a session worker's device off `deviceMap`; the `rediscommand` handler uses `sessionPrefixFor(name, wm.hostSession)` when set.
+  - `lib/cli-options.js`: `--maxSessionWorkers`, default 16, min 1.
+  - the supervisor's key: (name, session) for a session worker.
+- Test: `test/session-runtime/03-per-session-workers.js` (spawned shared runtime; two sessions through `test/session-transport/helpers/shim`), plus fixture `test/fixtures/per-session-module` (it writes to `ctx.redis` and `/data`, and dumps `process.env`, `process.argv`, `workerData` keys and its options to `/data/seen.json`)
+
+**Interfaces:**
+- Consumes: Task 1's `isPerSession`, Task 3's `ensure`.
+- Produces:
+  - `sessionWorkers.get(name, sid, cb(err, wm))`: spawns on the first call; at the cap it evicts the LRU idle worker (with the announcement) or fails `SESSION_WORKERS_BUSY`;
+  - `stop(name, sid, why)`, `stopSession(sid)`, `stopModule(name)`;
+  - `inFlight(wm)` (count, from the existing in-flight registry);
+  - `size()`.
+
+- [ ] Failing tests:
+  - two sessions calling the per-session fixture see their own counter in `ctx.redis` and their own file in `/data`, while a shared fixture sees one of each;
+  - `seen.json` contains no session id (all 64 characters of both ids grep'd);
+  - with `--maxSessionWorkers 1`, session B's call evicts A's idle worker, and A's next result carries "per-session-module's in-memory state was reset; its files were kept" with A's file still there;
+  - with A's call held in flight, B's call is `SESSION_WORKERS_BUSY`;
+  - killing A's worker restarts only A's (B's counter is intact, the listing unchanged);
+  - a reload stops both, and the next calls run the new code with the files kept;
+  - **never mid-call** (Reviewer, #349): with `--maxSessionWorkers 1`, A's worker holding a live hop token (a call in flight in the shared caller) isn't evicted for B, and B gets `SESSION_WORKERS_BUSY`;
+  - **B3:** turning off a this-session pack that holds the per-session fixture stops that session's worker of it, and the other session's runs on.
+- [ ] Implement. Run: PASS. Commit.
+
+### Task 5: Routing every dispatch through `workerFor`
+
+**Ruling at build time (Reviewer, 2026-11-17): no direct peer channel to a per-session target.** A worker keys its peer channels by target device alone (`lib/peer-worker.js` `peerDeviceWorkerMap`), and it can't key them by session, since no session id reaches a module. So a shared caller serving sessions A and B would carry A's hop into B's worker over the channel B's call opened. Therefore:
+- the broker answers a channel request for a per-session target with a grant-less `route: main`;
+- the caller's peer-worker marks that device main-routed for its life, and re-sends the queued calls, and every later one, through the main-thread hop (`invokeforeignaction`), where `workerFor` picks the worker from each call's own token;
+- as a backstop, the broker refuses an announcement whose token's session isn't the callee worker's `hostSession`.
+
+Isolation is then structural: no channel to a per-session worker exists. **Cost:** one main-thread round trip per hop into a per-session module. **Tests added:**
+- hop isolation, with and without `--no-directPeerChannels`;
+- queued calls racing the `route: main` answer, each landing in its own session's worker;
+- Task 4's surviving hop-guard mutants, now killed.
+
+**Deferred, not now:** a per-session caller (one session per worker) could keep a channel to the same session's per-session target. That needs a measurement first.
+
+**Files:**
+- Modify: `lib/device-manager.js`, `lib/peer-channel-broker.js`, `lib/route-manager.js` (each `deviceMap[` site in a dispatch path; the listing readers stay as they are)
+- Test: `test/session-runtime/04-per-session-routing.js` (spawned), plus `test/fixtures/per-session-caller` (a shared module that hops into the per-session one, and opens a peer channel to it)
+
+**Interfaces:**
+- Consumes: Task 4's `get`.
+- Produces: `DeviceManager.prototype.workerFor(deviceID, sessionId, cb(err, wm))`. A shared entry answers with itself synchronously. A per-session entry answers with `sessionWorkers.get(...)`. With `sessionId == null`, or an ended session, it answers `missingDeviceErrorForHop(deviceID)`.
+
+- [ ] List each `deviceMap[` site in the PR body with its decision: dispatch → `workerFor`, listing → unchanged.
+- [ ] Failing tests:
+  - the call path, the routed hop (the token entry's `session`), the device query (the claim's token), a job's run (`lib/job-sessions.js` `forRun`) and a peer channel each reach the calling session's worker;
+  - **hop isolation:** the shared caller serving A and B at once hops under A's token and lands in A's worker, even over a channel B's call opened;
+  - a hop token or a job of a session that has ended answers `DEVICE_NOT_FOUND` with no ID, runs nothing and bills nothing;
+  - the job isn't retried.
+- [ ] Implement. Run: PASS, plus `test/composition/18`, `test/direct-peer-channels/*`, `test/mcp-contract/01` and `02` (the routing and golden pins), one file at a time. Commit.
+
+### Task 6: Lifetime, the sweep and the announcements
+
+**Files:**
+- Modify:
+  - `lib/sessions.js`: on `'gone'` with `bye` or `window`, `stopSession(sid)` and then `partition.remove` for each per-session module; on `closed`, stop only;
+  - `lib/route-manager.js` `startSessions`: after `registry._restore(...)` and before `listener.listen()`, `await partition.sweep(new Set(restored ids))`;
+  - D3's reset notice.
+- Test: `test/session-runtime/05-per-session-lifetime.js` (spawned; restarts the runtime with a restore control message, as `test/session-transport/07-resume-restore.js` does)
+
+**Interfaces:**
+- Consumes: Task 2's reasons, Task 3's `remove` and `sweep`, Task 4's `stopSession`.
+
+- [ ] Failing tests:
+  - `bye` removes that session's keys and dirs, and the other session's stay;
+  - the window's expiry removes them;
+  - `close()` (a runtime stop) removes none;
+  - a restart with A restored and B not keeps A's partition and sweeps B's, and A's resumed call sees its file;
+  - a restart with nothing restored sweeps all, and the next session's first result says "per-session state was reset";
+  - a session ending with a call in flight: the call ends as a cancel does, and the partition is removed only after the worker stopped.
+- [ ] Implement. Run: PASS. Commit.
+
+### Task 7: Docs (the user asked for this explanation to be documented; the Reviewer's checklist, #349)
+
+**Added by the Reviewer's peer-channel ruling (Task 5):**
+- `docs/security-model.md`: hops into a per-session module always go through the main thread, routed by each call's token, never over a direct peer channel, and why (a caller's channels are keyed by device, never by session).
+- `docs/module-development.md`: the cost, one main-thread round trip per hop into a per-session module.
+
+**`docs/module-development.md`, a section "Modules that keep state per session" (for authors):**
+- [ ] **The default:** one worker per module, shared by every session. Declare `"countinghouse": {"state": "per-session"}` only if the module keeps per-user state in memory or storage.
+- [ ] **What you get:**
+  - one worker per session that uses the module, started lazily on that session's first call (a direct call, a hop from another module in the session, a job the session created, or a peer channel) and stopped when the session ends;
+  - its own `ctx.redis` keys, `/data` and `/tmp` per session;
+  - the module never sees a session id, and is written as if it were the only user.
+- [ ] **Limits:**
+  - `--maxSessionWorkers` (default 16) **in all**, across every per-session module (§4a; confirmed by the Reviewer): the one memory bound;
+  - idle workers are retired least recently used, never one with a call in flight or a live token;
+  - `SESSION_WORKERS_BUSY` when all are busy;
+  - the cost: about 15 MB once plus about 24 MB per worker × the cap (measured, #377);
+  - the cap is set from the terminal only.
+- [ ] **Lifetime:**
+  - storage is kept while the session can resume (a restart keeps restored sessions' partitions), and removed when it ends for good (`bye`, window expiry, `unsettled`), or by the sweep;
+  - a reload stops all its workers;
+  - `MODULE_STATE_CHANGED` if the declaration changes (unload first).
+- [ ] **Where it runs:** not on the HTTP hosting profile (`MODULE_NEEDS_SESSIONS`). `--stdio` is one session, so one worker, on today's paths.
+
+**`docs/security-model.md` (for operators):**
+- [ ] **How the worker is chosen: never by the caller.** Every call carries a call token the runtime issues and binds to the session. A hop or peer channel to a per-session module is routed by the token's session (each peer invoke announced and checked), so a session, or a module acting for it, reaches only its own session's worker and storage.
+- [ ] **Shared modules** are reached by every session by design. A shared module serving two sessions at once holds both tokens and could route into either session's per-session worker (§9 residual 5), so a shared module is trusted with every session's data.
+- [ ] **With B3,** a session sees and calls only the modules in packs that are on for it (the global ones plus its own); a hidden one answers like a missing one.
+
+**Also:**
+- [ ] `docs/cli-and-api-reference.md`: `--maxSessionWorkers`.
+- [ ] The spec (#236 §4a) points to both sections.
+- [ ] One commit, in the same PR as Task 6.
+
+## Out of scope
+
+- R2, ch-local's install review line ("keeps state per session"), which comes after R1.
+- The baseline RSS of one idle lean worker per extra session worker: a CI-only perf run, already a register row of A's.
+- `role` pinning (D1).

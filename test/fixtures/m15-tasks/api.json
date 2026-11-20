@@ -1,0 +1,25 @@
+{
+  "device": {
+    "friendlyName": "m15-tasks",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Long-running actions for the 2026-07-28 tasks extension (MCP completeness M15).",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:taskService": {
+        "actionList": [
+          {"name": "slow", "description": "Waits ms milliseconds, then answers.", "longRunning": true,
+           "input": {"schema": "/taskService/slow/input"}, "output": {"schema": "/taskService/slow/output"}},
+          {"name": "scalar", "description": "Answers a bare string.", "longRunning": true,
+           "input": {"schema": "/taskService/scalar/input"}, "output": {"schema": "/taskService/scalar/output"}},
+          {"name": "fails", "description": "Always fails.", "longRunning": true,
+           "input": {"schema": "/taskService/fails/input"}, "output": {"schema": "/taskService/fails/output"}},
+          {"name": "progress", "description": "Reports each of input.values as its progress, then answers input.holdMs later.", "longRunning": true,
+           "input": {"schema": "/taskService/progress/input"}, "output": {"schema": "/taskService/progress/output"}},
+          {"name": "quick", "description": "Answers at once; not long-running.",
+           "input": {"schema": "/taskService/quick/input"}, "output": {"schema": "/taskService/quick/output"}},
+          {"name": "exit", "description": "Answers, then ends its worker 50 ms later: a crash, for the supervisor's count.",
+           "input": {"schema": "/taskService/exit/input"}, "output": {"schema": "/taskService/exit/output"}}
+        ]
+      }
+    }
+  }
+}

@@ -11,6 +11,7 @@ const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolErrorCode} = require('../helpers/tool-result');
 const {deviceIDForName} = require('../../lib/call-address');
 
@@ -57,7 +58,7 @@ describe('sandbox 23: work in flight when a worker ends fails at once, with why'
   this.timeout(120000);
 
   describe('under audit (the supervisor restarts crashes)', () => {
-    const PORT = 9607;
+    const PORT = testPort(9607);
     let server = null;
     before(async () => { server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread', '--loadModule', FIXTURE]); });
     beforeEach(() => ensureLoaded(PORT));
@@ -148,7 +149,7 @@ describe('sandbox 23: work in flight when a worker ends fails at once, with why'
   });
 
   describe('under --moduleSandbox off (no supervisor: a crashed module stays down)', () => {
-    const PORT = 9608;
+    const PORT = testPort(9608);
     let server = null;
     before(async () => {
       server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', 'off', '--loadModule', FIXTURE]);

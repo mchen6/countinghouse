@@ -9,6 +9,7 @@ const path    = require('path');
 const redis   = require('redis');
 const request = require('supertest');
 const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 const {startRemoteServer} = require('../helpers/remote-mcp-server');
 const {redisUrlFor} = require('../helpers/test-env');
@@ -31,7 +32,7 @@ const serverArgs = (thread, allowance, extra) => ['--debug', '--debugKey', KEY, 
 const call = (port, module, action, input) => mcpCall(port, KEY, tool(module, action), input).then(toolOutput);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-[['worker mode', '--workerThread', 9720], ['single-thread mode', '--no-workerThread', 9721]].forEach(([mode, thread, port]) => {
+[['worker mode', '--workerThread', testPort(9720)], ['single-thread mode', '--no-workerThread', testPort(9721)]].forEach(([mode, thread, port]) => {
   describe(`remote 05: the remote: route, ${mode}`, function() {
     this.timeout(120000);
     let remote = null;
@@ -142,7 +143,7 @@ describe('remote 05: the registry', () => {
 
 describe('remote 05: the credential at load', function() {
   this.timeout(120000);
-  const PORT = 9721;
+  const PORT = testPort(9721);
   let remote = null;
   before(async () => { remote = await startRemoteServer(REMOTE); });
   after(async () => { await remote.close(); });

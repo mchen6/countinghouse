@@ -10,7 +10,7 @@ const {claimHop, checkHop} = require('../../lib/usage/hop');
 
 describe('usage: a call is owned by the workers it was sent to', () => {
   const usage = () => createUsage({usageDir: null, pid: 1, startMs: 1, now: () => Date.parse('2026-11-11T12:00:00Z')});
-  const begin = (u) => u.beginCall({pack: 'p', module: 'p', tool: 't', caller: 'u_a'});
+  const begin = (u) => u.beginCall({scenario: 'p', module: 'p', tool: 't', caller: 'u_a'});
 
   it('a grant lasts until it is released or the call ends, and grants to one worker count', () => {
     const u = usage();

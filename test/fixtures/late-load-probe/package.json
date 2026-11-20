@@ -1,0 +1,13 @@
+{
+  "name": "late-load-probe",
+  "version": "1.0.0",
+  "countinghouse": {
+    "permissions": {
+      "net": [
+        {
+          "host": "late-load.example.invalid"
+        }
+      ]
+    }
+  }
+}

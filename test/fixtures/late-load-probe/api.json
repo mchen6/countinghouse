@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "late-load-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "drives each path on which the runtime used to load a file after the lockdown",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {
+            "name": "exercise",
+            "description": "Run one late path.",
+            "input": {
+              "schema": "/probeService/exercise/input"
+            },
+            "output": {
+              "schema": "/probeService/exercise/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -16,9 +16,12 @@ my-module/
         └── <actionName>.js     # one handler per action
 ```
 
-That is the whole module. There is no `index.js` and no `device.js`: since
-6.0.0 the framework assembles the device from `api.json`, reads `schema.json`
-itself, and matches handlers by name. See
+That is the whole module, and the only format: the framework assembles the
+device from `api.json`, reads `schema.json` itself, and matches handlers by
+name. A module has no main entry. One with a main entry (`package.json`
+`"main"`, or an `index.js`) and no `handlers/` directory is refused before any
+of its code runs, with `MODULE_LAYOUT_UNSUPPORTED`; one that has both loads
+from `handlers/`, and its main entry is never run. See
 [`design-decisions.md`](design-decisions.md#module-shape-600-handlers-by-default-discovery-when-you-need-it)
 for why the old boilerplate went away.
 
@@ -34,20 +37,13 @@ module.exports = async (input, ctx) => ({
 `input` is the validated input object. `ctx` carries the caller, this device's
 identity, and the helpers a handler needs — see [`ctx`](#ctx) below.
 
-If you would rather keep everything in one file, export the same thing as a
-map from `device.js` instead of using the `handlers/` tree:
+Code that several handlers share goes in an ordinary file of the module that
+the handlers require (`require('../../lib/shared.js')`); it runs when a handler
+file is first required, never as a main entry.
 
-```js
-// device.js -- an alternative to handlers/, not an addition
-module.exports = {
-  greetService: {                                    // service SHORT name
-    hello: async (input, ctx) => ({output: {text: `hello ${input.name}`}})
-  }
-};
-```
-
-Top-level keys are service **short** names — the part after `:serviceID:` in
-the URN. `api.json` remains the only place the full URN appears.
+The directories under `handlers/` are service **short** names — the part after
+`:serviceID:` in the URN. `api.json` remains the only place the full URN
+appears.
 
 **Mismatches are startup errors, not silent omissions.** An action declared in
 `api.json` with no handler, a handler `api.json` does not declare, a service
@@ -59,37 +55,152 @@ name and the fix. A module never half-loads.
 
 | field | what it is |
 | --- | --- |
-| `ctx.caller` | `{apiKey, userName, isAdmin}` — the authenticated caller |
+| `ctx.caller` | `{id, isAdmin}` — the caller: `id` is an opaque id (`u_` and 22 characters), the same for that user everywhere on this server, never a key or a user name. For a hop's callee, the identity the hop authorized as (the calling module's binding) |
 | `ctx.device` | `{deviceID, friendlyName}` — this device |
 | `ctx.serviceID`, `ctx.actionName` | the action being served |
+| `ctx.settings` | your module's settings for this call: frozen, no prototype, an unset setting absent ([Module settings](#module-settings)) |
+| `ctx.settingRequired(name)` | return (or throw) it when the call needs a setting the user has not set: the client is told, in the runtime's words, to ask the user for it ([A missing setting](#a-missing-setting)) |
 | `ctx.log(entry)` | device log, already bound to this device |
-| `ctx.serviceClient(opts, cb)` | call another module by deviceID — see below |
+| `ctx.serviceClient(opts, cb)` | call another module by deviceID, as `ctx.call` authorizes (no `as`) — see below |
 | `ctx.call(address, input, opts)` | call another module by name — see below |
-| `ctx.job` | `{id, progress(n), info(cb)}` inside a task, otherwise `null` |
-| `ctx.redis` | the shared key-value store, in node_redis v3's callback style: Redis db 5 under `--store redis`, a local store with the same commands and answers under `--store local`. The commands are `del`, `get`, `hdel`, `hget`, `hgetall`, `hmget`, `hmset`, `hset`, `llen`, `lpush`, `lrange`, `ltrim`, `mget`, `multi`/`exec`, `pexpire`, `rpush`, `set`, `zadd`, `zrange` and `zrem` |
-| `ctx.recordUsage(tool, cost, cb)` | app-layer bookkeeping; never touches balance |
-| `ctx.httpHeaders` | request headers, when the call arrived over HTTP |
+| `ctx.job` | `{id, progress(n), info(cb)}`. Inside a task: the job's id; `progress(n)` (0–100) updates the job; `info` reads it. Outside a task: `id` is `null`; `progress(n)` (0–100) is the call's own progress, sent to a client that asked for it (at most one every 250 ms, the latest winning, none after the answer; a composite's parts' reports are dropped); `info` calls back with an error. Ask `ctx.job.id == null`, not `ctx.job == null`, to tell a call that is not a task |
+| `ctx.redis` | your module's own key-value space, in node_redis v3's callback style: Redis db 5 under `--store redis`, a local store with the same commands and answers under `--store local`. Every key you name is your module's alone: the runtime stores it as `m:<module name, URI-encoded>:<key>`, by the name it loaded your module under, so another module's `get('x')` never sees your `x`, and you never see the runtime's own keys. You write and read the key as you named it. The commands are `del`, `get`, `hdel`, `hget`, `hgetall`, `hmget`, `hmset` (fields as pairs or one `{field: value}` object), `hset`, `llen`, `lpush`, `lrange`, `ltrim`, `mget`, `pexpire`, `rpush`, `set`, `zadd`, `zrange` and `zrem`; there is no `multi`/`exec` |
+| `ctx.recordUsage(tool, cost, cb)` | app-layer bookkeeping; never touches balance; answers `{id, tool, cost, ts}` |
+| `ctx.usage()` | a promise of the current tools/call's counts so far, read-only: `{calls, linesIn, bytesIn, tokensInEst, servers: {name: calls}, sentence}`, plus `standIn: [names]` when an acceptance stand-in answered (`--remoteOriginMap`). They are the call's remote server calls, its parts' included, and the lines and bytes of text those calls returned; `tokensInEst` is bytes/4, an estimate; `sentence` is the first half of the runtime's receipt sentence, word for word (`read 48,210 lines (3.1 MB) in 14 calls to github`, or `no server was called`). The call's own output is measured when it returns, so it is not counted here. `null` when the call is not a counted one (not a tools/call, or one that has already answered). In a worker the query carries the call's token and is refused `CALL_TOKEN_INVALID` without it (a direct peer channel's call has none, and a call's token ends when it answers). Never a key, an id or a caller. A scenario writes its receipt sentence from it |
+| `ctx.ask(name, values)` | a promise of the user's answer to one of this action's declared questions: the form's content, or `null` when the user declined — see [Asking the user](#asking-the-user-ctxask) |
+| `ctx.httpHeaders` | request headers, when the call arrived over HTTP, minus `X-CH-Key`, `X-App-Key` and `Authorization` |
+
+A module is never handed an API key or a user name (R2-1): not in `ctx`,
+not in its hops, its job info or its environment. Its hops are authorized as
+the identity the operator binds to it (`runsModules`) and billed to the
+caller, by a per-call token the runtime keeps out of the module's reach. The
+global `CHUtil` a module sees has no `dm` or `ci`; `CHUtil.createServiceClient`
+takes no `appKey` in a worker.
 
 `ctx` replaces the device instance that used to be bound as `this`. That is a
 narrowing on purpose: handlers used to be able to reach `setAction`,
 `deviceControl` and the rest of the framework's own surface. They no longer
 can.
 
-## Failing a call
+## Asking the user: `ctx.ask`
 
-Return `ctx.error(code, message?, details?)`:
+A handler may ask its user one of the questions its action declares:
 
 ```js
 module.exports = async (input, ctx) => {
-  if (typeof input.text !== 'string') return ctx.error('INPUT_REJECTED', 'text must be a string');
+  const answer = await ctx.ask('overwrite', {id: input.id});
+  if (answer == null || answer.replace !== true) return {output: {saved: false}};
+  // ... save it
+};
+```
+
+The question is declared in `api.json`, never written by the handler:
+
+```json
+"questions": {"overwrite": {"message": "Replace the saved note {id}?", "schema": "/notesService/saveNote/questions/overwrite"}}
+```
+
+`values` fills the message's `{name}` placeholders with strings (cut to 200
+characters), numbers and booleans. The user reads
+`<module name>: <the message>`, and answers a form made from the
+schema (see [`api.json`](#apijson) for what a form may hold). The name is
+the module whose tool the user called: your own, or, when your action is a
+part reached through a scenario's `ctx.call`, the scenario's. A part is
+never named to the client; the runtime's log and usage record name it.
+
+**The handler runs again.** MCP is stateless here, so the first time
+`ctx.ask` has no answer it rejects with `ASK_PENDING`, which ends your
+handler; the client shows the form, and when the user answers the call is
+made again and your handler runs **from the top**, where `ctx.ask` returns
+the answer at once. So:
+
+- **Ask first, act after.** Whatever your handler did before the ask is
+  done again on the second run, and costs again:
+  - **Every hop made before the ask is made again, and billed again.** A
+    handler that calls three parts and then asks pays for six part calls
+    when the user answers. The call itself is billed once, when it
+    completes.
+  - **A non-idempotent action before an ask happens twice**: a message is
+    sent twice, a record written twice, a card charged twice. If the user
+    declines, the first one has still happened.
+  - `countinghouse-validate` cannot see either: whether a handler acts
+    before it asks is in its code. The usage record of a pass that asked
+    shows its round, so an operator can see a module that asks late.
+- **Let `ASK_PENDING` pass.** Do not catch it. If you do and return a
+  result, that result is the call's answer and the question is dropped.
+  This holds through composition too: a part's question rejects the
+  calling handler's `ctx.call` with `ASK_PENDING`, and the caller should
+  let it pass; on the retry both run again and the part's `ctx.ask` gets
+  its answer.
+- **A part asks only its own action's questions.** Which module and action
+  ask is the runtime's to know, never the message's. A call has one set of
+  rounds, whoever in its chain asks: one question a round, three rounds of
+  one question, eight in all.
+- **An answer is for the exact text asked.** `ctx.ask('overwrite', {id: 'a'})`
+  and `ctx.ask('overwrite', {id: 'b'})` are two questions, and each needs
+  its own answer.
+- **`ASK_UNAVAILABLE` means there is no one to ask**, and you may catch it
+  to fall back: the client offered no form, the call came by HTTP
+  `invoke-action`, it runs as a task whose request declared no form
+  elicitation or while too many tasks already wait on questions, the
+  operator turned questions off
+  (`--moduleQuestions off`), the outer call (when your action is a part)
+  has no one to ask for any of these reasons, three rounds brought no valid
+  answer, or the call has had eight rounds in all already (every
+  question's together). A part reached in single-thread mode
+  (`--no-workerThread`) has no one to ask either.
+- **Keep a question's values the same on every run.** A time or a counter
+  in `values` makes a new question each time, and the answer the user gave
+  is for the old one.
+- **A retry that is refused after the user answered asks again.** The
+  answer's state is used up when the retry is taken; if the call is then
+  refused before your handler runs (a rate limit, say), the next call
+  starts from the question.
+- **`ASK_NOT_DECLARED`** is your own mistake: no such question on this
+  action, or a value that is missing or is not a string, a number or a
+  boolean.
+- **An answer is not proof of a person.** A client may answer a form
+  however it likes, so an answer must never unlock what the caller could
+  not do without it.
+
+The answer is the form's content and nothing else: no client name, no
+session, no user.
+
+## Failing a call
+
+Return `ctx.error(code, message?, details?, options?)`:
+
+```js
+module.exports = async (input, ctx) => {
+  if (typeof input.text !== 'string') return ctx.error('INPUT_REJECTED', 'text must be a string', null, {kind: 'caller'});
   return {output: {text: input.text.toUpperCase()}};
 };
 ```
 
+An error is your module's fault by default. When the caller is at fault
+instead (input your schema could not rule out, a row that doesn't exist),
+pass `{kind: 'caller'}` as the fourth argument: the error's `kind` is then
+`'caller'`, and the usage report counts it as `CALLER_ERROR`, the caller's,
+not `MODULE_ERROR`. Only `'caller'` and `'module'` are taken; anything else
+is ignored, and a module never says an error is the runtime's. The answer
+itself is the same either way. A caller-kind error is not retried in a
+task: the same input fails the same way. When your module calls another
+one, a caller-kind error it gets back is your module's (you were its
+caller); if your caller is at fault, say so with your own `ctx.error`.
+
 The code is your module's own: an `UPPER_SNAKE_CASE` name for what went
 wrong (`INPUT_REJECTED` for input your schema can't rule out,
-`REPO_TOO_LARGE`, …). The runtime's codes (its error catalogue) are the
-runtime's, and a module never raises them. The caller gets your code and
+`REPO_TOO_LARGE`, …). Give your codes your module's own prefix, its short
+name (`WEATHER_RATE_LIMITED`, not `RATE_LIMITED`), so they never collide
+with the runtime's catalogue, now or in a later release. The runtime's
+codes (its error catalogue) are the runtime's, and a module never answers
+with them. `ctx.error` with one still returns your module's error, but
+where your handler's answer leaves it the runtime answers the runtime's
+`MODULE_CODE_RESERVED` instead, and so it does for an error whose code is
+set to one afterwards. The log says why, once per module and code, naming
+your module. `MODULE_CODE_RESERVED` is the runtime's (`origin: 'runtime'`, kind
+`module`): it says a module broke this rule. A setting your module cannot do without is
+`ctx.settingRequired(name)`, never `ctx.error('SETTING_REQUIRED')`. The caller gets your code and
 the message `CODE: message`, in worker and single-thread mode alike. So
 does a module that calls yours with `ctx.call`: it gets your error whole
 (code, message and details, as a copy: never your `cause` or your object),
@@ -97,8 +208,8 @@ in either mode.
 
 When you call another module, its rejection's `origin` says whose error it
 is: `'runtime'` for the runtime's (`MODULE_RELOADING`, `PEER_GONE`, a
-`CTX_CALL_…` refusal), `'module'` for the callee's own. A callee is free to
-name its code anything, a catalogue name included, so check
+`CTX_CALL_…` refusal), `'module'` for the callee's own. A callee cannot answer
+with a catalogue code (it is refused, as above), but check
 `err.origin === 'runtime'` before acting on a runtime code (retrying on
 `MODULE_RELOADING`, say), not the code alone.
 
@@ -106,8 +217,8 @@ Under `--moduleSandbox enforce`, `origin` can be trusted: only an error
 the runtime itself issued is `'runtime'`. However a
 module builds its error (setting `origin` on it, or constructing one
 through its constructor), it answers as the module's own,
-`origin: 'module'`, with no runtime meaning for a code that spells a
-catalogue name. A runtime error you were given (a callee's
+`origin: 'module'`, and one whose code spells a catalogue name answers
+`MODULE_CODE_RESERVED`. A runtime error you were given (a callee's
 `MODULE_RELOADING`, a `CTX_CALL_…` refusal, a `ctx.serviceClient`
 refusal) and pass on stays the runtime's, with the code it was issued
 with and the message it reached you with (in worker mode a runtime
@@ -162,33 +273,19 @@ becomes `DEVICE_INVOKE_FAIL`. See
 The pre-8.0 error globals are gone
 ([upgrading-to-8.md](upgrading-to-8.md)).
 
-## Dynamic discovery: when one module has many devices
+## Retired: main entries and dynamic discovery
 
-Everything above describes a module that is one device, described statically.
-If your module decides at runtime how many devices to expose — one per
-configured database connection, say — or needs to withdraw one when its
-backing resource disappears, export a class or EventEmitter instead of a
-handler map and the 5.x discovery path applies unchanged:
-
-```js
-// index.js -- still supported, and still the right answer for this case
-function DeviceModule() {
-  this.on('discover',     this.discoverDevices.bind(this));
-  this.on('stopdiscover', this.stopDiscoverDevices.bind(this));
-}
-util.inherits(DeviceModule, events.EventEmitter);
-
-DeviceModule.prototype.discoverDevices = function() {
-  for (const conn of readConfig()) this.emit('deviceonline', new Device(conn), this);
-};
-```
-
-`discover`, `deviceonline` and `deviceoffline` behave exactly as they did.
-Note that `deviceoffline` marks a device offline rather than unlisting it: it
-stays in `tools/list` and fails at call time with `DEVICE_OFFLINE`.
-
-The framework chooses between the two shapes by what your module exports — a
-plain object is a handler map, anything else takes the discovery path.
+Before 8.0, a module could also be a main entry: a `device.js` exporting a
+handler map, or an `index.js` exporting a class or EventEmitter that decided
+at runtime how many devices to expose (`discover`, `deviceonline`,
+`deviceoffline`). Both are retired. Such a module is refused at load, by
+`countinghouse-validate` (stage `layout`) and by the runtime, with
+`MODULE_LAYOUT_UNSUPPORTED`, which names the file that made it a main entry.
+For a `device.js` handler map, move each entry into its own
+`handlers/<service>/<action>.js` (`module.exports = <the entry's function>`);
+for a 5.x module (a `CHDevice` with `setAction`),
+`npx countinghouse-migrate-module ./my-module` converts it to `handlers/`. A module is one device, described by its `api.json`; a module
+that needs several devices is several modules.
 
 ## `api.json`
 
@@ -227,16 +324,429 @@ shows up as a load error rather than silently doing nothing. Directly under
 `device`, unknown fields are accepted; the retired CDIF-era `rateLimit` and
 `price` are among them, and `countinghouse-validate` warns about each.
 
+An action may also carry `title`, `annotations`, `icons`, `longRunning`,
+`questions` and `resource`, and the device a `promptList`: what the MCP
+layer serves to a client beyond a tool's name, description and schemas
+([every declaration, at a glance](#declarations-at-a-glance)). Each is
+checked by the meta-schema and at load (stage `declarations`):
+
+- a `resource`'s `uriTemplate` is a relative path of literals and `{name}`
+  variables, at most 8 and at most one to a segment (`notes/{id}`,
+  `files/{name}.json`); each variable is a string property of the action's
+  input, and every required input is a variable. No two resources of a
+  module may match the same URI: `notes/{id}` and `notes/all` do;
+- a prompt's arguments are an object schema of string properties, at most
+  16, and every `{{name}}` in its messages is one of them. Other text in
+  double braces is sent as written, with a warning from
+  `countinghouse-validate`;
+- a string here may be declared through a `$ref` (a variable's property, a
+  prompt's argument); a question's form may not, it is flat;
+- a question's schema is a flat form: at most 8 properties, each a string,
+  number, integer, boolean or an enum of strings. It is shown to the user as
+  you declare it, so it holds only what a form field takes (`title`,
+  `description`, `default`; a string's `minLength`, `maxLength` and
+  `format`; a number's `minimum` and `maximum`; an enum's `enum` and
+  `enumNames`), within bounds (a title of 128 characters, a description of
+  500, 64 enum values of 256), and no text in it, the question's message
+  included, carries a control or bidi character. A form never asks for a
+  password, a token, a key or a card number (`countinghouse-validate` warns
+  about a property that reads like one);
+- an action named as a `completion` takes `{argument, value, context}` and
+  gives `{values: string[]}`;
+- an icon is a file inside your module, a PNG, JPEG or WebP of at most
+  16 KiB, named by its path from the module's root. Never a URL, and never
+  SVG.
+
+A tool's `title`, `annotations` and `icons` are served on `tools/list`
+(each only when the action declares it). The hints in `annotations`
+(`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are
+your claims: the runtime enforces none of them, and a client or an install
+review may show them. Icons are read and checked when the module loads: a
+missing, oversized or SVG icon refuses the load (stage `icons`), and a reload
+to such a version leaves the loaded one serving. Each is sent inline as a
+`data:` URI from what the load read; nothing is read at list time.
+
+An action that declares a `resource` is served on `resources/list` (a
+`uriTemplate` with no variable) or `resources/templates/list` (one with
+variables), as `countinghouse://m/<module>/<path>`, where `<module>` is your
+module's name as tool names spell it. It is not also a tool: declare a
+second action over the same function if you want both. `resources/read`
+runs your action exactly as a `tools/call` does, with the URI's variables as
+its input (validated against your input schema, rate limited, billed as
+that action): a string output is the resource's text (your output schema's
+`contentMediaType`, else the declared `mimeType`, else `text/plain`), a
+binary string output its blob, anything else its JSON. A variable is
+percent-decoded as UTF-8; a value with a control character, a `/` or a
+`\`, or that is exactly `.` or `..`, never reaches you, but anything else
+is yours to guard, as any input is. Two things to keep it that way:
+
+- The variable reaches you decoded exactly once. Never decode it again:
+  `%252E%252E` arrives as `%2E%2E`, and a second decode makes it `..`.
+- Don't normalise it (NFKC, NFKD) before you use it as a path or a key.
+  Compatibility forms pass the checks above as the characters they are
+  (`．．`, two U+FF0E fullwidth full stops, is not `..`), and NFKC turns
+  them back into `..` and `/`.
+
+If two of the modules a runtime lists have names that spell the same
+`<module>` (`twin-a` and `twin_a`), neither one's resources are served, and
+the operator is warned; rename one.
+
+A client can subscribe to your resources' URIs on its `subscriptions/listen`
+stream. You have no API to say your data changed: your resource's
+`changesWith` says which of your module's actions may change it
+(`"changesWith": ["notesService.save", "notesService.remove"]`). After a call
+to one of them succeeds, by any path (a `tools/call`, an `invoke-action`, a
+hop from another module, a job), every subscription of the calling key that
+names a URI of that resource is sent `notifications/resources/updated`,
+once per URI within a quarter second. It is coarse on purpose: it says only
+"read again", whatever the call changed. A call that fails, or is refused
+before your handler runs, sends nothing. On a shared runtime, a module that
+keeps its state per session tells only the calling session's subscriptions.
+A resource's `changesWith` may not name its own read action (the load is
+refused): every read would announce a change, and a client that reads again
+on each would loop.
+
+An action that declares `longRunning: true` runs as a task for a 2026-07-28
+client that declares the `io.modelcontextprotocol/tasks` extension (with
+`--workerThread`): the call is answered at once with a `taskId`, and the
+client polls `tasks/get` for the result your action returns. Anyone else's
+call to it runs inline, as any action's does. Your handler is the same
+either way. While it runs, `ctx.job.progress(n)` (1–100) is the task's
+`statusMessage` on `tasks/get`, as `"NN%"`, rounded. A progress of 0 shows
+none, since every task starts at 0. A task that failed without an answer
+shows its code (`JOB_TIMEOUT` when it ran past `--jobTimeout`), never your
+handler's text.
+
+A task may ask, as a call does (see [Asking the user](#asking-the-user-ctxask)), when the request
+that made it declared form elicitation: the pass that asks ends, the task
+reads `input_required` with the form, and once the client answers it with
+`tasks/update` your handler runs again from the top under the same
+`taskId`, where `ctx.ask` returns the answer. The same rules hold: ask
+first, act after; three rounds of a question, eight in all. The pass that
+asks is not billed and spends none of the task's attempts. A question waits
+at most an hour; after that the task fails (`ASK_EXPIRED`) and nothing
+more of it runs. At most 64 of a key's tasks wait on a question at once
+(10,000 in all); past that, `ctx.ask` is `ASK_UNAVAILABLE` at once. While
+it waits its `statusMessage` is `waiting for an answer`, and a client that
+listens for the task is told each change as for a working one: waiting,
+working again once answered, then its end (or `ASK_EXPIRED` when the hour
+is up).
+
+Text you declare for the client (titles, descriptions, a prompt's messages, a
+question's message) reaches it with any hidden character as a space: a
+control, bidi, zero-width, tag, variation-selector or filler character
+(see [the security model](security-model.md)). A prompt's message keeps its
+line breaks and tabs, and an emoji keeps its joiner and VS-16. A completion
+candidate (an `enum` or `examples` value, or one your completion action
+answers) with a hidden character is not offered.
+
+A device's `promptList` is served on `prompts/list` and `prompts/get`: each
+prompt is listed as `<module>_<name>` (a scenario's under its bare name), to
+the keys that may reach the module, with its `title`, `description` and
+`icons` and the arguments its schema declares (name, description, whether
+required). `prompts/get` runs none of your code: it checks the arguments
+against that schema, replaces each `{{name}}` once with the argument's value
+(an absent optional one is the empty string; substituted text is never
+scanned again) and returns your messages, at most 64 KiB in all.
+
+`completion/complete` offers values for a prompt's argument, or for a
+resource template's variable (`ref/resource`, the template as listed): the
+argument's schema's `enum`, then its `examples` (a template's: the input
+property behind the variable), matched to what the user has typed. A
+prompt or a resource may instead name an action of your module to answer:
+`"completion": {"<argument>": "<service>.<action>"}`. That action is called
+with `{argument, value, context}` (`context.arguments`: the other
+arguments' values so far, strings only) and answers `{values: string[]}`;
+at most 100 values of at most 256 characters are kept. It runs as a call of
+that action (authorized, rate limited, your input and output schemas
+checked), but it is not billed and is not listed as a tool; it is counted
+in usage as `completion/complete`. Keep it cheap: a client may ask on every
+keystroke. If it fails, answers no values, or takes more than 2 seconds,
+the schema's candidates are offered instead, and a run past 2 seconds is
+cancelled as a cancelled call is (what it asks afterwards is refused).
+
 Specs written for 4.x (`argumentList` + `serviceStateTable`) do not load. The
 error says so and names the converter:
 `npx countinghouse-migrate-spec ./my-module`. See
 [`MIGRATION.md`](../MIGRATION.md).
+
+### Declarations at a glance
+
+Every key an action, its `resource` and a prompt may carry, with where the
+meta-schema ([`spec/schema.json`](../spec/schema.json)) defines it. Two
+prefixes keep the pointers short:
+
+- `ACTION` is
+  `#/properties/device/properties/serviceList/patternProperties/^urn:[\S]{1,64}:serviceID:[\S]{1,64}$/properties/actionList/items`
+- `PROMPT` is `#/properties/device/properties/promptList/items`
+
+An action, a resource and a prompt refuse any other key.
+
+| Declaration | In `spec/schema.json` | What it is |
+|---|---|---|
+| `name` | `ACTION/properties/name` | Required. The action's name, unique within its service. |
+| `description` | `ACTION/properties/description` | What a client, and an LLM, reads as the tool's description. An action without one is skipped. |
+| `input` | `ACTION/properties/input` | `{schema}`: a pointer into your `schema.json`. Without it, the action takes no input. |
+| `output` | `ACTION/properties/output` | `{schema}`. Without it, the result is not validated on the way back. |
+| `fault` | `ACTION/properties/fault` | `{schema}`: the shape of what a failure of this action carries ([Failing a call](#failing-a-call)), of any root type. It describes; no fault is checked against it. |
+| `title` | `ACTION/properties/title` | The tool's title, served on `tools/list`. |
+| `annotations` | `ACTION/properties/annotations` | `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`: your claims, served on `tools/list`, enforced by nothing. |
+| `icons` | `ACTION/properties/icons` | At most 4 files inside your module (PNG, JPEG or WebP, at most 16 KiB each), read at load and served inline. |
+| `longRunning` | `ACTION/properties/longRunning` | Runs as a task for a client that declares the tasks extension (with `--workerThread`). Every other caller runs it inline. |
+| `questions` | `ACTION/properties/questions` | At most 4 named questions your handler may ask with `ctx.ask`, each a message and a flat form ([Asking the user](#asking-the-user-ctxask)). |
+| `resource` | `ACTION/properties/resource` | The action is a resource, read by its URI, and is not listed as a tool. |
+| `resource.uriTemplate` | `ACTION/properties/resource/properties/uriTemplate` | Required. A relative path of literals and `{name}` variables, each one a string property of the input. |
+| `resource.name` | `ACTION/properties/resource/properties/name` | Required. The resource's name, as `resources/list` shows it. |
+| `resource.title` | `ACTION/properties/resource/properties/title` | Its title. |
+| `resource.description` | `ACTION/properties/resource/properties/description` | Its description. |
+| `resource.mimeType` | `ACTION/properties/resource/properties/mimeType` | What a string output is served as, when the output schema's `contentMediaType` does not say. |
+| `resource.changesWith` | `ACTION/properties/resource/properties/changesWith` | Up to 32 actions of this module (`<service>.<action>`) whose success tells subscribers to read again. Never its own read action. |
+| `resource.icons` | `ACTION/properties/resource/properties/icons` | As an action's `icons`. |
+| `resource.completion` | `ACTION/properties/resource/properties/completion` | Per variable, the action of this module that offers values for it. |
+| `promptList` | `#/properties/device/properties/promptList` | On the device: at most 32 prompts, served on `prompts/list` and `prompts/get`. |
+| `prompt.name` | `PROMPT/properties/name` | Required. Listed as `<module>_<name>`, or a scenario's under the bare name. |
+| `prompt.title` | `PROMPT/properties/title` | Its title. |
+| `prompt.description` | `PROMPT/properties/description` | Its description. |
+| `prompt.icons` | `PROMPT/properties/icons` | As an action's `icons`. |
+| `prompt.arguments` | `PROMPT/properties/arguments` | `{schema}`: an object schema of at most 16 string properties. |
+| `prompt.messages` | `PROMPT/properties/messages` | Required. 1 to 8 `{role, text}` messages, `role` being `user` or `assistant`, with `{{name}}` placeholders. |
+| `prompt.completion` | `PROMPT/properties/completion` | Per argument, the action of this module that offers values for it. |
+
+The declarations in your `package.json`'s `countinghouse` object are listed
+under [`package.json`: the `countinghouse` keys](#packagejson-the-countinghouse-keys).
 
 ## `schema.json`
 
 Supplies the JSON Schema 2020-12 documents the action's `input`/`output`/`fault`
 pointers resolve to. This is what becomes each MCP tool's
 `inputSchema`/`outputSchema`.
+
+Every call's input and output is validated in one of the server's
+validator workers, which all modules share:
+- your schemas are compiled at load, every action, within
+  `--validationCompileMs` (10 s by default), or the load is refused
+  (`MODULE_ASSEMBLY_FAIL`, stage `schemaCompile`);
+- a validation has a deadline (`--validationTimeoutMs`, 1000 ms by default),
+  past which the call is refused `VALIDATION_TIMEOUT`;
+- three such refusals of your own outputs (or compiles) in five minutes
+  quarantine your module, `VALIDATION_QUARANTINED`, until it is loaded again;
+- an output over `--maxOutputBytes` (16 MiB by default) is refused
+  `OUTPUT_TOO_LARGE`, and so is a `ctx.call` input over it, `INPUT_TOO_LARGE`,
+  on the main-thread-routed path. A hop's input is sent as bytes: a value
+  structured clone cannot carry, or a `SharedArrayBuffer`, fails the
+  `ctx.call` in your own worker.
+  Any other message your worker sends the runtime (a log line, a
+  `ctx.redis` command) over the output cap plus 64 KiB is refused
+  `MESSAGE_TOO_LARGE` before it leaves the worker. A file write is split
+  for you, so it has no such limit.
+- an output is JSON: one holding a Buffer, a typed array or a DataView is
+  refused `OUTPUT_NOT_JSON` in your worker, naming the field (a bare
+  `ArrayBuffer` is only caught by a typed field's check, and is sent as `{}`
+  otherwise). Binary data goes in a field declared
+  `{"type": "string", "contentEncoding": "base64", "contentMediaType": "image/png"}`
+  (your type in place of `image/png`), as `buf.toString('base64')`. Such a
+  field is checked for canonical base64 (the standard alphabet, padded, no
+  whitespace), in an input as in an output. Declare an output's binary
+  field inline, under `properties` or an array's `items`, at most 8 levels
+  down and 16 to an action, with a media type of the form `type/subtype`.
+  One anywhere else (under `oneOf` or the like) is refused at load, at stage
+  `declarations` (below), and so is a `$ref` under an output that leads to
+  one, also to one declared inline elsewhere: `schema.json` is dereferenced
+  before the fields are mapped, so the `$ref` would be a second field. An MCP client gets an
+  `image/*` or `audio/*` value as a block of its own
+  (`{type: "image" | "audio", data, mimeType}`), after the text block, in
+  schema order; in `structuredContent` and the text the value is a
+  reference, `{mimeType, bytes, block}` (`bytes` its decoded size, `block`
+  its index in `content`), and `tools/list` advertises that shape for the
+  field. A result can carry at most 16 such values (an array counts each
+  item), else `TOO_MANY_BINARY_VALUES`. Another media type is still sent as
+  its base64 string for now. `ctx.call` and HTTP `invoke-action` always get
+  the base64 string itself.
+- what you write to stdout and stderr (and `console`) reaches the
+  operator's log line by line, prefixed with your module's name: each line
+  cut at 8 KiB, control characters other than tab removed (and the line
+  separators and bidi controls), and under audit and enforce at most
+  256 KiB a minute per stream of what is written, each line counted with
+  its prefix and newline; past that it is dropped and counted. The streams
+  are the runtime's: assigning `process.stdout` throws (`TypeError`) in
+  strict mode. Use the log for diagnostics, not for data.
+
+Keep patterns simple, schemas small, and outputs modest: return a reference
+(a path in your data namespace) to anything large. A `schema.json` that is plainly unsafe is refused at load
+(`MODULE_ASSEMBLY_FAIL`, stage `schemaSafety`, naming the schema path):
+
+- `schema.json` larger than 1 MB (checked before it is parsed);
+- a regular expression (`pattern`, a `patternProperties` key, a
+  `propertyNames` pattern) longer than 1000 characters, or one that can
+  backtrack catastrophically: a repetition inside a repeated group, such as
+  `^(a+)+$` or `(\d+)*`, or a repeated group whose alternatives start alike,
+  such as `^(ab|ac)+$`. Write `^a+$`, `^\d+(?:,\d+)?$` with a bounded group,
+  or `^(a[bc])+$`, instead;
+- a schema that comes to more than 100,000 nodes once its `$ref`s are
+  expanded, or actions whose schemas come to that many together;
+- a `$ref` that refers to itself, or one that names no place in
+  `schema.json` (only `#/...` JSON pointers are followed);
+- a schema nested too deeply to check.
+
+`countinghouse-validate` runs this same check, in the load's own order and
+words (stage `schemaSafety`, code `MODULE_ASSEMBLY_FAIL`), so you meet it
+before an operator's load does. Its problems at the stages `declarations`
+and `readRootSchema` carry that code too: each is one the load refuses the
+module for.
+
+What your module declares is checked at load as well, where the meta-schema
+cannot say it (`MODULE_ASSEMBLY_FAIL`, stage `declarations`, naming the
+action):
+
+- a binary output field that is not under `properties` or `items` (above);
+- `x-mcp-header` anywhere in an input schema. MCP 2026-07-28 lets a property
+  mirror itself into an HTTP header; this runtime does not serve that yet, so
+  a schema may not carry the keyword;
+- the rules of the fields [`api.json`](#apijson) takes for MCP clients.
+
+The load stops at the first such problem. `countinghouse-validate` prints
+them all.
+
+## `package.json`: the `countinghouse` keys
+
+What your module declares outside its spec goes in one object in its
+`package.json`, `"countinghouse": {...}`. The runtime reads these keys and
+ignores any other one.
+
+| Key | Value | What it is |
+|---|---|---|
+| `calls` | `["<module>/<service>.<action>", ...]` | The actions of other modules this one may `ctx.call`. An address that is not here is refused ([Calling other modules](#calling-other-modules)). A scenario's parts are the modules it names. |
+| `permissions` | `{fs, net, env, limits}` | What its worker may reach under the sandbox: paths, hosts, environment variables, and memory, blocking and disk limits ([Declaring permissions](#declaring-permissions)). |
+| `remotes` | `[{name, transport, url, headers, credential}]` | The remote MCP server it calls, one per module in this version ([Calling a remote MCP server](#calling-a-remote-mcp-server)). |
+| `role` | `"scenario"` or `"part"` | A scenario is listed and loads its parts. A part loaded by a scenario is not listed ([Roles](module-authoring.md#roles-scenarios-and-parts)). Any other value counts as no role. In the single-identity profile (`--stdio`, the shared runtime) only scenarios are listed; on a hosted server a module with no role is listed as any module is. |
+| `settings` | `{"<name>": {type, values, min, max, maxLength, format, default, required, confirm, title, description}}` | The settings a user may choose for your module, such as units or a default repository ([Module settings](#module-settings)). An invalid declaration refuses the load (`SETTINGS_DECLARATION_INVALID`). |
+| `state` | `"shared"` (the default) or `"per-session"` | Whether the module keeps state per user session. `per-session` gives it, on the shared runtime, a worker, `ctx.redis` keys and `/data` and `/tmp` of its own per session (see [Modules that keep state per session](#modules-that-keep-state-per-session)). It is refused on the HTTP hosting profile (`MODULE_NEEDS_SESSIONS`); under `--stdio`, one session, it runs as a shared module. Any other value refuses the load (`MODULE_STATE_INVALID`); a reload that changes it is refused (`MODULE_STATE_CHANGED`). |
+
+## Module settings
+
+A module can declare settings that a user chooses: units, a default
+repository, a page size. Declare them in `package.json`, beside `calls` and
+`permissions`:
+
+> Module settings run only with worker threads (the default). In
+> single-thread mode (`--no-workerThread`) a module that declares settings is
+> not loaded (`SETTINGS_NEED_WORKER_THREADS`: "<package> declares settings,
+> which run only with worker threads (--workerThread); this version was not
+> loaded"), and a reload to a version that declares them is refused, the
+> loaded version serving on. A
+> module that declares none loads in either mode.
+
+```json
+"countinghouse": {
+  "settings": {
+    "units":       {"type": "enum", "values": ["metric", "imperial"], "default": "metric",
+                    "title": "Units", "description": "Units used in forecasts."},
+    "defaultRepo": {"type": "string", "format": "repo", "title": "Default repository",
+                    "description": "owner/name used when a call names no repository."},
+    "maxResults":  {"type": "integer", "min": 1, "max": 100, "default": 20,
+                    "title": "Results per call"},
+    "shareStats":  {"type": "boolean", "default": false, "confirm": true,
+                    "title": "Send anonymous usage statistics"}
+  }
+}
+```
+
+The vocabulary is small and closed. It is not JSON Schema.
+
+| Field | Rules |
+|---|---|
+| the name (the key) | `[a-z][a-zA-Z0-9_]{0,63}`, with no dot, and not the name of an `Object.prototype` member (`constructor`, `toString`, ...). At most 32 settings. |
+| `type` | `string`, `integer`, `number`, `boolean` or `enum`. |
+| `values` | For an `enum` only: 1 to 64 distinct strings, each 1 to 64 characters of letters, digits, space and `_.:/@+-`. |
+| `min`, `max` | For an `integer` or a `number`: finite bounds (whole numbers for an `integer`). |
+| `maxLength` | For a `string`: 1 to 1024 characters (256 by default), counted in code points. |
+| `format` | For a `string`, optional: `slug`, `repo` (`owner/name`, GitHub's grammar), `email`, `hostname` or `url` (https only, no user info, kept in canonical form). There is no `pattern` and no `path`. |
+| `default` | Optional; it must be a valid value. A setting with no default and no value is **unset**, and so is an empty string. |
+| `required` | `true`: a call while the setting is unset fails before your handler runs. |
+| `confirm` | `true`: a change in conversation needs the user's own confirmation. Mark a setting that sends data somewhere, costs money, or acts for the user. Every `string` setting needs it anyway. |
+| `title`, `description` | Shown to the user and the agent: at most 64 and 512 characters. |
+
+- **The declaration is at most 16 KiB**, and a module that declares settings
+  has an npm package name.
+- **A value with a hidden character is refused**, never cleaned.
+- **A `hostname` or `url` value must be inside your module's granted
+  `permissions.net`**, as the operator's policy narrowed it, or it is
+  refused as out of bounds. A default outside it is treated as unset, with
+  a warning at load.
+- **Settings are not secrets.** A value can be shown and set in
+  conversation. A key goes in a credential, never a setting.
+  `countinghouse-validate` warns on a name or title that looks like one
+  (`password`, `token`, `secret`, `apiKey`, `credential`).
+- **The values your module gets** are its defaults, then the values the
+  user stored, then any the operator fixes. A stored value your loaded
+  version does not accept (a removed setting, a narrowed enum, a tighter
+  bound) is not applied: the default applies, the log says so once per load
+  (naming the setting, never the value), and the stored value comes back
+  with a version that accepts it.
+- **The declaration is pinned when an operator loads your module**, as
+  `calls` is: a module that rewrites its `package.json` and restarts under
+  supervision keeps the declaration it was loaded with.
+
+### How a user sets them
+
+- **At a terminal:** `ch-local settings set <package>.<setting> <value>`.
+- **In conversation:** the built-in `countinghouse_settings` lists a loaded
+  module's settings (`get`, at most 64 a call, with a cursor; a part's are
+  never listed), and changes one by its name, `module.<package>.<setting>`
+  (`set`).
+  - An `enum`, `integer`, `number` or `boolean` setting changes on request.
+  - A `string` setting, and any you mark `confirm: true`, needs the user's
+    own confirmation: a form for a tested client, else the terminal command.
+  - The operator's ceiling can fix a value or allow the terminal only.
+  - A change applies to every session of the user, from the next call; each
+    session that has your module in view is told what changed.
+
+### Reading them: `ctx.settings`
+
+```js
+module.exports = async function forecast(input, ctx) {
+  const units = ctx.settings.units;                       // 'imperial'
+  const repo  = input.repo || ctx.settings.defaultRepo;
+  if (repo == null) return ctx.settingRequired('defaultRepo');
+  // ...
+};
+```
+
+- `ctx.settings` holds the values for this call: the defaults, then the
+  user's (or the operator's) values, then any value the operator's ceiling
+  fixes. It is frozen and has no prototype. An unset setting is absent.
+- A change applies from the next call: a call in flight keeps the values it
+  started with.
+- A task keeps the values of its first run for its life, so an answer to
+  `ctx.ask` is never run under other settings than it was asked under.
+- Every path gets them: a client's call, a call from another module, a
+  task's run, a per-session worker, and a direct peer channel.
+
+### A missing setting
+
+- **Declared `required`.** A call to your module while the setting is unset
+  fails before your handler runs, with `SETTING_REQUIRED`, and is not billed.
+  The check covers every module the call can reach through its declared
+  calls, so a part's missing setting fails the outer call too. The client is
+  told which setting (`_meta["countinghouse/missingSettings"]`) and to ask
+  the user for it; for a part's, only that a module the tool calls needs a
+  setting made at a terminal (a part's settings are never named to a
+  client).
+- **Needed only as a fallback** (most settings are a default for an input,
+  such as `repo`): don't mark it `required`, since a call that names the
+  value itself would then be refused. When neither the input nor the
+  setting gives a value, `return ctx.settingRequired('defaultRepo')`. The
+  runtime answers the same `SETTING_REQUIRED`, in its own words, when the
+  setting is declared by your module and unset in the values the call ran
+  with; any other claim is answered as a fault of your module
+  (`DEVICE_INVOKE_EXCEPTION`). The call ran, so it is metered as a call
+  whose handler returned an error.
+
+`countinghouse-validate` checks the declaration, by position and field, and
+prints how each setting is changed in conversation (on request, or only with
+the user's confirmation), so you see what your users will be asked. The load
+makes the same checks; an invalid declaration refuses it
+(`SETTINGS_DECLARATION_INVALID`).
 
 ## Loading your module
 
@@ -257,6 +767,79 @@ curl -X POST http://127.0.0.1:9527/load-module \
 
 You do **not** need `--debug` for either. `--debug` disables authentication
 for the whole server; it is not how you get access to an endpoint.
+
+### What your module's worker loads
+
+Under `--workerThread` your module runs in a worker of its own
+(`lib/lean-worker.js`). The main thread reads your `api.json` and
+`schema.json` itself, before the worker starts; the worker only requires
+your handler files, each once, and answers the calls the main thread sends
+it. Your device is what the main thread read from `api.json`. Nothing your
+code does in the worker can change it, add a device or rename one.
+
+The worker loads as little of the runtime as it can. `CHUtil` is a facade:
+each helper (`CHUtil.request`, `createServiceClient`, `deviceLog`, and the
+rest) loads its implementation the first time it is called, so a module
+that uses none never pays for them. `ctx` works the same way: `ctx.call`,
+`ctx.log` and `ctx.redis` load what they need on first use. `CHUtil` has no
+`dm` or `ci`. Those were the runtime's own objects, never part of the
+module API.
+
+### A require or import that can't be resolved, under `enforce`
+
+Under `--moduleSandbox enforce` a bare name (`require('dep/sub')`,
+`import('dep')`) or a `#` import that your code can't resolve gets one
+answer, whatever Node's resolver would have said:
+
+- a `require` gets `MODULE_NOT_FOUND`, an `import` `ERR_MODULE_NOT_FOUND`;
+- the message is "Cannot find module '<name>' (countinghouse module
+  sandbox)";
+- a `require`'s error has a `requireStack` of `/app/...` names only (your
+  own file where the refusal knows it), never a host path.
+
+Node looks a bare name up in the `node_modules` above your module too, so
+any other answer would tell your code what exists outside it. The cost is
+that an error from one of your own dependencies, such as an `exports` map
+that doesn't list the subpath (`ERR_PACKAGE_PATH_NOT_EXPORTED`) or a broken
+`package.json`, reads as not found there. Check the dependency under
+`--moduleSandbox audit` or `off`, where Node's own error is kept. Code that
+falls back on `MODULE_NOT_FOUND` for an optional dependency works as
+before.
+
+Under `enforce` no `package.json` in your module -- its own, a nested
+one, one in its `node_modules` -- may have a `"main"` that leads outside
+your module's directory or names the directory itself: the load is
+refused ("... 's "main" leads outside the module"), and under `audit` it
+is reported. Node picks a `"main"` past every check the sandbox makes, so
+where it led would otherwise tell your code whether a host file exists.
+Keep `"main"` inside your module, naming a file.
+
+Under `enforce` your module's directory may not hold a link to a
+directory: the load is refused ("holds a directory link at ..."), and
+under `audit` it is reported. Node's ES resolver reads a package's
+`"main"` against a link's own path, past every check the sandbox makes,
+so a linked package could tell your code whether a host file exists. A
+pnpm or workspace layout links packages in: use a flat install (`npm
+install`), or run that module under `audit` or `off`. A link to a file
+(`node_modules/.bin`) is fine.
+
+Under `enforce` Node's warnings about a `"main"` (`DEP0128`, `DEP0151`)
+aren't emitted to your module, and any other warning names your files by
+their `/app/...` paths. `process.emitWarning` can still be assigned, and
+what you assign is what a warning reaches, but it can't be redefined with
+`Object.defineProperty`.
+
+Under `enforce` the process-wide switches Node reads while it resolves are
+held. `process.emitWarning` can be assigned a function, or `null` to turn
+off every warning in your module's worker, Node's own included, but not
+redefined. `Error.stackTraceLimit`,
+`process.noDeprecation`, `process.throwDeprecation` and
+`process.traceDeprecation` can be assigned but not redefined or deleted.
+`process.env` and `process.send` can't be replaced (the keys of
+`process.env` can still be set; `process.send` stays `undefined`, though
+`'send' in process` is `true`, so test for an IPC channel with
+`typeof process.send === 'function'`): in strict code the assignment throws a
+`TypeError`, and otherwise it doesn't take.
 
 ## Files and paths
 
@@ -323,7 +906,11 @@ fallbacks such as `fs-extra`'s `move` work.
 - HTTP/2 `respondWithFile` is not available: read the file with `fs` and
   stream it.
 - A worker's `process.env` holds only the variables you declared (see
-  below), so code that read undeclared variables sees them missing.
+  below), so code that read undeclared variables sees them missing. Don't
+  declare a proxy variable (`HTTPS_PROXY`, `NO_PROXY` ...): under `enforce`
+  `CHUtil.request` never goes through a proxy (the lockdown sets
+  `proxy: null`), and in every mode the declaration lets your module read
+  the operator's proxy URL, which may hold credentials.
 
 **Single-thread mode** (`--no-workerThread`) is for debugging modules and
 has no sandbox. Modules still see `/app`, `/data` and `/tmp` through `fs`,
@@ -341,6 +928,94 @@ checks, quota or link rules. The differences from worker mode:
 
 Upgrading a module or a deployment from 7.x: see
 [`upgrading-to-8.md`](upgrading-to-8.md).
+
+## Modules that keep state per session
+
+By default a module runs in **one worker, shared by every session** of the
+runtime that hosts it: what it keeps in memory, in `ctx.redis` and in `/data`
+is the same for every user. That is right for almost every module. Declare
+otherwise only if your module keeps per-user state, in memory or in storage,
+that must not be shared:
+
+```json
+{
+  "name": "my-notes",
+  "version": "1.0.0",
+  "countinghouse": {"state": "per-session"}
+}
+```
+
+The value is `"shared"` (the default) or `"per-session"`; anything else
+refuses the load (`MODULE_STATE_INVALID`). It's read from your
+`package.json` when the operator loads the module, and kept with it: a
+reload or restart that changes it is refused (`MODULE_STATE_CHANGED`).
+Unload first, then load.
+
+**What you get, on the shared runtime** (one runtime serving several of a
+user's client sessions, `--sessionSocket`):
+
+- **A worker per session that uses the module.** It starts on that
+  session's first call into the module: a direct call, a hop from another
+  module (`ctx.call`) made in that session's call, or a task the session
+  created. It stops when the session ends. Listing the module's tools,
+  prompts and resources needs no worker.
+- **Its own storage per session:** its own `ctx.redis` keys, `/data` and
+  `/tmp`. Write the module as if it had one user. It never sees a session id
+  (not in its options, environment, `ctx`, paths or error texts), and it
+  can't reach another session's worker or storage.
+- **Hops into it go through the main thread.** Each hop is routed to the
+  calling session's worker by its own call's token, never over a direct
+  peer channel. That costs one main-thread round trip per hop into a
+  per-session module (see [the security model](security-model.md#modules-that-keep-state-per-session)
+  for why).
+
+**Limits.**
+
+- `--maxSessionWorkers` (default 16) caps the per-session workers **in
+  all**, across every per-session module and every session. It's the one
+  bound on their memory: about 15 MB once plus about 24 MB per per-session
+  worker (resident memory, measured on Node 24 with a small module; a
+  heavier module adds its own heap), so the default cap of 16 is about
+  400 MB at most, above the shared workers
+  ([benchmarks](benchmarks/lean-worker.md)). Only the operator sets it, from
+  the terminal. A session can't change it.
+- At the cap, the least recently used worker that is idle (no call in flight,
+  and no call token issued to it still live) gives up its slot, and its
+  session is told on its next result of the module: `<module>'s in-memory
+  state was reset; its files were kept`. A worker is never stopped mid-call.
+- When every slot is busy, the call is refused `SESSION_WORKERS_BUSY`
+  (retryable). Nothing is queued.
+- A worker that crashes frees its slot at once. Its session's next call
+  starts a fresh one and is told the same. Three exits within ten minutes
+  suspend the module for that session alone (`MODULE_SESSION_PAUSED`,
+  retryable), until the
+  ten minutes pass, the module is reloaded, or the session ends. Other
+  sessions' workers aren't affected.
+
+**Lifetime of the storage.**
+
+- It's kept while the session can come back: across a detach within the
+  reconnect window, and across a runtime restart that restores the session.
+- It's removed when the session ends for good: it leaves (`bye`), its
+  reconnect window passes, or a resume never settles. That happens after
+  the session's workers have stopped. It's kept across a runtime restart
+  that restores and resumes the session. If the module is being reloaded at
+  that moment, or was reloaded as a shared module, its storage for that
+  session is removed at the runtime's next start instead.
+- When the runtime starts, once it accepts connections, it removes in the
+  background the storage of every session it neither restored nor has open.
+  If it restored none (the daemon died) and there was storage to remove,
+  only the next session to connect is told that per-session module state
+  was reset. A swept session's user reconnects as a new session, which the
+  runtime can't link to the old one.
+- A reload stops every session's worker. Their storage is kept, and the
+  next calls run the new code. An uninstall removes every session's storage
+  with the module's own.
+
+**Where it runs.** A per-session module needs the shared runtime's sessions:
+on the HTTP hosting profile its load is refused (`MODULE_NEEDS_SESSIONS`).
+Under `--stdio` there is one session, so it runs in its one worker on the
+module's usual paths (`<name>/data`, `m:<name>:`), as a shared module does.
 
 ## Declaring permissions
 
@@ -643,32 +1318,26 @@ auth config. `test/composition/08-bare-server-discovery.js` guards both
 halves — that a bare instance reaches discovery completion, and that a
 composing module loaded into one at runtime can actually call through.
 
-### `ctx.serviceClient` — the escape hatch
+### `ctx.serviceClient` — addressing a device by ID
 
-`ctx.call` intentionally does not cover every case. Use `ctx.serviceClient`
-directly when you need:
-
-- **A per-call identity override** — `ctx.call` always authorizes as the one
-  identity bound to this module via `runsModules`; `ctx.serviceClient` lets
-  you pick `as` per call.
-- **A module needing two identities** — `ctx.call`'s load-time verification
-  binds exactly one identity per module (a second `runsModules` claim on the
-  same `friendlyName` is refused as a conflict); a module that legitimately
-  needs to act as two different identities for different targets still
-  needs `ctx.serviceClient`.
+`ctx.call` resolves a declared address by name. `ctx.serviceClient` reaches a
+target by `deviceID` (computed offline or looked up yourself, with no name
+resolution), for the same declared targets:
 
 ```js
-ctx.serviceClient({deviceID, serviceID, as: 'my-module-internal'}, (err, client) => {
+ctx.serviceClient({deviceID, serviceID}, (err, client) => {
   client.invoke({actionName: 'echo', input: {...}}, (err, data, platformMetering) => { ... });
 });
 ```
 
-`as` is the identity the inner hop is **authorized** as — your module's own,
-which must be granted access to the target device or every inner call fails.
-The hop is **billed** to `ctx.caller`, same as `ctx.call`, so per-hop cost
-lands on whoever called your tool rather than on your module. Unlike
-`ctx.call`, the target here is addressed by `deviceID`, computed offline or
-looked up yourself — there is no name resolution.
+It authorizes exactly as `ctx.call` does: as the one identity the operator
+bound to your module (`runsModules`, by its package.json name), which must be
+granted the target device, and only to targets your module declared in
+`countinghouse.calls`. The hop is **billed** to `ctx.caller`, so per-hop cost
+lands on whoever called your tool rather than on your module. A module never
+names the identity: `as` is refused since R2-1 with "identities come from the
+operator's runsModules binding; remove `as`", and a module with no binding
+gets `CTX_CALL_UNBOUND`. A module that needs two identities is two modules.
 
 `pre-installed-packages/composite-demo` stays on `ctx.serviceClient`
 deliberately, so both paths keep a live example and test coverage; see
@@ -681,7 +1350,28 @@ example, without ever holding the user's credential. The runtime's main
 thread connects to the server, adds the credential the operator allowed,
 and hands the module the server's answer.
 
-Declare it in `package.json`:
+Declare it in `package.json`. The shortest declaration:
+
+```json
+"countinghouse": {
+  "remotes": [
+    {"name": "github", "url": "https://api.githubcopilot.com/mcp/", "credential": "GITHUB_TOKEN"}
+  ]
+}
+```
+
+`"credential": "GITHUB_TOKEN"` means `{"env": "GITHUB_TOKEN"}`, with the
+header `Authorization` and the scheme `Bearer`; `transport` defaults to
+`"streamable-http"`. The load keeps the expanded form, and
+`countinghouse-validate` prints it for every remote, with where its
+credential goes:
+
+```
+remote github: {"name":"github","transport":"streamable-http","url":"https://api.githubcopilot.com/mcp/","credential":{"env":"GITHUB_TOKEN","header":"Authorization","scheme":"Bearer"}}
+  sends the credential GITHUB_TOKEN to https://api.githubcopilot.com as "Authorization: Bearer <value>"
+```
+
+The full form:
 
 ```json
 "countinghouse": {
@@ -691,7 +1381,7 @@ Declare it in `package.json`:
       "transport": "streamable-http",
       "url": "https://api.githubcopilot.com/mcp/",
       "headers": {"X-MCP-Toolsets": "actions,repos"},
-      "credential": {"env": "COUNTINGHOUSE_GITHUB_TOKEN", "fallbackEnv": "GITHUB_TOKEN",
+      "credential": {"env": "COUNTINGHOUSE_GITHUB_TOKEN",
                      "header": "Authorization", "scheme": "Bearer"}
     }
   ]
@@ -700,7 +1390,7 @@ Declare it in `package.json`:
 
 - `name`: lower-case letters, digits and `-`, starting with a letter. It
   is the name in the address below.
-- `transport`: `"streamable-http"`, the only one.
+- `transport` (optional): `"streamable-http"`, the only one and the default.
 - `url`: `https:`, with no user info and no fragment. `http:` is accepted
   only for a loopback host under `--debug`, for local testing. A loopback
   or private address, or the Redis endpoint, is refused.
@@ -709,12 +1399,20 @@ Declare it in `package.json`:
   credential's header, hop-by-hop headers and the headers the transport
   sets itself (`Host`, `Content-Type`, `Accept`, `Mcp-Session-Id` and the
   like) are refused.
-- `credential` (optional): the environment variable to read (`env`, then
-  `fallbackEnv` when `env` is empty), the header (default
-  `Authorization`) and the scheme (default `Bearer`; `""` sends the bare
-  value). It is a request, not a grant: the operator's
-  `--remoteCredentials` file decides which variables may go to which
-  origin.
+- `credential` (optional): a variable name (the short form), or an
+  object: the environment variable to read (`env`; a credential is one
+  variable, and a `fallbackEnv` is refused), the header (default
+  `Authorization`) and the scheme (default `Bearer`;
+  `""` sends the bare value). It is a request, not a grant: the
+  operator's `--remoteCredentials` file decides where it may go. Under a
+  version 2 file a key is bound to one module, one variable and one
+  origin: another module that declares the same variable gets nothing, and
+  a version of this module that sends it to another origin, or asks for it
+  under another name, gets nothing until it is bound again
+  (`REMOTE_CREDENTIAL_NOT_ALLOWED`, saying which).
+- The remotes are part of the module's pin: a supervised restart uses the
+  remotes the last load, reload or restart took, never a `package.json`
+  changed since.
 
 One remote per module in this version. `countinghouse-validate` reports a
 declaration problem by position and field, and the load refuses the
@@ -734,7 +1432,7 @@ rejects, with a code:
 
 | Code | When | Retryable |
 |---|---|---|
-| `REMOTE_UNREACHABLE` | DNS, connection or TLS failure, a redirect (refused, never followed), a 502 or 503, or the module was reloaded during the call | yes |
+| `REMOTE_UNREACHABLE` | DNS, connection or TLS failure, a redirect to another origin (refused; one within the same origin is followed, at most 5), a 502 or 503, or the module was reloaded during the call | yes |
 | `REMOTE_TIMEOUT` | no answer within `--remoteTimeout`, or a 504 | yes |
 | `REMOTE_AUTH_FAILED` | the server answered 401 or 403; the message names the variable, never its value | no |
 | `REMOTE_PROTOCOL` | an answer that is not valid MCP | no |
@@ -742,7 +1440,7 @@ rejects, with a code:
 | `REMOTE_ADDRESS_REFUSED` | the host resolves to a loopback, private or Redis-endpoint address | no |
 | `REMOTE_UNDECLARED` | the module declares no remote by that name | no |
 | `REMOTE_ARGS_INVALID` | not an address `remote:<name>/<tool>`, or the arguments are not a plain JSON object | no |
-| `REMOTE_CREDENTIAL_NOT_ALLOWED` | the operator's file does not allow the variable for this origin; the remote is disabled | no |
+| `REMOTE_CREDENTIAL_NOT_ALLOWED` | the operator's file does not allow the variable for this origin (version 1), or binds no key to this module for this origin and variable (version 2); the remote is disabled | no |
 | `REMOTE_CREDENTIAL_MISSING` | the variable is allowed but was not set when the module loaded | no |
 
 A remote needs no `net` permission: the connection is the main thread's,
@@ -761,19 +1459,18 @@ same.
 Work down this list in order. Every case below now logs an explicit error —
 **check the server log first**, it very likely already names the cause.
 
-### 1. The log says `MODULE_NOT_DISCOVERABLE`
+### 1. The log says `MODULE_LAYOUT_UNSUPPORTED`
 
 ```
-Device module is not discoverable: my-module its main entry point registers no
-"discover" listener, so it can never emit "deviceonline" ...
+my-module: a module is api.json, schema.json and handlers/<service>/<action>.js; this one has package.json "main": "device.js" and no handlers/ directory. See docs/module-development.md.
 ```
 
-This applies to the dynamic-discovery shape only. Your `package.json`'s `main`
-points at the device instead of the module that announces it. A handler-map
-module cannot hit this — the framework supplies the discovery shim itself.
-This is the most common failure by a wide margin: the module loads without
-error, reports success, and then nothing else ever happens, because nothing is
-listening for the `discover` request.
+The module has a main entry (`package.json` `"main"`, or an `index.js`) and no
+`handlers/` directory: the retired format (see
+[Retired: main entries and dynamic discovery](#retired-main-entries-and-dynamic-discovery)).
+None of its code was run. Move each action into
+`handlers/<service>/<action>.js` and remove the main entry (for a 5.x
+module, `npx countinghouse-migrate-module ./my-module` does it).
 
 ### 2. The log says `DEVICE_SPEC_VALIDATION_FAIL`
 
@@ -790,17 +1487,43 @@ missing `device.modelDescription`, an action without a `name`, an
 
 ### 3. The log says `MODULE_NO_DEVICE_ONLINE`
 
-The device object failed its interface check — usually it isn't a `CHDevice`
-(check that `device.js` calls `CHDevice.call(this, spec)` and
-`CHUtil.inherits(Device, CHDevice)`), or an earlier error on the device was
-recorded and the message will quote it.
+The device assembled from your `api.json` failed its interface check: an
+earlier error on the device was recorded, and the message quotes it.
 
-### 4. The log says `LOAD_MODULE_FAIL`
+### 4. The log says `MODULE_ASSEMBLY_FAIL` with `stage=schemaSafety`
 
-Your module threw while being constructed — a syntax error, a missing
-`require`, a bad path in `CHUtil.loadFile`. The stack is in the log.
+Your `schema.json` is one the validators will not compile: too large, a
+pattern that can backtrack catastrophically, or `$ref`s that expand too far,
+refer to themselves or name no place in the file. The message names the
+schema path; see [`schema.json`](#schemajson) for the limits. A call refused
+`VALIDATION_TIMEOUT` or `VALIDATION_QUARANTINED` means a schema that passed
+these checks still takes too long to compile or to validate a value.
 
-### 5. No error at all, and the module is listed as loaded
+### 4b. The log says `MODULE_ASSEMBLY_FAIL` with `stage=declarations`
+
+Something your module declares breaks a rule a schema cannot express: a
+binary output field under `oneOf` or behind a `$ref`, `x-mcp-header` in an
+input schema, a resource whose variable is no input property, a prompt whose
+`{{name}}` is no argument. The message names the action (or the prompt) and
+says what to change. The load stops at the first one; run
+`npx countinghouse-validate ./my-module` to see every one, with the warnings.
+
+### 5. The log says `LOAD_MODULE_FAIL`
+
+A handler file threw while being required — a syntax error, a missing
+`require`, a bad path in `CHUtil.loadFile`. The message names the handler
+file (`handlers/<service>/<action>.js`) and its error; the worker is ended
+and the module is not loaded.
+
+### 6. The log says `MODULE_LOAD_TIMEOUT`
+
+Your module did not finish loading within the operator's
+`--moduleLoadTimeout` (120 s by default), and its worker was ended. Something
+your module runs while it is required never returns: a busy loop, an
+`Atomics.wait`, a synchronous read that never ends. Do that work in an action,
+or start it asynchronously after load.
+
+### 7. No error at all, and the module is listed as loaded
 
 Then the device did come online, and the problem is downstream:
 
@@ -824,18 +1547,18 @@ Then the device did come online, and the problem is downstream:
 npx countinghouse-validate ./my-module
 ```
 
-Checks `api.json`, `schema.json` and the handler map against each other and
-prints every problem it finds, each naming the stage and the way out. Exit
+Checks `api.json`, `schema.json` and the handler map against each other, what
+the module declares for MCP clients (stage `declarations`) and its icon
+files, and prints every problem it finds, each naming the stage and the way
+out. Exit
 codes: `0` clean, `1` problems found, `2` the path could not be read. No
 Redis and no server required.
 
-`--verifyModule` remains available for checking a module in the context of a
-running framework: it makes the framework continue past validation failures
-and report everything it finds, rather than stopping at the first one.
-
-```sh
-node ./framework.js --verifyModule --loadModule ./path/to/my-module
-```
+`countinghouse-validate` is the way to check a module: it reports every
+problem in one pass. A running framework never loads a module that fails a
+check (8.0.0 removed `--verifyModule`, which made it continue past one); start
+it with `--loadModule ./path/to/my-module` to see the module load, and read
+the log's stage when it is refused.
 
 ### Letting an agent write the module
 

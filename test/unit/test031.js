@@ -1,6 +1,7 @@
 const request = require('supertest');
+const {testPort} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/cross-cutting-matrix.md found that MCP task-augmented tools/call
 // (params.task) never called userAuth -- any apiKey could task-augment a
@@ -12,7 +13,8 @@ const url = 'http://127.0.0.1:9527';
 // Single-thread mode (test2.js's server) doesn't support tasks at all
 // (CdifInterface.tasksSupported() requires --workerThread), so a
 // task-augmented call is rejected before userAuth would ever run there --
-// this test checks initialize's advertised capabilities first and only
+// this test checks a legacy initialize's advertised capabilities first
+// (tasks are the legacy era's: a 2026-07-28 request gets none, #232) and only
 // asserts the userAuth-specific behavior when tasks are actually supported.
 describe('test31: MCP task-augmented tools/call enforces userAuth', function() {
   this.timeout(0);
@@ -20,7 +22,7 @@ describe('test31: MCP task-augmented tools/call enforces userAuth', function() {
   function tasksSupported(callback) {
     request(url).post('/mcp')
     .set('Content-Type', 'application/json')
-    .send({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2026-07-28'}})
+    .send({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}}})
     .expect(200, (err, res) => {
       if (err) return callback(err);
       const supported = res.body.result != null

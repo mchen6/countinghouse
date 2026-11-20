@@ -1,0 +1,15 @@
+{
+  "device": {
+    "friendlyName": "redis-ns",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "runs ctx.redis commands, for the per-module namespace test (#164)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:nsService": {
+        "actionList": [
+          {"name": "run", "description": "Run one ctx.redis command.", "input": {"schema": "/nsService/run/input"}, "output": {"schema": "/nsService/run/output"}},
+          {"name": "forge", "description": "Send a rediscommand message naming another module.", "input": {"schema": "/nsService/forge/input"}, "output": {"schema": "/nsService/forge/output"}}
+        ]
+      }
+    }
+  }
+}

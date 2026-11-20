@@ -1,8 +1,8 @@
-const exec = require('child_process').exec;
-const waitForReady = require('../helpers/wait-for-ready');
+const {startServer, shutdownThenStop} = require('../helpers/sandbox-server');
 const request = require('supertest');
+const {testPort} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // Regression test for the double-billing fix (docs/composite-tools.md's
 // "billing authority" principle): platform automatic metering is now the
@@ -176,14 +176,19 @@ function runBillingAssertion(done) {
 describe('direct-peer-channels 06: composite-demo does not double-bill (--directPeerChannels on)', function() {
   this.timeout(0);
 
-  before(function(done) {
+  // started on the run's own port (testPort), stopped in after() whatever
+  // happens (#234: it used to listen on the default port, and to be asked
+  // to stop on another, so a failing run left it running)
+  let server = null;
+  before(async function() {
     this.timeout(0);
     console.log('starting countinghouse with --directPeerChannels for double-billing regression test...');
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey ${INTERNAL_API_KEY} --mcpToolCallCost 1 --directPeerChannels ${loadModuleArgs()}`, (err, stdout, stderr) => { console.log(err); }), done);
+    server = await startServer(testPort(9527), `--workerThread --debug --debugKey ${INTERNAL_API_KEY} --mcpToolCallCost 1 --directPeerChannels ${loadModuleArgs()}`.split(/\s+/).filter(Boolean), {nodeArgs: ['--expose-gc']});
   });
 
-  after((done) => {
-    request(url).post('/shutdown').set('X-CH-Key', INTERNAL_API_KEY).end(() => { done(); }); // /shutdown is now admin-gated
+  after(() => {
+    // asked to stop, then stopped whatever it answered, or did not (#234) // /shutdown is now admin-gated
+    return shutdownThenStop(server, testPort(9527), INTERNAL_API_KEY);
   });
 
   it('a 2-hop composite call bills exactly 2, and bill still shows 2 independent records', (done) => {
@@ -194,14 +199,19 @@ describe('direct-peer-channels 06: composite-demo does not double-bill (--direct
 describe('direct-peer-channels 06b: composite-demo does not double-bill (--no-directPeerChannels)', function() {
   this.timeout(0);
 
-  before(function(done) {
+  // started on the run's own port (testPort), stopped in after() whatever
+  // happens (#234: it used to listen on the default port, and to be asked
+  // to stop on another, so a failing run left it running)
+  let server = null;
+  before(async function() {
     this.timeout(0);
     console.log('starting countinghouse with --no-directPeerChannels for double-billing regression test...');
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey ${INTERNAL_API_KEY} --mcpToolCallCost 1 --no-directPeerChannels ${loadModuleArgs()}`, (err, stdout, stderr) => { console.log(err); }), done);
+    server = await startServer(testPort(9527), `--workerThread --debug --debugKey ${INTERNAL_API_KEY} --mcpToolCallCost 1 --no-directPeerChannels ${loadModuleArgs()}`.split(/\s+/).filter(Boolean), {nodeArgs: ['--expose-gc']});
   });
 
-  after((done) => {
-    request(url).post('/shutdown').set('X-CH-Key', INTERNAL_API_KEY).end(() => { done(); }); // /shutdown is now admin-gated
+  after(() => {
+    // asked to stop, then stopped whatever it answered, or did not (#234) // /shutdown is now admin-gated
+    return shutdownThenStop(server, testPort(9527), INTERNAL_API_KEY);
   });
 
   it('a 2-hop composite call bills exactly 2, and bill still shows 2 independent records', (done) => {

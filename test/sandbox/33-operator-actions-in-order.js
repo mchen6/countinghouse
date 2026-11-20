@@ -17,6 +17,7 @@ const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
 const {ROOT, startServer, stopServer, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
 const KEY     = 'operator-order-key';
@@ -27,21 +28,20 @@ const sleep   = (ms) => new Promise((r) => setTimeout(r, ms));
 const codeOf  = (r) => (r.status === 200 ? 200 : (r.body != null ? r.body.code : undefined));
 
 // Slow to load (1.5 s, so a second action lands while the worker is still
-// coming up) and slow to discover (3 s, so there is a reload window); a
-// call with v 'block' holds the worker 1.2 s, so an unload sent meanwhile
-// waits that long for its acknowledgement.
+// coming up) and slow to discover (a 3 s block just after its load, before it
+// answers discover, so there is a reload window), both from its handler file,
+// which every load requires; a call with v 'block' holds the worker 1.2 s, so
+// an unload sent meanwhile waits that long for its acknowledgement.
 function slowCopy(base) {
   const dir = path.join(base, NAME);
   fs.cpSync(path.join(ROOT, 'test', 'fixtures', NAME), dir, {recursive: true});
-  const index = path.join(dir, 'index.js');
-  const slowDiscovery = fs.readFileSync(index, 'utf8').replace("this.emit('deviceonline', new Device(), this);",
-    "setTimeout(() => this.emit('deviceonline', new Device(), this), 3000);");
-  fs.writeFileSync(index, `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);\n${slowDiscovery}`);
-  const device = path.join(dir, 'device.js');
-  fs.writeFileSync(device, fs.readFileSync(device, 'utf8').replace("this.setAction('urn:countinghouse-test:serviceID:svc', 'returnsCleanly', (args, callback) => {",
-    "this.setAction('urn:countinghouse-test:serviceID:svc', 'returnsCleanly', (args, callback) => {\n" +
-    "    if (args.input.v === 'crash') { setTimeout(() => process.exit(3), 50); return callback(null, {output: {v: 'bye'}}); }\n" +
-    "    if (args.input.v === 'block') Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1200);"));
+  fs.writeFileSync(path.join(dir, 'handlers', 'svc', 'returnsCleanly.js'),
+    'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);\n' +
+    'setImmediate(() => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000));\n' +
+    'module.exports = (input, ctx, callback) => {\n' +
+    "  if (input.v === 'crash') { setTimeout(() => process.exit(3), 50); return callback(null, {output: {v: 'bye'}}); }\n" +
+    "  if (input.v === 'block') Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1200);\n" +
+    '  return callback(null, {output: {v: input.v}});\n};\n');
   return dir;
 }
 
@@ -88,7 +88,7 @@ describe('sandbox 33: operator actions on one module, back to back', function() 
   this.timeout(120000);
 
   describe('under --moduleSandbox off', () => {
-    const PORT = 9644;
+    const PORT = testPort(9644);
     const h = helpers(PORT);
     let server = null;
     let base = null;
@@ -197,7 +197,7 @@ describe('sandbox 33: operator actions on one module, back to back', function() 
   });
 
   describe('under audit, with the supervisor', () => {
-    const PORT = 9645;
+    const PORT = testPort(9645);
     const h = helpers(PORT);
     let server = null;
     let base = null;

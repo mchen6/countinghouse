@@ -17,12 +17,14 @@ const ROOT = path.join(__dirname, '..', '..');
 // opts.env: extra environment variables for the server.
 // opts.cwd: the server's working directory (default: the repo root).
 // opts.root: a countinghouse installed somewhere else (default: this repo).
+// opts.nodeArgs: node's own flags before framework.js (bin/countinghouse
+// runs it with --expose-gc: the direct-peer-channels files, #234)
 function startServer(port, args, opts) {
   opts = opts || {};
   const root = opts.root || ROOT;
   return new Promise((resolve, reject) => {
     const server = spawn(process.execPath,
-      [path.join(root, 'framework.js'), '--bindAddr', '127.0.0.1', '--port', String(port)].concat(args, redisArgsFor(args)),
+      (opts.nodeArgs || []).concat([path.join(root, 'framework.js'), '--bindAddr', '127.0.0.1', '--port', String(port)], args, redisArgsFor(args)),
       {cwd: opts.cwd || root,
        env: Object.assign({}, process.env, {NODE_PATH: path.join(root, 'lib')}, opts.env || {}),
        stdio: ['ignore', 'pipe', 'pipe'], detached: true});
@@ -50,10 +52,41 @@ function startServer(port, args, opts) {
   });
 }
 
-// try/catch: the server may already be gone if an earlier step failed.
+// The server and what it started: by its process group on POSIX; on Windows
+// (no groups, and a negative pid does nothing) taskkill's tree kill, so a
+// stopped server never keeps answering on its port for the next case.
+function killTree(pid) {
+  if (process.platform === 'win32') {
+    try { require('child_process').execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], {stdio: 'ignore', windowsHide: true}); } catch (e) { /* already gone */ }
+    return;
+  }
+  try { process.kill(-pid, 'SIGKILL'); } catch (e) { /* already gone */ }
+}
+
+// The server may already be gone if an earlier step failed.
 function stopServer(server) {
   if (server == null || server.pid == null) return;
-  try { process.kill(-server.pid, 'SIGKILL'); } catch (e) { /* already gone */ }
+  killTree(server.pid);
+}
+
+// Asks the server to shut down (POST /shutdown, as an admin: key), waits at
+// most waitMs for its answer, then stops it whatever happened: a server that
+// hangs, throws or never answers is killed all the same (#234).
+async function shutdownThenStop(server, port, key, {waitMs = 3000} = {}) {
+  try {
+    if (server != null && server.exitCode == null) {
+      const asked = new Promise((resolve) => {
+        let r = request(`http://127.0.0.1:${port}`).post('/shutdown');
+        if (key != null) r = r.set('X-CH-Key', key);
+        r.end(() => resolve());
+      });
+      await Promise.race([asked, new Promise((resolve) => setTimeout(resolve, waitMs).unref())]);
+    }
+  } catch (e) {
+    // the stop below is what matters
+  } finally {
+    stopServer(server);
+  }
 }
 
 // An "unknown tool" answer throws, so a mistyped (or wrongly cased: tool
@@ -111,4 +144,4 @@ function waitFor(predicate, timeoutMs, label, describe) {
   });
 }
 
-module.exports = {ROOT, startServer, stopServer, mcpCall, post, waitFor, redisArgsFor};
+module.exports = {ROOT, startServer, stopServer, shutdownThenStop, mcpCall, post, waitFor, redisArgsFor};

@@ -101,7 +101,13 @@
               "null"
             ]
           },
-          "requestTimeoutMs": {
+          "jobTimeout": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "jobResultTtl": {
             "type": [
               "number",
               "null"

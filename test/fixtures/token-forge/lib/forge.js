@@ -34,10 +34,25 @@ const state = globalThis.__tokenForge || (globalThis.__tokenForge = {rules: {}, 
 const hops = new Map();   // a peer invoke's id -> its marker
 const deferred = new Map();   // a peer invoke's id -> its announcement, held until the invoke is posted
 
+// A routed hop's input crosses as v8.serialize bytes (lib/hop-input.js); a
+// module reading its own worker's messages reads them too. The marker is a
+// one-byte string: '"', its length, then its characters, after the key.
+function markerInBytes(bytes) {
+  const text = Buffer.from(bytes).toString('latin1');
+  const at = text.indexOf('"\x06marker"');
+  if (at < 0) return null;
+  const len = text.charCodeAt(at + 9);
+  return {marker: text.slice(at + 10, at + 10 + len)};
+}
+
 function hopInput(m) {
   if (m == null || typeof(m) !== 'object') return null;
-  if (m.command === 'invokeforeignaction' && m.data != null && m.data.args != null) return m.data.args.input;
-  if (m.command === 'peer-invoke') return m.input;
+  if (m.command === 'invokeforeignaction' && m.data != null && m.data.args != null) {
+    return (m.data.args.inputBytes instanceof ArrayBuffer) ? markerInBytes(m.data.args.inputBytes) : m.data.args.input;
+  }
+  // a peer hop's input is in its announcement, as bytes (lean worker step 4,
+  // the review of #202); the port's invoke carries its id alone
+  if (m.command === 'peer-announce' && m.data != null && m.data.inputBytes instanceof ArrayBuffer) return markerInBytes(m.data.inputBytes);
   return null;
 }
 const holder = (m) => (m.data != null && typeof(m.data) === 'object') ? m.data : m;
@@ -63,13 +78,12 @@ function rewrite(m) {
   if (m == null || typeof(m) !== 'object') return;
   const input = hopInput(m);
   if (input != null && typeof(input.marker) === 'string') {
-    if (m.command === 'peer-invoke') hops.set(m.id, input.marker);
+    if (m.command === 'peer-announce') {
+      hops.set(m.data.invokeId, input.marker);
+      if (state.rules[input.marker] != null) apply(m, state.rules[input.marker], input.marker, 'announce');
+      return;
+    }
     if (state.rules[input.marker] != null) return apply(m, state.rules[input.marker], input.marker, 'hop');
-    return;
-  }
-  if (m.command === 'peer-announce' && m.data != null && hops.has(m.data.invokeId)) {
-    const marker = hops.get(m.data.invokeId);
-    if (state.rules[marker] != null) apply(m, state.rules[marker], marker, 'announce');
     return;
   }
   if (tokenOf(m) !== undefined) {
@@ -79,43 +93,76 @@ function rewrite(m) {
   }
 }
 
+// The runtime posts to the main thread as envelopes (#170): a module that
+// shares its worker's realm (--moduleSandbox off) opens one with the
+// runtime's own lib/message-envelope.js, found in require.cache (keyed by
+// host path), buffers carried beside it (t) included. Under audit and
+// enforce the runtime's ports are pinned, so a hook never sees them.
+function runtimeEnvelope() {
+  const key = Object.keys(require.cache).find((k) => k.endsWith('/lib/message-envelope.js') && !k.startsWith('/app/'));
+  return key != null ? require.cache[key].exports : null;
+}
+function openEnvelope(message) {
+  const env = runtimeEnvelope();
+  if (env == null || message == null || !(message.b instanceof ArrayBuffer)) return null;
+  const r = env.unwrap(message, Infinity);
+  return r.violation == null ? r.message : null;
+}
+// {inner, envelope, rest} -> [message, ...rest] to post: the inner message
+// as it now stands, closed again if it came in an envelope, with the buffers
+// it carried beside it.
+// {inner, envelope, rest} -> [message, ...rest] to post: the inner message
+// as it now stands, closed again if it came in an envelope.
+function closeFor(p) {
+  if (p.envelope == null) return [p.inner].concat(p.rest);
+  const s = new (require('v8').Serializer)();
+  s.writeHeader();
+  s.writeValue(p.inner);
+  const buf = s.releaseBuffer();
+  const b = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+  const transfer = Array.isArray(p.rest[0]) ? p.rest[0].map((t) => (t === p.envelope.b ? b : t)) : [b];
+  return [Object.assign({}, p.envelope, {b})].concat([transfer], p.rest.slice(1));
+}
+
 if (MessagePort != null && state.hooked !== true) {
   state.hooked = true;
   const post = MessagePort.prototype.postMessage;
-  MessagePort.prototype.postMessage = function(message, ...rest) {
-    try {
-      if (message != null && message.command === 'peer-announce' && message.data != null && !hops.has(message.data.invokeId)) {
-        deferred.set(message.data.invokeId, {port: this, message: message, rest: rest});
-        return undefined;
-      }
-      rewrite(message);
-    } catch (e) { /* never break the worker */ }
-    let delayMs = null;
-    try {
-      if (message != null && message.command === 'peer-invoke') {
-        const rule = hops.has(message.id) ? state.rules[hops.get(message.id)] : null;
-        if (rule != null && rule.delayInvokeMs > 0) delayMs = rule.delayInvokeMs;
-      }
-    } catch (e) { /* never break the worker */ }
-    const flush = () => {
+  const send = (port, p) => post.apply(port, closeFor(p));
+  try {
+    MessagePort.prototype.postMessage = function(message, ...rest) {
+      const opened = openEnvelope(message);
+      const p = {inner: opened != null ? opened : message, envelope: opened != null ? message : null, rest};
+      const m = p.inner;
       try {
-        if (message != null && message.command === 'peer-invoke' && deferred.has(message.id)) {
-          const d = deferred.get(message.id);
-          deferred.delete(message.id);
-          rewrite(d.message);
-          post.call(d.port, d.message, ...d.rest);
+        rewrite(m);
+      } catch (e) { /* never break the worker */ }
+      let delayMs = null;
+      try {
+        if (m != null && m.command === 'peer-invoke') {
+          const rule = hops.has(m.id) ? state.rules[hops.get(m.id)] : null;
+          if (rule != null && rule.delayInvokeMs > 0) delayMs = rule.delayInvokeMs;
         }
       } catch (e) { /* never break the worker */ }
+      const flush = () => {
+        try {
+          if (m != null && m.command === 'peer-invoke' && deferred.has(m.id)) {
+            const d = deferred.get(m.id);
+            deferred.delete(m.id);
+            rewrite(d.p.inner);
+            send(d.port, d.p);
+          }
+        } catch (e) { /* never break the worker */ }
+      };
+      if (delayMs != null) {
+        flush();   // the announcement at once, the invoke after the delay
+        setTimeout(() => send(this, p), delayMs);
+        return undefined;
+      }
+      const r = send(this, p);
+      flush();
+      return r;
     };
-    if (delayMs != null) {
-      flush();   // the announcement at once, the invoke after the delay
-      setTimeout(() => post.call(this, message, ...rest), delayMs);
-      return undefined;
-    }
-    const r = post.call(this, message, ...rest);
-    flush();
-    return r;
-  };
+  } catch (e) { /* never break the worker */ }
 }
 
 function waitFor(test, ms) {

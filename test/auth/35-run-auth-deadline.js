@@ -16,7 +16,7 @@ function run(behaviour) {
   const script = `
     require(${JSON.stringify(path.join(LIB, 'cli-options'))}).setOptions({workerThread: true});
     const LOG = require(${JSON.stringify(path.join(LIB, 'logger'))});
-    LOG.createLogger(false);
+    LOG.createLogger();
     const lines = [];
     LOG.E = (e) => { lines.push(String(e && e.message ? e.message : e)); return e; };
     LOG.I = (l) => { lines.push(String(l)); };

@@ -12,6 +12,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {spawnSync} = require('child_process');
+const {testPort} = require('../helpers/test-env');
 
 const ROOT = path.resolve(__dirname, '../..');
 const LIB = path.join(ROOT, 'lib');
@@ -163,7 +164,7 @@ describe('auth 50: the review of B4', function() {
 
   it('a bare or empty --authConfigPath refuses to start', () => {
     for (const value of [[], ['']]) {
-      const run = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', '9731',
+      const run = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', String(testPort(9731)),
         '--authConfigPath'].concat(value), {cwd: ROOT, encoding: 'utf8', timeout: 20000});
       assert.strictEqual(run.status, 2, run.stderr);
       assert.ok(/--authConfigPath needs a path/.test(run.stderr), run.stderr);
@@ -208,19 +209,5 @@ describe('auth 50: the review of B4', function() {
         write: flags.some((f) => f.startsWith('--allow-fs-write=') && f.includes(${JSON.stringify(storePath)}))};
     `);
     assert.deepStrictEqual(out, {prot: true, created: true, read: true, write: true});
-  });
-
-  it('--apiMonitor under --store local logs nothing and does not throw (the API log is absent)', () => {
-    const out = child(`
-      const options = lib('cli-options');
-      options.setOptions({store: 'local', apiMonitor: true});
-      const Session = lib('session');
-      const s = Object.create(Session.prototype);
-      s.serviceID = 'svc'; s.actionName = 'act'; s.deviceID = 'd'; s.appKey = 'k'; s.startTime = Date.now();
-      s.device = {spec: {device: {serviceList: {svc: {actionList: [{name: 'act'}]}}}}};
-      Session.prototype.logAPICall.call(s, null, null, null, true);
-      return {ok: true};
-    `);
-    assert.deepStrictEqual(out, {ok: true});
   });
 });

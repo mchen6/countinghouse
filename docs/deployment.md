@@ -106,6 +106,26 @@ for the full list.
   publish the port to nothing but the ingress's network, so the exposure is
   the same.
 
+## Module settings
+
+A module can declare settings (see
+[Module settings](module-development.md#module-settings)). On a server you
+run, give their values in one file with `--moduleSettings <file>`:
+
+```json
+{"@acme/weather-tool": {"units": "imperial", "defaultRepo": "acme/api"}}
+```
+
+- The file is read at each module load and reload, and never written by the
+  runtime. Mount it read-only beside the policy file.
+- Each value is checked against the module's declaration. A `hostname` or
+  `url` value must be inside the module's granted `permissions.net`.
+- A setting the module declares `required` and the file leaves unset refuses
+  that module's load, and the log says which setting.
+- No module can read the file, as with `--modulePolicy`.
+- A file that cannot be read, or is not an object of objects, stops the start
+  (exit 2).
+
 ## Reference: Docker Compose
 
 A sketch to adapt, not a supported image. It assumes the repository checked
@@ -175,6 +195,14 @@ Notes:
   every start of the module, group and setgid bits included: they are the
   module's private directories by design. A backup that needs them runs as
   the runtime's user, or backs up `--moduleDataPath` as a whole.
+- A module's `data` and `tmp` never overlap module code. One inside (or
+  holding) its own directory, a `--loadModule` directory, any module the
+  runtime has loaded, or a `--modulePath` folder refuses the spawn under
+  `--moduleSandbox enforce`, is reported under `audit`, and its `tmp` is
+  never emptied; so does a module whose own code is inside, or holds, a
+  known module's data (its data root, or its `data` and `tmp` where they
+  really are). `--moduleDataPath` may sit in `--modulePath` beside the modules.
+  Don't install modules inside another module's data directory.
 - `--modulePath` and `--moduleDataPath` are distinct names: under
   `--hardened`, a granted directory whose name another grant extends is
   refused (`X` beside `X_data`; see
@@ -225,7 +253,7 @@ What local mode does not keep: jobs and tasks live in memory only, so a
 restart forgets them (`tasks/get` for a task from an earlier process
 answers "not found"), and a finished job is kept for `--jobResultTtl`
 seconds. The device log is kept in memory only, the last 1000 entries per
-device. The API monitor's log (`--apiMonitor`) is absent. Over `--stdio`
+device. Over `--stdio`
 without `--authConfigPath` the server runs as one user, its key made at
 start and written nowhere ([security model](security-model.md)).
 

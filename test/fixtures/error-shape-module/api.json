@@ -265,6 +265,76 @@
             "output": {
               "schema": "/shapeService/globalsProbe/output"
             }
+          },
+          {
+            "name": "catalogueCode",
+            "description": "error-shape case catalogueCode",
+            "input": {
+              "schema": "/shapeService/catalogueCode/input"
+            },
+            "output": {
+              "schema": "/shapeService/catalogueCode/output"
+            }
+          },
+          {
+            "name": "catalogueCodeSetAfter",
+            "description": "error-shape case catalogueCodeSetAfter",
+            "input": {
+              "schema": "/shapeService/catalogueCodeSetAfter/input"
+            },
+            "output": {
+              "schema": "/shapeService/catalogueCodeSetAfter/output"
+            }
+          },
+          {
+            "name": "catalogueCodeForgedOrigin",
+            "description": "error-shape case catalogueCodeForgedOrigin",
+            "input": {
+              "schema": "/shapeService/catalogueCodeForgedOrigin/input"
+            },
+            "output": {
+              "schema": "/shapeService/catalogueCodeForgedOrigin/output"
+            }
+          },
+          {
+            "name": "catalogueCodeInCallback",
+            "description": "error-shape case catalogueCodeInCallback",
+            "input": {
+              "schema": "/shapeService/catalogueCodeInCallback/input"
+            },
+            "output": {
+              "schema": "/shapeService/catalogueCodeInCallback/output"
+            }
+          },
+          {
+            "name": "remoteUndeclaredPassedOn",
+            "description": "error-shape case remoteUndeclaredPassedOn",
+            "input": {
+              "schema": "/shapeService/remoteUndeclaredPassedOn/input"
+            },
+            "output": {
+              "schema": "/shapeService/remoteUndeclaredPassedOn/output"
+            }
+          },
+          {
+            "name": "remoteArgsInvalidPassedOn",
+            "description": "error-shape case remoteArgsInvalidPassedOn",
+            "input": {
+              "schema": "/shapeService/remoteArgsInvalidPassedOn/input"
+            },
+            "output": {
+              "schema": "/shapeService/remoteArgsInvalidPassedOn/output"
+            }
+          },
+          {
+            "name": "remoteTooLargePassedOn",
+            "description": "error-shape case remoteTooLargePassedOn",
+            "input": {
+              "schema": "/shapeService/remoteTooLargePassedOn/input"
+            },
+            "output": {
+              "schema": "/shapeService/remoteTooLargePassedOn/output"
+            }
           }
         ]
       }

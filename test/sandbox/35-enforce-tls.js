@@ -15,6 +15,10 @@ const os     = require('os');
 const path   = require('path');
 const {spawnSync} = require('child_process');
 const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
+const {testPort, redisUrlFor} = require('../helpers/test-env');
+// the Redis the server uses (run-local's private one, or the system's in CI),
+// on the loopback tlsRoundTrip dials: its port is the denied endpoint
+const REDIS_PORT = Number(new URL(redisUrlFor()).port) || 6379;
 const {toolOutput} = require('../helpers/tool-result');
 
 const KEY     = 'aabbcc';
@@ -41,13 +45,13 @@ function hardenedRoot(dir) {
 }
 
 const ROWS = [
-  ['enforce', 9683, (dir) => ({args: ['--moduleSandbox', 'enforce', '--loadModule', FIXTURE], cert: path.join(dir, 'cert.pem')})],
-  ['hardened enforce', 9685, (dir) => {
+  ['enforce', testPort(9683), (dir) => ({args: ['--moduleSandbox', 'enforce', '--loadModule', FIXTURE], cert: path.join(dir, 'cert.pem')})],
+  ['hardened enforce', testPort(9685), (dir) => {
     const root = hardenedRoot(dir);
     return {args: ['--hardened', '--moduleSandbox', 'enforce', '--modulePath', root, '--loadModule', path.join(root, NAME)],
       cert: path.join(root, 'cert.pem'), root: root};
   }],
-  ['audit', 9684, (dir) => ({args: ['--moduleSandbox', 'audit', '--loadModule', FIXTURE], cert: path.join(dir, 'cert.pem')})]
+  ['audit', testPort(9684), (dir) => ({args: ['--moduleSandbox', 'audit', '--loadModule', FIXTURE], cert: path.join(dir, 'cert.pem')})]
 ];
 
 describe('sandbox 35: TLS client connections under enforce', function() {
@@ -98,13 +102,13 @@ describe('sandbox 35: TLS client connections under enforce', function() {
       });
 
       // The log reaches the test asynchronously: a connection to the denied
-      // Redis endpoint (the default --redisUrl; this server passes none) is
+      // Redis endpoint (the server's --redisUrl: the default, or run-local's) is
       // made after the three, and the log is read up to its line (L1 round
       // 5: not after a fixed wait). Nothing else here touches Redis, so the
       // once-per-target report logs it.
       it('the three connections tripped no violation', async () => {
-        assert.deepStrictEqual(await call('tlsRoundTrip', 6379), {code: 'EACCES'});
-        const mark = `module sandbox: ${NAME} violation redis 127.0.0.1:6379`;
+        assert.deepStrictEqual(await call('tlsRoundTrip', REDIS_PORT), {code: 'EACCES'});
+        const mark = `module sandbox: ${NAME} violation redis 127.0.0.1:${REDIS_PORT}`;
         await waitFor(() => server.output.includes(mark), 20000, 'the Redis violation line');
         const before = server.output.slice(0, server.output.indexOf(mark));
         assert.ok(!before.includes(`module sandbox: ${NAME} violation`),

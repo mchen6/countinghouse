@@ -1,0 +1,1 @@
+{"name": "stdout-flood", "version": "1.0.0", "description": "writes to its worker's stdout and stderr, for the worker output bound test"}

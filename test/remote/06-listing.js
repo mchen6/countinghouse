@@ -4,21 +4,21 @@
 // tried once at the first call, which goes ahead either way.
 const assert = require('assert');
 const fs     = require('fs');
-const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 const {startRemoteServer} = require('../helpers/remote-mcp-server');
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 
-const REMOTE = 9722;
-const SERVER = 9723;
+const REMOTE = testPort(9722);
+const SERVER = testPort(9723);
 const KEY = 'remote-listing-key';
 const TOKEN = `ghp_${'A'.repeat(36)}`;
 
 // remote-probe, copied with its url at this file's port.
 function probeAt(port) {
-  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-06-')), 'remote-probe');
+  const dir = path.join(tmpDirs.mkdtemp('ch-remote-06-'), 'remote-probe');
   fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'remote-probe'), dir, {recursive: true});
   const pkgPath = path.join(dir, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
@@ -27,11 +27,16 @@ function probeAt(port) {
   return dir;
 }
 const allowanceFileFor = (variables) => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-06a-')), 'remote-credentials.json');
+  const file = path.join(tmpDirs.mkdtemp('ch-remote-06a-'), 'remote-credentials.json');
   fs.writeFileSync(file, JSON.stringify({[`http://127.0.0.1:${REMOTE}`]: variables}));
   return file;
 };
 const allowanceFile = () => allowanceFileFor(['CH_TEST_REMOTE_TOKEN']);
+
+// this file's temporary trees, in os.tmpdir() (a module a runtime loads
+// stays outside the runtime's tree) and removed (test/helpers/test-tmp.js
+// forFile); nothing left there
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-06'], {base: require('os').tmpdir()});
 
 describe('remote 06: tools/list at load, in the registry', function() {
   this.timeout(60000);
@@ -120,6 +125,7 @@ describe('remote 06: tools/list at load, in the registry', function() {
     const code = await registry.callRemote('listing-probe', 'probe', 'echo_text', {}, {billingKey: KEY}).then(() => 'resolved', (e) => e.code);
     assert.strictEqual(code, 'REMOTE_UNREACHABLE');
   });
+  tmpDirs.hooks();
 });
 
 describe('remote 06: the load log', function() {
@@ -141,4 +147,5 @@ describe('remote 06: the load log', function() {
       20000, 'the tools/list line');
     assert.ok(!server.output.includes(TOKEN));
   });
+  tmpDirs.hooks();
 });

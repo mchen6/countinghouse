@@ -1,1 +1,4 @@
-{"name": "metering-forge", "version": "1.0.0", "main": "device.js"}
+{
+  "name": "metering-forge",
+  "version": "1.0.0"
+}

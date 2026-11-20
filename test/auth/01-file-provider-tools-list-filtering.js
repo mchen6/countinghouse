@@ -1,3 +1,4 @@
+const assert  = require('assert');
 const fs      = require('fs');
 const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
@@ -16,7 +17,7 @@ const url = `http://127.0.0.1:${PORT}`;
 // its consumers -- HTTP invoke-action's userAuth gate, /device-list (now
 // via AuthProvider.listDevices instead of a raw CouchDB view), and MCP
 // tools/list's new per-apiKey filtering (lib/mcp/tool-registry.js's
-// filterTargetsByAuth) -- which previously always listed every loaded
+// grantedDevices and callerSees) -- which previously always listed every loaded
 // device's tools regardless of caller identity.
 const AUTH_CONFIG_PATH = '/tmp/countinghouse-test-auth-01.json';
 
@@ -167,17 +168,25 @@ describe('auth 01: FileAuthProvider drives HTTP invoke-action, /device-list, and
     });
   });
 
-  it('MCP tools/call: denies a tool filtered out of tools/list, not just hidden from it', (done) => {
-    request(url).post('/mcp')
-    .set('Content-Type', 'application/json')
-    .set('X-CH-Key', SCOPED_KEY)
-    .send({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'transform_demo_transformservice_uppercase', arguments: {text: 'hi'}}})
-    .expect(200, (err, res) => {
-      if (err) return done(err);
-      if (res.body.error == null) {
-        return done(new Error(`expected tools/call to deny scoped key calling transform-demo, got: ${JSON.stringify(res.body)}`));
-      }
-      return done();
+  // A tool outside the key's grants is one the caller can't see: tools/call
+  // answers it exactly as a name never registered, byte for byte, plain and
+  // task-augmented, and runs nothing (the reviewer's ruling on #457's probe,
+  // B-uniform; lib/mcp/gateway.js handleToolsCall, tool-registry
+  // grantsForCall). userAuth is still the second gate behind it.
+  const call = (name, extra) => new Promise((resolve, reject) => request(url).post('/mcp')
+    .set('Content-Type', 'application/json').set('X-CH-Key', SCOPED_KEY)
+    .send({jsonrpc: '2.0', id: 2, method: 'tools/call', params: Object.assign({name, arguments: {text: 'hi'}}, extra)})
+    .end((err, res) => (err ? reject(err) : resolve(res))));
+  for (const [label, extra] of [['plain', {}], ['task-augmented', {task: {ttl: 60000}}]]) {
+    it(`MCP tools/call (${label}): a tool outside the key's grants is answered as an unknown tool, byte for byte, and not run`, async () => {
+      const TOOL = 'transform_demo_transformservice_uppercase';
+      const NEVER = 'no_such_tool_registered_anywhere';
+      const outside = await call(TOOL, extra);
+      const never = await call(NEVER, extra);
+      assert.strictEqual(outside.status, never.status);
+      assert.strictEqual(outside.body.result, undefined, JSON.stringify(outside.body));
+      assert.strictEqual(JSON.stringify(outside.body).split(TOOL).join('<name>'), JSON.stringify(never.body).split(NEVER).join('<name>'));
+      assert.strictEqual(outside.body.error.message, `unknown tool: ${TOOL}`);
     });
-  });
+  }
 });

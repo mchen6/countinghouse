@@ -1,9 +1,9 @@
 const fs = require('fs');
-const exec = require('child_process').exec;
-const waitForReady = require('../helpers/wait-for-ready');
+const {startServer, shutdownThenStop} = require('../helpers/sandbox-server');
 const request = require('supertest');
+const {testPort} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/direct-peer-channels-design.md section 5, step 4's required test:
 // "直连调用产生计量记录，与主线程路径记录字段一致" (a direct-channel call produces a
@@ -33,14 +33,19 @@ const url = 'http://127.0.0.1:9527';
 describe('direct-peer-channels 04: automatic metering on the direct path (D5)', function() {
   this.timeout(0);
 
-  before(function(done) {
+  // started on the run's own port (testPort), stopped in after() whatever
+  // happens (#234: it used to listen on the default port, and to be asked
+  // to stop on another, so a failing run left it running)
+  let server = null;
+  before(async function() {
     this.timeout(0);
     console.log('starting countinghouse with --mcpToolCallCost 1 to make recordCall\'s effect assertable...');
-    waitForReady(exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --mcpToolCallCost 1 --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', (err, stdout, stderr) => { console.log(err); }), done);
+    server = await startServer(testPort(9527), '--workerThread --debug --debugKey aabbcc --mcpToolCallCost 1 --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module'.split(/\s+/).filter(Boolean), {nodeArgs: ['--expose-gc']});
   });
 
-  after((done) => {
-    request(url).post('/shutdown').set('X-CH-Key', 'aabbcc').end(() => { done(); }); // /shutdown is now admin-gated
+  after(() => {
+    // asked to stop, then stopped whatever it answered, or did not (#234) // /shutdown is now admin-gated
+    return shutdownThenStop(server, testPort(9527), 'aabbcc');
   });
 
   const ECHO_DEVICE_CLIENT_ID = 'efefb416-bdc0-54eb-96a9-38f96f52779d'; // echo-device-client-module

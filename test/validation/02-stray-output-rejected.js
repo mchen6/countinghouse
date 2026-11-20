@@ -14,8 +14,9 @@ const http   = require('http');
 const net    = require('net');
 const path   = require('path');
 const spawn  = require('child_process').spawn;
+const {testPort} = require('../helpers/test-env');
 
-const PORT = 9575;
+const PORT = testPort(9575);
 const ROOT = path.join(__dirname, '..', '..');
 const KEY  = 'aabbcc';
 

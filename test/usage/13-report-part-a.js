@@ -1,5 +1,5 @@
-// countinghouse_usage_report, Part A (Matt, 2026-11-13; #158): `until` and
-// `since: "all"`, by-day rows, the tokens kept out of the model's context as
+// countinghouse_usage_report, Part A (maintainer's decision, 2026-11-13;
+// #158): `until` and `since: "all"`, by-day rows, the tokens kept out of the model's context as
 // an upper-bound estimate ({estimate, method, bound: "upper"}), and
 // profiling (call time, errors by code, server calls per call). The headline
 // is the period's totals. Pure over an in-memory recorder (and a fixture
@@ -26,13 +26,13 @@ function recorder() {
   // One tools/call: its server calls, then its result (out: null for none).
   u.call = ({at, caller = 'u_a', tool = 'triage', pack = 'ch-pack-x', ins = [], out = {}}) => {
     t = Date.parse(at);
-    const c = u.beginCall({pack, tool, caller});
+    const c = u.beginCall({scenario: pack, tool, caller});
     for (const i of ins) {
       u.recordIn(c, {server: i.server || 'github', module: 'ch-access-github', tool: 'get_logs', bytes: i.bytes || 0, lines: 1, ms: i.ms === undefined ? 1 : i.ms,
         outcome: i.outcome || 'ok', credential: 'GITHUB_TOKEN', mapped: i.mapped === true});
       t += 1;
     }
-    if (out !== null) u.recordOut(c, {tool, bytes: out.bytes || 0, lines: 1, ms: out.ms === undefined ? 5 : out.ms, outcome: out.outcome || 'ok', code: out.code});
+    if (out !== null) u.recordOut(c, {tool, bytes: out.bytes || 0, lines: 1, inlineBytes: out.inline || 0, ms: out.ms === undefined ? 5 : out.ms, outcome: out.outcome || 'ok', code: out.code});
     return c;
   };
   return u;
@@ -40,6 +40,17 @@ function recorder() {
 const report = (u, args, who = ADMIN, usageDir = null) => usageReport(args, who, {usage: u, usageDir, now: () => NOW});
 
 describe('countinghouse_usage_report, Part A', () => {
+  // M4: an image or audio block reached the model as surely as text did, so
+  // it counts as out (bytesOut, and so neither kept out nor estimated away)
+  it('an image or audio block\'s bytes count as out, and not as kept out of the model\'s context', async () => {
+    const u = recorder();
+    u.call({at: '2026-11-13T10:00:00.000Z', ins: [{bytes: 4000}], out: {bytes: 400, inline: 2000}});
+    const r = await report(u, {since: '2026-11-01'});
+    assert.strictEqual(r.totals.bytesOut, 2400);
+    assert.strictEqual(r.totals.keptOut.estimate, 400);
+    assert.strictEqual(r.days[0].bytesOut, 2400);
+  });
+
   describe('the window: until, and since "all"', () => {
     it('until takes a day (its end, inclusive), an ISO time or a duration; the default is now', async () => {
       const u = recorder();
@@ -259,10 +270,10 @@ describe('countinghouse_usage_report, Part A', () => {
     it('an error result\'s Out record carries its code; a success carries none', async () => {
       let t = Date.parse('2026-11-13T10:00:00Z');
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => t++});
-      const bad = u.beginCall({pack: 'p', tool: 'x', caller: 'u_a'});
+      const bad = u.beginCall({scenario: 'p', tool: 'x', caller: 'u_a'});
       finishToolCall({usage: u, call: bad, result: {isError: true, content: [{type: 'text', text: 'no'}], _meta: {'countinghouse/code': 'ARGUMENTS_INVALID'}},
         role: 'scenario', tool: 'x', startedMs: t, now: () => t});
-      const good = u.beginCall({pack: 'p', tool: 'x', caller: 'u_a'});
+      const good = u.beginCall({scenario: 'p', tool: 'x', caller: 'u_a'});
       finishToolCall({usage: u, call: good, result: {isError: false, content: [{type: 'text', text: 'ok'}]}, role: 'scenario', tool: 'x', startedMs: t, now: () => t});
       const outs = u.records().filter((r) => r.server == null);
       assert.deepStrictEqual(outs.map((r) => [r.outcome, r.code]), [['error', 'ARGUMENTS_INVALID'], ['ok', undefined]]);
@@ -271,7 +282,7 @@ describe('countinghouse_usage_report, Part A', () => {
     it('a code that is not one (free text) is recorded as OTHER, never the text', async () => {
       let t = 0;
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => t++});
-      const c = u.beginCall({pack: 'p', tool: 'x', caller: 'u_a'});
+      const c = u.beginCall({scenario: 'p', tool: 'x', caller: 'u_a'});
       finishToolCall({usage: u, call: c, result: {isError: true, content: [], _meta: {'countinghouse/code': 'secret text from somewhere'}}, role: 'scenario', tool: 'x', startedMs: 0, now: () => t});
       assert.strictEqual(u.records().find((r) => r.server == null).code, 'OTHER');
     });

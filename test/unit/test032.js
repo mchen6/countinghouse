@@ -1,7 +1,8 @@
 const request = require('supertest');
 const {toolErrorCode} = require('../helpers/tool-result');
+const {testPort} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/cross-cutting-matrix.md found that MCP tools/call error responses
 // (lib/mcp/gateway.js's toolCallResult()) dropped err.code -- the locale-
@@ -46,7 +47,7 @@ describe('test32: MCP tools/call error responses carry err.code', function() {
   it('task-augmented tools/call: an input-validation failure carries its code in _meta via tasks/result', (done) => {
     request(url).post('/mcp')
     .set('Content-Type', 'application/json')
-    .send({jsonrpc: '2.0', id: 2, method: 'initialize', params: {protocolVersion: '2026-07-28'}})
+    .send({jsonrpc: '2.0', id: 2, method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}}})
     .expect(200, (err, res) => {
       if (err) return done(err);
       const tasksSupported = res.body.result != null

@@ -26,7 +26,7 @@ describe('usage: the review fixes of #59', () => {
   it('a finished call is released, and memory keeps at most memoryMax records', async () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: clock(), memoryMax: 3});
     for (let i = 0; i < 5; i++) {
-      const call = u.beginCall({pack: null, module: 'm', tool: 't', caller: 'u_a'});
+      const call = u.beginCall({scenario: null, module: 'm', tool: 't', caller: 'u_a'});
       u.recordIn(call, {server: 's', tool: 'x', bytes: 1, lines: 1, ms: 1, outcome: 'ok', credential: null});
       const receipt = u.recordOut(call, {tool: 't', bytes: 2, lines: 1, ms: 1, outcome: 'ok'});
       assert.strictEqual(receipt.calls, 1);
@@ -40,7 +40,7 @@ describe('usage: the review fixes of #59', () => {
   it('a recorder that writes files makes the report read them, its own process included, not memory', async () => {
     const u = createUsage({usageDir: dir, pid: 2, startMs: 2, now: clock(), memoryMax: 1});
     for (let i = 0; i < 3; i++) {
-      const call = u.beginCall({pack: null, module: 'm', tool: 't', caller: 'u_a'});
+      const call = u.beginCall({scenario: null, module: 'm', tool: 't', caller: 'u_a'});
       u.recordOut(call, {tool: 't', bytes: 2, lines: 1, ms: 1, outcome: 'ok'});
     }
     const out = (await usageReport({}, {caller: 'u_a', isAdmin: false}, {usage: u, usageDir: dir, now: () => NOW}));
@@ -73,7 +73,7 @@ describe('usage: the review fixes of #59', () => {
 
   it('a direct call to a plain module is grouped under that module, not (unknown)', async () => {
     const u = createUsage({usageDir: null, pid: 3, startMs: 3, now: clock()});
-    const call = u.beginCall({pack: null, module: 'log-read', tool: 'log_read_svc_get', caller: 'u_a'});
+    const call = u.beginCall({scenario: null, module: 'log-read', tool: 'log_read_svc_get', caller: 'u_a'});
     u.recordOut(call, {tool: 'log_read_svc_get', bytes: 2, lines: 1, ms: 1, outcome: 'ok'});
     assert.strictEqual(u.records()[0].module, 'log-read');
     const out = (await usageReport({groupBy: 'module'}, {caller: 'u_a', isAdmin: false}, {usage: u, usageDir: null, now: () => NOW}));
@@ -82,7 +82,7 @@ describe('usage: the review fixes of #59', () => {
 
   it('a non-admin with no caller id sees nothing, not every other caller without one', async () => {
     const u = createUsage({usageDir: null, pid: 4, startMs: 4, now: clock()});
-    const call = u.beginCall({pack: null, module: 'm', tool: 't', caller: null});
+    const call = u.beginCall({scenario: null, module: 'm', tool: 't', caller: null});
     u.recordOut(call, {tool: 't', bytes: 2, lines: 1, ms: 1, outcome: 'ok'});
     const out = (await usageReport({}, {caller: null, isAdmin: false}, {usage: u, usageDir: null, now: () => NOW}));
     assert.deepStrictEqual([out.groups, out.totals.calls], [[], 0]);
@@ -90,7 +90,7 @@ describe('usage: the review fixes of #59', () => {
 
   it('a scenario result with no content array still gets its receipt', async () => {
     const u = createUsage({usageDir: null, pid: 5, startMs: 5, now: clock()});
-    const call = u.beginCall({pack: 'p', module: 'p', tool: 't', caller: 'u_a'});
+    const call = u.beginCall({scenario: 'p', module: 'p', tool: 't', caller: 'u_a'});
     const r = finishToolCall({usage: u, call, result: {isError: false}, role: 'scenario', tool: 't', startedMs: NOW, now: () => NOW});
     assert.strictEqual(r.content.length, 1);
     assert.match(r.content[0].text, /^no server was called; 0 lines \(0 B\) reached the model\.$/);
@@ -106,7 +106,7 @@ describe('usage: the review fixes of #59', () => {
   it('an HTTP invoke-action caller\'s usageCall never reaches the invoke args', (done) => {
     const options = require('../../lib/cli-options');
     options.setOptions({redisUrl: 'redis://127.0.0.1:9749'});
-    require('../../lib/logger').createLogger(false);
+    require('../../lib/logger').createLogger();
     const invokeAction = require('../../lib/routes/invoke-action');
     const seen = [];
     const cdif = {

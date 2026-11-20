@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "callerService": {
+    "hop": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "enum": [
+              "take",
+              "give",
+              "slow"
+            ]
+          },
+          "args": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "action",
+          "args"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "ping": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "hopDigest": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "wait": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "n"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "hopOdd": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "enum": [
+              "odd",
+              "forge"
+            ]
+          },
+          "args": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "action",
+          "args"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
+    }
+  }
+}

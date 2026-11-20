@@ -16,6 +16,7 @@ const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolErrorCode} = require('../helpers/tool-result');
 
 const INNER = path.join(ROOT, 'test', 'fixtures', 'worker-end');
@@ -29,8 +30,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const balance = (port) => request(`http://127.0.0.1:${port}`).get('/balance').set('X-CH-Key', KEY).then((r) => r.body.balance);
 
-[{label: 'with direct peer channels', port: 9609, flags: [], reloadCode: 'PEER_GONE'},
-  {label: 'without direct peer channels', port: 9610, flags: ['--no-directPeerChannels'], reloadCode: 'MODULE_RELOADING'}].forEach((variant) => {
+[{label: 'with direct peer channels', port: testPort(9609), flags: [], reloadCode: 'PEER_GONE'},
+  {label: 'without direct peer channels', port: testPort(9610), flags: ['--no-directPeerChannels'], reloadCode: 'MODULE_RELOADING'}].forEach((variant) => {
   describe(`composition 15: a composite's in-flight hop when its inner module reloads, ${variant.label}`, function() {
     this.timeout(120000);
     let base = null;
@@ -66,9 +67,14 @@ const balance = (port) => request(`http://127.0.0.1:${port}`).get('/balance').se
         20000, 'the reloaded inner module to answer');
     });
 
-    it('a callee\'s runtime error code reaches the caller', async () => {
+    // A callee module may not use a code of the runtime's catalogue
+    // (ctx.error('DEVICE_INVOKE_FAIL'), the logger spec, section 12, 1): its
+    // caller is answered the runtime's MODULE_CODE_RESERVED, never the
+    // catalogue code as if the runtime had said it (#445).
+    it('a callee\'s catalogue code reaches the caller as the runtime\'s MODULE_CODE_RESERVED', async () => {
       const r = await mcpCall(variant.port, KEY, 'worker_end_caller_callerservice_callfailcatalogue', {});
-      assert.strictEqual(toolErrorCode(r), 'DEVICE_INVOKE_FAIL', JSON.stringify(r));
+      assert.strictEqual(toolErrorCode(r), 'MODULE_CODE_RESERVED', JSON.stringify(r));
+      assert.match(JSON.stringify(r), /DEVICE_INVOKE_FAIL/, 'it names the code the callee used');
     });
 
     it('a callee\'s own error code reaches the caller too, as the module\'s', async () => {

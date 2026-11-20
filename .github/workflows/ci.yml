@@ -7,10 +7,12 @@ on:
     branches: [master]
 
 # A new push to a pull request cancels that PR's superseded run (the group is
-# the PR number); a push to master is grouped by its sha, unique per commit,
-# so no master run is ever cancelled and every merged commit keeps its result.
+# the PR number); a push to master is grouped by the branch, so a newer merge
+# cancels the run of an older one still queued or running. Every PR is gated by
+# its own run before it merges; master keeps the result of its newest commit,
+# and superseded master runs no longer queue ahead of every PR.
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -205,7 +207,29 @@ jobs:
       # this deliberately excludes it (mirrors the local dev-loop workflow)
       # The runs are listed once, in test/folders.json (npm test reads it too).
       - name: Run functional tests
-        run: node scripts/run-tests.js --ci
+        # Temporary watchdog while we find what starves the lost runners: every 30 s it logs
+        # free -m and the top memory users (the live log survives a lost runner), and below
+        # 800 MB available it prints the biggest processes and stops the tests, so the leg
+        # fails with that output instead of losing the runner. Remove once the cause is known.
+        run: |
+          set +e
+          ( while true; do
+              echo "::group::[watch] $(date -u +%T)"
+              free -m
+              ps -eo pid,ppid,pcpu,rss,etime,args --sort=-rss | head -6
+              echo "::endgroup::"
+              avail=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)
+              if [ "$avail" -lt 800 ]; then
+                echo "[watch] MemAvailable ${avail} MB < 800: stopping the tests"
+                ps -eo pid,ppid,rss,etime,args --sort=-rss | head -15
+                pkill -TERM -f 'node scripts/run-tests.js'
+              fi
+              sleep 30
+            done ) &
+          WATCH=$!
+          node scripts/run-tests.js --ci; rc=$?
+          kill $WATCH 2>/dev/null
+          exit $rc
 
       # informational only for now - the dependency tree isn't at zero
       # vulnerabilities yet, so this doesn't gate CI; it's here so the

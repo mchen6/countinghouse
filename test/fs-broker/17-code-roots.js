@@ -26,6 +26,60 @@ describe('fs-broker 17: code roots', () => {
     assert.strictEqual(excluded.length, first.length - 1);
   });
 
+  // An install run by a spelling that isn't its real path (#272: on Windows,
+  // one under an 8.3 short name, C:\\Users\\RUNNER~1\\..., from os.tmpdir();
+  // here a symlinked spelling): its own entries are roots under the spelling
+  // its files run by and under their real paths, so its lazily required files
+  // stay inside them; a module root inside it still takes both out.
+  it('lists countinghouse\'s own entries under the spelling it runs from and their real paths (#272)', () => {
+    const base = mkdtemp('code-roots-spelled-');
+    try {
+      const real = path.join(base, 'real-install');
+      fs.mkdirSync(path.join(real, 'lib'), {recursive: true});
+      fs.writeFileSync(path.join(real, 'package.json'), '{}');
+      fs.writeFileSync(path.join(real, 'lib', 'thread-info.js'), '');
+      const spelled = path.join(base, 'spelled');
+      fs.symlinkSync(real, spelled, 'junction');
+      const roots = identity.codeRootsFor(spelled, fs.realpathSync.native, []);
+      for (const p of [path.join(spelled, 'lib'), path.join(real, 'lib'), path.join(spelled, 'package.json'), path.join(real, 'package.json')]) {
+        assert.ok(roots.includes(p), `${p}: ${JSON.stringify(roots)}`);
+      }
+      const excluded = identity.codeRootsFor(spelled, fs.realpathSync.native, [path.join(real, 'lib')]);
+      assert.ok(!excluded.includes(path.join(spelled, 'lib')) && !excluded.includes(path.join(real, 'lib')), JSON.stringify(excluded));
+    } finally {
+      fs.rmSync(base, {recursive: true, force: true});
+    }
+  });
+
+  // stdio 26 (#272): an install whose node_modules is a link, run with
+  // --preserve-symlinks. Node looks a dependency's own dependency up from
+  // the spelling the dependency was loaded by (install/node_modules/once ->
+  // install/node_modules/wrappy), so that spelling is a root too, not only
+  // the real path (the review of #370: once, loaded at a worker's boot, had
+  // its wrappy refused).
+  it('lists a dependency\'s own dependencies under the spelling Node looks them up by, through a linked node_modules (#272)', () => {
+    const base = mkdtemp('code-roots-nested-');
+    try {
+      const store = path.join(base, 'store');
+      for (const [name, deps] of [['a', {b: '1'}], ['b', {c: '1'}], ['c', {}]]) {
+        fs.mkdirSync(path.join(store, 'node_modules', name), {recursive: true});
+        fs.writeFileSync(path.join(store, 'node_modules', name, 'package.json'), JSON.stringify({name, dependencies: deps}));
+      }
+      const copy = path.join(base, 'copy');
+      fs.mkdirSync(copy);
+      fs.writeFileSync(path.join(copy, 'package.json'), '{"dependencies": {"a": "1"}}');
+      fs.symlinkSync(path.join(store, 'node_modules'), path.join(copy, 'node_modules'), 'junction');
+      const install = path.join(base, 'install');
+      fs.symlinkSync(copy, install, 'junction');
+      const roots = identity.codeRootsFor(install, fs.realpathSync.native, []);
+      for (const name of ['a', 'b', 'c']) {
+        for (const p of [path.join(install, 'node_modules', name), path.join(store, 'node_modules', name)]) assert.ok(roots.includes(p), `${p}: ${JSON.stringify(roots)}`);
+      }
+    } finally {
+      fs.rmSync(base, {recursive: true, force: true});
+    }
+  });
+
   // pnpm and linked node_modules: a dependency reached through a symlink is
   // a root under the name Node looks up and under its real path; a module
   // root subtracts both (review, plan 5).

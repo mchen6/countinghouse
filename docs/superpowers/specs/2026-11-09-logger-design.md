@@ -121,7 +121,8 @@ of mine):
 - **Levels and format.** `--logLevel error|warn|info|debug` (default info).
   `--logFormat json|pretty`: pretty when stdout is a TTY, json otherwise.
   `--logStream`, which does nothing today, becomes a deprecated alias that
-  warns once.
+  warns once. (Superseded 2026-11-17, #383: removed outright with no alias,
+  as #382's flags were; it changed nothing.)
 
 **Pretty mode** (one line per record; colour only on a TTY):
 
@@ -284,11 +285,12 @@ implementer's, for review:
 
 | status | codes |
 | --- | --- |
-| 400 | caller-kind bad input: `ARGUMENTS_INVALID`, `INPUT_DATA_VALIDATION_FAIL`, `INPUT_NOT_FOUND`, `INVALID_BSON_REQUEST`, `INVALID_JSON_POINTER`, `INVALID_REDIRECT_URL`, `INVALID_MODULE_PATH`, `DEVICE_ID_INVALID_OR_NULL`, `MODULE_NAME_INVALID`, `MODULE_NAME_MISMATCH`; and the route manager's `REQUEST_INVALID` |
+| 400 | caller-kind bad input: `ARGUMENTS_INVALID`, `INPUT_DATA_VALIDATION_FAIL`, `INPUT_NOT_FOUND`, `INVALID_JSON_POINTER`, `INVALID_REDIRECT_URL`, `INVALID_MODULE_PATH`, `DEVICE_ID_INVALID_OR_NULL`, `MODULE_NAME_INVALID`, `MODULE_NAME_MISMATCH`; and the route manager's `REQUEST_INVALID` |
 | 401 | no key or an unknown key: `SYSTEM_ERROR_UNKNOWN_USER` |
 | 403 | a known caller without the right: `ADMIN_REQUIRED`, `DENY_DEVICE_ACCESS`, `USER_HAS_NO_DEVICE`, `PEER_NOT_GRANTED`, `JOB_ACCESS_DENIED`; and `HOST_NOT_ALLOWED` |
 | 404 | a missing device or tool: `DEVICE_NOT_FOUND`, `SERVICE_NOT_FOUND`, `ACTION_NOT_FOUND`, `SERVICEID_NOT_AVAILABLE`, `ACTIONNAME_NOT_AVAILABLE` (B), `IDENTITY_NOT_FOUND` (B) |
 | 413 | `REQUEST_TOO_LARGE` (as today) |
+| 415 | `REQUEST_UNSUPPORTED_MEDIA_TYPE`: an `application/bson` body (BSON was retired in 8.0.0, and with it `INVALID_BSON_REQUEST`) |
 | 429 | `RATE_LIMIT_EXCEEDED` |
 | 503 | operator-kind outages: `SYSTEM_ERROR_USERDB_NA`, `MODULE_SUSPENDED`, `MODULE_UNLOADED` (B); and the retryable runtime codes, which are transient by definition (B): `DEVICE_IN_ACTION`, `DEVICE_NOT_CONNECTED`, `DEVICE_OFFLINE`, `DEVICE_NOT_RESPONDING`, `REDIS_CLIENT_ERROR`, `PEER_GONE`, `PEER_CHANNEL_TIMEOUT`, `CTX_CALL_NOT_READY`, `MODULE_RESTARTING`, `MODULE_RELOADING` |
 | 500 | everything else: every module-kind code (the runtime's codes for a module's fault, `DEVICE_INVOKE_EXCEPTION` and `RATE_LIMITED` among them), the remaining runtime-kind and operator-kind codes, and every module's own code |
@@ -299,7 +301,7 @@ answers as a JSON-RPC error (`SYSTEM_ERROR_UNKNOWN_USER`,
 `USER_HAS_NO_DEVICE`, `SYSTEM_ERROR_USERDB_NA`), and an unknown tool keeps
 `-32602`; that answer has no catalogue code yet, and the MCP commit adds
 one (`TOOL_NOT_FOUND`, kind caller, 404) so `data.code` can name it (B).
-`REQUEST_INVALID`, `REQUEST_TOO_LARGE` and `HOST_NOT_ALLOWED`, which the
+`REQUEST_INVALID`, `REQUEST_TOO_LARGE`, `REQUEST_UNSUPPORTED_MEDIA_TYPE` and `HOST_NOT_ALLOWED`, which the
 route manager answers today without a catalogue entry, join the catalogue
 in the HTTP commit.
 
@@ -643,7 +645,7 @@ user.
   (item 9; session.js:196-222).
 - The redis devicelog lists (item 8).
 - `CHError` and `DeviceError`, classes and globals (in step 1, section 5.1).
-- `--logStream` (after one release as a warning alias).
+- `--logStream` (after one release as a warning alias; superseded: removed in #383).
 - The two `error-info.*.json` files (replaced by the catalogue).
 
 ## 9. Landing plan (the reviewer's call)
@@ -736,7 +738,7 @@ the file-broker spec's proposal 5 being kept.
   destinations, `--logFile` and logrotate, the restart policy, where module
   authors find their logs, and the admin readback.
 - `docs/cli-and-api-reference.md`: `--logLevel`, `--logFormat`, `--logFile`,
-  `--logStream` (deprecated), `--apiMonitor` (removed), `GET /admin/logs` and
+  `--logStream` (removed, #383), `--apiMonitor` (removed), `GET /admin/logs` and
   `countinghouse_logs`.
 - `docs/module-development.md` and the countinghouse-module skill:
   `ctx.error`, the codes rule (a module's codes are its own; it never raises

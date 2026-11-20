@@ -6,11 +6,11 @@
 //
 //   countinghouse-usage --usageDir <dir> [--since <day|ISO time|30m|24h|7d|all>]
 //                       [--until <day|ISO time|duration>]
-//                       [--groupBy tool|server|pack|module] [--json|--csv]
+//                       [--groupBy tool|server|scenario|module] [--json|--csv]
 const fs = require('fs');
 const {usageReport, reportText, reportCsv} = require('../lib/usage/report');
 
-const USAGE = 'usage: countinghouse-usage --usageDir <dir> [--since <day|ISO time|duration|all>] [--until <day|ISO time|duration>] [--groupBy tool|server|pack|module] [--json|--csv]\n';
+const USAGE = 'usage: countinghouse-usage --usageDir <dir> [--since <day|ISO time|duration|all>] [--until <day|ISO time|duration>] [--groupBy tool|server|scenario|module] [--json|--csv]\n';
 const VALUES = ['--usageDir', '--since', '--until', '--groupBy'];
 const FLAGS = ['--json', '--csv'];
 

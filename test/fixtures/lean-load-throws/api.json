@@ -1,0 +1,14 @@
+{
+  "device": {
+    "friendlyName": "lean-load-throws",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Lean worker step 3: a handler file that throws while it is required.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:pingService": {
+        "actionList": [
+          {"name": "ping", "description": "Never answers: its file throws at require.", "input": {"schema": "/pingService/ping/input"}, "output": {"schema": "/pingService/ping/output"}}
+        ]
+      }
+    }
+  }
+}

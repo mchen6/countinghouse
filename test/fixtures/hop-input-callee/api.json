@@ -1,0 +1,73 @@
+{
+  "device": {
+    "friendlyName": "hop-input-callee",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Callee of the hop-input fixture: takes a string and answers its length and digest (test/sandbox/48).",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:sinkService": {
+        "actionList": [
+          {
+            "name": "sink",
+            "description": "The length and sha256 of input.s.",
+            "input": {
+              "schema": "/sinkService/sink/input"
+            },
+            "output": {
+              "schema": "/sinkService/sink/output"
+            }
+          },
+          {
+            "name": "count",
+            "description": "How many times sink ran.",
+            "input": {
+              "schema": "/sinkService/count/input"
+            },
+            "output": {
+              "schema": "/sinkService/count/output"
+            }
+          },
+          {
+            "name": "big",
+            "description": "An output of n characters (test/sandbox/49).",
+            "input": {
+              "schema": "/sinkService/big/input"
+            },
+            "output": {
+              "schema": "/sinkService/big/output"
+            }
+          },
+          {
+            "name": "bad",
+            "description": "An output its own schema refuses (test/sandbox/49).",
+            "input": {
+              "schema": "/sinkService/bad/input"
+            },
+            "output": {
+              "schema": "/sinkService/bad/output"
+            }
+          },
+          {
+            "name": "slow",
+            "description": "Answers after ms milliseconds (test/sandbox/54: a call's own timeout).",
+            "input": {
+              "schema": "/sinkService/slow/input"
+            },
+            "output": {
+              "schema": "/sinkService/slow/output"
+            }
+          },
+          {
+            "name": "forge",
+            "description": "Makes its worker's copy of the call limits huge, then answers n characters (test/sandbox/54).",
+            "input": {
+              "schema": "/sinkService/forge/input"
+            },
+            "output": {
+              "schema": "/sinkService/forge/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

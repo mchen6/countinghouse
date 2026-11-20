@@ -35,12 +35,21 @@ describe('module-loading 14: the per-name lifecycle lock', () => {
     const lines = [];
     const stuck = {inFlight: 2, idle: () => new Promise(() => {})};
     const started = Date.now();
-    await boundedIdle(stuck, 50, (line) => lines.push(line), 'm');
+    assert.strictEqual(await boundedIdle(stuck, 50, (line) => lines.push(line), 'm'), false, 'not idle: the bound passed');
     assert.ok(Date.now() - started >= 45);
     assert.deepStrictEqual(lines, ['file broker: m not idle after 0.05 s (2 operations still running in the host); continuing']);
     const quiet = [];
-    await boundedIdle({inFlight: 0, idle: () => Promise.resolve()}, 50, (line) => quiet.push(line), 'm');
+    assert.strictEqual(await boundedIdle({inFlight: 0, idle: () => Promise.resolve()}, 50, (line) => quiet.push(line), 'm'), true);
     assert.deepStrictEqual(quiet, []);
+  });
+
+  it('boundedIdle: an idle() that fails counts as not idle, is logged with its error, and clears its bound (no later "not idle" line)', async () => {
+    const {boundedIdle} = require('../../lib/module-lifecycle');
+    const lines = [];
+    assert.strictEqual(await boundedIdle({inFlight: 1, idle: () => Promise.reject(new Error('the idle wait broke'))}, 50, (line) => lines.push(line), 'm'), false);
+    await new Promise((r) => setTimeout(r, 80));
+    assert.strictEqual(lines.length, 1, JSON.stringify(lines));
+    assert.ok(/its idle wait failed \(the idle wait broke\)/.test(lines[0]), lines[0]);
   });
 
   it('settleAfterExit always settles, even when closing the bridge fails (review, plan 4 Task 5)', async () => {

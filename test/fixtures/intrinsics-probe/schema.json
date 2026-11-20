@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "probeService": {
+    "probe": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "change": {"type": "string"},
+          "builtins": {"type": "array", "items": {"type": "string"}},
+          "runtimeFile": {"type": "string"},
+          "outsidePath": {"type": "string"},
+          "host": {"type": "string"},
+          "rethrow": {"type": "boolean"},
+          "route": {"type": "string"},
+          "marker": {"type": "string"},
+          "hostFile": {"type": "string"},
+          "hostDir": {"type": "string"},
+          "persist": {"type": "string"},
+          "realFd": {"type": "integer"}
+        },
+        "required": ["change"]
+      },
+      "output": {
+        "type": "object"
+      }
+    }
+  }
+}

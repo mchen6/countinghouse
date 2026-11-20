@@ -1,0 +1,5 @@
+{"device": {"friendlyName": "isolation-peer", "manufacturer": "countinghouse-test",
+  "modelDescription": "listens on a BroadcastChannel in a module worker of its own",
+  "serviceList": {"urn:countinghouse-test:serviceID:peerService": {"actionList": [
+    {"name": "listen", "description": "Wait for one broadcast message.", "input": {"schema": "/peerService/listen/input"}, "output": {"schema": "/peerService/listen/output"}}
+  ]}}}}
