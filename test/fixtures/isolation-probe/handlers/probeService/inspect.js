@@ -132,6 +132,45 @@ const STEPS = {
   // to one, never walks or stats above the root; a package found above it
   // and one missing give one answer, and nothing of module code's runs
   // inside Node's step while it looks)
+  // C-bare R0: a bare require is CommonJS's own lookup, every disk access
+  // on it judged. An "exports" target climbing out by '%2e' (plain Node:
+  // the file beside the root) reads as a missing name, by the whole error;
+  // an import of it the same; a self-reference from deep in the tree finds
+  // the root's package.json, never the one above the root.
+  cjsJudged: async () => {
+    const out = [];
+    const o = (fn, pkg) => { try { fn(); return 'found'; } catch (e) { return `${e.code}|${e.message}`.split(pkg).join('PKG'); } };
+    const same = (tag, a, b) => out.push(a === b ? 'same' : `${tag}(${a.slice(0, 200)} / ${b.slice(0, 200)})`);
+    same('requireClimb', o(() => require('dep6/e'), 'dep6'), o(() => require('nosuchdep6/e'), 'nosuchdep6'));
+    same('resolveClimb', o(() => require.resolve('dep6/e'), 'dep6'), o(() => require.resolve('nosuchdep6/e'), 'nosuchdep6'));
+    const oi = async (spec, pkg) => { try { await import(spec); return 'found'; } catch (e) { return `${e.code}|${e.message}`.split(pkg).join('PKG'); } };
+    same('importClimb', await oi('dep6/e', 'dep6'), await oi('nosuchdep6/e', 'nosuchdep6'));
+    const deep = require('../../lib/deep/a/b/c/self.js');
+    out.push(deep('isolation-probe/self-check') === 'counted' ? 'same' : `ownSelf(${deep('isolation-probe/self-check')})`);
+    same('outerSelf', deep('outer-self').split('outer-self').join('PKG'), deep('no-such-outer').split('no-such-outer').join('PKG'));
+    return out.join(' ');
+  },
+  // C-bare R0's layers past the judged _stat, each pinned alone by a
+  // route only it stands on. A link inside the root (made by the test after
+  // the load) to the file beside the root passes the lexical stat, and
+  // Node's realpath answers outside:
+  // - findPath: a direct Module._findPath of a package whose index.js is
+  //   the link -- the _findPath wrapper's answer check alone
+  // - direct: a direct _resolveFilename of the root's own export that is
+  //   the link (trySelf's answer never passes _findPath) -- the direct
+  //   call's answer check alone
+  // - hook: a require of another such export -- the require hook's
+  //   bound() alone
+  // each a missing name (a missing file, by the whole error)
+  linkLayers: () => {
+    const o = (fn, pkg) => { try { const r = fn(); return r === false ? 'false' : `found ${String(r)}`; } catch (e) { return `${e.code}|${e.message}`.split(pkg).join('PKG'); } };
+    const out = [];
+    const pair = (tag, a, b) => out.push(a === b ? 'same' : `${tag}(${a.slice(0, 200)} / ${b.slice(0, 200)})`);
+    pair('findPath', o(() => M._findPath('linkpkg', module.paths), 'linkpkg'), o(() => M._findPath('nosuchlink', module.paths), 'nosuchlink'));
+    pair('direct', o(() => M._resolveFilename('isolation-probe/link-self', module), 'link-self'), o(() => M._resolveFilename('isolation-probe/link-none', module), 'link-none'));
+    pair('hook', o(() => require('isolation-probe/link-self2'), 'link-self2'), o(() => require('isolation-probe/link-none2'), 'link-none2'));
+    return out.join(' ');
+  },
   bareSubpath: async () => {
     const out = [];
     const tryImport = async (spec) => { try { await import(spec); return 'found'; } catch (e) { return String(e.code); } };

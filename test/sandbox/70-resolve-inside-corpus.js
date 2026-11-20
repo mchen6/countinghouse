@@ -10,9 +10,9 @@
 // with --expose-internals): the answers must be the same file URL, or the
 // same refusal. The only difference allowed is the sandbox refusing a bare
 // request Node answers with a file outside the package it names (by
-// design: Node would then stat outside the module's root) -- judged by
-// case from the package's own directory -- and the cases marked stricter
-// below. The packages sit at their real names (scoped ones too), at more
+// design: Node would then stat outside the module's root) -- for the
+// cases that name their package's directory (pkgDir), judged from it --
+// and the cases marked stricter below. The packages sit at their real names (scoped ones too), at more
 // than one node_modules level, with a self-reference, a decoy and odd
 // "main"s; findPackageJSON's package for a bare name is compared too.
 const assert = require('assert');
@@ -50,7 +50,10 @@ const SYNTH_EXPORTS = [
   {'.': {0: './a.js', default: './b.js'}},
   {'./*': './.%2*/.%2*/x.js'},
   {'./dir/': './dir/'},
-  {'./*': './*'}
+  {'./*': './*'},
+  // (a ten-digit key past 2 ** 32 - 2 is a condition name, not an index)
+  {'.': {4294967295: './a.js', default: './b.js'}},
+  {'.': {4294967294: './a.js', default: './b.js'}}
 ];
 // Synthetic "imports" maps.
 const SYNTH_IMPORTS = [
@@ -73,7 +76,10 @@ const LEGACY = [
   // backslash, a '?' are file name characters)
   [{main: 'lib/a%20b.js'}, ['lib/a%20b.js', 'index.js']],
   [{main: 'lib\\main.js'}, ['lib/main.js', 'index.js']],
-  [{main: 'lib/q.js?x'}, ['lib/q.js', 'index.js']]
+  [{main: 'lib/q.js?x'}, ['lib/q.js', 'index.js']],
+  // (a "main" leaving the root: refused, never passed over for index.js,
+  // which Node answers after statting outside -- stricter)
+  [{main: '../../../../../../../../../../../../ch-no-such-outside.js'}, ['index.js'], true]
 ];
 
 // the subpaths asked of an "exports" map: '.', each plain key, each
@@ -102,7 +108,7 @@ const namesOf = (imports) => {
 describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of real and synthetic maps (C-bare)', function() {
   this.timeout(180000);
   let root = null;
-  const cases = [];   // {id, spec, parent, stricter?}
+  const cases = [];   // {id, spec, parent, pkgDir?, stricter?}
   const write = (file, text) => { fs.mkdirSync(path.dirname(file), {recursive: true}); fs.writeFileSync(file, text); };
 
   before(() => {
@@ -115,7 +121,8 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
     const exportsMaps = CORPUS.exports.map((e) => [`${e.name}@${e.version}`, e.exports, e.name]).concat(SYNTH_EXPORTS.map((e, i) => [`synthetic exports ${i}`, e, `p${i}`]));
     exportsMaps.forEach(([label, exports, name]) => {
       write(path.join(root, 'node_modules', name, 'package.json'), JSON.stringify({name, exports}));
-      for (const sub of subpathsOf(exports)) cases.push({id: `${label} ${sub}`, spec: sub === '.' ? name : `${name}/${sub.slice(2)}`, parent});
+      const pkgDir = path.join(root, 'node_modules', ...name.split('/'));
+      for (const sub of subpathsOf(exports)) cases.push({id: `${label} ${sub}`, spec: sub === '.' ? name : `${name}/${sub.slice(2)}`, parent, pkgDir});
     });
     const importsMaps = CORPUS.imports.map((e) => [`${e.name}@${e.version}`, e.imports]).concat(SYNTH_IMPORTS.map((e, i) => [`synthetic imports ${i}`, e]));
     importsMaps.forEach(([label, imports], i) => {
@@ -124,12 +131,13 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
       write(path.join(dir, 'index.js'), '');
       for (const name of namesOf(imports)) cases.push({id: `${label} ${name}`, spec: name, parent: path.join(dir, 'index.js')});
     });
-    LEGACY.forEach(([pkg, files], i) => {
+    LEGACY.forEach(([pkg, files, stricter], i) => {
       const name = `lm${i}`;
-      write(path.join(root, 'node_modules', name, 'package.json'), JSON.stringify(Object.assign({name}, pkg)));
-      for (const f of files) write(path.join(root, 'node_modules', name, f), '');
-      cases.push({id: `legacy ${i} .`, spec: name, parent});
-      cases.push({id: `legacy ${i} ./sub/file.js`, spec: `${name}/sub/file.js`, parent});
+      const pkgDir = path.join(root, 'node_modules', name);
+      write(path.join(pkgDir, 'package.json'), JSON.stringify(Object.assign({name}, pkg)));
+      for (const f of files) write(path.join(pkgDir, f), '');
+      cases.push({id: `legacy ${i} .`, spec: name, parent, pkgDir, stricter: stricter === true});
+      cases.push({id: `legacy ${i} ./sub/file.js`, spec: `${name}/sub/file.js`, parent, pkgDir});
     });
     // (a subpath with no "exports" that climbs into another package: Node
     // answers it, the sandbox refuses it -- the F2 shape)
@@ -178,12 +186,21 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
           answer = String(u.href || u);
         } catch (e) { answer = 'THROW ' + (e && e.code); }
         let pj = null;
-        if (!c.spec.startsWith('#') && typeof(fpj) === 'function') { try { pj = fpj(c.spec, pathToFileURL(c.parent).href) || null; } catch (e) { pj = 'THROW'; } }
-        return [answer, pj];
+        let pjBase = null;
+        if (!c.spec.startsWith('#') && typeof(fpj) === 'function') {
+          try { pj = fpj(c.spec, pathToFileURL(c.parent).href) || null; } catch (e) { pj = 'THROW'; }
+          // (from the base the sandbox hands Node in its stead)
+          if (c.base != null) { try { pjBase = fpj(c.spec, pathToFileURL(c.base).href) || null; } catch (e) { pjBase = 'THROW'; } }
+        }
+        return [answer, pj, pjBase];
       });
       process.stdout.write(JSON.stringify(out));`;
     const casesFile = path.join(root, '.cases.json');
-    fs.writeFileSync(casesFile, JSON.stringify(cases.map((c) => ({spec: c.spec, parent: c.parent}))));
+    const r0 = resolver();
+    fs.writeFileSync(casesFile, JSON.stringify(cases.map((c) => {
+      const found = c.spec.startsWith('#') ? null : r0.packageDir(c.spec, c.parent);
+      return {spec: c.spec, parent: c.parent, base: found == null ? null : found.base};
+    })));
     const r = spawnSync(process.execPath, ['--expose-internals', '--no-warnings', '-e', script, casesFile, JSON.stringify(conditions)], {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024});
     assert.strictEqual(r.status, 0, r.stderr);
     return JSON.parse(r.stdout);
@@ -206,6 +223,13 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
     }
   });
 
+  it('a "main" leaving the root is refused, never passed over for the package\'s index.js', () => {
+    const r = resolver();
+    const i = LEGACY.findIndex((l) => l[2] === true);
+    assert.ok(i >= 0);
+    assert.strictEqual(r.resolve(`lm${i}`, path.join(root, 'index.js'), () => true).refuse, true);
+  });
+
   for (const [label, conditions] of CONDITIONS) {
     it(`every case answers as Node does, conditions ${label}`, () => {
       const node = nodeAnswers(conditions);
@@ -223,12 +247,11 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
         if (theirs.startsWith('THROW ') ? mine === 'REFUSE' : mine === theirs) return;
         // (the one direction allowed: the sandbox refusing what Node
         // answers outside the package, which it would then stat outside)
-        if (mine === 'REFUSE' && !theirs.startsWith('THROW ') && !c.spec.startsWith('#')) {
-          const scoped = c.spec.startsWith('@');
-          const pkgDir = path.join(root, 'node_modules', ...c.spec.split('/').slice(0, scoped ? 2 : 1));
+        if (mine === 'REFUSE' && c.stricter === true) return;
+        if (mine === 'REFUSE' && !theirs.startsWith('THROW ') && typeof(c.pkgDir) === 'string') {
           let outside = false;
-          try { const p = url.fileURLToPath(theirs); outside = !(p === pkgDir || p.startsWith(`${pkgDir}${path.sep}`)); } catch (e) { outside = false; }
-          if (c.stricter === true || outside) return;
+          try { const p = url.fileURLToPath(theirs); outside = !(p === c.pkgDir || p.startsWith(`${c.pkgDir}${path.sep}`)); } catch (e) { outside = false; }
+          if (outside) return;
         }
         mismatches.push(`${c.id} (${c.spec}): Node ${theirs.replace(url.pathToFileURL(root).href, '<root>')}, sandbox ${String(mine).replace(url.pathToFileURL(root).href, '<root>')}`);
       });
@@ -244,8 +267,10 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
         const mine = r.packageDir(c.spec, c.parent);
         const minePj = mine == null ? null : path.join(mine.pkgDir, 'package.json');
         const inRoot = typeof(theirsPj) === 'string' && theirsPj !== 'THROW' && (theirsPj.startsWith(`${root}${path.sep}`));
-        if (minePj == null ? !inRoot : minePj === theirsPj) return;
-        fpjMismatches.push(`${c.id}: Node ${theirsPj}, sandbox ${minePj}`);
+        if (minePj == null ? inRoot : minePj !== theirsPj) fpjMismatches.push(`${c.id}: Node ${theirsPj}, sandbox ${minePj}`);
+        // (and Node's own findPackageJSON, from the base the sandbox hands
+        // it, names that package, inside the root)
+        if (mine != null && node[i][2] !== minePj) fpjMismatches.push(`${c.id}: from the base ${mine.base}, Node ${node[i][2]}, sandbox ${minePj}`);
       });
       assert.deepStrictEqual(fpjMismatches, []);
     });

@@ -73,6 +73,25 @@ describe('fs-broker 11: path-scoped original-fs grants (L1)', function() {
     });
   });
 
+  // (C-bare R0: each answer check past Node's judged lookups, alone -- Node's
+  // own answer stood in for by one outside the root)
+  it('enforce: an answer of Node\'s outside the root is refused by _findPath\'s own check and by _resolveFilename\'s', async () => {
+    dir = mkdtemp('answer-checks-');
+    const ch = path.join(dir, 'ch');
+    const mod = path.join(dir, 'mod');
+    fs.mkdirSync(path.join(ch, 'lib'), {recursive: true});
+    fs.mkdirSync(path.join(mod, 'node_modules'), {recursive: true});
+    const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.homedir(), '.ch-answer-checks-')));
+    fs.writeFileSync(path.join(outside, 'f.js'), 'module.exports = 1;\n');
+    try {
+      const m = await runBrokered(S('answer-checks.js'), {mode: 'enforce', extra: {ch, mod, outside, mode: 'enforce'}});
+      assert.strictEqual(m.ok, true, JSON.stringify(m));
+      assert.deepStrictEqual(m.r, {findPathAnswer: false, resolveAnswer: 'throws MODULE_NOT_FOUND'}, JSON.stringify(m));
+    } finally {
+      fs.rmSync(outside, {recursive: true, force: true});
+    }
+  });
+
   it('a countinghouse parent imports an ES-module dependency under live enforce (review I4)', async () => {
     dir = mkdtemp('esm-dep-');
     const ch = path.join(dir, 'ch');
