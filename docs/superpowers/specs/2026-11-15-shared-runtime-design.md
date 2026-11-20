@@ -143,10 +143,10 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 | `SHUTTING_DOWN` | the runtime is draining | retries with jitter |
 
 **The pre-auth stage has its own bounds.** On Windows any local user, or a remote one over SMB, can list the pipe's name and open an instance of it. With read access alone it can't write a HELLO, so it gets no bytes at all, but it holds a pre-auth slot until the 2 s deadline.
-- At most 64 connections may be unauthenticated at once. When a 65th arrives, the oldest one already refused is evicted, else the **oldest whose bytes none have been read**; if none is either, the **new** connection is refused (closed at once). One whose bytes the runtime has read, as a real shim's handshake's are, is never evicted, and silent openers can't hold the pool. (A connection whose HELLO is written but not yet read counts as silent for that moment.)
+- At most 64 connections may be unauthenticated at once. When a 65th arrives, the oldest one already refused whose REFUSED is written out is evicted, else the **oldest whose bytes none have been read**; if none is either, the **new** connection is refused (closed at once). One whose bytes the runtime has read, as a real shim's handshake's are, is never evicted, and silent openers can't hold the pool. (A connection whose HELLO is written but not yet read counts as silent for that moment.)
 - Each has 2 s to complete AUTH. At most 512 bytes are read from a connection before its HELLO is complete.
 
-**The shim retries with jitter.** After a failure before WELCOME (refused, timed out, `BUSY` or `SHUTTING_DOWN`), it retries after 100 ms to 2 s, randomised, for up to 20 s in all.
+**The shim retries with jitter.** After a failure before WELCOME (refused or evicted -- a real shim's connection whose HELLO isn't read yet can be evicted as silent --, timed out, `BUSY` or `SHUTTING_DOWN`), it retries after 100 ms to 2 s, randomised, for up to 20 s in all.
 
 **If it still can't attach,** the shim says so plainly and never hangs:
 - it writes the reason on stderr;

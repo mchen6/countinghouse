@@ -155,8 +155,19 @@ describe('session-transport 02: the listener and the registry', function() {
       for (const c of conns) c.end();
     });
 
-    it('a full pool evicts one it has already refused before one whose bytes it read', async() => {
-      await start({listener: {preAuthMax: 64, preAuthDeadlineMs: 20000}});
+    // (63 whose bytes were read, then one refused -- an unknown protocol, its
+    // REFUSED read by a half-open client that never ends its side, so its
+    // socket stays in the server's 1 s grace -- the server's own sockets
+    // kept, to stub the refused one's)
+    const refusedAt64 = async(stubPending) => {
+      // (the refused connection's server socket, taken as it is accepted;
+      // and whether it is still open the moment the 65th is accepted)
+      const at = {capture: false, serverSide: null, count: 0, aliveAt65: null};
+      listener.server.prependListener('connection', (s) => {
+        at.count += 1;
+        if (at.capture) { at.serverSide = s; at.capture = false; }
+        if (at.count === 65 && at.serverSide != null) at.aliveAt65 = !at.serverSide.destroyed;
+      });
       const conns = [];
       for (let i = 0; i < 63; i++) {
         const c = await shim.connect(sock);
@@ -164,9 +175,7 @@ describe('session-transport 02: the listener and the registry', function() {
         assert.ok(await c.json('P') != null, `PROVE ${i}`);
         conns.push(c);
       }
-      // the newest in the pool: refused (an unknown protocol), its REFUSED
-      // read; a half-open client that never ends its side, so its socket
-      // stays in the server's 1 s grace when the 65th arrives
+      at.capture = true;
       const refused = net.createConnection({path: sock, allowHalfOpen: true});
       let gotRefused = false;
       refused.on('error', () => {});
@@ -174,13 +183,36 @@ describe('session-transport 02: the listener and the registry', function() {
       await new Promise((r) => refused.once('connect', r));
       refused.write(frames.encode('H', JSON.stringify({protocol: 99, nc: handshake.newChallenge().toString('base64')})));
       assert.ok(await until(() => gotRefused, 2000), 'REFUSED');
+      const serverSide = at.serverSide;
+      assert.ok(serverSide != null, 'its server socket');
+      // (its REFUSED not yet written out, as a peer that reads nothing leaves it)
+      if (stubPending) Object.defineProperty(serverSide, 'writableLength', {get: () => 1, configurable: true});
+      return {conns, refused, serverSide, at};
+    };
+    it('a full pool evicts one it has already refused before one whose bytes it read', async() => {
+      await start({listener: {preAuthMax: 64, preAuthDeadlineMs: 20000}});
+      const {conns, refused, at} = await refusedAt64(false);
       const newest = await shim.connect(sock);
+      // (the refused one was still in its grace as the 65th was accepted)
+      assert.ok(await until(() => at.aliveAt65 != null, 2000) && at.aliveAt65 === true, 'the refused one still held at the 65th');
       newest.send('H', {protocol: 1, nc: handshake.newChallenge().toString('base64')});
       // (taken only by evicting the refused one: every other was read; a
       // half-open client sees no close of its own, so that is the proof)
       assert.ok(await newest.json('P') != null, 'the new one is taken, the refused one evicted');
       assert.ok(conns.every((c) => !c.closed()), 'every one whose bytes were read is kept');
       for (const c of conns.concat([newest])) c.end();
+      refused.destroy();
+    });
+
+    it('one refused whose REFUSED is not yet written out is not evicted: the new one is refused', async() => {
+      await start({listener: {preAuthMax: 64, preAuthDeadlineMs: 20000}});
+      const {conns, refused, serverSide, at} = await refusedAt64(true);
+      const newest = await shim.connect(sock);
+      assert.ok(await until(() => at.aliveAt65 != null, 2000) && at.aliveAt65 === true, 'the refused one still held at the 65th');
+      assert.ok(await until(() => newest.closed(), 2000), 'the new one is refused');
+      assert.strictEqual(serverSide.destroyed, false, 'the refused one keeps its grace to write');
+      assert.ok(conns.every((c) => !c.closed()), 'every one whose bytes were read is kept');
+      for (const c of conns) c.end();
       refused.destroy();
     });
 
