@@ -42,17 +42,19 @@ describe('sessions 33: a task\'s history record where nothing reads it (F1-5)', 
     assert.deepStrictEqual(pushed.map((p) => p[0]), [`jobinfo:{chj-${require('../../lib/server-id').get()}}:report`]);
   });
 
-  it('with no server id there is no key: the record is refused, never written under the unscoped one of before (B-j1)', () => {
+  it('with no server id there is no key: the record is not written, under the unscoped key of before or any, and the refusal is logged (B-j1)', () => {
     // (a process of its own: this one's id is never taken away under it)
     const path = require('path');
     const lib = (m) => JSON.stringify(path.join(__dirname, '..', '..', 'lib', m));
     const r = require('child_process').spawnSync(process.execPath, ['-e', `
-      require(${lib('logger')}).createLogger();
+      const LOG = require(${lib('logger')});
+      LOG.createLogger();
+      let logged = null;
+      LOG.E = (e) => { logged = e.message; };
       const pushed = [];
       require(${lib('redis-api')}).client = {lpush: (k) => pushed.push(k), ltrim: () => {}};
-      let refused = null;
-      try { require(${lib('job-control-common')}).saveJobInfo({id: '1', name: 'report', data: {}, opts: {}, progress: 0}, 'completed'); } catch (e) { refused = e.message; }
-      process.stdout.write(JSON.stringify({refused, pushed}));`], {encoding: 'utf8', timeout: 20000});
-    assert.deepStrictEqual(JSON.parse(r.stdout), {refused: 'server-id: not initialized', pushed: []}, r.stderr);
+      require(${lib('job-control-common')}).saveJobInfo({id: '1', name: 'report', data: {}, opts: {}, progress: 0}, 'completed');
+      process.stdout.write(JSON.stringify({logged, pushed}));`], {encoding: 'utf8', timeout: 20000});
+    assert.deepStrictEqual(JSON.parse(r.stdout), {logged: 'server-id: not initialized', pushed: []}, r.stderr);
   });
 });
