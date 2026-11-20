@@ -126,8 +126,63 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
         const copied = CountinghouseError.fromReply(crossed);
         assert.deepStrictEqual([statusOf(copied), kindOf(copied)], [500, 'module'], `${code} copied`);
         assert.strictEqual(oneActionAnswer(crossed), crossed, `${code}: never folded into the caller's one answer`);
-        assert.strictEqual(notRetried(code, crossed), false, `${code}: a hop's refusal is retried`);
+        // (the usual path: the composer rethrows it, and the handler's answer
+        // copies it, answerable: the medium on round 1, 1)
+        const answered = CountinghouseError.answerable(hop);
+        assert.deepStrictEqual([answered.code, statusOf(answered), kindOf(answered)], [code, 500, 'module'], `${code} rethrown by the composer`);
+        assert.deepStrictEqual([statusOf(CountinghouseError.answerable(crossed)), kindOf(CountinghouseError.answerable(crossed))], [500, 'module'], `${code} rethrown after a reply`);
       }
+      // retried: only a hop's refusal of a name a reload may have replaced
+      for (const code of ['ACTION_NOT_FOUND', 'SERVICE_NOT_FOUND', 'DEVICE_NOT_FOUND']) assert.strictEqual(notRetried(code, ce.hopError(new CountinghouseError(code))), false, code);
+    });
+
+    // the medium on round 1, 2 and 3: the end caller's own state stays theirs
+    it('a hop leaves the end caller\'s own refusals theirs: their budget, their settings, their key; and the rule for retrying them', () => {
+      const ce = require('../../lib/countinghouse-error');
+      const {notRetried} = require('../../lib/job-control-common');
+      for (const code of ['RATE_LIMIT_EXCEEDED', 'SETTING_REQUIRED', 'SYSTEM_ERROR_UNKNOWN_USER', 'USER_HAS_NO_DEVICE']) {
+        const hop = ce.hopError(new CountinghouseError(code));
+        assert.strictEqual(ce.hopped(hop), false, code);
+        assert.strictEqual(kindOf(hop), CODES[code].kind, code);
+        assert.strictEqual(statusOf(hop), CODES[code].httpStatus, code);
+      }
+      assert.strictEqual(notRetried('SETTING_REQUIRED', ce.hopError(new CountinghouseError('SETTING_REQUIRED'))), true, 'a hop\'s missing setting is not retried');
+    });
+
+    // the medium on round 1, 4 and 5: when to retry, on every path
+    it('when to retry crosses every copy and reply, and the per-key limiter says it too; a throwing getter never breaks an answer', () => {
+      const ce = require('../../lib/countinghouse-error');
+      const busy = new CountinghouseError('RUNTIME_BUSY');
+      Object.defineProperty(busy, 'retryAfterMs', {value: 2500, enumerable: false, writable: true, configurable: true});
+      const hop = ce.hopError(busy);
+      assert.strictEqual(ce.retryAfterOf(hop), 2500, 'a hop\'s copy');
+      const fields = CountinghouseError.replyFields(hop);
+      assert.strictEqual(fields.errRetryAfterMs, 2500);
+      assert.strictEqual(ce.retryAfterOf(CountinghouseError.fromReplyFields(fields)), 2500, 'across a reply');
+      assert.strictEqual(ce.retryAfterOf(CountinghouseError.answerable(hop)), 2500, 'rethrown by a composer');
+      const CdifInterface = require('../../lib/countinghouse-interface');
+      const told = [];
+      CdifInterface.prototype.invokeDeviceAction.call({rateLimiter: (k, cb) => cb(null, 0), rateLimit: (k, cb) => cb(null, {limited: true, timeLeft: 4200}), deviceManager: {emit() {}}},
+        LISTED, SERVICE, 'act', null, {appKey: 'k', callbackWithoutTimer: (err) => told.push(err)});
+      assert.deepStrictEqual([told[0].code, ce.retryAfterOf(told[0])], ['RATE_LIMIT_EXCEEDED', 4200]);
+      const odd = new CountinghouseError('RATE_LIMIT_EXCEEDED');
+      Object.defineProperty(odd, 'retryAfterMs', {get() { throw new Error('no'); }});
+      const res = {setHeader() {}, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; }};
+      ce.answerError(res, odd);
+      assert.strictEqual(res.code, 429);
+    });
+
+    // #482's high, 3, at its source: a per-session device has no session to
+    // be reached by over REST
+    it('workerFor: no session at all (REST) is the one answer at the source; a hop with none is still not found', () => {
+      const DeviceManager = require('../../lib/device-manager');
+      const {SessionModuleRecord} = require('../../lib/session-module-record');
+      const dm = {deviceMap: {[PER_SESSION]: Object.create(SessionModuleRecord.prototype)}, moduleManager: {}};
+      let got = null;
+      DeviceManager.prototype.workerFor.call(dm, PER_SESSION, null, (err) => { got = err; });
+      assert.strictEqual(got && got.code, 'MODULE_NOT_LISTED');
+      DeviceManager.prototype.workerFor.call(dm, PER_SESSION, null, (err) => { got = err; }, {hop: true});
+      assert.strictEqual(got && got.code, 'DEVICE_NOT_FOUND');
     });
 
     // #482's high, 4
@@ -173,7 +228,10 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       // a device gone between the route's check and the dispatch
       invokeDeviceAction(deviceID, serviceID, actionName, args, session) {
         invoked.push([deviceID, serviceID, actionName]);
-        if (deviceID === PER_SESSION) return session.callbackWithoutTimer(new CountinghouseError('DEVICE_NOT_FOUND', deviceID));
+        // (what workerFor answers a call with no session: below)
+        if (deviceID === PER_SESSION) return session.callbackWithoutTimer(new CountinghouseError('MODULE_NOT_LISTED'));
+        // a listed device still loading (shared mode's startup): its own answer
+        if (actionName === 'still-loading') return session.callbackWithoutTimer(new CountinghouseError('DEVICE_NOT_FOUND', deviceID));
         // a composer whose part refused it: the composer's own fault, passed on
         if (actionName === 'hop-refused') return session.callbackWithoutTimer(require('../../lib/countinghouse-error').hopError(new CountinghouseError('ACTION_NOT_FOUND', 'part-act')));
         if (deviceID === GONE_LATE) {
@@ -186,8 +244,7 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
         if (serviceID === 'urn:x:no-such-service') return session.callbackWithoutTimer(new CountinghouseError('SERVICE_NOT_FOUND', serviceID));
         return session.callbackWithoutTimer(null, {ok: true});
       },
-      getDeviceSpec: (deviceID, session) => (deviceID === PER_SESSION ? session.callbackWithoutTimer(new CountinghouseError('DEVICE_NOT_FOUND', deviceID))
-        : session.callbackWithoutTimer(null, {device: {serviceList: {}}})),
+      getDeviceSpec: (deviceID, session) => session.callbackWithoutTimer(null, {device: {serviceList: {}}}),
       getDeviceSchema: (deviceID, p, session) => session.callbackWithoutTimer(null, {}),
       getDevicePackageInfo: (deviceID, cb) => cb(null, {name: 'x', version: '1.0.0'})
     };
@@ -256,10 +313,11 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       });
     }
 
-    it('a per-session device in shared mode (listed; REST has no session to reach it) is the one answer too, on invoke-action and get-spec', async () => {
+    it('a per-session device in shared mode (listed; REST has no session to reach it) is the one answer; a listed device still loading keeps its own', async () => {
       const want = JSON.stringify({status: 404, body: {code: 'MODULE_NOT_LISTED', message: CODES.MODULE_NOT_LISTED.en, kind: 'caller'}});
       assert.strictEqual(await call(ROUTES[0], PER_SESSION), want, 'invoke-action');
-      assert.strictEqual(await call(ROUTES[1], PER_SESSION), want, 'get-spec');
+      const loading = JSON.parse(await call(ROUTES[0], LISTED, {serviceID: SERVICE, actionName: 'still-loading', input: {}}));
+      assert.deepStrictEqual([loading.status, loading.body.code], [404, 'DEVICE_NOT_FOUND'], 'the medium on round 1, 6: not folded into "not listed to you"');
     });
 
     it('invoke-action: a composer passing on its part\'s refusal answers 500, the module\'s, never the caller\'s 404', async () => {

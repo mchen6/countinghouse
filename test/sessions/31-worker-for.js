@@ -63,8 +63,11 @@ describe('sessions 31: a per-session module\'s worker is its call\'s session\'s 
     const gone = await workerFor(A, {hop: true});
     assert.strictEqual(gone.err.code, 'DEVICE_NOT_FOUND');
     assert.ok(!gone.err.message.includes(D), gone.err.message);
-    assert.strictEqual((await workerFor(null)).err.code, 'DEVICE_NOT_FOUND');
-    assert.ok((await workerFor(null)).err.message.includes(D), 'a client\'s call names the device it asked for, as for one unknown');
+    // (no session at all: a REST call, which only a session's MCP calls can
+    // stand in for; REST's one answer for a device it can't use, naming
+    // nothing: #482's high, 3)
+    assert.strictEqual((await workerFor(null)).err.code, 'MODULE_NOT_LISTED');
+    assert.ok(!(await workerFor(null)).err.message.includes(D), 'the one answer names no device');
   });
 
   // the review of #367's /code-review: a spawn given up on because the
