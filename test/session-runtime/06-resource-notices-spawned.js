@@ -56,25 +56,35 @@ function runtime(home, args) {
     '--sessionSocket', socket, '--settingsFile', path.join(home, 'settings.json'), ...args],
   {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: '',
     NODE_OPTIONS: `--require ${path.join(__dirname, '..', 'fixtures', 'session-elicitation-preload.js')}`})});
-  const r = {child, socket, run, err: ''};
+  const r = {child, socket, run, err: '', told: []};
   const replies = new Map();
   let nextControl = 1;
   r.control = (msg) => new Promise((resolve) => { const id = nextControl++; replies.set(id, resolve); child.send(Object.assign({}, msg, {id})); });
   child.on('message', (m) => {
     if (m == null) return undefined;
     if (m.type === 'ready') child.send({id: 'restore-1', type: 'restore', sessions: [], declines: [], reset: []});
+    // (what the runtime tells unasked: its 'listening', among others)
+    if (m.id === undefined && m.type !== 'ready') r.told.push(m);
     const f = replies.get(m.id);
     if (f != null) { replies.delete(m.id); return f(m); }
     return undefined;
   });
   child.stderr.on('data', (d) => { r.err += d; });
   child.stdout.on('data', (d) => { r.err += d; });
-  r.exited = new Promise((res) => child.on('exit', (code, signal) => res({code, signal})));
+  r.exited = new Promise((res) => child.on('exit', (code, signal) => { r.code = code; res({code, signal}); }));
   child.on('error', () => {});
   return r;
 }
 const secretOf = (r) => {
   try { return handshake.parseSecret(fs.readFileSync(path.join(r.run, 'secret'), 'utf8')); } catch (e) { return null; }
+};
+// the runtime's own 'listening' tell (after its start's checks), not its
+// socket file and secret: a first connect raced those (ECONNREFUSED), the
+// flake seen four times on 11-17, as session-runtime 01, 03, 10 and 11
+// found; or its exit
+const listening = async(r) => {
+  await until(async() => (r.told.some((m) => m.type === 'listening') && secretOf(r) != null) || r.code !== undefined);
+  return secretOf(r);
 };
 
 // a session: its lines as they arrive (answers by seq, notifications in order)
@@ -121,7 +131,7 @@ describe('session-runtime 06: resources/updated reaches only the sessions whose 
     fs.rmSync(home, {recursive: true, force: true});
   });
   const open = async() => {
-    await until(async() => fs.existsSync(r.socket) && secretOf(r) != null);
+    await listening(r);
     try { return session((await shim.session(r.socket, secretOf(r))).c); } catch (e) { throw new Error(`${e.message}\n${r.err.slice(-2000)}`); }
   };
   const tools = async(s) => {

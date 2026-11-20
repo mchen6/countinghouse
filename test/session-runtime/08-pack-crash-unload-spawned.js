@@ -65,24 +65,34 @@ function runtime(home, modulesRoot) {
     '--modulePath', path.join(home, 'modules'), '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc',
     '--sessionSocket', socket, '--modulesRoot', modulesRoot],
   {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: ''})});
-  const r = {child, socket, run, err: ''};
+  const r = {child, socket, run, err: '', told: []};
   const replies = new Map();
   let nextControl = 1;
   r.control = (msg) => new Promise((resolve) => { const id = nextControl++; replies.set(id, resolve); child.send(Object.assign({}, msg, {id})); });
   child.on('message', (m) => {
     if (m == null) return;
     if (m.type === 'ready') child.send({id: 'restore-1', type: 'restore', sessions: [], declines: [], reset: []});
+    // (what the runtime tells unasked: its 'listening', among others)
+    if (m.id === undefined && m.type !== 'ready') r.told.push(m);
     const f = replies.get(m.id);
     if (f != null) { replies.delete(m.id); f(m); }
   });
   child.stderr.on('data', (d) => { r.err += d; });
   child.stdout.on('data', (d) => { r.err += d; });
-  r.exited = new Promise((res) => child.on('exit', (code, signal) => res({code, signal})));
+  r.exited = new Promise((res) => child.on('exit', (code, signal) => { r.code = code; res({code, signal}); }));
   child.on('error', () => {});
   return r;
 }
 const secretOf = (r) => {
   try { return handshake.parseSecret(fs.readFileSync(path.join(r.run, 'secret'), 'utf8')); } catch (e) { return null; }
+};
+// the runtime's own 'listening' tell (after its start's checks), not its
+// socket file and secret: a first connect raced those (ECONNREFUSED), the
+// flake seen four times on 11-17, as session-runtime 01, 03, 10 and 11
+// found; or its exit
+const listening = async(r) => {
+  await until(async() => (r.told.some((m) => m.type === 'listening') && secretOf(r) != null) || r.code !== undefined);
+  return secretOf(r);
 };
 let nextSeq = 1;
 async function request(c, method, params = {}) {
@@ -116,7 +126,7 @@ describe('session-runtime 08: a pack turned off while its module restarts after 
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sr08-'));
     const pack = crashyPack(home);
     r = runtime(home, pack.root);
-    assert.ok(await until(() => fs.existsSync(r.socket) && secretOf(r) != null), `never listened: ${r.err.slice(-1500)}`);
+    assert.ok(await listening(r) != null, `never listened: ${r.err.slice(-1500)}`);
     const s = await shim.session(r.socket, secretOf(r));
     if (s.c != null) conns.push(s.c);
     assert.ok(s.welcome != null, JSON.stringify(s.refused));

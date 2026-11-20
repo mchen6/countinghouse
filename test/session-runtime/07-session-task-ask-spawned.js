@@ -54,16 +54,28 @@ function runtime(home, extra = []) {
   const child = spawn(process.execPath, [FRAMEWORK, '--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'),
     '--modulePath', path.join(home, 'modules'), '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc',
     '--sessionSocket', socket, ...extra], {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: ''})});
-  const r = {child, socket, run, err: '', out: ''};
-  child.on('message', (m) => { if (m != null && m.type === 'ready') child.send({id: 'restore-1', type: 'restore', sessions: [], declines: [], reset: []}); });
+  const r = {child, socket, run, err: '', out: '', told: []};
+  child.on('message', (m) => {
+    if (m != null && m.type === 'ready') child.send({id: 'restore-1', type: 'restore', sessions: [], declines: [], reset: []});
+    // (what the runtime tells unasked: its 'listening', among others)
+    if (m != null && m.id === undefined && m.type !== 'ready') r.told.push(m);
+  });
   child.stderr.on('data', (d) => { r.err += d; });
   child.stdout.on('data', (d) => { r.out += d; });
-  r.exited = new Promise((res) => child.on('exit', (code, signal) => res({code, signal})));
+  r.exited = new Promise((res) => child.on('exit', (code, signal) => { r.code = code; res({code, signal}); }));
   child.on('error', () => {});
   return r;
 }
 const secretOf = (r) => {
   try { return handshake.parseSecret(fs.readFileSync(path.join(r.run, 'secret'), 'utf8')); } catch (e) { return null; }
+};
+// the runtime's own 'listening' tell (after its start's checks), not its
+// socket file and secret: a first connect raced those (ECONNREFUSED), the
+// flake seen four times on 11-17, as session-runtime 01, 03, 10 and 11
+// found; or its exit
+const listening = async(r) => {
+  await until(async() => (r.told.some((m) => m.type === 'listening') && secretOf(r) != null) || r.code !== undefined);
+  return secretOf(r);
 };
 let nextSeq = 1;
 async function request(c, method, params, meta) {
@@ -93,7 +105,7 @@ describe('session-runtime 07: a task\'s question in a shared runtime, spawned (M
 
   it('only the task\'s own session sees and answers its question: to another session it is an id never issued', async() => {
     r = runtime(home, ['--loadModule', scenario(home)]);
-    await until(async() => fs.existsSync(r.socket) && secretOf(r) != null);
+    await listening(r);
     const secret = secretOf(r);
     const open = async() => { try { return await shim.session(r.socket, secret); } catch (e) { throw new Error(`${e.message}\n${r.err.slice(-2000)}`); } };
     const a = await open();
