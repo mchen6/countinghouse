@@ -814,12 +814,14 @@ is reported. Node picks a `"main"` past every check the sandbox makes, so
 where it led would otherwise tell your code whether a host file exists.
 Keep `"main"` inside your module, naming a file.
 
-On Node below 24.15, a `#` name your code `require`s under `enforce` is
-resolved with Node's default CommonJS conditions (`require`, `node`,
-`node-addons`, `module-sync`), whatever `--conditions`, `--no-addons` or
-`--no-experimental-require-module` the runtime was started with: an
-`"imports"` entry keyed on those picks the target the default list picks.
-On 24.15 and later Node's own conditions are used.
+On Node below 24.15, a `#` name your code resolves with `require.resolve`
+(or `createRequire().resolve`) under `enforce` -- or `require`s before any
+plain `require` has run -- is resolved with Node's default CommonJS
+conditions (`require`, `node`, `node-addons`, `module-sync`), whatever
+`--conditions`, `--no-addons` or `--no-experimental-require-module` the
+runtime was started with: an `"imports"` entry keyed on those picks the
+target the default list picks. Otherwise, and on 24.15 and later, Node's
+own conditions are used.
 
 Under `enforce` your module's directory may not hold a link to a
 directory: the load is refused ("holds a directory link at ..."), and
