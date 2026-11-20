@@ -1478,7 +1478,12 @@ address in them.
 A key that resolved in the last ten minutes, from any address (its digest
 is kept, never the key), still passes, so a user behind a shared address is
 not shut out by another's bad requests, and it is still looked up as any
-key is; a key refused since (revoked) leaves the set at once. API keys are
+key is; a key refused since (revoked) leaves the set at once, though not
+for a provider that failed to answer. A valid key not resolved in the last
+ten minutes is counted like any other while its lookup is in flight, so
+more than the budget's worth of its requests at once from one address, or
+its first request from an address others have put over budget, waits too.
+API keys are
 high-entropy: this bounds the provider's load, it is not brute-force
 protection, and it is not what keeps a key from being guessed. In memory,
 per process: several runtimes each allow their own budget. `--stdio` and
