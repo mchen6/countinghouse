@@ -39,6 +39,16 @@ function modern(key, method, params = {}, {ext = true, headers = {}, port = PORT
   return r.send(body).then((res) => ({status: res.status, body: res.body}));
 }
 const modernOn = (port, key, method, params) => modern(key, method, params, {port});
+// the caller's own usage report's profile (B-cancelled): a task cancelled
+// while it ran is counted in profile.cancelled, never in its errors
+const profileOn = (port, key) => request(`http://127.0.0.1:${port}`).post('/mcp').set('X-CH-Key', key)
+  .set('Accept', 'application/json, text/event-stream')
+  .send({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'countinghouse_usage_report', arguments: {}}})
+  .then((res) => {
+    const result = res.body.result;
+    assert.ok(result != null && result.isError === false, JSON.stringify(res.body));
+    return result.structuredContent.profile;
+  });
 const legacy = (key, method, params) => request(`http://127.0.0.1:${PORT}`).post('/mcp').set('X-CH-Key', key)
   .set('Accept', 'application/json, text/event-stream').send({jsonrpc: '2.0', id: 1, method, params}).then((res) => res.body);
 
@@ -192,6 +202,7 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
   });
 
   it('update acknowledges the owner\'s task; cancel removes it, and get then reads cancelled to its owner only', async () => {
+    const before = await profileOn(PORT, KEY_A);
     const t = await created('slow', {ms: 3000});
     const updated = await modern(KEY_A, 'tasks/update', {taskId: t.taskId, inputResponses: {}});
     assert.deepStrictEqual(Object.keys(updated.body.result).filter((k) => k !== '_meta' && k !== 'resultType'), [], JSON.stringify(updated.body));
@@ -209,6 +220,10 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
     const ended = await modern(KEY_A, 'tasks/get', {taskId: t.taskId});
     assert.strictEqual(ended.body.result && ended.body.result.status, 'cancelled', JSON.stringify(ended.body));
     assert.strictEqual(ended.body.result.result, undefined, 'no result');
+    // its run's usage record is a cancelled call's, not an error's (B-cancelled)
+    const now = await profileOn(PORT, KEY_A);
+    assert.strictEqual(now.cancelled, before.cancelled + 1, JSON.stringify(now));
+    assert.deepStrictEqual(now.errors.calls, before.errors.calls);
   });
 
   // ext-tasks 2026-07-28 has no terminal-status rule for tasks/cancel: a known
@@ -346,6 +361,10 @@ describe('mcp-contract 27: a task cancelled while it runs, under --store redis',
     const got = await on('tasks/get', {taskId});
     assert.strictEqual(got.body.result && got.body.result.status, 'cancelled', JSON.stringify(got.body));
     assert.strictEqual(got.body.result.result, undefined, 'no result');
+    // its run's usage record is a cancelled call's, not an error's (B-cancelled)
+    const profile = await profileOn(RPORT, KEY_A);
+    assert.strictEqual(profile.cancelled, 1, JSON.stringify(profile));
+    assert.deepStrictEqual(profile.errors.calls, {});
   });
 });
 

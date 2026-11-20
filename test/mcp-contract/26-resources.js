@@ -21,8 +21,11 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-26-'));
 const AUTH = path.join(home, 'auth.json');
 const KEY_A = `test-a-${'a'.repeat(24)}`;
 const KEY_B = `test-b-${'b'.repeat(24)}`;
+// an admin, for countinghouse_call_tool (an authoring tool)
+const KEY_ADMIN = `test-admin-${'c'.repeat(20)}`;
 const ID = (name) => callAddress.deviceIDForName(name);
-fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: [ID('notes')]}}));
+fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: [ID('notes')]},
+  [KEY_ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
 
 const options = require('../../lib/cli-options');
 // set again before this file's tests: a folder run requires every file first
@@ -70,6 +73,10 @@ const invoked = [];
 // each call's ask state as the call path receives it: {action, askable}
 const asked = [];
 const billed = [];
+// what the runtime's own tools spend or read past their gates (#458's third high round)
+const spent = [];
+const loads = [];
+const balances = [];
 let limited = false;
 function buildInterface(devices = DEVICES) {
   const deviceMap = {};
@@ -80,9 +87,11 @@ function buildInterface(devices = DEVICES) {
     deviceMap[ID(name)] = {spec, packageInfo: {name, countinghouse: d.role != null ? {role: d.role} : {}}};
   }
   return {
-    deviceManager: {deviceMap, moduleManager: {unlisted: new Set(['ch-step-part'])}, getAllDeviceSpecs: () => specs},
+    deviceManager: {deviceMap, moduleManager: {unlisted: new Set(['ch-step-part']), loadModuleFromPath: (...a) => { loads.push(a[0]); a[3](new Error('not in this test')); }},
+      getAllDeviceSpecs: () => specs},
     getDeviceSchema(deviceID, p, session) { session.localCallback(null, SCHEMAS[p] || {type: 'object'}); },
-    rateLimit: (key, cb) => cb(null, {limited: limited}),
+    rateLimit: (key, cb) => { spent.push(key); cb(null, {limited: limited}); },
+    checkBalance: (key, cb) => { balances.push(key); cb(null, {balance: 1}); },
     recordCall(appKey, tool, cost, cb) { billed.push({appKey, tool, cost}); cb(null); },
     // the call path's one way into a module: a read reaches it as a call does
     invokeDeviceAction(deviceID, serviceID, actionName, args, session) {
@@ -256,6 +265,315 @@ describe('mcp-contract 26: module resources (M7)', function() {
     assert.deepStrictEqual(invoked, [], 'not run');
     assert.deepStrictEqual(billed, [], 'not billed');
     assert.strictEqual(registered, null, 'unregistered at its end');
+  });
+
+  // #458's high review, 1: a tools/call registers its cancellation before
+  // it reads the caller's grants (tool-registry grantsForCall), so a cancel
+  // or a closed POST while they are read runs nothing and bills nothing
+  it('a tools/call cancelled while the caller\'s grants are read neither runs nor bills, and is not answered', async () => {
+    invoked.length = 0;
+    billed.length = 0;
+    require('../../lib/mcp/tool-registry').forgetGrants();
+    let registered = null;
+    const opts = {cancellable: (fn) => { registered = fn; return () => { registered = null; }; }};
+    // the key's resolution takes a moment, as a real provider's does
+    let inWindow = null;
+    const authenticate = provider.authenticate;
+    provider.authenticate = (...args) => {
+      const cb = args.pop();
+      return authenticate(...args, (...answer) => { inWindow = setImmediate(() => cb(...answer)); });
+    };
+    let got;
+    try {
+      const req = {jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'notes_svc_save', arguments: {}}};
+      got = new Promise((resolve) => gateway.handle(req, ci, KEY_A, (err, r, info) => resolve({r, info}), opts));
+      for (let w = 0; inWindow == null && w < 200; w++) await new Promise((res) => setImmediate(res));
+      assert.ok(inWindow != null, 'the key\'s resolution is in flight');
+      assert.strictEqual(typeof(registered), 'function', 'registered before the grants are read');
+      registered();
+    } finally {
+      provider.authenticate = authenticate;
+    }
+    const {r, info} = await got;
+    assert.strictEqual(r, null, JSON.stringify(r));
+    assert.deepStrictEqual(info, {cancelled: true});
+    await new Promise((res) => setTimeout(res, 100));
+    assert.deepStrictEqual(invoked, [], 'not run');
+    assert.deepStrictEqual(billed, [], 'not billed');
+    assert.strictEqual(registered, null, 'unregistered at its end');
+  });
+
+  // #458's second high round, 1: countinghouse_call_tool registers its
+  // cancellation at its outer gate and its inner call reuses it, so a cancel
+  // during the outer gate's key resolution or the admin check's read runs
+  // nothing and bills nothing
+  for (const [label, slowAt] of [['the outer gate\'s key resolution', 1], ['the admin check\'s identity read', 2]]) {
+    it(`countinghouse_call_tool cancelled during ${label}: the inner call neither runs nor bills, and nothing is answered`, async () => {
+      invoked.length = 0;
+      billed.length = 0;
+      require('../../lib/mcp/tool-registry').forgetGrants();
+      options.setOptions(Object.assign({}, OPTIONS, {authoringTools: true}));
+      let registered = null;
+      const opts = {cancellable: (fn) => { registered = fn; return () => { registered = null; }; }};
+      let inWindow = null;
+      let n = 0;
+      const authenticate = provider.authenticate;
+      provider.authenticate = (...args) => {
+        const cb = args.pop();
+        const slow = ++n === slowAt;
+        return authenticate(...args, (...answer) => { if (slow) inWindow = setImmediate(() => cb(...answer)); else cb(...answer); });
+      };
+      let got;
+      try {
+        const req = {jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'countinghouse_call_tool', arguments: {name: 'notes_svc_save', arguments: {}}}};
+        got = new Promise((resolve) => gateway.handle(req, ci, KEY_ADMIN, (err, r, info) => resolve({r, info}), opts));
+        for (let w = 0; inWindow == null && w < 400; w++) await new Promise((res) => setImmediate(res));
+        assert.ok(inWindow != null, 'the read is in flight');
+        assert.strictEqual(typeof(registered), 'function', 'registered at the outer gate');
+        registered();
+      } finally {
+        provider.authenticate = authenticate;
+        options.setOptions(OPTIONS);
+      }
+      const {r, info} = await got;
+      assert.strictEqual(r, null, JSON.stringify(r));
+      assert.deepStrictEqual(info, {cancelled: true});
+      await new Promise((res) => setTimeout(res, 100));
+      assert.deepStrictEqual(invoked, [], 'not run');
+      assert.deepStrictEqual(billed, [], 'not billed');
+      assert.strictEqual(registered, null, 'unregistered at its end');
+    });
+  }
+
+  // #458's second high round, 4: a plain call whose session ends while its
+  // own userAuth runs (the second authenticate: the first resolves the key at
+  // the gate) is answered as an ended session's, and nothing runs or bills,
+  // as a task gets no job
+  it('a tools/call whose session ends during its userAuth neither runs nor bills', async () => {
+    invoked.length = 0;
+    billed.length = 0;
+    require('../../lib/mcp/tool-registry').forgetGrants();
+    const sessions = require('../../lib/sessions');
+    const SID = 's'.repeat(32);
+    const realGet = sessions.get;
+    let live = true;
+    sessions.get = (id) => (id === SID ? (live ? {id} : null) : realGet(id));
+    let n = 0;
+    const authenticate = provider.authenticate;
+    provider.authenticate = (...args) => {
+      const cb = args.pop();
+      const nth = ++n;
+      return authenticate(...args, (...answer) => { if (nth === 2) live = false; cb(...answer); });
+    };
+    try {
+      const req = {jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'notes_svc_save', arguments: {}}};
+      const r = await new Promise((resolve) => gateway.handle(req, ci, KEY_A, (err, resp) => resolve(resp),
+        {session: {id: SID, client: {status: 'ok', conditions: 'no', repo: null}}}));
+      assert.strictEqual(r.result && r.result._meta && r.result._meta['countinghouse/code'], 'MODULE_NOT_LISTED', JSON.stringify(r));
+      assert.ok(n >= 2, 'the gate\'s resolution, then the call\'s own userAuth');
+    } finally {
+      provider.authenticate = authenticate;
+      sessions.get = realGet;
+    }
+    await new Promise((res) => setTimeout(res, 100));
+    assert.deepStrictEqual(invoked, [], 'not run');
+    assert.deepStrictEqual(billed, [], 'not billed');
+  });
+
+  // the medium of #458's second round: a resource read whose session ends
+  // during its own userAuth is answered as an ended session's read is at the
+  // top of handleModuleResourceRead ("not found"), not a tools/call result
+  it('a resources/read whose session ends during its userAuth is "not found", and neither runs nor bills', async () => {
+    invoked.length = 0;
+    billed.length = 0;
+    require('../../lib/mcp/tool-registry').forgetGrants();
+    const sessions = require('../../lib/sessions');
+    const SID = 'r'.repeat(32);
+    const realGet = sessions.get;
+    let live = true;
+    sessions.get = (id) => (id === SID ? (live ? {id} : null) : realGet(id));
+    let n = 0;
+    const authenticate = provider.authenticate;
+    provider.authenticate = (...args) => {
+      const cb = args.pop();
+      const nth = ++n;
+      return authenticate(...args, (...answer) => { if (nth === 2) live = false; cb(...answer); });
+    };
+    try {
+      const req = {jsonrpc: '2.0', id: 1, method: 'resources/read', params: {uri: 'countinghouse://m/notes/notes/one'}};
+      const r = await new Promise((resolve) => gateway.handle(req, ci, KEY_A, (err, resp) => resolve(resp),
+        {session: {id: SID, client: {status: 'ok', conditions: 'no', repo: null}}}));
+      assert.deepStrictEqual(r.error, {code: -32602, message: 'Resource not found'}, JSON.stringify(r));
+    } finally {
+      provider.authenticate = authenticate;
+      sessions.get = realGet;
+    }
+    await new Promise((res) => setTimeout(res, 100));
+    assert.deepStrictEqual(invoked, [], 'not run');
+    assert.deepStrictEqual(billed, [], 'not billed');
+  });
+
+  // the medium of #458's second round: a key that is no admin's calling an
+  // authoring tool is answered as a name never registered with the flag on
+  // as with it off, and with no provider read more, so neither the answer
+  // nor its cost tells the flag
+  it('an authoring tool from a key that is no admin\'s: the same answer and the same provider reads, --authoringTools on or off', async () => {
+    const authenticate = provider.authenticate;
+    const listDevices = provider.listDevices;
+    const run = async(flag) => {
+      require('../../lib/mcp/tool-registry').forgetGrants();
+      options.setOptions(Object.assign({}, OPTIONS, {authoringTools: flag}));
+      let reads = 0;
+      provider.authenticate = (...args) => { reads++; return authenticate(...args); };
+      provider.listDevices = (...args) => { reads++; return listDevices(...args); };
+      try {
+        const r = await ask('tools/call', KEY_A, {name: 'countinghouse_validate_module', arguments: {path: '.'}});
+        return {r, reads};
+      } finally {
+        provider.authenticate = authenticate;
+        provider.listDevices = listDevices;
+        options.setOptions(OPTIONS);
+      }
+    };
+    const off = await run(false);
+    const on = await run(true);
+    assert.deepStrictEqual(on, off);
+    assert.deepStrictEqual(off.r.error, {code: -32602, message: 'unknown tool: countinghouse_validate_module'});
+  });
+
+  // #458's third high round: ONE cancellation for every name and one
+  // stillOpen check after every read. Each of the runtime's own tools, with
+  // a cancel during its own identity read, or its session ending there,
+  // spends, reads and writes nothing past it; a reserved name and a name
+  // never registered answer a cancel alike.
+  const BUILTINS = [
+    {name: 'countinghouse_check_balance', key: KEY_A, nothing: () => [spent, balances]},
+    {name: 'countinghouse_usage_report', key: KEY_A, nothing: () => [spent]},
+    {name: 'countinghouse_reload_auth', key: KEY_ADMIN, authoring: true, nothing: () => [reloads]},
+    {name: 'countinghouse_load_module', key: KEY_ADMIN, authoring: true, args: {path: '/nowhere', name: 'x'}, nothing: () => [loads]},
+    {name: 'countinghouse_settings', key: KEY_A, single: true, args: {action: 'set', name: 'requestTimeout', value: '20s'}, nothing: () => [settingsWrites()]}
+  ];
+  const reloads = [];
+  const SETTINGS = path.join(home, 'settings.json');
+  const settingsWrites = () => (fs.existsSync(SETTINGS) ? [fs.readFileSync(SETTINGS, 'utf8')] : []);
+  // a tools/call of name, its own identity read (the provider's nth
+  // authenticate) held: then cancelled, or its session ended
+  const during = async(name, key, args, {nth, end, single, authoring, extra = {}}) => {
+    require('../../lib/mcp/tool-registry').forgetGrants();
+    for (const a of [spent, balances, loads, reloads, invoked, billed]) a.length = 0;
+    fs.rmSync(SETTINGS, {force: true});
+    options.setOptions(Object.assign({}, OPTIONS, authoring ? {authoringTools: true} : {}));
+    // (the profile's fields are set as the start sets them, not through setOptions)
+    const savedProfile = {singleIdentity: options.singleIdentity, settingsFile: options.settingsFile};
+    if (single) Object.assign(options, {singleIdentity: true, settingsFile: SETTINGS});
+    const sessions = require('../../lib/sessions');
+    const SID = 'h'.repeat(32);
+    const realGet = sessions.get;
+    let live = true;
+    sessions.get = (id) => (id === SID ? (live ? {id} : null) : realGet(id));
+    let registered = null;
+    // (a cancel: no session, as over HTTP, so a set is the file's and is
+    // written; an ended session: the request's own)
+    const opts = Object.assign(end ? {session: {id: SID, client: {status: 'ok', conditions: 'no', repo: null}}} : {},
+      {cancellable: (fn) => { registered = fn; return () => { registered = null; }; }});
+    let held = null;
+    let n = 0;
+    const authenticate = provider.authenticate;
+    const reload = provider.reload;
+    provider.reload = (cb) => { reloads.push(1); return reload.call(provider, cb); };
+    provider.authenticate = (...a) => {
+      const cb = a.pop();
+      const k = ++n;
+      return authenticate(...a, (...answer) => {
+        if (k !== nth) return cb(...answer);
+        if (end) { live = false; return cb(...answer); }
+        held = () => cb(...answer);
+        return undefined;
+      });
+    };
+    try {
+      const got = new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 1, method: 'tools/call', params: Object.assign({name, arguments: args || {}}, extra)}, ci, key,
+        (err, resp, info) => resolve({resp, info}), opts));
+      if (!end) {
+        for (let w = 0; held == null && w < 400; w++) await new Promise((res) => setImmediate(res));
+        assert.ok(held != null, `${name}: its read is in flight`);
+        assert.strictEqual(typeof(registered), 'function', `${name}: registered`);
+        registered();
+        held();
+      }
+      const out = await got;
+      await new Promise((res) => setTimeout(res, 50));
+      return out;
+    } finally {
+      provider.authenticate = authenticate;
+      provider.reload = reload;
+      sessions.get = realGet;
+      options.setOptions(OPTIONS);
+      Object.assign(options, savedProfile);
+    }
+  };
+  for (const b of BUILTINS) {
+    // (the gate resolves the key first: the tool's own identity read is the second)
+    it(`${b.name}: cancelled during its own identity read, it spends, reads and writes nothing`, async () => {
+      const {resp, info} = await during(b.name, b.key, b.args, {nth: 2, single: b.single, authoring: b.authoring});
+      assert.strictEqual(resp, null, JSON.stringify(resp));
+      assert.deepStrictEqual(info, {cancelled: true});
+      assert.deepStrictEqual(b.nothing(), b.nothing().map(() => []));
+    });
+    it(`${b.name}: its session ending during its own identity read, it is answered as an ended session's and writes nothing`, async () => {
+      const {resp} = await during(b.name, b.key, b.args, {nth: 2, end: true, single: b.single, authoring: b.authoring});
+      assert.strictEqual(resp.result && resp.result._meta && resp.result._meta['countinghouse/code'], 'MODULE_NOT_LISTED', JSON.stringify(resp));
+      assert.deepStrictEqual(b.nothing(), b.nothing().map(() => []));
+    });
+  }
+  // (the medium of the cut) a task-augmented call: cancelled, or its session
+  // ended, while its userAuth reads the key, it spends no rate-limit unit
+  // and makes no job
+  it('a task-augmented call cancelled during its userAuth spends no rate limit, and is not answered', async () => {
+    const {resp, info} = await during('notes_svc_save', KEY_A, {}, {nth: 2, extra: {task: {}}});
+    assert.strictEqual(resp, null, JSON.stringify(resp));
+    assert.deepStrictEqual(info, {cancelled: true});
+    assert.deepStrictEqual([spent, invoked], [[], []]);
+  });
+  it('a task-augmented call whose session ends during its userAuth spends no rate limit, and is answered as ended', async () => {
+    const {resp} = await during('notes_svc_save', KEY_A, {}, {nth: 2, end: true, extra: {task: {}}});
+    assert.strictEqual(resp.result && resp.result._meta && resp.result._meta['countinghouse/code'], 'MODULE_NOT_LISTED', JSON.stringify(resp));
+    assert.deepStrictEqual([spent, invoked], [[], []]);
+  });
+  // #458's acceptance: a continuation that throws answers an internal error,
+  // so the call's in-flight registration is released, never left for a
+  // later cancel under a reused id to hit -- a built-in's, and a module run's
+  for (const [label, name, key, breakIt] of [
+    ['a built-in (countinghouse_check_balance)', 'countinghouse_check_balance', KEY_A, (c) => { c.checkBalance = () => { throw new Error('boom'); }; }],
+    ['a module run', 'notes_svc_save', KEY_A, (c) => { c.invokeDeviceAction = () => { throw new Error('boom'); }; }]
+  ]) {
+    it(`${label} that throws in a continuation answers an internal error and leaves no in-flight entry`, async () => {
+      require('../../lib/mcp/tool-registry').forgetGrants();
+      const broken = Object.assign({}, ci);
+      breakIt(broken);
+      let registered = null;
+      const opts = {cancellable: (fn) => { registered = fn; return () => { registered = null; }; }};
+      const LOG = require('../../lib/logger');
+      const logged = [];
+      const realE = LOG.E;
+      LOG.E = (e) => { logged.push(String(e && e.message)); };
+      try {
+        const r = await new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name, arguments: {}}}, broken, key,
+          (err, resp) => resolve(resp), opts));
+        assert.deepStrictEqual(r.error, {code: -32603, message: 'internal error'}, JSON.stringify(r));
+      } finally {
+        LOG.E = realE;
+      }
+      assert.strictEqual(registered, null, 'its in-flight registration released');
+      assert.ok(logged.includes('boom'), JSON.stringify(logged));
+    });
+  }
+
+  it('a reserved name and a name never registered answer a cancel during the gate\'s read alike', async () => {
+    const reserved = await during('countinghouse_check_balance', KEY_A, {}, {nth: 1});
+    const never = await during('no_such_tool_anywhere', KEY_A, {}, {nth: 1});
+    assert.deepStrictEqual(reserved, never);
+    assert.deepStrictEqual(never, {resp: null, info: {cancelled: true}});
   });
 
   it('the output\'s shape: a string as text (the schema\'s media type, else the declared one), a binary string as a blob, anything else as JSON', async () => {

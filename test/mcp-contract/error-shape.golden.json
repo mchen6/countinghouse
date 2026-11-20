@@ -2686,8 +2686,8 @@
         "jsonrpc": "2.0",
         "id": 1,
         "error": {
-          "code": -32603,
-          "message": "This apiKey does not have access to this device: ask the operator to add it to the apiKey's devices list in the auth config"
+          "code": -32602,
+          "message": "unknown tool: error_shape_module_shapeservice_ok"
         }
       }
     },
@@ -2698,8 +2698,8 @@
           "jsonrpc": "2.0",
           "id": 1,
           "error": {
-            "code": -32603,
-            "message": "This apiKey does not have access to this device: ask the operator to add it to the apiKey's devices list in the auth config"
+            "code": -32602,
+            "message": "unknown tool: error_shape_module_shapeservice_ok"
           }
         }
       }
@@ -3726,8 +3726,8 @@
         "jsonrpc": "2.0",
         "id": 1,
         "error": {
-          "code": -32603,
-          "message": "This apiKey does not have access to this device: ask the operator to add it to the apiKey's devices list in the auth config"
+          "code": -32602,
+          "message": "unknown tool: error_shape_module_shapeservice_ok"
         }
       }
     },

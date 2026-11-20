@@ -10,6 +10,38 @@ the auth config.
 
 ## Unreleased
 
+### Fixed — one shared-runtime session's stalling inputs no longer throttle the others
+
+The validator pool holds an input's stalls against its caller, and after
+three in five minutes refuses that caller's calls to the module
+(`VALIDATION_CALLER_THROTTLED`). In a shared runtime every session is the
+one local user's, one caller id, so one session's stalling inputs throttled
+every session. There the caller is now the caller and its session (calls,
+routed and direct hops, job runs, `prompts/get`): each session has its own
+three stalls, its own validation in flight, and its entries go when it
+ends. Over HTTP and `--stdio` it is the caller id, as before (a client
+choosing new session ids cannot slip its own throttle).
+
+### Changed — the usage report counts a cancelled call apart: `profile.cancelled`
+
+A call cancelled while it ran (M19) was counted among the report's errors.
+It is no error: `countinghouse_usage_report` (and `countinghouse-usage`)
+now count such calls in `profile.cancelled`, and leave them, and the
+server calls the cancel aborted (`CALL_TOKEN_INVALID`), out of
+`profile.errors`. A task cancelled with `tasks/cancel` while its run ran
+is such a call: its run's record says `cancelled`, whatever the run's end.
+### Changed — `tools/call` answers a tool outside the key's grants as an unknown tool
+
+A known key's `tools/call` of a tool outside its grants (an unlisted part's
+too) now answers `-32602 unknown tool: <name>`, as a name never registered
+does, instead of `-32603` with the no-access text: one answer for every tool
+a caller can't see, so a call no longer tells what is installed; so is a
+runtime tool not listed to the key (an authoring tool for a non-admin key,
+which answered `ADMIN_REQUIRED`; the single-identity profile's hidden
+built-ins, which answered `MODULE_NOT_LISTED`). No key and
+an unknown key keep their auth refusal, now the same for every name,
+the runtime's own `countinghouse_*` tools included.
+
 ### Removed — the pack form, `--packsRoot`, a ceiling's `packs`, `fallbackEnv`
 
 Module-level configuration's cleanup (#413 rev 3, section 16, rule 7):

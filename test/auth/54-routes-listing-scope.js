@@ -163,6 +163,52 @@ describe('auth 54: get-spec and the schema route answer only what the caller\'s 
     });
   }
 
+  // B-uniform (the reviewer's ruling on #457's probe): on tools/call a tool
+  // the caller can't see gets one answer, a name never registered's, byte
+  // for byte, plain and task-augmented: a listed module's tool outside the
+  // key's grants, an unlisted part's tool outside them, and a name never
+  // registered. A key granted the part still learns it is not listed.
+  const callAs = (key, name, extra = {}) => new Promise((resolve, reject) => {
+    const r = request(url).post('/mcp').set('Content-Type', 'application/json');
+    (key != null ? r.set('X-CH-Key', key) : r)
+    .send({jsonrpc: '2.0', id: 3, method: 'tools/call', params: Object.assign({name, arguments: {}}, extra)})
+    .end((err, res) => (err ? reject(err) : resolve(res)));
+  });
+  for (const [label, extra] of [['plain', {}], ['task-augmented', {task: {ttl: 60000}}]]) {
+    // no key, or a key the auth layer does not know: the auth refusal, the
+    // same whatever the name (a module's tool, an unlisted part's, or one
+    // never registered), so it says nothing of what exists
+    it(`tools/call (${label}): no key or an unknown key is refused as such, the same for every name`, async () => {
+      const names = [toolNames('echo')[0], toolNames('part')[0], 'no_such_tool_registered_anywhere'];
+      for (const key of [null, `unknown-${'u'.repeat(24)}`]) {
+        const seen = [];
+        for (const name of names) {
+          const res = await callAs(key, name, extra);
+          seen.push(`${res.status} ${JSON.stringify(res.body)}`);
+        }
+        assert.deepStrictEqual(seen, [seen[0], seen[0], seen[0]], String(key));
+        assert.ok(/"code":-32603/.test(seen[0]) && /Unknown user/.test(seen[0]), seen[0]);
+      }
+    });
+    it(`tools/call (${label}): a tool the key can't see is answered as a name never registered, whatever the reason`, async () => {
+      const shape = (res, name) => `${res.status} ${JSON.stringify(res.body).split(name).join('<name>')}`;
+      const NEVER = 'no_such_tool_registered_anywhere';
+      const cases = {
+        'never registered': NEVER,
+        'listed, outside the grants': toolNames('transform')[0],
+        'an unlisted part, outside the grants': toolNames('part')[0]
+      };
+      const seen = {};
+      for (const [why, name] of Object.entries(cases)) seen[why] = shape(await callAs(SCOPED_KEY, name, extra), name);
+      const want = shape(await callAs(SCOPED_KEY, NEVER, extra), NEVER);
+      assert.deepStrictEqual(seen, {'never registered': want, 'listed, outside the grants': want, 'an unlisted part, outside the grants': want});
+      assert.ok(want.includes('unknown tool: <name>'), want);
+      // granted the part: told it is not listed, as before
+      const granted = await callAs(WILDCARD_KEY, toolNames('part')[0], extra);
+      assert.ok(JSON.stringify(granted.body).includes('MODULE_NOT_LISTED'), JSON.stringify(granted.body));
+    });
+  }
+
   it('the unlisted part is refused MODULE_NOT_LISTED by both routes, even to a key granted every device', async () => {
     for (const p of [`/devices/${idOf('part')}/get-spec`, `/devices/${idOf('part')}/schema/`]) {
       const res = await get(WILDCARD_KEY, p);

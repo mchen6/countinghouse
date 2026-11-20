@@ -429,7 +429,7 @@ A module sees its own namespace, in every mode:
 |---|---|---|
 | `/app` | the module's install directory | read-only: `EROFS` under `enforce`, `EACCES` under `audit` |
 | `/data` | `<moduleDataPath>/<name>/data` | read-write, quota, kept across restarts |
-| `/tmp` | `<moduleDataPath>/<name>/tmp` | read-write, quota, emptied when the worker starts |
+| `/tmp` | `<moduleDataPath>/<name>/tmp` | read-write, quota, emptied when the worker starts (only one the runtime made: "Only what the runtime made is deleted") |
 | each declared path, e.g. `/var/log/app` | the same host path | `r` or `rw` as the operator's policy narrows it; no quota |
 
 `<name>` is the package.json name the main thread verified. A load whose
@@ -654,6 +654,75 @@ the registry entry and deletes `<moduleDataPath>/<name>` unless `keepData`,
 never following links. It refuses while the module is loaded, restarting or
 suspended, and never removes the module's code under `--modulePath`.
 Unload, restart and reload never delete data.
+
+**Only what the runtime made is deleted.** Every recursive delete the
+runtime does is limited to directories it made:
+- `/tmp` emptied at a spawn (a worker, a session's worker, single-thread
+  mode);
+- a module's data removed by an uninstall;
+- a session's partition removed at its end or by the start's sweep.
+
+When it creates a module's or a session's `data` and `tmp`, it records each
+directory's identity (device, inode and birth time) in an owner-only marker,
+`.countinghouse-owned`, in the directory holding them: `<name>/`, or
+`<name>/sessions/<id>/`. No worker sees that directory. Before deleting, the
+directory as it is now must be the one recorded. A directory the runtime did
+not make, or one swapped in since (another at the same path, an inode number
+reused included), is never emptied or removed; it is kept and said once. The
+module's root and a session's root are never removed recursively, only by
+`rmdir` once empty.
+
+A marker is read, and a directory judged its own, only through real
+directories from `--moduleDataPath` down. A `<name>/` or `@scope` that is a
+link leads to another module's marker, which vouches for nothing there, so
+**a module's data directory can't be a symlink**. To put it on other
+storage, use a bind mount, or link `--moduleDataPath` itself. An uninstall
+refuses a module whose `<name>/` is reached through a link
+(`MODULE_DATA_NOT_DIRECTORY`). A `.countinghouse-owned-probe-*` directory
+in a module's `data` or `tmp` is the runtime's, briefly: it checks there
+whether the file system keeps real birth times.
+
+A directory made before this rule, by an earlier version, is adopted in any
+of these:
+- its module's first spawn;
+- a session worker's spawn;
+- a load in single-thread mode;
+- an uninstall;
+- a session's end;
+- the start's sweep.
+
+Adoption happens only when:
+- it is at the path the runtime would have made it, with no link from
+  `--moduleDataPath` down to it;
+- the overlap judgement found no module's code inside it or around it: the
+  file broker's own at a spawn, elsewhere the same question asked of every
+  module root the runtime knows, each `--loadModule` directory and the
+  `--modulePath` folders.
+
+A directory whose marker names another, changed since, is never adopted
+again: a mismatch is the sign that something other than the runtime changed
+it. When the runtime removes a directory, it rewrites the marker without
+that directory's entry. A birth time recorded on a host that can read them
+is never set aside for device and inode alone. A directory that can't be
+checked that way is kept, said with the same recovery: stop the runtime and
+delete the marker.
+
+Nothing about a package name or a file layout is read to decide. The
+throwaway `<moduleDataPath>/.validate` of a validation is not under this
+rule: the runtime makes it fresh, under a dot name no module's name can
+take.
+
+A directory the runtime made that holds module code it knows is kept too,
+since a module may have been loaded from inside another's `/data`. That
+covers a module root it knows, a `--loadModule` directory, or a
+`--modulePath` folder inside it.
+
+The marker names directories by their identity, so a copy names nothing.
+After `--moduleDataPath` is moved or restored (`rsync -a`, `cp -a`), or on a
+file system whose device numbers change across reboots, every directory
+there is kept and said. To have them adopted again, under the same
+conditions as an earlier version's, delete the `.countinghouse-owned`
+files with the runtime stopped.
 
 **7. `--hardened`.** Re-launches the server under Node's permission model
 (`--permission`) with read access to the install directory, `--modulePath`,
@@ -1285,6 +1354,34 @@ and every one is bounded.
   URL.
 - **Prompt text** is declared and reviewed. An argument is substituted
   once, as text, and bounded.
+- **A tool the caller can't see** gets one answer on `tools/call`, decided
+  before anything module-specific, so no probe tells what is installed. No
+  key, or a key the auth layer does not know: its auth refusal, decided
+  first, the same for every name -- a module's tool, an unlisted part's,
+  one never registered, and the runtime's own `countinghouse_*` tools,
+  enabled or not. A known key: a name never registered, a tool outside its
+  grants (an unlisted part's too) and one hidden while its module goes on
+  or off all answer `unknown tool: <name>`, byte for byte, and so does a
+  runtime tool not listed to it: an authoring tool for a key that is no
+  admin's (whatever `--authoringTools` says), and in the single-identity
+  profile the built-ins it hides (outside it, `countinghouse_settings`). A
+  key granted an unlisted part still learns it is not listed. The grant set that chooses
+  the answer is kept per known key (by a SHA-256 digest of the key, never
+  the key) for at most 5 s; authorisation is still `userAuth`'s read on
+  every call, so within those 5 s a revoked grant's tool gets the auth
+  refusal (which tells it from a name never registered), and a new grant's
+  answers "unknown tool". A reload of the auth config ends that window at
+  once for the file provider; the sqlite and CouchDB providers have no
+  change signal, so for them the 5 s is the bound. The cost: a key not in
+  the cache -- never seen, pushed out past the 1024, or after a reload
+  cleared every key -- is resolved before its grants are read, so an
+  unknown key costs one provider read and a valid key's first call one
+  serial read more; a key in the cache whose 5 s have lapsed has both read
+  side by side, and a fresh one neither. Whether the key is an admin's is
+  kept with it the same way, to choose an answer only: for up to 5 s a
+  just-promoted admin is answered "unknown tool" for an authoring tool,
+  and a just-demoted one costs one fresh read before the same answer (an
+  admin's call is always read fresh before it runs).
 
 **Bounds.** Each is enforced on the main thread, and each has a test that
 fails if it is removed:
@@ -1303,7 +1400,9 @@ fails if it is removed:
 | A task's question | at most 64 of an owner's tasks waiting, 10,000 in all; a wait of an hour, then `ASK_EXPIRED` | questions 08 |
 | Progress | 4 a second and 240 per call | mcp-contract 10 (progress) |
 | Cancellation | a request of the caller's own connection or session only; an unknown id ignored; no answer and no error text | mcp-contract 18, 19 |
-| Every read, get, completion and task method | the per-key rate limit, before any lookup | auth 15, mcp-contract 24, 26, 30, 09 |
+| Every read, get, completion and task method | the per-key rate limit, once the key resolves and before any lookup | auth 15, mcp-contract 24, 26, 30, 09 |
+| `tools/call` | the per-key rate limit (and `--globalRateLimit`) on the call's run, after its one answer for a tool the caller can't see is decided; the key's resolution and grant read before it are not limited, as no limiter exists for a key that does not resolve (registered after the first release) | auth 15 (a built-in), mcp-contract 37 (a task); auth 54 the order |
+| The grant sets `tools/call` is answered by | a known key's only, kept by a digest of the key; at most 5 s old, refreshed by every list's read, all cleared by an auth reload; 1024 keys, the one written longest ago out first; a failed read never kept | mcp-contract 40, auth 54 |
 
 A module resource read takes its token from the call path, after the
 listing lookup that finds its action: a probe of a URI that reads nothing
@@ -1590,6 +1689,28 @@ and the short list of what the in-process sandbox cannot give.
   rules: no `..`, so a link leads only into its own directory, however that
   directory is later renamed), so a stale entry cannot either. A link a host
   process made, or one made before 8.0.0, is not covered by that.
+  An open whose parent directory did not exist when the broker checked it,
+  and appeared before the open, is decided on where it really landed; under
+  `enforce` a name there that is a link is refused outright, wherever it
+  leads, and reported as `link-appeared` (not as an escape): such a link
+  appeared in the race itself, and nothing legitimate needs one there.
+  A name that is a link to nothing when the broker checks it is refused
+  under `enforce` before the open (reported as `link-dangling`): opening it
+  would follow it wherever it leads, outside the namespace, or to a file a
+  host process points it at in between, before anything could judge that.
+  Writes through a dangling link are refused under `audit` and `enforce`
+  alike (reported as `link-dangling`; `audit` previews `enforce`, and no
+  write under it leaves the module's own area); a read finds nothing, as
+  before. A module that wants a file there writes the target, or makes
+  its link again. Where the broker saw no link at a name -- nothing there,
+  or a plain file -- the open passes `O_NOFOLLOW`, so a link a host process
+  puts there in between is never followed: the open fails, nothing is
+  created, and it is reported as `link-appeared`. Where it reached a file
+  through a link, the open goes to that file's real path, never through
+  the link again; and where it saw a file, the open never creates one, so
+  a parent or a link changed in between makes nothing anywhere. Windows has no
+  `O_NOFOLLOW`: there the checks after the open stand alone, refusing the
+  descriptor, and a file such an open created where the link led can stay.
 - **Host paths leak in one place.** For a CommonJS file imported directly by
   an ES module, Node 24 gives `__filename` and stack frames the host path.
 - **Descriptor and handle adoption is refused only under `enforce`.**
@@ -1601,6 +1722,9 @@ and the short list of what the in-process sandbox cannot give.
 - **The quota is approximate in the safe direction.** Concurrent writes that
   extend one file can each count the growth, so a module can be refused
   before it is really over.
+  The quota counts by the root a path names; a link a module makes between
+  its own declared roots can move bytes between their counts, never past an
+  uncounted root's existing freedom.
 - **A stuck host operation delays a restart by at most 35 s.** After that
   the next start goes ahead and logs what was still running; a late write
   can land in the fresh `/tmp`, or leave the quota count a little off.
