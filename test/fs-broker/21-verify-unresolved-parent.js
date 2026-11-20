@@ -420,6 +420,20 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
     } finally { await t.done(); }
   });
 
+  // (the medium review of 4ac385de: the module's own O_NOFOLLOW on an
+  // in-root link answers ELOOP, as on master -- never the link's target)
+  it('an open with the module\'s own O_NOFOLLOW on an in-root link answers ELOOP', async function() {
+    if (fs.constants.O_NOFOLLOW === undefined) return this.skip();
+    const t = await setup('enforce', () => {});
+    try {
+      fs.writeFileSync(path.join(t.dirs.data, 'target'), 't');
+      fs.symlinkSync(path.join(t.dirs.data, 'target'), path.join(t.dirs.data, 'lnk'));
+      await assert.rejects(t.broker.handle('open', ['/data/lnk', fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW]), (e) => e.code === 'ELOOP');
+      assert.ok(!t.reports.some((r) => r.startsWith('link-appeared')), t.reports.join(', '));
+      assert.strictEqual(t.broker.fds.size, 0);
+    } finally { await t.done(); }
+  });
+
   // (ruled R-a, and the medium review of 5df938b7: where the check saw a
   // file -- through an in-root link it followed, or plain with a parent --
   // the open never creates: a link re-pointed outside, or a parent swapped
