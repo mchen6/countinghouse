@@ -217,10 +217,11 @@ Notes:
 The same posture, in outline:
 
 - **A Deployment** of one replica: the gateway keeps in-memory state, so
-  scaling out needs more design first. Two runtimes can't share a data
-  directory's server id (`.server-id`, which names the job queue): a second
-  live one on the same Redis is refused at start; for more capacity, see
-  this one-replica note. Its pod spec has:
+  scaling out needs more design first. A long-running server (the HTTP
+  profile) claims its data directory's server id (`.server-id`, which names
+  the job queue) on Redis: a second live one with that id on the same Redis
+  is refused at start; for more capacity, see this one-replica note. Its
+  pod spec has:
   - `securityContext`: `runAsNonRoot: true`, `runAsUser: 1000`,
     `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`,
     `capabilities: {drop: [ALL]}`, `seccompProfile: {type: RuntimeDefault}`;
@@ -259,6 +260,10 @@ seconds. The device log is kept in memory only, the last 1000 entries per
 device. Over `--stdio`
 without `--authConfigPath` the server runs as one user, its key made at
 start and written nowhere ([security model](security-model.md)).
+A `--stdio` runtime on Redis is one session: its job queue is its own
+process's (`{chj-<server id>-<8 hex>}`), so several on one data directory
+and one Redis (each MCP client spawning its own) run side by side, none
+refused, and the tasks an earlier process queued are not run.
 
 Writes reach the store's files on a schedule (metering within about half
 a second, a module's `ctx.redis` data within five seconds), and at once

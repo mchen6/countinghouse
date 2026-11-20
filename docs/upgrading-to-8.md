@@ -680,7 +680,10 @@ says how to write a module for this.
   once it goes a heartbeat (about 12 s) without renewal, so a replaced pod
   waits that long before it serves. (ch-local's runtimes share a data
   directory with `--store local`, which has no Redis queue and makes no
-  claim.) The start whose scan finds no old job history records that in
+  claim; nor does a `--stdio` runtime, one session whose queue is its
+  process's own, `{chj-<server id>-<8 hex>}`, so several MCP clients each
+  spawning one on the default data directory run side by side.) The start
+  whose scan finds no old job history records that in
   Redis (`countinghouse:legacy-jobs-none`, db 5), and later starts no longer
   scan for it; the old jobs and schedulers are a few cheap reads, counted
   at every start. Jobs

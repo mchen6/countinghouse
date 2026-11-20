@@ -265,3 +265,67 @@ describe('auth 56: one live runtime per server id (round 2, 3)', function() {
     }
   });
 });
+
+// The reviewer's ruling on #463's round 2: a --stdio runtime is one
+// session. Two of them on one data directory and one Redis (two MCP clients,
+// each spawning countinghouse --stdio with the same defaults) each have a
+// queue of their own, {chj-<id>-<8 hex>}, make no claim, and are never
+// refused: each completes its own task.
+describe('auth 56: two --stdio runtimes on one data directory and one Redis', function() {
+  this.timeout(120000);
+  const {startStdio} = require('../helpers/stdio-client');
+  const {redisArgs} = require('../helpers/test-env');
+  const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'm15-tasks');
+  const STDIO_KEY = `k${crypto.randomBytes(12).toString('hex')}`;
+  let home = null;
+  const runtimes = [];
+  before(async () => {
+    home = tmp.mkdtemp('ch-auth-56s-');
+    const auth = path.join(home, 'auth.json');
+    fs.writeFileSync(auth, JSON.stringify({[STDIO_KEY]: {userName: 'k', devices: ['*']}}));
+    for (let i = 0; i < 2; i++) {
+      const io = startStdio(['--workerThread', ...redisArgs(), '--modulePath', path.join(home, `modules-${i}`), '--moduleDataPath', path.join(home, 'module_data'),
+        '--authConfigPath', auth, '--loadModule', FIXTURE], {env: {COUNTINGHOUSE_API_KEY: STDIO_KEY}});
+      runtimes.push(io);
+      const init = await io.request({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2026-07-28', capabilities: {}, clientInfo: {name: `client-${i}`, version: '1'}}});
+      assert.ok(init.result != null, JSON.stringify(init) + io.err.slice(-1500));
+    }
+  });
+  after(() => {
+    for (const io of runtimes) io.child.kill('SIGKILL');
+  });
+
+  it('each completes a task-augmented call, neither is refused, and each queue is its own', async () => {
+    for (const [i, io] of runtimes.entries()) {
+      const list = await io.request({jsonrpc: '2.0', id: 2, method: 'tools/list', params: {}});
+      const tool = list.result.tools.find((t) => /(^|_)slow$/.test(t.name));
+      assert.ok(tool != null, JSON.stringify(list.result.tools.map((t) => t.name)));
+      const created = await io.request({jsonrpc: '2.0', id: 3, method: 'tools/call', params: {name: tool.name, arguments: {ms: 0}, task: {}}});
+      assert.ok(created.result != null && created.result.task != null, JSON.stringify(created).slice(0, 600) + io.err.slice(-1500));
+      let status = null;
+      for (let n = 4; n < 200 && status !== 'completed' && status !== 'failed'; n++) {
+        const got = await io.request({jsonrpc: '2.0', id: n, method: 'tasks/get', params: {taskId: created.result.task.taskId}});
+        status = got.result != null ? got.result.status : JSON.stringify(got);
+        if (status !== 'completed') await new Promise((r) => setTimeout(r, 100));
+      }
+      assert.strictEqual(status, 'completed', `runtime ${i}: ${io.err.slice(-1500)}`);
+    }
+    for (const io of runtimes) {
+      assert.strictEqual(io.child.exitCode, null, io.err.slice(-1500));
+      assert.doesNotMatch(io.err, /another server is using/);
+    }
+    // two queues, the server id's and each process's suffix
+    const id = fs.readFileSync(path.join(home, 'module_data', '.server-id'), 'utf8');
+    const kv11 = new (require('ioredis'))(redisConnectionFor(11));
+    try {
+      const keys = await kv11.keys(`{chj-${id}-*}:job-queue:*`);
+      const suffixes = new Set(keys.map((k) => k.slice(`{chj-${id}-`.length, `{chj-${id}-`.length + 8)));
+      assert.strictEqual(suffixes.size, 2, JSON.stringify([...suffixes]));
+      assert.deepStrictEqual(await kv11.keys(`chj-claim:{chj-${id}*`), [], 'no claim made');
+    } finally {
+      kv11.disconnect();
+    }
+  });
+
+  tmp.hooks();
+});
