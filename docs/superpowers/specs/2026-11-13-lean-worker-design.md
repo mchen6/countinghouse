@@ -46,7 +46,9 @@ payloads and on synthetic ones:
 | 22.7 MB | 5.2 ms, 7.9 ms | 303 ms | 1.22 s |
 
 Validation costs 1/20 to 1/60 of the copy every call already pays to cross
-from a worker to the main thread.
+from a worker to the main thread. (The first version of this design read
+that as a reason to validate on the main thread. #152's high review reversed
+it, since a schema's cost can't be bounded beforehand: section 4.)
 
 ## Goals
 
@@ -78,16 +80,26 @@ from a worker to the main thread.
   wants. Rejected.
 - A V8 compile cache (measured at 35-140 ms per worker, deferred in #123 for
   its trust surface).
-- A separate validation thread. Measured: it would add a copy and a round
-  trip that cost far more than the validation itself (1.2 s against 5 ms at
-  23 MB). Rejected.
+- Keeping validation on the main thread, or in the module's own worker.
+  Rejected. The first version of this design kept it on the main thread and
+  rejected a separate validation thread, because a copy and a round trip
+  cost far more than the validation itself (1.2 s against 5 ms at 23 MB).
+  #152's high review reversed that: a module-authored schema's cost can't be
+  bounded beforehand, and on the main thread one slow schema stalls every
+  module and session. Validation runs in validator workers ([section 4](#4-the-modules-spec-on-the-main-thread-its-validation-in-validator-workers)).
+  In its own worker, a module could switch its validation off: the fixture
+  `test/fixtures/main-checked` does, and `test/sandbox/41` shows a lean
+  worker holds no validator to switch off. The hops this costs per call are
+  cut by #224 (the validator delivers checked bytes to the receiving worker;
+  design #277, after release 1), not by moving validation back.
 
 ## Anti-goals
 
 - A lean worker that is easier to escape, or a module that can influence the
   validation of its own output.
-- A main thread that blocks: no unbounded work per call. The result size cap
-  below bounds validation and the copy together.
+- A main thread that blocks: no unbounded work per call. Validation runs in
+  validator workers under their deadline (`--validationTimeoutMs`); the
+  result size cap below bounds the copy.
 - Two diverging implementations of the module API: `ctx` and `CHUtil` behave
   the same in a lean worker and in single-thread mode.
 
