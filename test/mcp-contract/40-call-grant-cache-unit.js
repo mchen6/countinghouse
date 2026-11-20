@@ -203,6 +203,15 @@ describe('mcp-contract 40: the grant set a tools/call is answered by (unit)', ()
     assert.deepStrictEqual([...await call('key-a')], ['new']);
   });
 
+  it('whether the key is an admin\'s comes with the set, as it resolved, and is kept with its resolution', async () => {
+    const asAdmin = (key, cb) => { ids.push(key); setImmediate(cb, null, {isAdmin: key === 'key-all'}); };
+    const who = (key) => new Promise((resolve, reject) => registry.grantsForCall(key, asAdmin, (err, g, unread, w) => (err ? reject(err) : resolve(w))));
+    assert.deepStrictEqual(await who('key-all'), {isAdmin: true});
+    assert.deepStrictEqual(await who('key-a'), {isAdmin: false});
+    assert.deepStrictEqual(await who('key-all'), {isAdmin: true}, 'kept: no resolution');
+    assert.deepStrictEqual(ids, ['key-all', 'key-a']);
+  });
+
   it('grants the provider could not read: the key resolved, no set, said apart from an auth refusal, and not kept', async () => {
     const down = Object.assign(new Error('down'), {code: 'SYSTEM_ERROR_USERDB_NA'});
     registry.resetGrantsForTests({now: () => t, read: (key, cb) => { reads.push(key); setImmediate(cb, down); }});
