@@ -1684,6 +1684,28 @@ and the short list of what the in-process sandbox cannot give.
   rules: no `..`, so a link leads only into its own directory, however that
   directory is later renamed), so a stale entry cannot either. A link a host
   process made, or one made before 8.0.0, is not covered by that.
+  An open whose parent directory did not exist when the broker checked it,
+  and appeared before the open, is decided on where it really landed; under
+  `enforce` a name there that is a link is refused outright, wherever it
+  leads, and reported as `link-appeared` (not as an escape): such a link
+  appeared in the race itself, and nothing legitimate needs one there.
+  A name that is a link to nothing when the broker checks it is refused
+  under `enforce` before the open (reported as `link-dangling`): opening it
+  would follow it wherever it leads, outside the namespace, or to a file a
+  host process points it at in between, before anything could judge that.
+  Writes through a dangling link are refused under `audit` and `enforce`
+  alike (reported as `link-dangling`; `audit` previews `enforce`, and no
+  write under it leaves the module's own area); a read finds nothing, as
+  before. A module that wants a file there writes the target, or makes
+  its link again. Where the broker saw no link at a name -- nothing there,
+  or a plain file -- the open passes `O_NOFOLLOW`, so a link a host process
+  puts there in between is never followed: the open fails, nothing is
+  created, and it is reported as `link-appeared`. Where it reached a file
+  through a link, the open goes to that file's real path, never through
+  the link again; and where it saw a file, the open never creates one, so
+  a parent or a link changed in between makes nothing anywhere. Windows has no
+  `O_NOFOLLOW`: there the checks after the open stand alone, refusing the
+  descriptor, and a file such an open created where the link led can stay.
 - **Host paths leak in one place.** For a CommonJS file imported directly by
   an ES module, Node 24 gives `__filename` and stack frames the host path.
 - **Descriptor and handle adoption is refused only under `enforce`.**
@@ -1695,6 +1717,9 @@ and the short list of what the in-process sandbox cannot give.
 - **The quota is approximate in the safe direction.** Concurrent writes that
   extend one file can each count the growth, so a module can be refused
   before it is really over.
+  The quota counts by the root a path names; a link a module makes between
+  its own declared roots can move bytes between their counts, never past an
+  uncounted root's existing freedom.
 - **A stuck host operation delays a restart by at most 35 s.** After that
   the next start goes ahead and logs what was still running; a late write
   can land in the fresh `/tmp`, or leave the quota count a little off.

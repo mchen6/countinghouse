@@ -7,18 +7,27 @@
 // 09 saw workerThread on from 21's setOptions (B-golden09).
 //
 // snapshot() in a describe's before(), before its setOptions; restore(kept)
-// at the end of its after(): every option back as it was (one setOptions
-// gave, one it didn't).
+// at the end of its after(): every option back as it was, by its property
+// descriptor (apiKey, which setOptions defines read-only and unlisted in the
+// single-identity profile, included): one setOptions gave goes, one it
+// changed or removed comes back.
 const options = require('../../lib/cli-options');
 
+const isOption = (d) => !('value' in d) || typeof(d.value) !== 'function';
 const snapshot = () => {
   const kept = {};
-  for (const k of Object.keys(options)) if (typeof(options[k]) !== 'function') kept[k] = options[k];
+  for (const [k, d] of Object.entries(Object.getOwnPropertyDescriptors(options))) if (isOption(d)) kept[k] = d;
   return kept;
 };
 function restore(kept) {
-  for (const k of Object.keys(options)) if (typeof(options[k]) !== 'function' && !(k in kept)) delete options[k];
-  Object.assign(options, kept);
+  for (const [k, d] of Object.entries(Object.getOwnPropertyDescriptors(options))) {
+    if (isOption(d) && !(k in kept) && d.configurable) delete options[k];
+  }
+  for (const [k, d] of Object.entries(kept)) {
+    const now = Object.getOwnPropertyDescriptor(options, k);
+    if (now != null && !now.configurable) continue;
+    Object.defineProperty(options, k, d);
+  }
 }
 
 module.exports = {snapshot, restore};

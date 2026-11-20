@@ -69,3 +69,94 @@ a workload it targets) it is **not kept**: it also adds a residual against
 the host (an open of an existing file in `/data` or `/tmp` verified by its
 dev/ino alone). Its commit and tests stay on branch `b-fsb-p2` for the final
 report.
+
+## Proposal 4: the main thread's profile, and one change it suggested
+
+`perf/fs-broker-profile.js` runs R (3 × 250 rounds), S and W under `enforce`
+with the server's main thread under `--cpu-prof`. Of 42.9 s profiled, the
+main thread was idle 55.5%. Where the rest went (self time; the profile is
+the main thread's, as the code it shows says: the broker and its server's
+`reply` run there, and nowhere else. The script now picks that profile by
+its name, the server's pid and thread 0):
+
+| Share | What |
+|---|---|
+| ~15% | the fs bindings the broker's checks and operations call (`lstat` 4.3%, `realpath` 3.0%, `fstat` 2.9%, `close` 2.2%, the write 1.7%, `stat` 1.2%, `open` 1.1%, `readlink` 1.1%, `ftruncate` 0.9%) |
+| 7.2% | the garbage collector |
+| 5.0% | (program) |
+| 2.6% | `lib/fs-broker/server.js`, nearly all `reply` (`postMessage` and its structured clone) |
+| 1.4% | `lib/fs-broker/broker.js` |
+| 1.4% | `node:internal/fs/promises` |
+
+The hand-offs, not the broker's JavaScript, are where the main thread
+works: proposals 1, 3 and 5 are aimed there. No read in these workloads is
+64 KB or more, so transferring large results would move nothing here.
+
+The JavaScript the profile did show was the bridge's own per-request
+allocations: a timer, a timeout promise, `Promise.race` and `finally` for
+each request. The candidate (branch `b-fsb-p4-sweep`, `9066c5a`; the branch
+was deleted when the user dropped it, and the commit is no longer kept)
+checks every
+pending request's deadline with one sweep instead. Measured against
+`d5191d2` in three alternating sessions; `perf/fs-broker-workloads.js` now
+also records the CPU time of the server's main thread over each call, which
+the machine's other load moves far less than wall-clock:
+
+| | before | after |
+|---|---|---|
+| R, `enforce`: main-thread CPU (sessions' medians) | 820, 690, 750 ms | 750, 780, 730 ms |
+| S, `enforce`: main-thread CPU | 1 520, 1 460, 1 700 ms | 1 430, 1 600, 1 620 ms |
+| W, `enforce`: main-thread CPU | 580, 540, 560 ms | 590, 630, 560 ms |
+| R, `enforce` (wall, `perf/fs-broker-io-perf.js`) | 1 779, 1 289, 2 543 ms | 2 286, 1 426, 1 313 ms |
+| R, 10 modules, `enforce` (all 10) | 1 250, 1 280, 1 373 ms | 895, 1 076, 1 082 ms |
+| S, `off` (wall) | 1 802, 1 877, 1 939 ms | 1 420, 2 323, 2 487 ms |
+
+The main thread's CPU did not move, so the change saves no measurable work.
+R with 10 modules ran faster beyond its spread while S under `off` ran slower
+in the median (with a wide spread after). That is a mixed result: by the
+spec's rule it went to the user with both numbers, and the recommendation was
+**not to keep it** (no work saved, one workload possibly slower). The user
+dropped it on 2026-11-14.
+
+## Proposal 3: compound ops -- the trace finds nothing to fold
+
+The spec takes the candidates from a trace of the bridge calls
+(`perf/fs-broker-trace.js`: a preload in the server records each call the
+broker serves). Under `enforce`:
+
+| Workload | Bridge calls | By op | Same-path sequences |
+|---|---|---|---|
+| L: a reload of the module that requires 300 packages | 11 | `readFile` 4, `exists` 3, `stat` 2, `readdir` 2 | `stat` → `readdir` 2 |
+| W: one walk of 3 000 files | 3 061 | `stat` 3 030, `readdir` 31 | `stat` → `readdir` 30 |
+| seeding the tree (`mkdir -p`, 50 small files) | 56 | `writeFile` 50, `mkdir` 5, `rm` 1 | none |
+| S: 100 writes to one descriptor | 102 | `write` 100, `open` 1, `close` 1 | `write` → `write` 99 |
+
+- The dependency loader's reads do not go through the broker: the patch
+  serves them from the loader's grants. L's time is the worker's start and
+  the loader's own work, not bridge calls.
+- `mkdir -p`, `writeFile`, `readFile`, `exists` and `rm` are already one
+  brokered call each.
+- W's and S's sequences are the module's own calls, one after another (a
+  `stat` per entry, a `write` per write). Folding them would mean the worker
+  answering a later call from an earlier one (prefetched stats, batched
+  writes): a change of what the module sees, not a compound op, which the
+  spec does not allow. S is proposal 1's.
+- The one multi-call sequence the patch issues itself is `fs.cp`/`cpSync`:
+  per file `lstat`, `exists`, `unlink` when the target exists, and
+  `copyFile` (3-4 calls); per directory `lstat`, `mkdir` and `readdir`. A
+  compound `cp` would have to carry every per-entry check (the namespace,
+  read-only roots, the quota, the link rules, the always-denied set) into
+  one broker op. Module code rarely copies trees, so this is not
+  recommended unless a module needs it.
+
+So proposal 3 adds no op: there is nothing in the workloads to fold.
+
+## Where the five proposals ended (2026-11-14)
+
+| Proposal | Result |
+|---|---|
+| 2: no readlink for an existing file in `/data`/`/tmp` | **Dropped.** One pool job fewer per `enforce` round (26 → 25); no wall-clock gain beyond the sessions' spread, and it would add a residual against the host. Code and tests on `b-fsb-p2`. |
+| 4: profile the main thread, fix what it shows | **Dropped** (the user's decision, 2026-11-14). The profile: fs bindings about 15% of the main thread, GC 7%, the broker's own JavaScript about 4% (`server.js` 2.6%, `broker.js` 1.4%). Its one candidate (one deadline sweep instead of a timer per request) saves no main-thread CPU and gave mixed wall-clock results; its branch is deleted. The profile script and the main-thread CPU columns stay. |
+| 3: compound ops | **Nothing to fold.** The trace shows the loader's reads bypass the broker, the common calls are already single ops, and the rest are the module's own call sequences. No op added; a compound `cp` only if a module needs one. |
+| 1: direct I/O on verified descriptors, with write leases | **Deferred until after the first release.** With the broker's own JavaScript about 4% of the main thread, the remaining cost is the hand-offs themselves; proposal 1 is the one change aimed there, but it is large and opens a security boundary (the worker holding real descriptors). |
+| 5: file threads | Not started: it follows proposal 1 in the landing order. |
