@@ -14,8 +14,9 @@ the auth config.
 
 A call cancelled while it ran (M19) was counted among the report's errors.
 It is no error: `countinghouse_usage_report` (and `countinghouse-usage`)
-now count such calls in `profile.cancelled`, once each by call id however
-many server calls they made, and leave them out of `profile.errors`.
+now count such calls in `profile.cancelled`, and leave them, and the
+server calls the cancel aborted (`CALL_TOKEN_INVALID`), out of
+`profile.errors`.
 
 ### Removed — the pack form, `--packsRoot`, a ceiling's `packs`, `fallbackEnv`
 
