@@ -413,7 +413,26 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       const t = id();
       assert.ok((await ask(t)).asked != null);
       tombstones.get = () => Promise.reject(new Error('tombstones down'));
-      assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true, waiting: true});
+      assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true});
+    });
+    // (a cancel whose record removal failed: its question still shows
+    // waiting, and its tombstone is read all the same -- ruled M2)
+    it('a run for a task cancelled while its question waits (the record left) runs nothing: {skip, cancelled}', async () => {
+      const t = id();
+      assert.ok((await ask(t)).asked != null);
+      tombstones.get = () => Promise.resolve({owner: 'o'});
+      assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true, cancelled: true});
+    });
+    // (a question past its wait, the tombstone read failing: it stays a
+    // skip, to end as ASK_EXPIRED as before)
+    it('a run whose question\'s wait is over stays a skip when the tombstone read fails', async () => {
+      const t = id();
+      assert.ok((await ask(t)).asked != null);
+      now += taskAsks.WAIT_MS + 1;
+      try {
+        tombstones.get = () => Promise.reject(new Error('tombstones down'));
+        assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true});
+      } finally { now -= taskAsks.WAIT_MS + 1; }
     });
     // (a real cancel takes the record and leaves the tombstone: the run
     // started again finds neither question nor record, and is cancelled)
@@ -448,8 +467,13 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
   // nothing more and opens no call (#487's high, round 1). `api` is the
   // runner. Each asking pass takes 100 ms here, as a handler's would.
   const waitOrders = (label, getApi, done = () => {}) => {
-    const harness = (api, {timeout, answers, okAt, before = null}) => {
-      const log = {started: [], ended: [], completed: [], at: [], passes: 0, settled: 0};
+    // (every close of a call counted -- the end hook's, the completion
+    // hook's, and the asked hook's own when it answers {asked}, as the
+    // gateway's closes the call when it writes the question: exactlyOnce
+    // asserts each call opened was closed once; ruled M1)
+    const harness = (api, {timeout, answers, okAt, before = null, holdMs = () => 60000}) => {
+      const log = {started: [], ended: [], completed: [], at: [], passes: 0, settled: 0, closes: {}};
+      const closed = (c) => { log.closes[c] = (log.closes[c] || 0) + 1; };
       const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
         invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
           log.passes += 1;
@@ -461,15 +485,24 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       api.authorizeRun = () => Promise.resolve();
       api.initJobProcess(ci);
       api.setStartHook(() => { log.started.push(log.started.length + 1); log.at.push(Date.now()); return {usageCall: log.started.length}; });
-      api.setEndHook((data, run, outcome) => log.ended.push([run.extra.usageCall, outcome]));
-      api.setCompletionHook((data, results, run) => { log.completed.push([run.extra != null ? run.extra.usageCall : null, run.error != null ? String(run.error.message).split(':')[0] : 'ok', Date.now()]); return null; });
+      api.setEndHook((data, run, outcome) => { closed(run.extra.usageCall); log.ended.push([run.extra.usageCall, outcome]); });
+      api.setCompletionHook((data, results, run) => {
+        if (run.extra != null) closed(run.extra.usageCall);
+        log.completed.push([run.extra != null ? run.extra.usageCall : null, run.error != null ? String(run.error.message).split(':')[0] : 'ok', Date.now()]);
+        return null;
+      });
       let n = 0;
       let b = 0;
       api.setAskHooks({
         before: (data, taskId, run) => { b += 1; return Promise.resolve(before != null ? before(b, run) : {state: moduleAsk.newState({askable: true, shownAs: 'm'})}); },
-        asked: () => { n += 1; return Promise.resolve(answers(n)); },
+        asked: (data, taskId, state, run) => {
+          n += 1;
+          const r = answers(n);
+          if (r != null && r.asked != null) closed(run.extra.usageCall);
+          return Promise.resolve(r);
+        },
         settled: () => { log.settled += 1; return Promise.resolve(); },
-        holdMs: () => 60000
+        holdMs
       });
       return new Promise((resolve) => api.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: id(), era: 'modern', asks: true, timeout}, 'd', 's', 'a', {}, (err) => resolve({err, log})));
     };
@@ -477,6 +510,17 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       for (const end = Date.now() + ms; Date.now() < end;) { if (await check()) return true; await new Promise((r) => setTimeout(r, 20)); }
       return false;
     };
+    const exactlyOnce = (log) => assert.deepStrictEqual(log.started.map((c) => [c, log.closes[c] || 0]), log.started.map((c) => [c, 1]), JSON.stringify(log));
+    it(`${label}: a failure after the question was written takes a call of its own; each call closed once`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, answers: () => ({asked: {round: 1}}), holdMs: () => { throw new Error('hold broken'); }});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.deepStrictEqual([log.started, log.completed[0][0], log.completed[0][1]], [[1, 2], 2, 'hold broken'], JSON.stringify(log));
+        exactlyOnce(log);
+      } finally { done(api); }
+    });
     it(`${label}: the run's limit -- JOB_TIMEOUT, counted from the first pass of the run started again, its failure a call of its own`, async () => {
       const api = getApi();
       try {
@@ -490,6 +534,8 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
         // none of those closed
         assert.ok(log.ended.length > 0 && log.ended.every(([, o]) => o === 'unavailable'), JSON.stringify(log.ended));
         assert.ok(!log.ended.some(([c]) => c === call), `the failure's call ${call} was closed already: ${JSON.stringify(log)}`);
+        await new Promise((r) => setTimeout(r, 300));
+        exactlyOnce(log);
       } finally { done(api); }
     });
     it(`${label}: passes with no question shown run again at once, and the run completes`, async () => {
@@ -499,6 +545,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
         assert.ifError(err);
         assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
         assert.deepStrictEqual([log.completed[0][1], log.ended.map(([, o]) => o), log.started.length], ['ok', ['unavailable', 'unavailable', 'unavailable'], 4], JSON.stringify(log));
+        exactlyOnce(log);
       } finally { done(api); }
     });
     it(`${label}: a before that fails (a store read) runs nothing; the run fails with a call of its own`, async () => {
@@ -508,6 +555,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
         assert.ifError(err);
         assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
         assert.deepStrictEqual([log.passes, log.started, log.completed[0][0], log.completed[0][1]], [0, [1], 1, 'store down'], JSON.stringify(log));
+        exactlyOnce(log);
       } finally { done(api); }
     });
     it(`${label}: a before that fails between two passes runs nothing more; the run fails with a call of its own`, async () => {
@@ -518,6 +566,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
         assert.ifError(err);
         assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
         assert.deepStrictEqual([log.passes, log.ended, log.completed[0][0], log.completed[0][1]], [1, [[1, 'unavailable']], 2, 'store down'], JSON.stringify(log));
+        exactlyOnce(log);
       } finally { done(api); }
     });
     it(`${label}: a task cancelled between two passes runs no next pass and opens no call`, async () => {
@@ -530,6 +579,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
         await new Promise((r) => setTimeout(r, 400));
         assert.deepStrictEqual([log.passes, log.started, log.ended], [1, [1], [[1, 'unavailable']]], JSON.stringify(log));
         assert.ok(log.settled >= 1, `its question settled: ${JSON.stringify(log)}`);
+        exactlyOnce(log);
       } finally { done(api); }
     });
   };
