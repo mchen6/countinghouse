@@ -30,7 +30,7 @@ const RUNTIMES = {
 };
 // (the count is whatever this Redis holds under the old prefix: the job
 // seeded here at least)
-const LEGACY_SAID = /job queue: (\d+) jobs? and \d+ schedulers? under the old shared prefix \{cdifJob\} were not moved to this server's queue, and (\d+) job histor(?:y|ies) under the old jobinfo:<name> keys are not read/g;
+const LEGACY_SAID = /job queue: (\d+) jobs? and \d+ schedulers? under the old shared prefix \{cdifJob\} were not moved to this server's queue, and (?:at least )?(\d+) job histor(?:y|ies) under the old jobinfo:<name> keys are not read/g;
 const LEGACY_HISTORY = `jobinfo:legacy-56-${process.pid}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -125,4 +125,24 @@ describe('auth 56: each runtime\'s job queue is its own (B-j1)', function() {
   });
 
   tmp.hooks();
+});
+
+// A count that cannot be made is said, and nothing is left connected (the
+// medium review of #463's rework): a Redis nothing listens on.
+describe('auth 56: the old prefix\'s count, when Redis does not answer', function() {
+  this.timeout(30000);
+  const LOG = require('../../lib/logger');
+  let saved = null;
+  const said = [];
+  // (a bare process has no logger set up: its W and E are this test's)
+  before(() => { saved = {W: LOG.W, E: LOG.E}; LOG.W = (m) => { said.push(String(m)); }; LOG.E = () => {}; });
+  after(() => { if (saved != null) Object.assign(LOG, saved); });
+
+  it('says it could not count, and moves or reads nothing', async () => {
+    const net = require('net');
+    const port = await new Promise((resolve) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); }); });
+    const JobControl = require('../../lib/job-control');
+    assert.strictEqual(await JobControl.countLegacy({host: '127.0.0.1', port, db: 11}), false);
+    assert.ok(said.some((m) => /could not be counted .*; none of it is moved or read/.test(m)), JSON.stringify(said));
+  });
 });
