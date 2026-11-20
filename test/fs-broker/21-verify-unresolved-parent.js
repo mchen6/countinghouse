@@ -208,13 +208,17 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
       await assert.rejects(t.broker.handle('open', ['/data/lock', 'wx']), (e) => e.code === 'EEXIST');
       await assert.rejects(t.broker.handle('copyFile', ['/data/plain', '/data/lock', fs.constants.COPYFILE_EXCL]), (e) => e.code === 'EEXIST');
       assert.ok(!t.reports.includes('link-dangling ENOENT /data/lock'), t.reports.join(', '));
+      // (O_EXCL without O_CREAT follows a link like any open: refused as one)
+      await assert.rejects(t.broker.handle('open', ['/data/lock', fs.constants.O_RDONLY | fs.constants.O_EXCL]), enoent('/data/lock'));
+      assert.ok(t.reports.includes('link-dangling ENOENT /data/lock'), t.reports.join(', '));
       await assert.rejects(t.broker.handle('copyFile', ['/data/missing', '/data/lock']), (e) => e.code === 'ENOENT' && e.path === '/data/missing');
     } finally { await t.done(); }
   });
 
-  // (descriptors: every refused open closes its own exactly once -- the
-  // process's own count the same after as before, on Linux, where it can be
-  // read)
+  // (descriptors: a refused open that held one -- link-appeared, escape --
+  // closes it exactly once; one refused before any open -- EISDIR by the
+  // kernel, link-dangling -- holds none. The process's own count the same
+  // after as before, on Linux, where it can be read)
   it('refused opens leave the process\'s descriptors as they were', async function() {
     if (process.platform !== 'linux') return this.skip();
     const count = () => fs.readdirSync('/proc/self/fd').length;
@@ -227,12 +231,12 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
       fs.symlinkSync(path.join(t.dirs.outside, 'nope'), path.join(t.dirs.data, 'dangling'));
       const before = count();
       for (let i = 0; i < 3; i++) {
-        await assert.rejects(t.broker.handle('open', ['/data/planted', 'r']));
+        await assert.rejects(t.broker.handle('open', ['/data/planted', 'r']), enoent('/data/planted'));
         fs.unlinkSync(path.join(t.dirs.data, 'planted'));
-        await assert.rejects(t.broker.handle('open', ['/data/late/secret', 'r']));
+        await assert.rejects(t.broker.handle('open', ['/data/late/secret', 'r']), enoent('/data/late/secret'));
         fs.unlinkSync(path.join(t.dirs.data, 'late'));
-        await assert.rejects(t.broker.handle('open', ['/data/adir', 'r+']));
-        await assert.rejects(t.broker.handle('open', ['/data/dangling', 'w']));
+        await assert.rejects(t.broker.handle('open', ['/data/adir', 'r+']), (e) => e.code === 'EISDIR');
+        await assert.rejects(t.broker.handle('open', ['/data/dangling', 'w']), enoent('/data/dangling'));
       }
       assert.strictEqual(count(), before);
       assert.strictEqual(t.broker.fds.size, 0);
