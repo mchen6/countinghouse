@@ -287,7 +287,7 @@ implementer's, for review:
 | --- | --- |
 | 400 | caller-kind bad input: `ARGUMENTS_INVALID`, `INPUT_DATA_VALIDATION_FAIL`, `INPUT_NOT_FOUND`, `INVALID_JSON_POINTER`, `INVALID_REDIRECT_URL`, `INVALID_MODULE_PATH`, `DEVICE_ID_INVALID_OR_NULL`, `MODULE_NAME_INVALID`, `MODULE_NAME_MISMATCH`; and the route manager's `REQUEST_INVALID` |
 | 401 | no key or an unknown key: `SYSTEM_ERROR_UNKNOWN_USER` |
-| 403 | a known caller without the right: `ADMIN_REQUIRED`, `DENY_DEVICE_ACCESS`, `USER_HAS_NO_DEVICE`, `PEER_NOT_GRANTED`, `JOB_ACCESS_DENIED`; and `HOST_NOT_ALLOWED` |
+| 403 | a known caller without the right: `ADMIN_REQUIRED`, `USER_HAS_NO_DEVICE` (on a device route answered as the one `MODULE_NOT_LISTED` 404), `PEER_NOT_GRANTED`; and `HOST_NOT_ALLOWED`. (Post-rel caller 400: `JOB_ACCESS_DENIED` became `JOB_NOT_FOUND` 404, one answer with a job never issued; `DENY_DEVICE_ACCESS`, which only the rate limiters raised, became `RATE_LIMIT_EXCEEDED` 429 per key and `RUNTIME_BUSY` 503 server-wide.) |
 | 404 | a missing device or tool: `DEVICE_NOT_FOUND`, `SERVICE_NOT_FOUND`, `ACTION_NOT_FOUND`, `SERVICEID_NOT_AVAILABLE`, `ACTIONNAME_NOT_AVAILABLE` (B), `IDENTITY_NOT_FOUND` (B) |
 | 413 | `REQUEST_TOO_LARGE` (as today) |
 | 415 | `REQUEST_UNSUPPORTED_MEDIA_TYPE`: an `application/bson` body (BSON was retired in 8.0.0, and with it `INVALID_BSON_REQUEST`) |

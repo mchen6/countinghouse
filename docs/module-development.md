@@ -143,12 +143,18 @@ the answer at once. So:
   to fall back: the client offered no form, the call came by HTTP
   `invoke-action`, it runs as a task whose request declared no form
   elicitation or while too many tasks already wait on questions, the
-  operator turned questions off
-  (`--moduleQuestions off`), the outer call (when your action is a part)
-  has no one to ask for any of these reasons, three rounds brought no valid
-  answer, or the call has had eight rounds in all already (every
-  question's together). A part reached in single-thread mode
-  (`--no-workerThread`) has no one to ask either.
+  operator turned questions off (`--moduleQuestions off`), the outer call
+  (when your action is a part) has no one to ask for any of these reasons,
+  three rounds brought no valid answer, or the call has had eight rounds in
+  all already (every question's together). A part reached in single-thread
+  mode (`--no-workerThread`) has no one to ask either. In a task, a
+  question whose form can't be shown, or that finds no room among the
+  tasks waiting on questions, is a round like one asked, and the task runs
+  again at once, its `ctx.ask` then `ASK_UNAVAILABLE` for that question --
+  so a task that asks under a new key each time stops within its eight
+  rounds. Those passes run within the task's time limit (its own timeout,
+  else `--jobTimeout`), counted from the first of them; past it the task
+  fails `JOB_TIMEOUT`.
 - **Keep a question's values the same on every run.** A time or a counter
   in `values` makes a new question each time, and the answer the user gave
   is for the old one.
@@ -183,7 +189,10 @@ pass `{kind: 'caller'}` as the fourth argument: the error's `kind` is then
 `'caller'`, and the usage report counts it as `CALLER_ERROR`, the caller's,
 not `MODULE_ERROR`. Only `'caller'` and `'module'` are taken; anything else
 is ignored, and a module never says an error is the runtime's. The answer
-itself is the same either way. A caller-kind error is not retried in a
+names the kind: over HTTP a caller-kind error answers `400` and a module
+error `500`, each body `{code, message, kind}`; over MCP the tool's error
+result carries `countinghouse/kind` in its `_meta`, beside
+`countinghouse/code`. A caller-kind error is not retried in a
 task: the same input fails the same way. When your module calls another
 one, a caller-kind error it gets back is your module's (you were its
 caller); if your caller is at fault, say so with your own `ctx.error`.

@@ -576,6 +576,7 @@ function serve() {
     JobControl.initJobProcess(routeManager.cdifInterface);
     jobHooks = require('./lib/mcp/gateway').jobHooks(routeManager.cdifInterface);
     JobControl.setStartHook(jobHooks.start);
+    JobControl.setEndHook(jobHooks.end);
     JobControl.setCompletionHook(jobHooks.complete);
     JobControl.setCancelHook(jobHooks.cancel);
     // a 2026-07-28 task's question (M22, lib/task-asks.js)

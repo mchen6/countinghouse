@@ -77,7 +77,7 @@ describe('sessions 21: tasks by key and session (shared runtime B5, Task 2)', fu
       assert.strictEqual(again.err != null && again.err.code, 'ADD_JOB_ERROR');
       // the first, unchanged: still A's, never B's
       assert.ifError((await call(runner, 'getJob', IN(A), id)).err);
-      assert.strictEqual((await call(runner, 'getJob', IN(B), id)).err.code, 'GET_JOB_ERROR');
+      assert.strictEqual((await call(runner, 'getJob', IN(B), id)).err.code, 'JOB_NOT_FOUND');
     });
   });
 
@@ -92,7 +92,7 @@ describe('sessions 21: tasks by key and session (shared runtime B5, Task 2)', fu
         const got = await call(runner, 'getJob', ctx, id);
         const never = await call(runner, 'getJob', ctx, NEVER);
         assert.strictEqual(shape(got.err), shape(never.err), JSON.stringify(got));
-        assert.strictEqual(got.err.code, 'GET_JOB_ERROR');
+        assert.strictEqual(got.err.code, 'JOB_NOT_FOUND');
         const removed = await call(runner, 'removeJob', ctx, 'n', id, false);
         const neverRemoved = await call(runner, 'removeJob', ctx, 'n', NEVER, false);
         assert.strictEqual(shape(removed.err), shape(neverRemoved.err), JSON.stringify(removed));
@@ -103,7 +103,7 @@ describe('sessions 21: tasks by key and session (shared runtime B5, Task 2)', fu
       // and once it has completed: still unknown to B
       release.open();
       assert.ok(await until(async() => (await call(runner, 'getJob', IN(A), id)).r.state === 'completed'));
-      assert.strictEqual((await call(runner, 'getJob', IN(B), id)).err.code, 'GET_JOB_ERROR');
+      assert.strictEqual((await call(runner, 'getJob', IN(B), id)).err.code, 'JOB_NOT_FOUND');
     });
 
     it('listJobs: B\'s is empty while A\'s has its job; INTERNAL\'s job is in no session\'s list, and INTERNAL lists every job', async() => {
@@ -119,7 +119,7 @@ describe('sessions 21: tasks by key and session (shared runtime B5, Task 2)', fu
     it('a session that comes after A\'s end gets unknown for A\'s id', async() => {
       shared();
       const id = (await add(IN(A))).r.id;
-      assert.strictEqual((await call(runner, 'getJob', IN(C), id)).err.code, 'GET_JOB_ERROR');
+      assert.strictEqual((await call(runner, 'getJob', IN(C), id)).err.code, 'JOB_NOT_FOUND');
     });
 
     it('no record or error carries a session id', async() => {
@@ -131,9 +131,9 @@ describe('sessions 21: tasks by key and session (shared runtime B5, Task 2)', fu
       assert.ok(!JSON.stringify((await call(runner, 'getJob', IN(B), id)).err).includes(A));
     });
 
-    it('outside shared mode another key\'s job is JOB_ACCESS_DENIED, as before', async() => {
+    it('outside shared mode another key\'s job is JOB_NOT_FOUND, as one never issued (post-rel caller 400)', async() => {
       const id = (await add({appKey: 'k'})).r.id;
-      assert.strictEqual((await call(runner, 'getJob', {appKey: 'other'}, id)).err.code, 'JOB_ACCESS_DENIED');
+      assert.strictEqual((await call(runner, 'getJob', {appKey: 'other'}, id)).err.code, 'JOB_NOT_FOUND');
     });
   });
 

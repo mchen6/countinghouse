@@ -112,11 +112,12 @@ describe('auth 54: get-spec and the schema route answer only what the caller\'s 
     assert.strictEqual(res.body.code, 'MODULE_NOT_LISTED', JSON.stringify(res.body));
     const echo = await get(WILDCARD_KEY, `/devices/${idOf('echo')}/package-info`);
     assert.strictEqual(echo.status, 200, JSON.stringify(echo.body));
-    // a device no module serves is DEVICE_NOT_FOUND on every route
+    // a device no module serves is the same one answer on every route
+    // (post-rel caller 400; byte for byte with the part's: the test below)
     const nowhere = deviceIDForName('no-such-module');
     for (const p of [`/devices/${nowhere}/package-info`, `/devices/${nowhere}/get-spec`, `/devices/${nowhere}/schema/`]) {
       const r = await get(WILDCARD_KEY, p);
-      assert.ok(['DEVICE_NOT_FOUND', 'USER_HAS_NO_DEVICE'].includes(r.body.code), `${p}: ${JSON.stringify(r.body)}`);
+      assert.deepStrictEqual([r.status, r.body.code], [404, 'MODULE_NOT_LISTED'], `${p}: ${JSON.stringify(r.body)}`);
     }
   });
 
@@ -208,6 +209,43 @@ describe('auth 54: get-spec and the schema route answer only what the caller\'s 
       assert.ok(JSON.stringify(granted.body).includes('MODULE_NOT_LISTED'), JSON.stringify(granted.body));
     });
   }
+
+  // post-rel caller 400: one answer, byte for byte, for a device the caller
+  // can't use, whatever the reason, on every device route, end to end
+  it('every device route: a device no module serves, an unlisted part and one outside the key\'s grants are one answer, byte for byte', async () => {
+    const NOWHERE = 'ffffffff-0000-5000-8000-0000000000ff';
+    const send = (key, method, p, body) => new Promise((resolve, reject) => {
+      const r = request(url)[method](p).set('X-CH-Key', key);
+      (method === 'post' ? r.send(body) : r).end((err, res) => (err ? reject(err) : resolve(JSON.stringify({status: res.status, body: res.body}))));
+    });
+    const body = {serviceID: 'urn:x', actionName: 'x', input: {}};
+    const want = JSON.stringify({status: 404, body: {code: 'MODULE_NOT_LISTED', message: require('../../lib/error-catalogue').CODES.MODULE_NOT_LISTED.en, kind: 'caller'}});
+    for (const [method, route] of [['post', 'invoke-action'], ['get', 'get-spec'], ['get', 'schema/'], ['get', 'package-info'], ['post', 'add-job']]) {
+      const seen = {
+        missing: await send(WILDCARD_KEY, method, `/devices/${NOWHERE}/${route}`, body),
+        unlisted: await send(WILDCARD_KEY, method, `/devices/${idOf('part')}/${route}`, body),
+        ungranted: await send(SCOPED_KEY, method, `/devices/${idOf('transform')}/${route}`, body)
+      };
+      assert.deepStrictEqual(seen, {missing: want, unlisted: want, ungranted: want}, route);
+    }
+  });
+
+  // post-rel caller 400, an access fix: add-job queued an unlisted part's
+  // action and ran it (no listing check at all). Now it is refused, and no
+  // run is ever recorded.
+  it('add-job: an unlisted part\'s action is refused, and never runs', async () => {
+    const name = `unlisted-probe-${Date.now()}`;
+    const added = await new Promise((resolve, reject) => request(url).post(`/devices/${idOf('part')}/add-job`).set('X-CH-Key', WILDCARD_KEY)
+      .send({serviceID: Object.keys(api('part').device.serviceList)[0], actionName: 'store', input: {id: 'x'}, opts: {name}})
+      .end((err, res) => (err ? reject(err) : resolve(res))));
+    assert.strictEqual(added.status, 404, JSON.stringify(added.body));
+    assert.strictEqual(added.body.code, 'MODULE_NOT_LISTED');
+    // (a run would be recorded in well under this)
+    await new Promise((r) => setTimeout(r, 3000));
+    const history = await new Promise((resolve, reject) => request(url).post(`/devices/${idOf('echo')}/get-job-history`).set('X-CH-Key', WILDCARD_KEY)
+      .send({name}).end((err, res) => (err ? reject(err) : resolve(res))));
+    assert.deepStrictEqual([history.status, history.body], [200, []], 'no run of it is recorded');
+  });
 
   it('the unlisted part is refused MODULE_NOT_LISTED by both routes, even to a key granted every device', async () => {
     for (const p of [`/devices/${idOf('part')}/get-spec`, `/devices/${idOf('part')}/schema/`]) {

@@ -1528,14 +1528,23 @@ release; it comes with the planned audit work (structured records,
 bounded retention, an administrator's readback). Until then, these events
 are a usage record or a log line, and none carries a key, a user's name,
 a module's text or an answer:
-- a call's result (`ok`, `error` with its catalogued code, `cancelled`),
+- a call's result (`ok`, `error` with its catalogued code, `cancelled` --
+  a task's pass whose end is being recorded when the in-memory job runner
+  closes counts as cancelled too, unless its question was already written,
+  when it is recorded as asked; a pass the closing runner interrupts
+  inside the module's code is not recorded yet -- a later fix),
   with what was stored past the inline budget counted in its bytes;
 - a stored result refused (`RESULT_STORE_FULL`), and a stored result read;
 - a module resource read, recorded under its action's tool;
 - a question asked (its module, action, question name and round); a retry's
   answer refused (`ASK_STATE_INVALID` or `ASK_STATE_UNCHECKED`, the log
   line naming why: expired, used, and so on);
-- a task's question asked, and a task cancelled while it ran.
+- a task's question asked; a task's pass that ended on a question no form
+  could be shown for (outcome `unavailable`: a pass, run again, never a
+  call, counted in the usage report's `unavailable`; so is one whose
+  question found no room among the tasks waiting on questions); and a task
+  cancelled while a pass of it ran (one cancelled between two passes runs
+  nothing more and records nothing more: its passes are recorded).
 
 These events are **not recorded in this release**:
 - a stored result's id and size per item, a read of one refused or
@@ -2218,7 +2227,10 @@ these are the checks that predate them and still apply:
   [`authentication.md`](authentication.md) for how to configure each one).
   Every entry path in `docs/cross-cutting-matrix.md`'s table
   that checks `userAuth` denies a caller that isn't explicitly granted
-  the target `deviceID` (`USER_HAS_NO_DEVICE`), via one of three pluggable
+  the target `deviceID` (`USER_HAS_NO_DEVICE`; a REST device route answers
+  it as it answers a device that isn't there or isn't listed, one
+  `MODULE_NOT_LISTED` 404, so no caller can probe which modules exist), via
+  one of three pluggable
   backends: `FileAuthProvider` (default, a JSON file), `SqliteAuthProvider`,
   or `CouchDBAuthProvider` (needs a real CouchDB instance, `nano` no
   longer a hard dependency). This is caller-identity authorization, not

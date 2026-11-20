@@ -66,8 +66,9 @@ describe('auth 06: module-lifecycle routes are admin-gated, not --debug/--verify
       });
     });
 
-    it(`${route}: denies an unknown apiKey with 403 (not admin, and not a valid user at all)`, (done) => {
-      request(url).post(route).set('X-CH-Key', UNKNOWN_KEY).send({}).expect(403, (err, res) => {
+    // (an unknown key is 401, SYSTEM_ERROR_UNKNOWN_USER's row: post-rel caller 400)
+    it(`${route}: denies an unknown apiKey with 401 (not admin, and not a valid user at all)`, (done) => {
+      request(url).post(route).set('X-CH-Key', UNKNOWN_KEY).send({}).expect(401, (err, res) => {
         if (err) return done(err);
         if (res.body.code !== 'SYSTEM_ERROR_UNKNOWN_USER') {
           return done(new Error(`expected SYSTEM_ERROR_UNKNOWN_USER for an unknown key on ${route}, got: ${JSON.stringify(res.body)}`));

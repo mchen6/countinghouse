@@ -254,6 +254,9 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
       }
       const over = await complete(KEY_A, 'colours_paint', 'colour', 'r');
       assert.match(over.error && over.error.message, /rate limit/, JSON.stringify(over));
+      // (its data as every rate-limit error's: the code, the kind and when
+      // to retry, the floor's 1 s; #482's high, round 3, 4)
+      assert.deepStrictEqual(over.error.data, {'countinghouse/code': 'RATE_LIMIT_EXCEEDED', 'countinghouse/kind': 'caller', 'countinghouse/retryAfter': 1});
       now += 1000;
       const again = await complete(KEY_A, 'colours_paint', 'colour', 'r');
       assert.ok(again.result != null, JSON.stringify(again));

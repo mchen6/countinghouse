@@ -60,7 +60,8 @@ const REFUSALS = {
 const CODES = {
   badInput: 'INPUT_DATA_VALIDATION_FAIL', extraInputKey: 'INPUT_DATA_VALIDATION_FAIL',
   badOutputType: 'OUTPUT_DATA_VALIDATION_FAIL', extraOutputKey: 'OUTPUT_DATA_VALIDATION_FAIL',
-  noOutput: 'OUTPUT_DATA_VALIDATION_FAIL', unknownAction: 'ACTION_NOT_FOUND', unknownService: 'SERVICE_NOT_FOUND'
+  // (a missing service answers as a missing action: post-rel caller 400)
+  noOutput: 'OUTPUT_DATA_VALIDATION_FAIL', unknownAction: 'ACTION_NOT_FOUND', unknownService: 'ACTION_NOT_FOUND'
 };
 
 // Single-thread mode's answer as worker mode gives it: an error that crosses
@@ -129,9 +130,10 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
     it('a service or action named like an Object.prototype member is not found, and nothing runs', async () => {
       for (const name of ['constructor', '__proto__', 'toString']) {
         const action = await invoke(name, {n: 'not an integer'});
-        assert.deepStrictEqual([action.status, action.body.code], [500, 'ACTION_NOT_FOUND'], `action ${name}: ${JSON.stringify(action.body)}`);
+        assert.deepStrictEqual([action.status, action.body.code], [404, 'ACTION_NOT_FOUND'], `action ${name}: ${JSON.stringify(action.body)}`);
         const service = await invoke('take', {n: 'not an integer'}, name);
-        assert.deepStrictEqual([service.status, service.body.code], [500, 'SERVICE_NOT_FOUND'], `service ${name}: ${JSON.stringify(service.body)}`);
+        // (a missing service answers as a missing action: post-rel caller 400)
+        assert.deepStrictEqual([service.status, service.body.code], [404, 'ACTION_NOT_FOUND'], `service ${name}: ${JSON.stringify(service.body)}`);
       }
       assert.deepStrictEqual(await count(), {takes: 0, tampered: false});
     });

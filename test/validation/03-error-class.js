@@ -56,9 +56,14 @@ describe('validation 03: CountinghouseError (logger-design §5.1)', () => {
     assert.deepStrictEqual([restarting.kind, restarting.retryable, restarting.httpStatus], ['runtime', true, 500]);
   });
 
-  it('gives a code the catalogue does not know kind module, status 500, mcpCode null, and its code as its message', () => {
+  // (#482's high, 4: a runtime-origin error with no catalogue code is the
+  // runtime's; a module's own code is kind module only on a module's error,
+  // CountinghouseError.moduleOwn, origin module)
+  it('gives a code the catalogue does not know kind runtime on a runtime error (module on a module\'s), status 500, mcpCode null, and its code as its message', () => {
     const e = new CountinghouseError('MY_MODULE_SPECIFIC_CODE');
-    assert.deepStrictEqual([e.kind, e.retryable, e.httpStatus, e.mcpCode, e.message], ['module', false, 500, null, 'MY_MODULE_SPECIFIC_CODE']);
+    assert.deepStrictEqual([e.kind, e.retryable, e.httpStatus, e.mcpCode, e.message], ['runtime', false, 500, null, 'MY_MODULE_SPECIFIC_CODE']);
+    const own = CountinghouseError.moduleOwn('MY_MODULE_SPECIFIC_CODE', 'm', null, 'probe');
+    assert.deepStrictEqual([own.origin, own.kind, own.httpStatus], ['module', 'module', 500]);
   });
 
   it('create(code, {message, details, cause}) carries them, with the catalogue text when no message is given', () => {

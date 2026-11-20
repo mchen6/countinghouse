@@ -29,6 +29,27 @@ describe('task-augmented tools/call: counting and the receipt', () => {
     });
   });
 
+  // F2-2: a pass that ends with no form shown (the run starts again), or a
+  // task cancelled during its asking pass, closes its usage call: one Out
+  // record, unbilled, and nothing left open for it
+  it('a pass that ended with no form shown, or cancelled while asking, closes its usage call', () => {
+    for (const outcome of ['unavailable', 'cancelled']) {
+      const extra = hooks.start(job(SCENARIO));
+      t += 10;
+      hooks.ended(job(SCENARIO), {extra}, outcome);
+      const outs = u.records().filter((r) => r.call === extra.usageCall && r.outcome != null);
+      assert.strictEqual(outs.length, 1, JSON.stringify(u.records()));
+      assert.strictEqual(outs[0].outcome, outcome);
+      assert.ok(!('round' in outs[0]), 'no round: the user was asked nothing');
+      // a pass, never a call (and never a question put to the user)
+      // (as the reader gives it to the aggregate: lib/usage/read.js normalise)
+      if (outcome === 'unavailable') assert.strictEqual(require('../../lib/usage/aggregate').isPass(require('../../lib/usage/read').normalise(outs[0])), true);
+      // closed: its run is gone, so a later completion of it records nothing
+      assert.strictEqual(hooks.complete(job(SCENARIO), {output: {}}, {extra}), null);
+    }
+    assert.strictEqual(u.inFlight(), 0, 'nothing left open');
+  });
+
   it('the start hook mints a call in this process, with the pack, the tool and the opaque caller', () => {
     const extra = hooks.start(job(SCENARIO));
     assert.ok(Number.isInteger(extra.usageCall));

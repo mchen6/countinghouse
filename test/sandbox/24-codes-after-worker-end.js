@@ -58,9 +58,12 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
       if (base != null) fs.rmSync(base, {recursive: true, force: true});
     });
 
-    it('a device that never existed is DEVICE_NOT_FOUND', async () => {
+    // (post-rel caller 400: REST's one answer for a device the caller can't
+    // use, 404; a module that is down still says why, below)
+    it('a device that never existed is MODULE_NOT_LISTED, 404', async () => {
       const r = await invoke(PORT, deviceIDForName('never-loaded-anywhere'));
-      assert.strictEqual(codeOf(r), 'DEVICE_NOT_FOUND', JSON.stringify(r.body));
+      assert.strictEqual(codeOf(r), 'MODULE_NOT_LISTED', JSON.stringify(r.body));
+      assert.strictEqual(r.status, 404);
     });
 
     it('after an unload, a request is MODULE_UNLOADED', async () => {
@@ -176,11 +179,11 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
       assert.strictEqual(codeOf(await invokeAs(OWNER, DEVICE)), 'MODULE_UNLOADED');
     });
 
-    it('a key with no grant gets USER_HAS_NO_DEVICE, the same as for a device that never existed', async () => {
+    it('a key with no grant gets the same one answer for an unloaded device as for one that never existed', async () => {
       const unloaded = await invokeAs(OTHER, DEVICE);
       const never = await invokeAs(OTHER, deviceIDForName('never-loaded-anywhere'));
-      assert.strictEqual(codeOf(unloaded), 'USER_HAS_NO_DEVICE', JSON.stringify(unloaded.body));
-      assert.strictEqual(codeOf(never), 'USER_HAS_NO_DEVICE', JSON.stringify(never.body));
+      assert.strictEqual(codeOf(unloaded), 'MODULE_NOT_LISTED', JSON.stringify(unloaded.body));
+      assert.deepStrictEqual([unloaded.status, unloaded.body], [never.status, never.body]);
     });
   });
 

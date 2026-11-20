@@ -339,7 +339,7 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     const sent = [];
     const dm = {deviceMap: {'d-400': {deviceList: {'d-400': JSON.parse(JSON.stringify(spec))}}}, ensureDeviceState: (id) => sent.push(id), discoveredTag: (e) => e};
     const refused = await new Promise((resolve) => DeviceManager.prototype.invokeJobsNow.call(dm, 'd-400', 'urn:a:serviceID:s', 'stuck', {}, 'j1', (err) => resolve(err)));
-    assert.strictEqual(refused && refused.code, 'MODULE_NOT_LISTED');
+    assert.strictEqual(refused && refused.code, 'ACTION_NOT_FOUND');
     // the other service of the same short name, and a listed action: not refused
     DeviceManager.prototype.invokeJobsNow.call(dm, 'd-400', 'urn:b:serviceID:s', 'stuck', {}, 'j2', () => sent.push('refused'));
     DeviceManager.prototype.invokeJobsNow.call(dm, 'd-400', 'urn:a:serviceID:s', 'fine', {}, 'j3', () => sent.push('refused'));
@@ -526,24 +526,24 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     assert.deepStrictEqual(at('s', 'a', 'input', 'properties', 'x', 'description'), {value: 'd '});
     for (const left of [['s', 'a', 'input', 'x-note', 'a'], ['s', 'a', 'input', 'examples', '0'], ['s', 'a', 'input', 'properties', 'x', 'description', '0'],
       ['$defs', 'Shared'], ['$defs'], ['s', 'a', 'nothing']]) {
-      assert.deepStrictEqual(at(...left), {refused: 'POINTER_DEREF_ERROR'}, left.join('/'));
+      assert.deepStrictEqual(at(...left), {refused: 'SCHEMA_PATH_NOT_FOUND'}, left.join('/'));
     }
-    assert.deepStrictEqual(at('s', 'b', 'input'), {refused: 'MODULE_NOT_LISTED'});
-    assert.deepStrictEqual(at('s', 'b', 'input', 'description'), {refused: 'MODULE_NOT_LISTED'});
+    assert.deepStrictEqual(at('s', 'b', 'input'), {refused: 'SCHEMA_PATH_NOT_FOUND'});
+    assert.deepStrictEqual(at('s', 'b', 'input', 'description'), {refused: 'SCHEMA_PATH_NOT_FOUND'});
     assert.deepStrictEqual(at(), {value: {s: {a: {input: {type: 'object', properties: {x: shared}}, output: {type: 'object'}}, r: {input: {type: 'object', description: 'R only'}}}}},
       'the document: only the usable ones');
-    assert.deepStrictEqual(at('s', 'b'), {refused: 'POINTER_DEREF_ERROR'}, 'nothing shown there: as a path that names nothing');
+    assert.deepStrictEqual(at('s', 'b'), {refused: 'SCHEMA_PATH_NOT_FOUND'}, 'nothing shown there: as a path that names nothing');
     assert.deepStrictEqual(at('s', 'r', 'input'), {value: {type: 'object', description: 'R only'}}, 'an action that is no tool, decided usable');
     // a tool whose output is unusable is shown nowhere, its input neither (as tools/list leaves it out)
     const both = {s: {c: {input: {type: 'object'}, output: {type: 'object', properties: {k: {enum: [`x${ZWSP}`]}}}}}};
     const cSpec = {device: {serviceList: {[svc]: {actionList: [{name: 'c', description: 'C.', input: {schema: '/s/c/input'}, output: {schema: '/s/c/output'}}]}}}};
-    assert.deepStrictEqual(answer(both, cSpec, ['s', 'c', 'input'], null), {refused: 'MODULE_NOT_LISTED'});
+    assert.deepStrictEqual(answer(both, cSpec, ['s', 'c', 'input'], null), {refused: 'SCHEMA_PATH_NOT_FOUND'});
     // (the reviewer's ruling: exactly as tools/list) an output that is no
     // object is not advertised, the tool still listed with its input; an
     // input that names nothing is advertised as the default schema
     const loose = {s: {c: {input: {type: 'object', description: 'In.'}, output: true}}};
     assert.deepStrictEqual(answer(loose, cSpec, ['s', 'c', 'input'], null), {value: {type: 'object', description: 'In.'}});
-    assert.deepStrictEqual(answer(loose, cSpec, ['s', 'c', 'output'], null), {refused: 'POINTER_DEREF_ERROR'});
+    assert.deepStrictEqual(answer(loose, cSpec, ['s', 'c', 'output'], null), {refused: 'SCHEMA_PATH_NOT_FOUND'});
     assert.deepStrictEqual(answer(loose, cSpec, ['s', 'c'], null), {value: {input: {type: 'object', description: 'In.'}}});
     assert.deepStrictEqual(answer({s: {c: {output: {type: 'object'}}}}, cSpec, ['s', 'c', 'input'], null), {value: {type: 'object', properties: {}}});
     // an answer is a copy: changing it changes nothing kept
@@ -752,10 +752,18 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
         assert.match(JSON.stringify(called.result), /MODULE_NOT_LISTED/, JSON.stringify(called).slice(0, 600));
         const devices = (await request(at).get('/device-list').set('X-CH-Key', KEY)).body;
         const device = devices.find((d) => d.device != null && d.device.friendlyName === 'hidden-text');
+        // (post-rel caller 400) a hidden action answers as a missing one, byte
+        // for byte: invoke-action's ACTION_NOT_FOUND 404; add-job, which
+        // single-thread mode refuses whole, the same refusal for both
         for (const route of ['invoke-action', 'add-job']) {
-          const res = await request(at).post(`/devices/${device.device.deviceID}/${route}`).set('X-CH-Key', KEY)
-            .send({serviceID: 'urn:countinghouse-test:serviceID:textService', actionName: 'stuck', input: {}});
-          assert.strictEqual(res.body && res.body.code, 'MODULE_NOT_LISTED', `${route}: ${JSON.stringify(res.body).slice(0, 400)}`);
+          const sent = async (actionName) => {
+            const res = await request(at).post(`/devices/${device.device.deviceID}/${route}`).set('X-CH-Key', KEY)
+              .send({serviceID: 'urn:countinghouse-test:serviceID:textService', actionName, input: {}});
+            return JSON.stringify({status: res.status, body: res.body});
+          };
+          const hidden = await sent('stuck');
+          assert.strictEqual(hidden, await sent('no-such-action'), route);
+          if (route === 'invoke-action') assert.match(hidden, /"status":404,"body":\{"code":"ACTION_NOT_FOUND"/);
         }
         const got = (await request(at).get(`/devices/${device.device.deviceID}/get-spec`).set('X-CH-Key', KEY)).body;
         const shownNames = (got && got.device && got.device.serviceList ? got.device.serviceList['urn:countinghouse-test:serviceID:textService'].actionList : []).map((a) => a.name);
@@ -766,27 +774,42 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     });
 
     // #400: the load's one decision on the action, so the HTTP routes refuse
-    // it as tools/call does (and a listed action of the same module runs)
-    it('HTTP invoke-action and add-job refuse a tool its declared text leaves unusable', async () => {
+    // it as tools/call does (and a listed action of the same module runs);
+    // post-rel caller 400: as a missing action, byte for byte, invoke-action
+    // at once, add-job at the run (its add accepted, its run failing the same)
+    it('HTTP invoke-action and add-job refuse a tool its declared text leaves unusable, as a missing action', async () => {
       const list = (await request(`http://127.0.0.1:${PORT}`).get('/device-list').set('X-CH-Key', KEY)).body;
       const device = list.find((d) => d.device != null && d.device.friendlyName === 'hidden-text');
       assert.ok(device != null && typeof(device.device.deviceID) === 'string', JSON.stringify(list).slice(0, 800));
       const serviceID = 'urn:countinghouse-test:serviceID:textService';
-      for (const route of ['invoke-action', 'add-job']) {
-        for (const actionName of ['stuck', 'outStuck']) {
-          const res = await request(`http://127.0.0.1:${PORT}`).post(`/devices/${device.device.deviceID}/${route}`).set('X-CH-Key', KEY)
-            .send({serviceID, actionName, input: {}});
-          assert.strictEqual(res.body && res.body.code, 'MODULE_NOT_LISTED', `${route} ${actionName}: ${res.status} ${JSON.stringify(res.body).slice(0, 400)}${log()}`);
+      const at = `http://127.0.0.1:${PORT}`;
+      const post = (route, body) => request(at).post(`/devices/${device.device.deviceID}/${route}`).set('X-CH-Key', KEY).send(body);
+      const invoked = async (actionName) => { const r = await post('invoke-action', {serviceID, actionName, input: {}}); return JSON.stringify({status: r.status, body: r.body}); };
+      const missing = await invoked('no-such-action');
+      assert.match(missing, /^\{"status":404,"body":\{"code":"ACTION_NOT_FOUND"/, missing);
+      for (const actionName of ['stuck', 'outStuck']) assert.strictEqual(await invoked(actionName), missing, `invoke-action ${actionName}${log()}`);
+      // add-job: each accepted; each run fails, with the same reason
+      const failedReason = async (actionName) => {
+        const added = await post('add-job', {serviceID, actionName, input: {}, opts: {name: `probe-${actionName}`}});
+        assert.strictEqual(added.status, 200, `add-job ${actionName}: ${JSON.stringify(added.body)}${log()}`);
+        for (let i = 0; i < 100; i++) {
+          const got = (await post('get-job', {id: added.body.id})).body;
+          if (got != null && got.state === 'failed') return got.job.failedReason;
+          await new Promise((r) => setTimeout(r, 100));
         }
-      }
+        throw new Error(`add-job ${actionName}: its run never failed${log()}`);
+      };
+      const missingRun = await failedReason('no-such-action');
+      assert.match(missingRun, /^ACTION_NOT_FOUND/, missingRun);
+      for (const actionName of ['stuck', 'outStuck']) assert.strictEqual(await failedReason(actionName), missingRun, `add-job ${actionName}`);
       // nor its schema (the schema route answers only what tools/list
       // advertises): its own is refused; a parent's or the root's holds only
       // the usable ones, cleaned
       const schemaAt = async (at) => (await request(`http://127.0.0.1:${PORT}`).get(`/devices/${device.device.deviceID}/schema${at}`).set('X-CH-Key', KEY)).body;
       for (const at of ['/textService/stuck/input', '/textService/stuck/input/properties', '/textService/stuck/input/properties/mode/enum']) {
-        assert.strictEqual((await schemaAt(at) || {}).code, 'MODULE_NOT_LISTED', at);
+        assert.strictEqual((await schemaAt(at) || {}).code, 'SCHEMA_PATH_NOT_FOUND', at);
       }
-      assert.strictEqual((await schemaAt('/textService/stuck') || {}).code, 'POINTER_DEREF_ERROR', 'nothing shown there');
+      assert.strictEqual((await schemaAt('/textService/stuck') || {}).code, 'SCHEMA_PATH_NOT_FOUND', 'nothing shown there');
       for (const at of ['/textService', '/']) {
         const body = await schemaAt(at);
         const text = JSON.stringify(body);
@@ -799,7 +822,7 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       // what tools/list leaves out, a character of a string, and a path that
       // is no declared schema name nothing
       for (const at of ['/textService/show/input/properties/mood/default', '/textService/show/input/properties/what/description/0', '/textService/show%2Finput', '/type']) {
-        assert.strictEqual((await schemaAt(at) || {}).code, 'POINTER_DEREF_ERROR', at);
+        assert.strictEqual((await schemaAt(at) || {}).code, 'SCHEMA_PATH_NOT_FOUND', at);
       }
       // a usable one is sent as tools/list shows it
       const listed = (await modern('tools/list')).result.tools.find((t) => /textservice_show$/.test(t.name));
