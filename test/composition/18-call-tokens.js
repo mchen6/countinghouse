@@ -1548,6 +1548,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
   });
 
   describe('a job history record\'s owner', () => {
+    // (the history's key is this server's: B-j1)
+    require('../helpers/server-id').useServerId();
     it('(#163-2) is the caller\'s opaque id, never the key or a hash of it; the owner still reads the record', (done) => {
       const identity = require('../../lib/identity');
       if (!identity.ready()) {
