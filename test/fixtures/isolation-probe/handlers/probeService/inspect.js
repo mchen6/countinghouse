@@ -866,6 +866,36 @@ const STEPS = {
       out.push(names.every((n) => /^(\/app(\/|$)|[A-Z]:\\app(\\|$)|node:|countinghouse:|$)/.test(n)) ? 'callsites-virtual' : `callsites-host`);
     } else out.push('callsites-virtual');
     try { module.constructor._initPaths(); out.push('initPaths'); } catch (e) { out.push(`initPaths-${e.name}`); }
+    // (the round's second medium: Node 22's alias; Node's counts; an eval's
+    // frame of the module's own; frames handed back to the formatter)
+    if (typeof(util.getCallSite) === 'function') {
+      const names = util.getCallSite().map((c) => String(c.scriptName));
+      out.push(names.every((n) => /^(\/app(\/|$)|[A-Z]:\\app(\\|$)|node:|countinghouse:|$)/.test(n)) ? 'alias-virtual' : 'alias-host');
+    } else out.push('alias-virtual');
+    if (typeof(util.getCallSites) === 'function') {
+      let counts;
+      try { counts = `${util.getCallSites(200).length <= 200} ${util.getCallSites(2).length <= 2} ${util.getCallSites({}).length <= 10}`; } catch (e) { counts = `threw ${e.code}`; }
+      out.push(counts === 'true true true' ? 'counts' : `counts(${counts})`);
+    } else out.push('counts');
+    const saved2 = Error.prepareStackTrace;
+    try {
+      let evalFn = null;
+      let kept = null;
+      Error.prepareStackTrace = (e, f) => {
+        kept = f;
+        for (const site of f) if (site.isEval() && site.getFileName() == null && evalFn == null) evalFn = site.getFunction();
+        return 'x';
+      };
+      new Function('return new Error("e").stack')();
+      out.push(evalFn != null ? 'eval-own' : 'eval-none');
+      // (frames kept from one stack, handed to the formatter again with a
+      // function of the module's assigned: read as frames, never wrapped twice)
+      Error.prepareStackTrace = (e, f) => f.map((site) => String(site.getFileName())).join(',');
+      const fmt = Error.prepareStackTrace;
+      let text;
+      try { text = String(fmt(new Error('again'), kept)); } catch (e) { text = `threw ${e.name}`; }
+      out.push(/^threw/.test(text) || text === '' ? `rewrapped(${text.slice(0, 60)})` : 'rewrapped');
+    } finally { Error.prepareStackTrace = saved2; }
     return out.join(' ');
   },
   // (C-lows d: process.argv as module code reads it under enforce)
