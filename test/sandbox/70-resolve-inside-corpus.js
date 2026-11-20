@@ -8,9 +8,13 @@
 // own (packageResolve and packageImportsResolve, from
 // lib/internal/modules/esm/resolve.js, in a child of this very Node binary
 // with --expose-internals): the answers must be the same file URL, or the
-// same refusal. The only differences allowed are the sandbox refusing what
-// Node answers outside the package (by design: Node would then stat outside
-// the module's root), listed below by case.
+// same refusal. The only difference allowed is the sandbox refusing a bare
+// request Node answers with a file outside the package it names (by
+// design: Node would then stat outside the module's root) -- judged by
+// case from the package's own directory -- and the cases marked stricter
+// below. The packages sit at their real names (scoped ones too), at more
+// than one node_modules level, with a self-reference, a decoy and odd
+// "main"s; findPackageJSON's package for a bare name is compared too.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -64,7 +68,12 @@ const LEGACY = [
   [{}, ['index.js']],
   [{main: 'missing.js'}, ['index.json']],
   [{main: 'missing.js'}, []],
-  [{main: './lib/../lib/main.js'}, ['lib/main.js']]
+  [{main: './lib/../lib/main.js'}, ['lib/main.js']],
+  // ("main" joined as a path, as Node joins it: a literal '%20', a
+  // backslash, a '?' are file name characters)
+  [{main: 'lib/a%20b.js'}, ['lib/a%20b.js', 'index.js']],
+  [{main: 'lib\\main.js'}, ['lib/main.js', 'index.js']],
+  [{main: 'lib/q.js?x'}, ['lib/q.js', 'index.js']]
 ];
 
 // the subpaths asked of an "exports" map: '.', each plain key, each
@@ -103,9 +112,8 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
     const parent = path.join(root, 'index.js');
     // (a package an "imports" bare target names)
     write(path.join(root, 'node_modules', 'dep-inside', 'package.json'), JSON.stringify({name: 'dep-inside', exports: {'./x': './x.js'}}));
-    const exportsMaps = CORPUS.exports.map((e) => [`${e.name}@${e.version}`, e.exports]).concat(SYNTH_EXPORTS.map((e, i) => [`synthetic exports ${i}`, e]));
-    exportsMaps.forEach(([label, exports], i) => {
-      const name = `p${i}`;
+    const exportsMaps = CORPUS.exports.map((e) => [`${e.name}@${e.version}`, e.exports, e.name]).concat(SYNTH_EXPORTS.map((e, i) => [`synthetic exports ${i}`, e, `p${i}`]));
+    exportsMaps.forEach(([label, exports, name]) => {
       write(path.join(root, 'node_modules', name, 'package.json'), JSON.stringify({name, exports}));
       for (const sub of subpathsOf(exports)) cases.push({id: `${label} ${sub}`, spec: sub === '.' ? name : `${name}/${sub.slice(2)}`, parent});
     });
@@ -126,6 +134,32 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
     // (a subpath with no "exports" that climbs into another package: Node
     // answers it, the sandbox refuses it -- the F2 shape)
     cases.push({id: 'legacy climbing subpath', spec: 'lm0/../lm1/lib/main.js', parent, stricter: true});
+    // (nested node_modules: the nearer level wins, a deeper parent walks up,
+    // a scoped package at each level)
+    for (const [dir, tag] of [[path.join(root, 'sub'), 'near'], [root, 'far']]) {
+      write(path.join(dir, 'node_modules', 'nest', 'package.json'), JSON.stringify({name: 'nest', exports: {'.': `./${tag}.js`, './x': `./x-${tag}.js`}}));
+      write(path.join(dir, 'node_modules', '@sc', 'nest', 'package.json'), JSON.stringify({name: '@sc/nest', exports: {'./*': `./${tag}/*.js`}}));
+    }
+    write(path.join(root, 'node_modules', 'onlyfar', 'package.json'), JSON.stringify({name: 'onlyfar', exports: './only.js'}));
+    const deep = path.join(root, 'sub', 'deep', 'er', 'x.js');
+    write(deep, '');
+    for (const spec of ['nest', 'nest/x', '@sc/nest/a', '@sc/nest/a/b', 'onlyfar', 'nest/missing']) {
+      cases.push({id: `nested from deep ${spec}`, spec, parent: deep});
+      cases.push({id: `nested from root ${spec}`, spec, parent});
+    }
+    // (a self-reference: a package's own name from inside it, through its
+    // "exports")
+    const selfDir = path.join(root, 'selfpkg');
+    write(path.join(selfDir, 'package.json'), JSON.stringify({name: 'selfpkg', exports: {'.': './main.js', './feature/*': './f/*.js'}}));
+    write(path.join(selfDir, 'lib', 'x.js'), '');
+    for (const spec of ['selfpkg', 'selfpkg/feature/a', 'selfpkg/nope']) cases.push({id: `self ${spec}`, spec, parent: path.join(selfDir, 'lib', 'x.js')});
+    // (a decoy in node_modules/node_modules: the sandbox refuses a package
+    // with one; Node, from the parent, resolves the real one)
+    write(path.join(root, 'node_modules', 'decoyed', 'package.json'), JSON.stringify({name: 'decoyed', exports: './real.js'}));
+    write(path.join(root, 'node_modules', 'node_modules', 'decoyed', 'package.json'), JSON.stringify({name: 'decoyed', exports: './decoy.js'}));
+    cases.push({id: 'decoy', spec: 'decoyed', parent, stricter: true});
+    // (a scope with an empty, '.' or '..' name part)
+    for (const spec of ['@sc/..', '@sc/.', '@sc/']) cases.push({id: `scope part ${spec}`, spec, parent, stricter: true});
   });
   after(() => { if (root != null) remove(root); });
 
@@ -135,12 +169,17 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
       const {pathToFileURL} = require('url');
       const cases = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
       const conditions = new Set(JSON.parse(process.argv[2]));
+      const fpj = require('module').findPackageJSON;
       const out = cases.map((c) => {
+        let answer;
         try {
           const base = pathToFileURL(c.parent);
           const u = c.spec.startsWith('#') ? packageImportsResolve(c.spec, base, conditions) : packageResolve(c.spec, base, conditions);
-          return String(u.href || u);
-        } catch (e) { return 'THROW ' + (e && e.code); }
+          answer = String(u.href || u);
+        } catch (e) { answer = 'THROW ' + (e && e.code); }
+        let pj = null;
+        if (!c.spec.startsWith('#') && typeof(fpj) === 'function') { try { pj = fpj(c.spec, pathToFileURL(c.parent).href) || null; } catch (e) { pj = 'THROW'; } }
+        return [answer, pj];
       });
       process.stdout.write(JSON.stringify(out));`;
     const casesFile = path.join(root, '.cases.json');
@@ -157,6 +196,16 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
     isBuiltin: Module.isBuiltin
   });
 
+  it('a scope with an empty, \'.\' or \'..\' name part names no package, and no findPackageJSON base above the root', () => {
+    const r = resolver();
+    const parent = path.join(root, 'index.js');
+    fs.mkdirSync(path.join(root, 'node_modules', '@types'), {recursive: true});
+    for (const spec of ['@x/..', '@types/.', '@types/..', '@x/', '@x/../y']) {
+      assert.strictEqual(r.packageDir(spec, parent), null, spec);
+      assert.strictEqual(r.resolve(spec, parent, () => true).refuse, true, spec);
+    }
+  });
+
   for (const [label, conditions] of CONDITIONS) {
     it(`every case answers as Node does, conditions ${label}`, () => {
       const node = nodeAnswers(conditions);
@@ -169,7 +218,7 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
         // (Node's answer as its resolve finishes it: a file URL that names no
         // path -- an invalid escape -- is Node's own throw, in
         // finalizeResolution's fileURLToPath)
-        let theirs = node[i];
+        let theirs = node[i][0];
         if (theirs.startsWith('file:')) { try { url.fileURLToPath(theirs); } catch (e) { theirs = `THROW ${e.code}`; } }
         if (theirs.startsWith('THROW ') ? mine === 'REFUSE' : mine === theirs) return;
         // (the one direction allowed: the sandbox refusing what Node
@@ -185,6 +234,20 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
       });
       assert.deepStrictEqual(mismatches, [], `${mismatches.length} of ${cases.length} cases differ`);
       assert.ok(cases.length > 400, `${cases.length} cases`);
+      // (findPackageJSON: the package the sandbox finds for a bare name is
+      // the one Node's findPackageJSON names, where Node names one inside
+      // the root; the sandbox never answers one Node doesn't)
+      const fpjMismatches = [];
+      cases.forEach((c, i) => {
+        if (c.spec.startsWith('#') || c.stricter === true) return;
+        const theirsPj = node[i][1];
+        const mine = r.packageDir(c.spec, c.parent);
+        const minePj = mine == null ? null : path.join(mine.pkgDir, 'package.json');
+        const inRoot = typeof(theirsPj) === 'string' && theirsPj !== 'THROW' && (theirsPj.startsWith(`${root}${path.sep}`));
+        if (minePj == null ? !inRoot : minePj === theirsPj) return;
+        fpjMismatches.push(`${c.id}: Node ${theirsPj}, sandbox ${minePj}`);
+      });
+      assert.deepStrictEqual(fpjMismatches, []);
     });
   }
 });
