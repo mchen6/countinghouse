@@ -666,7 +666,11 @@ says how to write a module for this.
   `--storePath` in the single-identity profile; mode 0600), so two runtimes
   on one Redis no longer take each other's jobs. It does not follow the
   identity secret: rotating the secret keeps the queue. A data directory
-  restored without its `.server-id` is a new server, with a new queue. Jobs
+  restored without its `.server-id` is a new server, with a new queue; so
+  is every start on a data directory that does not persist (a container
+  with no volume for it), even with the secret given in
+  `COUNTINGHOUSE_IDENTITY_SECRET`: keep `--moduleDataPath` (`--storePath`
+  in the single-identity profile) on storage that outlives a restart. Jobs
   and schedulers queued before the upgrade, under the old shared
   `{cdifJob}`, are not moved: the start logs how many, once, and leaves them;
   re-create any you still want once no older runtime serves that prefix.
@@ -827,7 +831,7 @@ examples show the shape.
   them, since every module's keys live in its own namespace (`m:` plus the
   URI-encoded module name), and new records name their owner by the caller id, but the old
   lists stay until removed:
-  `redis-cli -n 5 --scan --pattern 'jobinfo:*' | grep -v '^jobinfo:{chj-' | xargs -r redis-cli -n 5 del`
+  `redis-cli -n 5 --scan --pattern 'jobinfo:*' | grep -v '^jobinfo:{chj-' | while IFS= read -r k; do redis-cli -n 5 del "$k"; done`
   (8.0's own lists, `jobinfo:{chj-<server id>}:<name>`, are kept; a 7.x
   job's history is gone).
 - A module still reads files and environment outside its namespace under
