@@ -10,6 +10,13 @@ the auth config.
 
 ## Unreleased
 
+### Changed — the usage report counts a cancelled call apart: `profile.cancelled`
+
+A call cancelled while it ran (M19) was counted among the report's errors.
+It is no error: `countinghouse_usage_report` (and `countinghouse-usage`)
+now count such calls in `profile.cancelled`, once each by call id however
+many server calls they made, and leave them out of `profile.errors`.
+
 ### Removed — the pack form, `--packsRoot`, a ceiling's `packs`, `fallbackEnv`
 
 Module-level configuration's cleanup (#413 rev 3, section 16, rule 7):
