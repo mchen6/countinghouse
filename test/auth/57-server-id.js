@@ -78,5 +78,27 @@ describe('auth 57: the server id (B-j1)', () => {
     refused(bad, /must hold the server id as 16 hex characters/);
   });
 
+  it('two starts making it at once keep one file: the one that lost takes the winner\'s id, and leaves no temporary file', () => {
+    const privateFile = require('../../lib/private-file');
+    const dir = tmp.mkdtemp('ch-auth-57-');
+    const opts = {moduleDataPath: dir};
+    // the winner's file lands between this start's read (none) and its write
+    const winner = crypto.randomBytes(8).toString('hex');
+    const real = privateFile.createPrivate;
+    privateFile.createPrivate = (d, file, content, spec, flag) => {
+      privateFile.createPrivate = real;
+      fs.writeFileSync(file, winner, {mode: 0o600});
+      return real(d, file, content, spec, flag);
+    };
+    try {
+      serverId.initSync(opts);
+    } finally {
+      privateFile.createPrivate = real;
+    }
+    assert.strictEqual(serverId.get(), winner);
+    assert.strictEqual(fs.readFileSync(path.join(dir, '.server-id'), 'utf8'), winner);
+    assert.deepStrictEqual(fs.readdirSync(dir), ['.server-id']);
+  });
+
   tmp.hooks();
 });
