@@ -31,10 +31,10 @@ describe('single-thread 03: require.resolve of an /app path', function() {
       {outcome: 'allowed', code: null, result: path.join(PROBE, 'handlers', 'probeService', 'attempt.js')});
   });
 
-  // The facade does not map an /app path for createRequire(__filename)
-  // (measured on 24.21 with Node's own hook): the same answer on every
-  // version, so not a gap the shim leaves.
+  // createRequire(__filename), __filename virtual: the facade maps it
+  // through the calling module's own root (C-compat), so its resolve
+  // answers the module's own file, the same on every version.
   it('createRequire().resolve gives the same answer on every version', async () => {
-    assert.deepStrictEqual(await resolve('createRequireResolve'), {outcome: 'allowed', code: 'MODULE_NOT_FOUND', result: null});
+    assert.deepStrictEqual(await resolve('createRequireResolve'), {outcome: 'allowed', code: null, result: path.join(PROBE, 'handlers', 'probeService', 'attempt.js')});
   });
 });
