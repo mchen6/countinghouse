@@ -22,8 +22,9 @@ async function setup(mode) {
   const namespace = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp,
     declared: [], protectedPaths: []});
   await namespace.prepare();
-  const broker = new FsBroker({name: 'm', mode: mode, namespace: namespace, cwd: '/'});
-  return {base, dirs, broker, done: () => broker.closeAll().then(() => fs.rmSync(base, {recursive: true, force: true}))};
+  const reports = [];
+  const broker = new FsBroker({name: 'm', mode: mode, namespace: namespace, cwd: '/', report: (rule, target) => reports.push(`${rule} ${target}`)});
+  return {base, dirs, broker, reports, done: () => broker.closeAll().then(() => fs.rmSync(base, {recursive: true, force: true}))};
 }
 
 function isLink(p) {
@@ -76,6 +77,13 @@ describe('fs-broker 20: a symlink is decided by its real target, and takes no ".
         await t.broker.handle('rename', ['/data/a/b', '/data/b']);
         assert.strictEqual(fs.readFileSync(path.join(t.dirs.data, 'b', 'l1'), 'utf8'), 'ok', mode);
         assert.strictEqual(fs.readFileSync(path.join(t.dirs.data, 'b', 'l2', 'f'), 'utf8'), 'ok', mode);
+        // (the dangling l3: made, moved with its directory, and once what it
+        // names is created there it leads inside, to that)
+        assert.strictEqual(fs.readlinkSync(path.join(t.dirs.data, 'b', 'l3')), 'missing/later', mode);
+        await t.broker.handle('mkdir', ['/data/b/missing']);
+        await t.broker.handle('writeFile', ['/data/b/missing/later', 'later']);
+        assert.strictEqual(fs.readFileSync(path.join(t.dirs.data, 'b', 'l3'), 'utf8'), 'later', mode);
+        assert.strictEqual(fs.realpathSync(path.join(t.dirs.data, 'b', 'l3')), path.join(fs.realpathSync(t.dirs.data), 'b', 'missing', 'later'), mode);
       } finally { await t.done(); }
     }
   });
@@ -91,8 +99,54 @@ describe('fs-broker 20: a symlink is decided by its real target, and takes no ".
         await assert.rejects(t.broker.handle('symlink', ['abs/secret', '/data/l1']), eperm, mode);
         await assert.rejects(t.broker.handle('symlink', ['a/up', '/data/l2']), eperm, mode);
         await assert.rejects(t.broker.handle('symlink', ['sub/up/f', '/data/l3']), eperm, mode);
+        // (and with nothing there: the rule refuses where the target leads,
+        // whether or not anything is at the end of it)
+        assert.strictEqual(fs.existsSync(path.join(t.base, 'g')), false);
+        await assert.rejects(t.broker.handle('symlink', ['sub/up/g', '/data/l3b']), eperm, mode);
         await t.broker.handle('symlink', ['a', '/data/l4']);              // a -> sub: inside
       } finally { await t.done(); }
+    }
+  });
+
+  // (the FB1 follow-up, ruled 11-10: a link's own root is the one it really
+  // lands in -- checkHost's -- not the one its virtual path names; a
+  // host-made link between two declared roots, both ways)
+  it('a link\'s own root is where it really lands: through a host-made link from /data into /tmp\'s root, both ways', async () => {
+    for (const mode of ['audit', 'enforce']) {
+      const t = await setup(mode);
+      try {
+        fs.mkdirSync(path.join(t.dirs.tmp, 'sub'));
+        fs.writeFileSync(path.join(t.dirs.tmp, 'sub', 'f'), 'tmp');
+        fs.writeFileSync(path.join(t.dirs.data, 'f'), 'data');
+        fs.symlinkSync(path.join(t.dirs.tmp, 'sub'), path.join(t.dirs.data, 'hl'));    // host-made: /data/hl is in /tmp's root
+        fs.symlinkSync(t.dirs.data, path.join(t.dirs.tmp, 'sub', 'back'));           // host-made: back into /data's root
+        // a link placed at /data/hl/... lives in /tmp's root: one to a file
+        // beside it stays in its own root, and is made
+        await t.broker.handle('symlink', ['f', '/data/hl/l1']);
+        assert.strictEqual(fs.readFileSync(path.join(t.dirs.tmp, 'sub', 'l1'), 'utf8'), 'tmp', mode);
+        // one through 'back' leads into /data's root, not its own: refused
+        await assert.rejects(t.broker.handle('symlink', ['back/f', '/data/hl/l2']), eperm, mode);
+        assert.strictEqual(isLink(path.join(t.dirs.tmp, 'sub', 'l2')), false, mode);
+      } finally { await t.done(); }
+    }
+  });
+
+  // (the FB1 follow-up, ruled 11-10: an lstat the walk can't make, for
+  // another reason than ENOENT or ENOTDIR, keeps the refusal, but is
+  // reported with its errno under its own rule, so an operator can tell it
+  // from a link-rule violation)
+  it('an lstat the walk can\'t make (EACCES) is refused EPERM and reported as link-unreadable with its errno', async function() {
+    if (process.platform === 'win32' || process.getuid() === 0) return this.skip();
+    for (const mode of ['audit', 'enforce']) {
+      const t = await setup(mode);
+      const locked = path.join(t.dirs.data, 'locked');
+      try {
+        fs.mkdirSync(locked);
+        fs.writeFileSync(path.join(locked, 'x'), 'x');
+        fs.chmodSync(locked, 0);
+        await assert.rejects(t.broker.handle('symlink', ['locked/x', '/data/l']), eperm, mode);
+        assert.ok(t.reports.includes('link-unreadable /data/l EACCES'), `${mode}: ${t.reports.join(', ')}`);
+      } finally { fs.chmodSync(locked, 0o700); await t.done(); }
     }
   });
 

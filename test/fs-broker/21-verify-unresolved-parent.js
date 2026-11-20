@@ -57,6 +57,25 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
     }
   });
 
+  // (the FB2 follow-up, ruled 11-10: a creating open refused after it
+  // leaves no empty file behind -- removed only when this open made it)
+  it('a creating open refused after it leaves no file behind, in a read-only root or outside; an existing one is kept', async () => {
+    for (const [to, name] of [['ro', 'made-ro'], ['outside', 'made-out']]) {
+      const t = await setup('enforce', plantParent('late', to));
+      try {
+        await assert.rejects(t.broker.handle('open', [`/data/late/${name}`, 'w']), enoent(`/data/late/${name}`));
+        assert.strictEqual(fs.existsSync(path.join(t.dirs[to], name)), false, `${to}: the file the refused open made is gone`);
+      } finally { await t.done(); }
+    }
+    // (an 'a' open creates only when there is nothing: the existing file
+    // it found is no file of its making, and stays)
+    const t = await setup('enforce', plantParent('late', 'ro'));
+    try {
+      await assert.rejects(t.broker.handle('open', ['/data/late/config', 'a']), enoent('/data/late/config'));
+      assert.strictEqual(fs.readFileSync(path.join(t.dirs.ro, 'config'), 'utf8'), 'ro');
+    } finally { await t.done(); }
+  });
+
   it('a copyfile whose destination parent is created as a link to the outside is refused under enforce', async () => {
     const t = await setup('enforce', (syscall, host, dirs) => {
       if (syscall === 'copyfile' && path.basename(path.dirname(host)) === 'late') fs.symlinkSync(dirs.outside, path.dirname(host));
@@ -78,6 +97,32 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
       await t.broker.handle('close', [fd]);
       assert.ok(fs.existsSync(path.join(t.dirs.data, 'late', 'f')));
     } finally { await t.done(); }
+  });
+
+  // (the FB2 follow-up, ruled 11-10: the leaf a link inside the root is no
+  // escape -- the name and the descriptor compared as the same file, the
+  // link followed where it really leads -- and a leaf link leading out still
+  // is one)
+  it('a leaf that is a link to a file inside the root opens; one to a file outside is refused', async () => {
+    for (const [target, ok] of [['data', true], ['outside', false]]) {
+      const t = await setup('enforce', (syscall, host, dirs) => {
+        if (syscall === 'open' && path.basename(path.dirname(host)) === 'late') {
+          fs.mkdirSync(path.dirname(host));
+          const file = path.join(dirs[target], target === 'data' ? 'inside-file' : 'secret');
+          if (target === 'data') fs.writeFileSync(file, 'inside');
+          fs.symlinkSync(file, host);
+        }
+      });
+      try {
+        if (ok) {
+          const fd = await t.broker.handle('open', ['/data/late/leaf', 'r']);
+          await t.broker.handle('close', [fd]);
+          assert.ok(!t.reports.some((r) => r.startsWith('escape')), t.reports.join(', '));
+        } else {
+          await assert.rejects(t.broker.handle('open', ['/data/late/leaf', 'r']), enoent('/data/late/leaf'));
+        }
+      } finally { await t.done(); }
+    }
   });
 
   it('audit does not refuse it: the check after open is enforce-only, as before', async () => {
