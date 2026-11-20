@@ -108,17 +108,23 @@ describe('session-transport 02: the listener and the registry', function() {
       assert.strictEqual(dispatched.length, 0);
     });
 
-    it('evicts the OLDEST pre-auth connection when the 65th arrives, and closes one silent past its deadline', async() => {
+    // (F1-6: a full pre-auth pool refuses the NEW connection -- one in its
+    // handshake is never evicted by a flood; each still has its deadline)
+    it('refuses the 65th pre-auth connection, keeping every one before it, and closes one silent past its deadline', async() => {
       await start({listener: {preAuthMax: 64, preAuthDeadlineMs: 1500}});
       const conns = [];
       for (let i = 0; i < 64; i++) conns.push(await shim.connect(sock));
       await tick(50);
       const newest = await shim.connect(sock);
-      assert.ok(await until(() => conns[0].closed(), 500), 'the oldest is evicted');
-      assert.strictEqual(conns[1].closed(), false, 'only the oldest');
-      assert.strictEqual(newest.closed(), false, 'the newest is kept');
-      assert.ok(await until(() => newest.closed(), 3000), 'silent past the deadline: closed');
-      for (const c of conns) c.end();
+      assert.ok(await until(() => newest.closed(), 500), 'the new one is refused');
+      assert.strictEqual(conns[0].closed(), false, 'the oldest is kept');
+      assert.ok(await until(() => conns[0].closed(), 3000), 'silent past the deadline: closed');
+      // (room again once the pool drains: a new one is taken)
+      assert.ok(await until(() => conns.every((c) => c.closed()), 3000));
+      const later = await shim.connect(sock);
+      await tick(100);
+      assert.strictEqual(later.closed(), false, 'taken once there is room');
+      later.end();
     });
   });
 

@@ -143,10 +143,10 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 | `SHUTTING_DOWN` | the runtime is draining | retries with jitter |
 
 **The pre-auth stage has its own bounds.** On Windows any local user, or a remote one over SMB, can list the pipe's name and open an instance of it. With read access alone it can't write a HELLO, so it gets no bytes at all, but it holds a pre-auth slot until the 2 s deadline.
-- At most 64 connections may be unauthenticated at once. When a 65th arrives, the **oldest** pre-auth connection is evicted, not the newest refused, so a real shim arriving behind a flood still gets in.
+- At most 64 connections may be unauthenticated at once. When a 65th arrives, that **new** connection is refused (closed at once); one already in its handshake is never evicted, so a flood can't break a real shim's handshake mid-way. A flood can delay a new real shim's attach: each flooding slot is freed within its 2 s deadline, and the shim retries.
 - Each has 2 s to complete AUTH. At most 512 bytes are read from a connection before its HELLO is complete.
 
-**The shim retries with jitter.** After a failure before WELCOME (evicted, timed out, `BUSY` or `SHUTTING_DOWN`), it retries after 100 ms to 2 s, randomised, for up to 20 s in all.
+**The shim retries with jitter.** After a failure before WELCOME (refused, timed out, `BUSY` or `SHUTTING_DOWN`), it retries after 100 ms to 2 s, randomised, for up to 20 s in all.
 
 **If it still can't attach,** the shim says so plainly and never hangs:
 - it writes the reason on stderr;
@@ -672,7 +672,7 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
    - A same-user process that can rewrite `shim.json` can already change ch-local itself, so this adds nothing.
 5. **A module holding two sessions' calls at once** (it serves both) holds two hop tokens, and can make a hop with either, so with the other session's cap or timeout, and into the other session's worker of a per-session module (§4a), so with its state. The values stay within the ceiling, and a module already sees all of one user's data. A token or peer channel that outlives its session is refused like an unknown device.
 6. **On Windows, another user (local, or remote over SMB) can slow attaches, but can't lock them out. Availability only.**
-   - **What it can do:** list the pipe's name, and open read-only instances. Each holds a pre-auth slot for 2 s. Past 64, the oldest is evicted, so a flood slows a real shim's attach without stopping it (the shim retries with jitter).
+   - **What it can do:** list the pipe's name, and open read-only instances. Each holds a pre-auth slot for 2 s. Past 64, a new connection is refused, so a flood can delay a real shim's attach (the shim retries with jitter, for up to 20 s) but never breaks one mid-handshake. A flood that keeps all 64 slots filled for longer than that keeps a new shim out.
    - **What it can't do:**
      - send a byte: the client speaks first, and only the owner, Administrators and SYSTEM can write, so it never even sees a `PROVE`;
      - create an instance: that needs `FILE_CREATE_PIPE_INSTANCE`, which read access doesn't include;
@@ -749,7 +749,7 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
 - Each authenticated connection is served by the stdio MCP handler (`lib/mcp/stdio.js`), one instance per session.
 - Tests (Docker):
   - a wrong MAC either way, no hello, or a too-long frame are refused;
-  - a 65th unauthenticated connection evicts the oldest, and one silent past 2 s is closed;
+  - a 65th unauthenticated connection is refused, every earlier one kept, and one silent past 2 s is closed;
   - a reply's id travels in the frame header;
   - two sessions get their own initialize and list;
   - a `C` frame can't come from client bytes;
