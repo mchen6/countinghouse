@@ -202,11 +202,34 @@ describe('mcp-contract 40: the grant set a tools/call is answered by (unit)', ()
     assert.deepStrictEqual([...await call('key-a')], ['new']);
   });
 
-  it('a provider failure is not kept', async () => {
-    registry.resetGrantsForTests({now: () => t, read: (key, cb) => { reads.push(key); setImmediate(cb, Object.assign(new Error('down'), {code: 'SYSTEM_ERROR_USERDB_NA'})); }});
-    await assert.rejects(call('key-a'), (e) => e.code === 'SYSTEM_ERROR_USERDB_NA');
-    await assert.rejects(call('key-a'));
+  it('grants the provider could not read: the key resolved, no set, said apart from an auth refusal, and not kept', async () => {
+    const down = Object.assign(new Error('down'), {code: 'SYSTEM_ERROR_USERDB_NA'});
+    registry.resetGrantsForTests({now: () => t, read: (key, cb) => { reads.push(key); setImmediate(cb, down); }});
+    const both = (key) => new Promise((resolve) => registry.grantsForCall(key, identify, (err, granted, unread) => resolve({err, granted, unread})));
+    assert.deepStrictEqual(await both('key-a'), {err: null, granted: undefined, unread: down});
+    assert.deepStrictEqual(await both('key-a'), {err: null, granted: undefined, unread: down});
     assert.strictEqual(reads.length, 2, 'read again');
     assert.deepStrictEqual(registry.grantKeysForTests(), []);
+    // an unknown key is still its auth refusal, not the provider's failure
+    assert.strictEqual((await both('not-a-key')).err, UNKNOWN);
+  });
+
+  it('no key reads no grants; a lapsed resolution whose entry went meanwhile keeps nothing and throws nothing', async () => {
+    await assert.rejects(call(null), (e) => e === UNKNOWN);
+    assert.deepStrictEqual(reads, []);
+    await call('key-a');
+    t += registry.GRANT_TTL_MS;
+    // the set refreshed by a list (fresh), the resolution lapsed: only identify runs
+    await list('key-a');
+    let release;
+    const held = new Promise((r) => { release = r; });
+    const pending = new Promise((resolve, reject) => registry.grantsForCall('key-a', (key, cb) => held.then(() => cb(null)), (err, g) => (err ? reject(err) : resolve(g))));
+    // the entry pushed out by the bound while identify is in flight (the
+    // generation unchanged, so the call goes on to keep)
+    for (let i = 0; i < registry.GRANT_CACHE_MAX; i++) { knownKeys.add(`other-${i}`); await call(`other-${i}`); }
+    assert.ok(!registry.grantKeysForTests().includes(require('../../lib/key-fingerprint').meterId('key-a')));
+    release();
+    assert.deepStrictEqual([...await pending], ['d1']);
+    assert.ok(!registry.grantKeysForTests().includes(require('../../lib/key-fingerprint').meterId('key-a')), 'nothing renewed');
   });
 });
