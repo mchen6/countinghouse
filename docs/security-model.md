@@ -1431,7 +1431,7 @@ fails if it is removed:
 | Cancellation | a request of the caller's own connection or session only; an unknown id ignored; no answer and no error text | mcp-contract 18, 19 |
 | Every read, get, completion and task method | the per-key rate limit, once the key resolves and before any lookup | auth 15, mcp-contract 24, 26, 30, 09 |
 | `tools/call` | the per-key rate limit (and `--globalRateLimit`) on the call's run, after its one answer for a tool the caller can't see is decided; a key that does not resolve is limited per address before its resolution (below) | auth 15 (a built-in), mcp-contract 37 (a task); auth 54 the order |
-| A key that does not resolve | `--unauthRateLimit` (30) refusals per client address (IPv6 by its /64) per minute, ten times that across the process; then 429 `UNAUTH_RATE_LIMITED` with `Retry-After`, before any auth lookup, the same answer whatever the key and whatever is named; 10,000 addresses kept, the least recently refused out first | auth 59 |
+| A key that does not resolve | `--unauthRateLimit` (30) lookups per client address (IPv6 by its /64) per minute, counted per lookup (a batch's each) and while in flight, kept unless the key resolved; ten times that across the process, never for an address with nothing in its window; then 429 `UNAUTH_RATE_LIMITED` with `Retry-After`, before any auth lookup, the same answer whatever the key and whatever is named (within a request already under way: that error, no lookup); 10,000 addresses kept, the least recently counted out first | auth 59 |
 | The grant sets `tools/call` is answered by | a known key's only, kept by a digest of the key; at most 5 s old, refreshed by every list's read, all cleared by an auth reload; 1024 keys, the one written longest ago out first; a failed read never kept | mcp-contract 40, auth 54 |
 
 **Requests whose key doesn't resolve.** Without a limit, a loop of requests
@@ -1439,12 +1439,23 @@ with made-up keys cost one auth-provider lookup each, and nothing slowed it:
 the per-key and global limits only begin once a key resolves. Now every
 HTTP request carries its client's address (the socket's, or, behind a proxy
 named with `--trustProxy`, the client `X-Forwarded-For` names) to the one
-place a key is refused for not resolving, and past `--unauthRateLimit`
-refusals a minute that address is answered 429 before anything is done for
-it. `--trustProxy` belongs only behind a proxy you control: otherwise
-`X-Forwarded-For` is the client's to forge, and each forged value would get
-its own budget (the process-wide cap still holds). A key that resolved in
-the last ten minutes, from any address (its hash is kept, never the key),
+place a key is looked up (`/device-list` resolves its key there too). Each
+lookup takes a place in the address's budget while it is in flight, so
+requests sent at once cannot all pass before any is counted, and keeps it
+unless the key resolved (a known key, with the device or without it);
+anything else counts, a provider's failure or a code the runtime doesn't
+know included. Past `--unauthRateLimit` a minute, that address is answered
+429 before anything is done for it, and a lookup a request under way would
+make (the next message of a legacy batch) is not made. The process-wide cap
+never refuses an address with nothing in its window, so a spray from many
+addresses does not shut out a new client or every client after a restart:
+each address still has its first lookup, and a key that resolves is
+remembered. `--trustProxy` belongs only behind a proxy you control:
+otherwise `X-Forwarded-For` is the client's to forge, and each forged value
+would get its own budget (the process-wide cap still holds). A hop count is
+right only when it is the real number of proxies (one more, and the
+client's own entry is believed); a `/0` and more than 10 hops are refused. A key that resolved in
+the last ten minutes, from any address (its digest is kept, never the key),
 still passes, so a user behind a shared address is not shut out by
 another's bad requests, and it is still looked up as any key is. API keys are high-entropy: this bounds the provider's load, it is
 not brute-force protection, and it is not what keeps a key from being
