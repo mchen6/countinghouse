@@ -242,6 +242,46 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
     }
   });
 
+  // #482's high, round 3, 3: a per-session device out of the map
+  // (restarting, spawning) is still per-session to a job's run with no
+  // session: the one answer, never the shared path (ensureDeviceState)
+  it('a job\'s run with no session of a per-session device out of the map is the one answer, before any worker or device state', async () => {
+    const DeviceManager = require('../../lib/device-manager');
+    const cliOptions = require('../../lib/cli-options');
+    const visibility = require('../../lib/module-visibility');
+    const savedSocket = cliOptions.sessionSocket;
+    const saved = visibility.configure({moduleOf: () => 'session-mod', isGone: () => true, changed: () => {}});
+    cliOptions.sessionSocket = '/nonexistent.invalid/sock';
+    try {
+      const pkg = {name: 'session-mod', countinghouse: {state: 'per-session'}};
+      const dm = {deviceMap: {}, moduleOfDevice: () => 'session-mod', packageOfModule: () => pkg, moduleManager: {unlisted: new Set()},
+        workerFor() { throw new Error('reached workerFor'); }, ensureDeviceState() { throw new Error('reached ensureDeviceState'); }, discoveredTag: (e) => e};
+      const err = await new Promise((resolve) => DeviceManager.prototype.invokeJobsNow.call(dm, 'd', 's', 'a', {}, 'j', resolve, null, {}));
+      assert.strictEqual(err && err.code, 'MODULE_NOT_LISTED');
+    } finally {
+      cliOptions.sessionSocket = savedSocket;
+      visibility.configure(saved);
+    }
+  });
+
+  // #482's high, round 3, 3: a sessionless MCP call in shared mode is
+  // refused at the gateway's start (handleToolsCall: sessionIdOf undefined),
+  // before any key, grant or limiter is read
+  it('a sessionless tools/call in shared mode is the one answer before any limiter is asked', async () => {
+    const sessions = require('../../lib/sessions');
+    const gateway = require('../../lib/mcp/gateway');
+    const asked = [];
+    const cdif = {rateLimit: (k, cb) => { asked.push('rateLimit'); cb(null, {limited: false}); }, rateLimiter: () => asked.push('global'), deviceManager: {deviceMap: {}}};
+    sessions.attach(new (require('events'))());
+    try {
+      const resp = await new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 8, method: 'tools/call', params: {name: 'session_mod_svc_act', arguments: {}}}, cdif, 'k', (err, r) => resolve(r)));
+      assert.strictEqual(resp.result._meta['countinghouse/code'], 'MODULE_NOT_LISTED', JSON.stringify(resp));
+      assert.deepStrictEqual(asked, []);
+    } finally {
+      sessions.resetForTests();
+    }
+  });
+
   // #482's high, round 2, 6: a job's run with no session, as a sessionless call
   it('a job\'s run of a per-session module with no session is the one answer, not retried', async () => {
     const DeviceManager = require('../../lib/device-manager');
