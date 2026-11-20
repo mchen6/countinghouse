@@ -10,6 +10,18 @@ the auth config.
 
 ## Unreleased
 
+### Changed — every device ID: countinghouse's own namespace
+
+A device's ID was a UUID v5 of `https://registry.apemesh.com/packages/<friendlyName>`,
+a seed under another project's registry. It is now a UUID v5 of the
+`friendlyName` in countinghouse's own namespace, fixed for good
+(`lib/call-address.js` `CH_DEVICE_NS`), so every ID changed. Grants that
+list specific device IDs must be regenerated (`'*'` grants are unaffected);
+a start logs, once per module, a grant that still names a loaded module's
+pre-8.0 ID, with the new one. Device logs stored under the old IDs are
+orphaned. The examples' `auth.json` files are regenerated, and the tests,
+scripts and examples compute IDs with `deviceIDForName`.
+
 ### Changed — the usage report counts a cancelled call apart: `profile.cancelled`
 
 A call cancelled while it ran (M19) was counted among the report's errors.

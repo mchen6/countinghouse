@@ -1,5 +1,7 @@
 # log-triage Example Implementation Plan
 
+> **Note (8.0):** the device-ID seed changed in 8.0, so the device IDs below are pre-8.0 ones; see `lib/call-address.js` (`deviceIDForName`).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add `examples/log-triage`, a second composite example whose metered hop count grows with the number of log files read and is capped by the caller.
