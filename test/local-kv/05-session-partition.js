@@ -227,6 +227,17 @@ describe('local-kv 05: a per-session module\'s partitions (R1)', () => {
       assert.strictEqual(said.length, 2);
     });
 
+    // the reviewer's high on #467, 4: a session's end adopts as the sweep does
+    it('a session\'s end (remove with adopt) removes a pre-marker partition of a restored session', async () => {
+      const d = moduleData.sessionDirsFor(data, 'mod', A);
+      fs.mkdirSync(d.data, {recursive: true});
+      fs.mkdirSync(d.tmp, {recursive: true});
+      fs.writeFileSync(path.join(d.data, 'x'), '1');
+      const r = await partition.remove(data, kv, 'mod', A, {adopt: true, code: {roots: []}});
+      assert.deepStrictEqual(r.kept, []);
+      assert.ok(!fs.existsSync(d.root));
+    });
+
     it('the start\'s sweep adopts a partition from before markers (removed); one holding a module the runtime knows is kept, not counted removed', async () => {
       // (from before markers: made by hand, no marker)
       for (const id of [A, B]) {

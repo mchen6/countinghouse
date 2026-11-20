@@ -611,12 +611,12 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       const view = await spawn(A);
       write(view, tmp(A, 't'), 2500);
       const before = quota().bytes;
-      await mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'), null, {holder: path.join(env.dataRoot, 'ps', 'sessions', A)});
+      await mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'), null, {holder: path.join(env.dataRoot, 'ps', 'sessions', A), base: env.dataRoot});
       assert.strictEqual(quota().bytes, before, 'no view: emptied, nothing given back');
       write(view, tmp(A, 't2'), 1000);
       const {Quota} = require('../../lib/fs-broker/quota');
       const other = new Quota({maxBytes: 1, maxEntries: 1}).viewFor(A);
-      await mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'), other, {holder: path.join(env.dataRoot, 'ps', 'sessions', A)});
+      await mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'), other, {holder: path.join(env.dataRoot, 'ps', 'sessions', A), base: env.dataRoot});
       assert.strictEqual(quota().bytes, before + 1000, 'another quota\'s view: nothing given back here');
     });
 
@@ -644,7 +644,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       write(view, data(A, 'kept'), 4000);
       fs.linkSync(data(A, 'kept'), tmp(A, 'alsoKept'));
       const before = quota().bytes;
-      await mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'), view, {holder: path.join(env.dataRoot, 'ps', 'sessions', A)});
+      await mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'), view, {holder: path.join(env.dataRoot, 'ps', 'sessions', A), base: env.dataRoot});
       assert.strictEqual(quota().bytes, before - 2500, 't only: kept still has a name in /data');
       assert.deepStrictEqual(fs.readdirSync(path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp')), []);
       await end(A);
@@ -658,7 +658,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     await make(C);
     await lifetime.checkResetAtStart(false, env);   // A restored: the registry isn't idle
     const open = new Set([C]);   // opened while the sweep runs: kept too
-    assert.deepStrictEqual(await lifetime.sweepAtStart({has: (id) => id === A || open.has(id)}, env), {removed: 1, failed: 0, skipped: 0});
+    assert.deepStrictEqual(await lifetime.sweepAtStart({has: (id) => id === A || open.has(id)}, env), {removed: 1, failed: 0, skipped: 0, kept: 0});
     assert.ok(has(A) && !has(B) && has(C));
     const notices = require('../../lib/notices');
     notices.openSession(C, null);
@@ -666,7 +666,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     assert.deepStrictEqual(notices.take('ps', C), [], 'A was restored: nothing reset for anyone');
     await make(B);
     await lifetime.checkResetAtStart(true, env);
-    assert.deepStrictEqual(await lifetime.sweepAtStart(new Set(), env), {removed: 3, failed: 0, skipped: 0});
+    assert.deepStrictEqual(await lifetime.sweepAtStart(new Set(), env), {removed: 3, failed: 0, skipped: 0, kept: 0});
     notices.openSession(C, null);
     lifetime.sessionOpened(C);
     assert.deepStrictEqual(notices.take('ps', C), [lifetime.RESET_AT_START]);
@@ -681,7 +681,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     await make(C);
     let stopping = false;
     const keep = {has: () => { const kept = stopping; stopping = true; return kept; }};
-    assert.deepStrictEqual(await lifetime.sweepAtStart(keep, env), {removed: 1, failed: 0, skipped: 0}, 'the first only, before the stop');
+    assert.deepStrictEqual(await lifetime.sweepAtStart(keep, env), {removed: 1, failed: 0, skipped: 0, kept: 0}, 'the first only, before the stop');
     assert.strictEqual([A, B, C].filter(has).length, 2);
   });
 
@@ -696,7 +696,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
 
   it('a sweep that cannot run is logged, never fatal', async () => {
     const broken = {dataRoot: env.dataRoot, kv: {keysWithPrefix: () => { throw new Error('the store is gone'); }}};
-    assert.deepStrictEqual(await lifetime.sweepAtStart(new Set(), broken), {removed: 0, failed: 0, skipped: 0});
+    assert.deepStrictEqual(await lifetime.sweepAtStart(new Set(), broken), {removed: 0, failed: 0, skipped: 0, kept: 0});
     await lifetime.checkResetAtStart(true, broken);   // nor its listing
   });
 });

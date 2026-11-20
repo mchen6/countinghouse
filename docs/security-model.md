@@ -667,11 +667,30 @@ reused included), is never emptied or removed; it is kept and said once. The
 module's root and a session's root are never removed recursively, only by
 `rmdir` once empty.
 
-A directory made before this rule, by an earlier version, is adopted at its
-module's first spawn, or a session's at the start's sweep, only when:
+A marker is read, and a directory judged its own, only through real
+directories from `--moduleDataPath` down. A `<name>/` or `@scope` that is a
+link leads to another module's marker, which vouches for nothing there.
+
+A directory made before this rule, by an earlier version, is adopted in any
+of these:
+- its module's first spawn;
+- a session worker's spawn;
+- a load in single-thread mode;
+- an uninstall;
+- a session's end;
+- the start's sweep.
+
+Adoption happens only when:
 - it is at the path the runtime would have made it, with no link from
   `--moduleDataPath` down to it;
-- the overlap judgement found no module's code inside it or around it.
+- the overlap judgement found no module's code inside it or around it: the
+  file broker's own at a spawn, elsewhere the same question asked of every
+  module root the runtime knows, each `--loadModule` directory and the
+  `--modulePath` folders.
+
+A directory whose marker names another, changed since, is never adopted
+again: a mismatch is the sign that something other than the runtime changed
+it.
 
 Nothing about a package name or a file layout is read to decide. The
 throwaway `<moduleDataPath>/.validate` of a validation is not under this
