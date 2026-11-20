@@ -115,8 +115,9 @@ function runtimeFiles(files) {
 }
 
 // the local store's directory, this run's own, removed by its exact path
+// after the describe that uses it (in it: a hook outside a describe runs
+// around every file of a folder run, validation 32)
 const LOCAL_STORE = path.join(os.tmpdir(), `ch-s43-store-${process.pid}`);
-after(() => fs.rmSync(LOCAL_STORE, {recursive: true, force: true}));
 
 // One server per path, in turn on the same port: direct peer channels (the
 // default), routed (--no-directPeerChannels), and a local store (--store
@@ -125,6 +126,7 @@ after(() => fs.rmSync(LOCAL_STORE, {recursive: true, force: true}));
   ['a local store', ['--store', 'local', '--storePath', LOCAL_STORE]]].forEach(([label, flags]) => {
   describe(`sandbox 43: a lean worker loads only what it needs (lean worker step 3), ${label}`, function() {
     this.timeout(120000);
+    if (flags.includes(LOCAL_STORE)) after(() => fs.rmSync(LOCAL_STORE, {recursive: true, force: true}));
     let base = null;
     let server = null;
     before(async () => {

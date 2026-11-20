@@ -13,8 +13,8 @@
 // once -- never a hook's or a test's body, nor a function only defined. In
 // it, a setOptions call, an assignment through the cli-options module (the
 // identifiers bound to it, and `options`), or an Object.assign onto it, is an
-// offender; so is one in a hook outside every describe (a root hook, run
-// around every file of the run).
+// offender; so is a hook outside every describe (a root hook, run around
+// every file of the run, whatever its body calls).
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -73,16 +73,17 @@ function loadTimeWrites(src) {
         found.push({line: node.loc.start.line, what: 'Object.assign onto the options'});
       }
       const name = calleeName(c);
-      // a hook outside every describe runs around every file of the run: its
-      // body's writes are the run's, as a load-time one is
+      // a hook outside every describe runs around every file of the run:
+      // whatever it does (a write, or a call to a function that writes) is
+      // the run's, so it is an offender itself
       const rootHook = HOOKS.has(name) && !inSuite && name !== 'it' && name !== 'specify';
+      if (rootHook) found.push({line: node.loc.start.line, what: `a root-level ${name}()`});
       // a function called at once runs now
       if (FUNCTION.has(c.type)) visit(c.body, inSuite);
       else visit(c, inSuite);
       for (const a of node.arguments) {
         if (!FUNCTION.has(a.type)) { visit(a, inSuite); continue; }
         if (SUITES.has(name)) visit(a.body, true);
-        else if (rootHook) visit(a.body, false);
         else if (name != null && name.startsWith('.') && AT_ONCE.has(name.slice(1))) visit(a.body, inSuite);
       }
       return;
@@ -95,7 +96,7 @@ function loadTimeWrites(src) {
 
 describe('validation 32: no test file sets the options at load (B-loadopts, B-loadopts-2)', function() {
   this.timeout(60000);   // (a parse of every test file)
-  it('no code a test file runs at load (its top level, its describe bodies, a root hook) writes the options', () => {
+  it('no code a test file runs at load (its top level, its describe bodies) writes the options, and no hook is outside a describe', () => {
     const offenders = [];
     for (const f of files(DIR).sort()) {
       for (const w of loadTimeWrites(fs.readFileSync(path.join(DIR, f), 'utf8'))) offenders.push(`${f}:${w.line}: ${w.what}`);
@@ -112,8 +113,8 @@ describe('validation 32: no test file sets the options at load (B-loadopts, B-lo
     assert.deepStrictEqual(at("describe('d', () => {\n  options.setOptions({});\n});\n"), ['setOptions']);
     assert.deepStrictEqual(at("[1, 2].forEach((n) => describe(`d${n}`, () => { options.debug = true; }));\n"), ['an options field assigned']);
     assert.deepStrictEqual(at("if (process.env.CI) { options.setOptions({}); }\n"), ['setOptions']);
-    assert.deepStrictEqual(at("before(() => { options.setOptions({}); });\n"), ['setOptions']);
-    assert.deepStrictEqual(at("after(() => { fs.rmSync(dir); });\n"), []);
+    assert.deepStrictEqual(at("before(() => { setUp(); });\nfunction setUp() { options.workerThread = true; }\n"), ['a root-level before()']);
+    assert.deepStrictEqual(at("after(() => { fs.rmSync(dir); });\n"), ['a root-level after()']);
     // never: a hook's or a test's body, a function only defined, a string or a comment
     assert.deepStrictEqual(at([
       "const url = 'https://example.com/{x}/*';",
