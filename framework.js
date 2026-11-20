@@ -77,6 +77,19 @@ if (options.debugKeyMissing === true) {
 }
 // A cost that is not a finite number >= 0 would credit callers or serve
 // calls free (review M9).
+if (options.unauthRateLimitInvalid != null) {
+  var badUnauth = options.unauthRateLimitInvalid.value;
+  console.error('--unauthRateLimit must be a whole number >= 0 (got ' +
+    (typeof(badUnauth) === 'boolean' || badUnauth === '' ? 'no value' : JSON.stringify(String(badUnauth))) + ')');
+  process.exit(2);
+}
+if (options.trustProxyInvalid != null) {
+  var badProxy = options.trustProxyInvalid;
+  console.error('--trustProxy takes a number of proxy hops (1 or more) or a comma list of the proxies\' addresses or CIDRs (got ' +
+    (typeof(badProxy.value) === 'boolean' || badProxy.value === '' ? 'no value' : JSON.stringify(String(badProxy.value))) +
+    (badProxy.why != null ? `: ${badProxy.why}` : '') + ')');
+  process.exit(2);
+}
 if (options.mcpToolCallCostInvalid != null) {
   var badCost = options.mcpToolCallCostInvalid.value;
   console.error('--mcpToolCallCost must be a finite number >= 0 (got ' +

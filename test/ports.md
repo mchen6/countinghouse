@@ -70,6 +70,7 @@ one) as well as the ports it binds.
 | `test/auth/57-server-id.js` | none (in-process) |
 | `test/auth/58-pre8-device-grants.js` | 9675, 9676 |
 | `test/auth/58-pre8-device-grants.js` | 9675, 9676, 9677 |
+| `test/auth/59-unauth-limit.js` | 9678, 9679, 9701 |
 | `test/benchmark/test001.js` | 9527 |
 | `test/benchmark/test002.js` | 9527 |
 | `test/composition/02-ctx-call.js` | 9556–9557, 9560 |
