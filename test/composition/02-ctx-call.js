@@ -91,7 +91,10 @@ const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 // blows up trying to resolve a hostname. Same pattern as
 // test/module-authoring/01-module-validator.js and
 // test/composition/05-module-identity.js.
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 const handlerCtx = require('../../lib/handler-ctx');
 const {testPort} = require('../helpers/test-env');
 
@@ -149,6 +152,9 @@ function callTool(name, args, cb) {
 }
 
 describe('ctx.call: success and refusal, against the real spawned server', function() {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   this.timeout(40000);
 
   before((done) => startServer(done));
@@ -195,6 +201,9 @@ describe('ctx.call: success and refusal, against the real spawned server', funct
 // No mocking: buildCtx and setComposition are the exact functions Task 5's
 // load-time verification and every real handler invocation use.
 describe('ctx.call: guard clause messages (in-process, same production code)', function() {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   // The first ctx.call in this process loads handler-ctx's dependencies
   // cold; on a busy 1-CPU machine that has taken longer than mocha's 2 s.
   this.timeout(10000);
@@ -303,6 +312,9 @@ function callToolSingleThread(name, args, cb) {
 }
 
 describe('ctx.call: success in single-thread mode (no --workerThread)', function() {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   this.timeout(40000);
 
   before((done) => startSingleThreadServer(done));

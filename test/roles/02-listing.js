@@ -9,7 +9,10 @@
 // nothing listens on before the registry is required.
 const assert = require('assert');
 const options = require('../../lib/cli-options');
-options.setOptions({redisUrl: 'redis://127.0.0.1:9749'});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 require('../../lib/logger').createLogger();
 const toolRegistry = require('../../lib/mcp/tool-registry');
 const gateway = require('../../lib/mcp/gateway');
@@ -37,10 +40,11 @@ const codeOf = (r) => r.result && r.result._meta && r.result._meta['countinghous
 describe('listing: roles, bare names, MODULE_NOT_LISTED, the single-identity profile', () => {
   // (--debug: every device granted, and a caller with no key resolved, so
   // what is looked at is the listing; since #458 tools/call refuses an
-  // unresolvable caller before any name, auth 54 and mcp-contract 40's)
-  let savedDebug;
-  before(() => { savedDebug = options.debug; options.debug = true; });
-  after(() => { options.debug = savedDebug; });
+  // unresolvable caller before any name, auth 54 and mcp-contract 40's).
+  // Every option, debug too, put back by the one restore, last.
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); options.setOptions({redisUrl: 'redis://127.0.0.1:9749'}); options.debug = true; });
+  after(() => { restoreOptions(keptOptions); });
   afterEach(() => { options.singleIdentity = false; });
 
   it('unlisted parts are not tools; a scenario is listed under its bare action name; others keep the long form', () => {

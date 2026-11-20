@@ -28,7 +28,10 @@ const assert = require('assert');
 // bin/countinghouse-validate.js hits the same problem for the same reason
 // and fixes it the same way: call setOptions({workerThread: false}) for its defaults (real
 // redisUrl 'redis://127.0.0.1:6379') before requiring anything downstream.
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 
 // Likewise, the conflict branch under test logs via LOG.E(), which calls
 // into a bunyan logger that only exists after LOG.createLogger() runs --
@@ -66,6 +69,9 @@ function stubModuleManager() {
 }
 
 describe('worker-mode registration from the main thread\'s spec: conflict guard', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   it('a refused (conflicting) registration mutates nothing on the WorkerMessage or deviceMap', async () => {
     const deviceManager = new DeviceManager(stubModuleManager());
     const wm = await workerWithSpec('colliding-name', 'incoming-module', '/modules/incoming');

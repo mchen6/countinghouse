@@ -3,7 +3,10 @@
 // (CHUtil.ci.deviceManager.workerMessage, require.cache) and send any
 // command itself.
 const assert = require('assert');
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 const WorkerMessage = require('../../lib/worker-message');
 const DeviceManager = require('../../lib/device-manager');
 
@@ -17,6 +20,9 @@ function exhausted() {
 }
 
 describe('sandbox 14: main-thread message bounds', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   it('delivers sandbox-violation and peer-self-invalidate with the bucket empty', () => {
     ['sandbox-violation', 'peer-self-invalidate'].forEach((command) => {
       const {wm, posted} = exhausted();

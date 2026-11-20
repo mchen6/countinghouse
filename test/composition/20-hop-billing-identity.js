@@ -8,10 +8,16 @@
 // Server-free: buildCtx on the main thread, with lib/remote's callRemote and
 // CHUtil.recordUsage stood in for.
 const assert = require('assert');
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 const handlerCtx = require('../../lib/handler-ctx');
 
 describe('composition 20: a hop\'s billing key reaches the callee\'s work, never its ctx.caller', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   const remote = require('../../lib/remote');
   const CHUtil = require('../../lib/countinghouse-util');
   let saved = null;
@@ -66,6 +72,9 @@ describe('composition 20: a hop\'s billing key reaches the callee\'s work, never
 // The review of #163 (4): a worker states no billing key and no identity on
 // any path; a client asked to is refused, as `as` is.
 describe('composition 20: a worker states no billing key', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   const wt = require('worker_threads');
   const inWorker = (fn) => {
     Object.defineProperty(wt, 'isMainThread', {value: false, configurable: true, writable: true});

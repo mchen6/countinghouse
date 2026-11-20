@@ -7,7 +7,10 @@
 const assert = require('assert');
 const path = require('path');
 const {EventEmitter} = require('events');
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 const ModuleManager = require('../../lib/module-manager');
 
 function handlerMapLike() { return new EventEmitter(); }
@@ -19,6 +22,9 @@ const settle = () => new Promise((r) => setImmediate(r));
 // on a loaded machine; instantiating a fixture loads files, so the whole
 // describe has 30 s, not mocha's 2.
 describe('module-loading 18: whenDiscovered', function() {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   this.timeout(30000);
 
   it('ends once every module has reported a device after it started listening', async () => {

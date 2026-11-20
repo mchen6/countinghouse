@@ -33,7 +33,10 @@ const assert = require('assert');
 
 // Before requiring anything that reaches lib/countinghouse-util.js -- same
 // reason as test/composition/02-ctx-call.js's copy of this line.
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 const handlerCtx = require('../../lib/handler-ctx');
 const {toolErrorCode} = require('../helpers/tool-result');
 
@@ -55,6 +58,9 @@ async function refusalOf(ctx, address) {
 }
 
 describe('ctx.call refusals carry a code an MCP client can branch on', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   it('refuses with CTX_CALL_NOT_READY when no verdict has been delivered by the bound', async function() {
     // No setComposition call at all: this is the startup window, not a
     // misconfigured module. ctx.call waits for a verdict for
@@ -200,6 +206,9 @@ function callTool(name, args, cb) {
 }
 
 describe('ctx.call refusal codes reach an MCP client through the worker hop', function() {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   this.timeout(40000);
 
   before((done) => startServer(done));
