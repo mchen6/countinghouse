@@ -60,6 +60,20 @@ const STEPS = {
     const found = require('resolve-from')(__dirname, '../../lib/target');
     return /[\\/]target\.js$/.test(found) ? 'works' : 'answered another file';
   },
+  // (C-compat, items 4 and 5: Node's own entry points, asked directly with
+  // a relative request from the module's own, virtual, file -- the nearest
+  // package.json, and the file a relative require names)
+  'findPackageJSON relative': () => {
+    const find = require('module').findPackageJSON;
+    if (typeof(find) !== 'function') return 'works';
+    const found = find('../../lib/target.js', path.join(__dirname, 'library.js'));
+    return typeof(found) === 'string' && path.basename(found) === 'package.json' ? 'works' : `answered ${typeof(found) === 'string' ? 'another file' : String(found)}`;
+  },
+  '_resolveFilename relative': () => {
+    const file = path.join(__dirname, 'library.js');
+    const found = require('module')._resolveFilename('../../lib/target', {id: file, filename: file, paths: []});
+    return /[\\/]target\.js$/.test(found) ? 'works' : 'answered another file';
+  },
   // deletes a file's require.cache entry and requires it again
   'import-fresh': () => {
     const fresh = require('import-fresh');

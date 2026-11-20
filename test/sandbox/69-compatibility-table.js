@@ -44,6 +44,10 @@ const WIN = process.platform === 'win32';
 const TABLE = [
   ['resolve-from', 'works', 'works', 'works', 'works'],
   ['import-fresh', 'works', 'works', 'works', 'works'],
+  // (Node's own entry points with a relative request from a module's own
+  // file, asked directly: C-compat, items 4 and 5)
+  ['findPackageJSON relative', 'works', 'works', 'works', 'works'],
+  ['_resolveFilename relative', 'works', 'works', 'works', 'works'],
   ['source-map-support', 'works', 'works', 'works', 'works'],
   ['source-map-support hookRequire', 'works', 'works', 'no hook', 'threw TypeError'],
   ['module-alias', WIN ? 'works' : 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'threw TypeError'],

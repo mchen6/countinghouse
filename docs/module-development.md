@@ -842,6 +842,9 @@ own, as on 24.15 and later.
   module's own `__dirname`: work in every mode, single-thread included.
   Your module's directory is `/app/...`; it reaches Node's resolver in its
   host form, inside your module only.
+- Node's own `module.findPackageJSON` and `Module._resolveFilename`, called
+  with a relative request from one of your files (`__filename`): work in
+  every mode, the same way.
 - `require-in-the-middle` (APM agents' module hooks): throws at
   `new Hook()` under `audit` and `enforce`; a module can't hook the
   runtime's module loading.
@@ -955,9 +958,10 @@ checks, quota or link rules. The differences from worker mode:
 - Stack frames, `module.filename`, `require.cache` keys and `require.resolve`
   results are host paths, and so is `import.meta.dirname` in ES modules.
 - Paths given to anything other than `fs`, `fs/promises`, `os` and
-  `CHUtil.loadFile` are not translated.
-- `createRequire` with a virtual (`/app`) path fails with `MODULE_NOT_FOUND`;
-  use `require`, or `createRequire(import.meta.url)` in ES modules.
+  `CHUtil.loadFile` are not translated, except that a `/app` path your
+  module resolves from (`createRequire`, `require.resolve`'s parent, a
+  `module.findPackageJSON` base) is mapped through your module's own
+  directory. Each answer is a host path.
 - A module can require countinghouse's own dependencies through `NODE_PATH`.
 
 Upgrading a module or a deployment from 7.x: see

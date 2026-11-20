@@ -279,6 +279,15 @@ const STEPS = {
       const all = answers.every((x) => x === 'undefined');
       out.push(ran === 0 && all ? 'same' : `objectInFind(${ran} ${answers.join(',')})`);
     } else out.push('same');
+    // (C-compat, item 6: '..c6x/y' is relative to CommonJS, a directory
+    // named '..c6x' beside this file: missing, it fails in the words a
+    // missing './c6x/y' does, never as a bare name refused)
+    {
+      const said = (req) => { try { require(req); return 'found'; } catch (e) { return `${e.code} ${String(e.message).split('\n')[0].replace(req, 'R')}`; } };
+      const a = said('./no-such-c6x/y');
+      const b = said('..no-such-c6x/y');
+      out.push(a === b ? 'same' : `dotDotName(${a} | ${b})`);
+    }
     // (#465's Fable pass, F2 and F3: a require whose parent is the root
     // itself -- createRequire('/app') -- is refused before Node, as a missing
     // name is, while createRequire('/app/'), a directory, still requires

@@ -77,9 +77,10 @@ describe('single-thread 02: identity in a running server', function() {
     const b = out(rb);
     assert.deepStrictEqual([a.dirname, a.filename, a.own], ['/app/handlers/probeService', '/app/handlers/probeService/where.js', 'fs-probe']);
     assert.deepStrictEqual([b.dirname, b.own], ['/app/handlers/probeService', 'fs-probe-twin']);
-    // documented differences: require.resolve stays host; a virtual createRequire path is not mapped
+    // documented differences: require.resolve stays host; a virtual createRequire path is mapped
+    // through the calling module's own root, its answer a host path (C-compat)
     assert.ok(a.resolve.startsWith(path.join(FIXTURES, 'fs-probe')), a.resolve);
-    assert.strictEqual(a.dirResolve, 'MODULE_NOT_FOUND');
+    assert.strictEqual(a.dirResolve, path.join(FIXTURES, 'fs-probe', 'handlers', 'probeService', 'read.js'));
   });
 
   it('CHUtil.loadFile finds its caller even when the module rewrites stack traces (review I3)', async () => {
