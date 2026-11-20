@@ -112,6 +112,30 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       assert.ok(!got.settings.some((s) => s.name.includes('region')), 'a part\'s are never listed');
     });
 
+    // B-bythemodule: the module's own words are the module's text, cleaned
+    // as module text is before it reaches a client (module-text: a hidden
+    // character a space; a title one line of at most 64, a description at
+    // most 512, its line breaks kept), never as the author wrote them
+    it('the module\'s own words are cleaned: hidden characters out, a title one line, a description\'s line breaks kept', async () => {
+      const H = pkgOf('@acme/hidden-words', {mode: {type: 'enum', values: ['a', 'b'], default: 'a',
+        title: 'Mode\u202e evil\u200b  title', description: 'Line one\u2066 here\nline two\u200b'}});
+      modules = [{name: H.name, version: H.version, part: false, pkg: H, state: ms.stateFor(H.name, H, {operator: false, net: []})}];
+      const got = await make().get();
+      const row = got.settings.find((r) => r.name === 'module.@acme/hidden-words.mode');
+      assert.ok(row != null, JSON.stringify(got.settings.map((r) => r.name)));
+      assert.deepStrictEqual(row.byTheModule, {title: 'Mode evil title', description: 'Line one here\nline two'});
+      const words = JSON.stringify(row.byTheModule);
+      for (const c of ['\u202e', '\u200b', '\u2066']) assert.ok(!words.includes(c), `${JSON.stringify(c)} reached the client`);
+    });
+
+    it('a title or description of hidden characters alone is none: no empty field reaches the client', async () => {
+      const H = pkgOf('@acme/blank-words', {mode: {type: 'enum', values: ['a', 'b'], default: 'a', title: '\u200b\u200b', description: '\u202e \u2066'}});
+      modules = [{name: H.name, version: H.version, part: false, pkg: H, state: ms.stateFor(H.name, H, {operator: false, net: []})}];
+      const got = await make().get();
+      const row = got.settings.find((r) => r.name === 'module.@acme/blank-words.mode');
+      assert.strictEqual(row.byTheModule, undefined, JSON.stringify(row));
+    });
+
     it('the ceiling: a fixed value is the operator\'s; conversation off is the terminal\'s', async () => {
       ceiling = trusted({moduleSettings: {'@acme/weather-tool.units': {fixed: 'metric'}, '@acme/weather-tool.maxResults': {conversation: false}}});
       const rows = Object.fromEntries((await make().get()).settings.map((s) => [s.name, s]));
@@ -230,6 +254,16 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       assert.strictEqual(stored()['module.@acme/weather-tool.defaultRepo'], 'acme/repo');
       assert.ok(history().some((h) => h.setting === 'module.@acme/weather-tool.defaultRepo' && h.confirmed === '1.2.0'), JSON.stringify(history()));
       assert.strictEqual(applied, 1);
+    });
+
+    // B-bythemodule: the author's title in the runtime's sentence is cleaned too
+    it('the author\'s title in the form is cleaned: hidden characters out, one line', async () => {
+      const H = pkgOf('@acme/hidden-form', {note: {type: 'string', title: 'Note\u202e\u200b text\nmore'}});
+      modules = [{name: H.name, version: H.version, part: false, pkg: H, state: ms.stateFor(H.name, H, {operator: false, net: []})}];
+      const asked = await make(formClient).set('module.@acme/hidden-form.note', 'x', 'settings tool', {session: 'form-hidden'});
+      const message = asked.inputRequired.inputRequests.approve.params.message;
+      assert.match(message, /in its own words, as: "Note text more"/);
+      for (const c of ['\u202e', '\u200b', '\n']) assert.ok(!message.includes(c), `${JSON.stringify(c)} reached the form`);
     });
 
     it('a decline writes nothing and locks the kind for this start: a second asks at the terminal', async () => {

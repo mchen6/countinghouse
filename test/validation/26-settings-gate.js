@@ -233,6 +233,15 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.deepStrictEqual(err.fields.missingSettings, ['defaultRepo']);
     });
 
+    // B-bythemodule: the author's title as countinghouse_settings and its
+    // form show it (module-settings ownWords): hidden characters out, one line
+    it('the setting\'s title in the refusal is the module\'s words cleaned, as everywhere else', () => {
+      const dm = dmWith({'weather-tool': {state: stateWith({defaultRepo: {type: 'string', format: 'repo', required: true, title: 'Default\u202e\u200b  repo'}})}});
+      const err = gate.requiredRefusal(dm, dm.idOf('weather-tool'), true);
+      assert.match(err.message, /needs a setting: defaultRepo \(Default repo\)/);
+      assert.ok(!/[\u202e\u200b]/.test(err.message), err.message);
+    });
+
     it('a part\'s, over the call graph: the top-level module named, no setting, no missingSettings', () => {
       const dm = dmWith({
         'top': {state: stateWith({}), calls: ['mid']},

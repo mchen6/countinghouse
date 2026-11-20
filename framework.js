@@ -75,6 +75,31 @@ if (options.debugKeyMissing === true) {
   console.error('--debugKey needs a value (--debugKey <key>)');
   process.exit(2);
 }
+if (options.unauthRateLimitInvalid != null) {
+  var badUnauth = options.unauthRateLimitInvalid.value;
+  console.error('--unauthRateLimit must be a whole number from 0 to 1000 (got ' +
+    (typeof(badUnauth) === 'boolean' || badUnauth === '' ? 'no value' : JSON.stringify(String(badUnauth))) + ')');
+  process.exit(2);
+}
+if (options.trustProxyInvalid != null) {
+  var badProxy = options.trustProxyInvalid;
+  console.error('--trustProxy takes a number of proxy hops (1 to 10) or a comma list of the proxies\' addresses or CIDRs (got ' +
+    (typeof(badProxy.value) === 'boolean' || badProxy.value === '' ? 'no value' : JSON.stringify(String(badProxy.value))) +
+    (badProxy.why != null ? `: ${badProxy.why}` : '') + ')');
+  process.exit(2);
+}
+// the list as Express will compile it at the start ('trust proxy'): one it
+// cannot read is refused here, as the parse above refuses, never a stack
+// trace from the route manager (the high review of #483, round 2, 6)
+if (options.trustProxy != null) {
+  try {
+    require('express')().set('trust proxy', options.trustProxy);
+  } catch (e) {
+    console.error('--trustProxy takes a number of proxy hops (1 to 10) or a comma list of the proxies\' addresses or CIDRs (got ' +
+      JSON.stringify(String(options.trustProxy)) + ': ' + (e != null && e.message != null ? e.message : String(e)) + ')');
+    process.exit(2);
+  }
+}
 // A cost that is not a finite number >= 0 would credit callers or serve
 // calls free (review M9).
 if (options.mcpToolCallCostInvalid != null) {
@@ -509,6 +534,14 @@ function serve() {
   var routeManager = new RouteManager(mm);
 
   monitor.init();
+  // At exit, one synchronous sequence before the local store's exit flush
+  // (lib/exit-sequence.js; B-shutdown-usage): the job runner's passes still
+  // running ended, then every usage call still open (a tools/call still
+  // running too) ended as a cancelled one, so a call begun is always ended
+  // in the record.
+  const exitSequence = require('./lib/exit-sequence');
+  if (options.workerThread === true) exitSequence.atExit(() => require('./lib/store').jobs.close());
+  exitSequence.atExit(() => require('./lib/usage/runtime').closeOpen(jobHooks != null ? jobHooks.outcomeOf : null));
 
   var redisAPI = require('./lib/redis-api');
   redisAPI.init();
@@ -520,12 +553,16 @@ function serve() {
   global.CHUtil.redis = redisAPI.client;
 
   var JobControl    = require('./lib/store').jobs;
+  // the task hooks (worker mode): the exit sequence asks them for a failure
+  // noted while its record was being written
+  var jobHooks      = null;
   if (options.workerThread === true) {
     JobControl.initJobProcess(routeManager.cdifInterface);
-    const jobHooks = require('./lib/mcp/gateway').jobHooks(routeManager.cdifInterface);
+    jobHooks = require('./lib/mcp/gateway').jobHooks(routeManager.cdifInterface);
     JobControl.setStartHook(jobHooks.start);
     JobControl.setEndHook(jobHooks.end);
     JobControl.setCompletionHook(jobHooks.complete);
+    JobControl.setCancelHook(jobHooks.cancel);
     // a 2026-07-28 task's question (M22, lib/task-asks.js)
     JobControl.setAskHooks(jobHooks.ask);
   }

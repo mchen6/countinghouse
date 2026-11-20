@@ -476,13 +476,13 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
   // gets a call of its own, and a task cancelled between two passes runs
   // nothing more and opens no call (#487's high, round 1). `api` is the
   // runner. Each asking pass takes 100 ms here, as a handler's would.
-  const waitOrders = (label, getApi, done = () => {}) => {
+  const waitOrders = (label, getApi, done = () => {}, stoppable = false) => {
     // (every close of a call counted -- the end hook's, the completion
     // hook's, and the asked hook's own when it answers {asked}, as the
     // gateway's closes the call when it writes the question: exactlyOnce
     // asserts each call opened was closed once; ruled M1)
     const harness = (api, {timeout, answers, okAt, before = null, holdMs = () => 60000, authorize = null, askedMs = 0, startThrowsAt = null, attempts}) => {
-      const log = {started: [], ended: [], completed: [], at: [], passes: 0, settled: 0, closes: {}, reruns: [], sessions: []};
+      const log = {started: [], ended: [], completed: [], at: [], passes: 0, settled: 0, closes: {}, reruns: [], sessions: [], cancelled: []};
       const closed = (c) => { log.closes[c] = (log.closes[c] || 0) + 1; };
       const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
         invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
@@ -504,6 +504,8 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       });
       // (a pass whose start hook threw has no call: its close is of none)
       api.setEndHook((data, run, outcome) => { if (run.extra != null) closed(run.extra.usageCall); log.ended.push([run.extra != null ? run.extra.usageCall : null, outcome]); });
+      // (a stop's close: the cancel hook, B-shutdown-usage)
+      api.setCancelHook((data, run) => { if (run.extra != null) closed(run.extra.usageCall); log.cancelled.push(run.extra != null ? run.extra.usageCall : null); });
       api.setCompletionHook((data, results, run) => {
         if (run.extra != null) closed(run.extra.usageCall);
         log.completed.push([run.extra != null ? run.extra.usageCall : null, run.error != null ? String(run.error.message).split(':')[0] : 'ok', Date.now()]);
@@ -698,6 +700,49 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
         exactlyOnce(log);
       } finally { done(api); }
     });
+    // (#487 on #488: a stop -- the runner's close() -- ends a pass's call
+    // through the close-once helper: once, and none between two passes)
+    if (stoppable) {
+      it(`${label}: a stop during a pass's dispatch ends its call once, cancelled`, async () => {
+        const api = getApi();
+        try {
+          const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true})});
+          assert.ifError(err);
+          assert.ok(await until(() => log.passes === 1), JSON.stringify(log));
+          api.close();
+          await new Promise((r) => setTimeout(r, 400));
+          assert.deepStrictEqual([log.started, log.cancelled, log.passes], [[1], [1], 1], JSON.stringify(log));
+          exactlyOnce(log);
+        } finally { done(api); }
+      });
+      it(`${label}: a stop while the question is written ends the pass's call once; nothing more runs`, async () => {
+        const api = getApi();
+        try {
+          const {err, log} = await harness(api, {timeout: 5000, askedMs: 500, answers: () => ({rerun: true})});
+          assert.ifError(err);
+          assert.ok(await until(() => log.passes === 1), JSON.stringify(log));
+          await new Promise((r) => setTimeout(r, 250));
+          api.close();
+          await new Promise((r) => setTimeout(r, 700));
+          assert.deepStrictEqual([log.started, log.cancelled, log.passes, log.ended], [[1], [1], 1, []], JSON.stringify(log));
+          exactlyOnce(log);
+        } finally { done(api); }
+      });
+      it(`${label}: a stop between two passes closes no call again`, async () => {
+        const api = getApi();
+        try {
+          const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true}),
+            before: (b) => (b === 1 ? {state: moduleAsk.newState({askable: true, shownAs: 'm'})}
+              : new Promise((r) => setTimeout(r, 500, {state: moduleAsk.newState({askable: true, shownAs: 'm'})})))});
+          assert.ifError(err);
+          assert.ok(await until(() => log.ended.length === 1), JSON.stringify(log));
+          api.close();
+          await new Promise((r) => setTimeout(r, 800));
+          assert.deepStrictEqual([log.started, log.cancelled, log.passes, log.ended], [[1], [], 1, [[1, 'unavailable']]], JSON.stringify(log));
+          exactlyOnce(log);
+        } finally { done(api); }
+      });
+    }
     it(`${label}: a task cancelled between two passes runs no next pass and opens no call`, async () => {
       const api = getApi();
       try {
@@ -860,7 +905,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       }
     });
 
-    waitOrders('BullMQ', () => JobControl, (api) => { api.setStartHook(null); api.setEndHook(null); api.setCompletionHook(null); });
+    waitOrders('BullMQ', () => JobControl, (api) => { api.setStartHook(null); api.setEndHook(null); api.setCompletionHook(null); api.setCancelHook(null); });
 
     it('a run that times out (JOB_TIMEOUT) while its ask is being written leaves no record and no slot', async () => {
       const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
@@ -1018,7 +1063,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       runner.close();
     });
 
-    waitOrders('the local runner', () => createRunner({jobTimeoutMs: 0}), (api) => api.close());
+    waitOrders('the local runner', () => createRunner({jobTimeoutMs: 0}), (api) => api.close(), true);
 
     // (the asked hook closes the pass's call when it writes the question; a
     // throw after that fails the job with a call of its own, never on the
