@@ -26,6 +26,14 @@ count against its address (a worker it happened to start does not).
 `--trustProxy` names the proxies whose `X-Forwarded-For` is
 believed (none by default: only behind a proxy you control; at most an
 IPv4 /8 and an IPv6 /32 together). HTTP only.
+### Fixed — a module setting's own words are cleaned before a client sees them
+
+`countinghouse_settings get` returned a module setting's title and
+description (`byTheModule`) as the author wrote them, and the confirmation
+form quoted the title the same way; nothing on the way out cleaned them.
+Both now go through the module-text rule: a hidden character becomes a
+space, a title is one line of at most 64 characters, a description at most
+512, its line breaks kept.
 
 ### Fixed — each runtime's job queue is its own
 
