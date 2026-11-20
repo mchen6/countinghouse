@@ -41,6 +41,7 @@ const LIBRARIES = ['resolve-from', 'import-fresh', 'source-map-support', 'module
 // in single-thread mode module-alias's alias works too: an absolute /app
 // path, mapped by the facade, as on Windows, where the module's own
 // directory is <V>:\app\..., a drive no host path is on, #195)
+const WIN_HOST = process.platform === 'win32';
 const TABLE = [
   ['resolve-from', 'works', 'works', 'works', 'works'],
   ['import-fresh', 'works', 'works', 'works', 'works'],
@@ -53,6 +54,9 @@ const TABLE = [
   // (single-thread mode answers host paths, development mode; a worker
   // never names a host path to module code)
   ['resolve-from absolute', 'works (host path)', 'works', 'works', 'works'],
+  // (POSIX: a backslash is a character of the name, the file found as
+  // plain Node finds it; on Windows a separator, not asserted)
+  ...(WIN_HOST ? [] : [['absolute request, a backslash in the name', 'works (host path)', 'works', 'works', 'works']]),
   ['resolve-from absolute, missing', 'threw MODULE_NOT_FOUND, named otherwise', 'threw MODULE_NOT_FOUND, as asked', 'threw MODULE_NOT_FOUND, as asked', 'threw MODULE_NOT_FOUND, as asked'],
   // (enforce only: none of the module's own files named by its host path
   // in any part of the error, by any route; the other modes have no
@@ -129,6 +133,9 @@ describe('sandbox 69: the compatibility table (loader-related libraries, per --m
     probe = path.join(home, 'compat-probe');
     fs.cpSync(FIXTURE, probe, {recursive: true});
     copyClosure(LIBRARIES, probe);
+    // (a module file whose name holds a backslash, a plain character on a
+    // POSIX host)
+    if (!WIN_HOST) fs.writeFileSync(path.join(probe, 'lib', 'back\\slash.js'), 'module.exports = 1;\n');
   });
   after(() => fs.rmSync(home, {recursive: true, force: true}));
 

@@ -96,6 +96,12 @@ const STEPS = {
     if (found === path.join(__dirname, '..', '..', 'lib', 'target.js')) return 'works';
     return /[\\/]target\.js$/.test(found) && !found.startsWith(path.join(__dirname, '..', '..')) ? 'works (host path)' : 'answered another file';
   },
+  'absolute request, a backslash in the name': () => {
+    const asked = path.join(__dirname, '..', '..', 'lib', 'back\\slash.js');
+    const found = require('module')._resolveFilename(asked, {id: __filename, filename: __filename, paths: []});
+    if (found === asked) return 'works';
+    return found.endsWith('back\\slash.js') && !found.startsWith(path.join(__dirname, '..', '..')) ? 'works (host path)' : 'answered another file';
+  },
   'resolve-from absolute, missing': () => {
     const asked = path.join(__dirname, 'no-such-compat-file');
     try { require('resolve-from')(__dirname, asked); return 'found'; } catch (e) {
