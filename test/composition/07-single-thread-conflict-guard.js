@@ -38,7 +38,10 @@ const {testPort} = require('../helpers/test-env');
 
 // Same reasoning as 02-ctx-call.js and friends: something downstream reaches
 // lib/countinghouse-util.js at require time, which needs options.redisUrl.
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 
 const PORT      = testPort(9561);
 const FIXTURES  = path.join(__dirname, '..', 'fixtures');
@@ -90,6 +93,9 @@ function rpc(body, cb) {
 }
 
 describe('single-thread deviceID conflict guard (DeviceManager.prototype.onDeviceOnline)', function() {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   this.timeout(40000);
 
   before((done) => startServer(done));

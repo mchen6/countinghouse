@@ -11,7 +11,10 @@ const os        = require('os');
 const path      = require('path');
 const spawnSync = require('child_process').spawnSync;
 
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 // The file provider warns at load about a key that doubles as its user name
 // (LOG.W), and every LOG call needs the logger framework.js creates at
 // startup. Run alone, nothing else in this process has created it; created
@@ -26,6 +29,9 @@ function tmpAuthFile(config) {
 }
 
 describe('file provider: identityForModule', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   it('returns the identity that lists the module', (done) => {
     const p = tmpAuthFile({
       'demo-key': {userName: 'demo', devices: ['*']},
@@ -80,6 +86,9 @@ function probeSqlite3() {
 }
 
 describe('sqlite provider: identityForModule', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   const skipReason = probeSqlite3();
   let provider;
 

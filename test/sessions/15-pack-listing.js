@@ -12,7 +12,10 @@
 const assert = require('assert');
 const EventEmitter = require('events');
 const options = require('../../lib/cli-options');
-options.setOptions({redisUrl: 'redis://127.0.0.1:1'});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 require('../../lib/logger').createLogger();
 const toolRegistry = require('../../lib/mcp/tool-registry');
 const gateway = require('../../lib/mcp/gateway');
@@ -43,6 +46,9 @@ function fakeInterface({withCi = true} = {}) {
 
 
 describe('sessions 15: a module going on or off is in no session\'s lists (B3 Task 3, as M5a leaves it)', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); options.setOptions({redisUrl: 'redis://127.0.0.1:1'}); });
+  after(() => { restoreOptions(keptOptions); });
   const A = 'a'.repeat(32);
   const B = 'b'.repeat(32);
   let ci;

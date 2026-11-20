@@ -17,7 +17,10 @@
 //   anything is decoded; past it the worker is ended.
 // Server-free.
 const assert = require('assert');
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 require('../../lib/logger').createLogger();
 const WorkerMessage = require('../../lib/worker-message');
 const DeviceManager = require('../../lib/device-manager');
@@ -67,6 +70,9 @@ function handled(wm) {
 }
 
 describe('sandbox 65: progress messages and a worker\'s bytes, on the main thread (F4-3, F4-4)', function() {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   this.timeout(WAIT_TIMEOUT);
   describe('F4-3: progress spends a bucket of its own', () => {
     it('jobprogress spends no bucket at all, the requests\' or the progress one: a final 100 always reaches its handler', () => {

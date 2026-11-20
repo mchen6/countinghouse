@@ -7,7 +7,10 @@
 // path, with a stub module manager.
 const assert = require('assert');
 const options = require('../../lib/cli-options');
-options.setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 const LOG = require('../../lib/logger');
 LOG.createLogger();
 const DeviceManager = require('../../lib/device-manager');
@@ -19,6 +22,9 @@ const settle = () => new Promise((r) => setTimeout(r, 50));
 const good = () => ({device: {friendlyName: 'spec-ok', manufacturer: 'countinghouse-test', modelDescription: 'module-loading 37', serviceList: {}}});
 
 describe('module-loading 37: a module that fails its spec check never loads', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); options.setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   afterEach(() => { delete options.verifyModule; });
 
   for (const stale of [undefined, true]) {

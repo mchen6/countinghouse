@@ -3,7 +3,10 @@
 // call does. A device nobody knows keeps its old answer.
 const assert = require('assert');
 const path = require('path');
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 const CountinghouseError = require('../../lib/countinghouse-error').CountinghouseError;
 
 const DeviceManager = require('../../lib/device-manager');
@@ -47,6 +50,9 @@ function callerWM() {
 const tokenFor = (key) => require(path.join(LIB, 'call-tokens')).issue({billingKey: key, identityKey: key, workerId: WORKER, deviceID: 'dev-a'});
 
 describe('sandbox 15: calls to a restarting module', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   before(() => {
     saved = {userAuth: require.cache[userAuthFile], broker: require.cache[brokerFile]};
     require.cache[userAuthFile] = {id: userAuthFile, filename: userAuthFile, loaded: true,
