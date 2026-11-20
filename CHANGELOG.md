@@ -10,6 +10,18 @@ the auth config.
 
 ## Unreleased
 
+### Added — requests whose API key doesn't resolve are limited per address
+
+An unauthenticated loop cost one auth-provider lookup per request, with
+nothing in its way. Now at most `--unauthRateLimit` (30) such requests a
+minute per client address (IPv6 by its /64; ten times that across the
+process) are looked up; past it the address is answered 429
+`UNAUTH_RATE_LIMITED` with `Retry-After`, before any lookup, the same answer
+whatever was wrong with the key and whatever was named. A key that resolved
+lately still passes. `--trustProxy` names the proxies whose
+`X-Forwarded-For` is believed (none by default: only behind a proxy you
+control). HTTP only.
+
 ### Fixed — each runtime's job queue is its own
 
 Every runtime opened its BullMQ job queue under one prefix, `{cdifJob}`, so

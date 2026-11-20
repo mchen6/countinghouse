@@ -1430,8 +1430,27 @@ fails if it is removed:
 | Progress | 4 a second and 240 per call | mcp-contract 10 (progress) |
 | Cancellation | a request of the caller's own connection or session only; an unknown id ignored; no answer and no error text | mcp-contract 18, 19 |
 | Every read, get, completion and task method | the per-key rate limit, once the key resolves and before any lookup | auth 15, mcp-contract 24, 26, 30, 09 |
-| `tools/call` | the per-key rate limit (and `--globalRateLimit`) on the call's run, after its one answer for a tool the caller can't see is decided; the key's resolution and grant read before it are not limited, as no limiter exists for a key that does not resolve (registered after the first release) | auth 15 (a built-in), mcp-contract 37 (a task); auth 54 the order |
+| `tools/call` | the per-key rate limit (and `--globalRateLimit`) on the call's run, after its one answer for a tool the caller can't see is decided; a key that does not resolve is limited per address before its resolution (below) | auth 15 (a built-in), mcp-contract 37 (a task); auth 54 the order |
+| A key that does not resolve | `--unauthRateLimit` (30) refusals per client address (IPv6 by its /64) per minute, ten times that across the process; then 429 `UNAUTH_RATE_LIMITED` with `Retry-After`, before any auth lookup, the same answer whatever the key and whatever is named; 10,000 addresses kept, the least recently refused out first | auth 59 |
 | The grant sets `tools/call` is answered by | a known key's only, kept by a digest of the key; at most 5 s old, refreshed by every list's read, all cleared by an auth reload; 1024 keys, the one written longest ago out first; a failed read never kept | mcp-contract 40, auth 54 |
+
+**Requests whose key doesn't resolve.** Without a limit, a loop of requests
+with made-up keys cost one auth-provider lookup each, and nothing slowed it:
+the per-key and global limits only begin once a key resolves. Now every
+HTTP request carries its client's address (the socket's, or, behind a proxy
+named with `--trustProxy`, the client `X-Forwarded-For` names) to the one
+place a key is refused for not resolving, and past `--unauthRateLimit`
+refusals a minute that address is answered 429 before anything is done for
+it. `--trustProxy` belongs only behind a proxy you control: otherwise
+`X-Forwarded-For` is the client's to forge, and each forged value would get
+its own budget (the process-wide cap still holds). A key that resolved in
+the last ten minutes, from any address (its hash is kept, never the key),
+still passes, so a user behind a shared address is not shut out by
+another's bad requests, and it is still looked up as any key is. API keys are high-entropy: this bounds the provider's load, it is
+not brute-force protection, and it is not what keeps a key from being
+guessed. In memory, per process: several runtimes each allow their own
+budget. `--stdio` and `--sessionSocket` are local and authenticated, and are
+not limited.
 
 A module resource read takes its token from the call path, after the
 listing lookup that finds its action: a probe of a URI that reads nothing
