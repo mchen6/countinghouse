@@ -98,20 +98,37 @@ jobs:
           OPEN_SESSIONS: ${{ inputs.open_sessions }}
           OPEN_CALLS: ${{ inputs.open_calls }}
           RUN: ${{ matrix.run }}
+        # (the maintainer, 11-19: the open run, realistic load, is the release
+        # gate, and the job fails with it; the closed run's verdict is
+        # recorded only, in the log and the step's summary, and never fails
+        # the job. A harness failure fails it in either mode. Every mode asked
+        # for runs, and the results still upload.)
         run: |
           set +e
           case "$MODES" in closed|open|closed,open|open,closed) ;; *) echo "modes must be closed, open or closed,open"; exit 2 ;; esac
           shim=ch-local/shim/target/release/ch-shim
+          rc=0
+          # a gate's exit as 0, 1 or 2: a FAIL verdict is 1 only with its
+          # result written (a crash also exits 1, with none); a signal or any
+          # other code is the harness failing
+          code() { if [ "$1" = 0 ]; then echo 0; elif [ "$1" = 1 ] && [ -s "$2" ]; then echo 1; else echo 2; fi; }
+          word() { case "$1" in 0) echo PASS ;; 1) echo FAIL ;; *) echo "the harness failed" ;; esac; }
+          say() { if [ -n "$GITHUB_STEP_SUMMARY" ]; then echo "- $1" >> "$GITHUB_STEP_SUMMARY"; fi; }
           case ",$MODES," in *,closed,*)
             node perf/latency-gate/gate.js --shim "$shim" --mode closed \
               --sessions "$CLOSED_SESSIONS" --rounds "$CLOSED_ROUNDS" --calls "$CLOSED_CALLS" --json gate-closed.json
-            echo "closed: gate exit $? (0 PASS, 1 FAIL, 2 the harness failed)" ;;
+            c=$?; c=$(code "$c" gate-closed.json); echo "closed: gate exit $c (0 PASS, 1 FAIL, 2 the harness failed)"
+            say "closed (back to back): $(word "$c"), recorded only, not the release gate"
+            [ "$c" = 2 ] && rc=2 ;;
           esac
           case ",$MODES," in *,open,*)
             node perf/latency-gate/gate.js --shim "$shim" --mode open \
               --sessions "$OPEN_SESSIONS" --rounds 1 --calls "$OPEN_CALLS" --seed "$RUN" --json gate-open.json
-            echo "open: gate exit $? (0 PASS, 1 FAIL, 2 the harness failed)" ;;
+            c=$?; c=$(code "$c" gate-open.json); echo "open: gate exit $c (0 PASS, 1 FAIL, 2 the harness failed)"
+            say "open (realistic load): $(word "$c"), the release gate"
+            [ "$c" -gt "$rc" ] && rc=$c ;;
           esac
+          exit "$rc"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

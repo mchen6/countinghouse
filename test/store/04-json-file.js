@@ -389,8 +389,9 @@ describe('store 04: the review of B2', function() {
 
 // #150: a process that takes the lock again the moment it releases it
 // starved one waiting with a 10 ms retry past LOCK_WAIT_MS (seen on Windows
-// CI). A waiter announces itself, and the others yield to it, so both
-// finish, every wait inside LOCK_WAIT_MS.
+// CI). A waiter announces itself, and the others yield to it, so once it
+// has announced the other process takes the lock at most once more before
+// the waiter has it (measured in holds, not the wall clock: below).
 describe('store 04: a waiter is not starved (#150)', function() {
   this.timeout(60000);
 
@@ -489,11 +490,26 @@ describe('store 04: a waiter is not starved (#150)', function() {
     }
   });
 
-  it('two processes hammering one key both finish, every operation within LOCK_WAIT_MS', async () => {
+  // Fairness, measured in the other process's holds, never the wall clock:
+  // a loaded runner stalls both processes alike (CI took 13 s for a 3 s
+  // hammer, and an update that succeeded took 2697 ms with the yield
+  // working), and a late retry timer lets a hammer whose own announcement
+  // the waiter yielded to take the lock freely until the waiter's next
+  // attempt, as designed. What the announcement promises is load-free: once
+  // the waiter has announced (the rename onto .lock.waiting), the other
+  // process begins at most one more hold -- one already past its yield
+  // check -- before the waiter has the lock. The hammer logs when each hold
+  // begins, the waiter when it announced and when it got the lock (inside
+  // fn), on one monotonic timeline; at most 3 holds (slack for the clock's
+  // resolution) may begin in between. With the yield disabled an update
+  // waited through 177 and 190 holds of its whole wait.
+  it('two processes hammering one key both finish, and once a waiter has announced the other takes the lock at most once more', async () => {
     const dir = tmpStore();
     const file = path.join(dir, 'm.json');
     const run = (script) => new Promise((resolve, reject) => {
-      const p = spawn(process.execPath, ['-e', `const {openJsonFile, withStoreLock} = require(${JSON.stringify(MOD)});\n${script}`],
+      const p = spawn(process.execPath, ['-e', `const {openJsonFile, withStoreLock} = require(${JSON.stringify(MOD)});
+        const {performance: perfHooks} = require('perf_hooks');
+        const monotonic = () => perfHooks.timeOrigin + perfHooks.now();\n${script}`],
         {stdio: ['ignore', 'pipe', 'pipe']});
       let out = '';
       let err = '';
@@ -501,34 +517,56 @@ describe('store 04: a waiter is not starved (#150)', function() {
       p.stderr.on('data', (c) => { err += c; });
       p.on('exit', (code) => (code === 0 ? resolve(out) : reject(new Error(err || `exit ${code}`))));
     });
-    // takes the lock again at once, each time holding it about 2 ms
+    // takes the lock again at once, each time holding it about 2 ms, and
+    // logs when each hold begins; a wait that ends yielding to a stalled
+    // waiter (its announcement still fresh) is counted, not a failure
     const hammer = run(`
       const end = Date.now() + 3000;
-      let n = 0;
+      const holds = [];
+      let yielded = 0;
       while (Date.now() < end) {
-        withStoreLock(${JSON.stringify(dir)}, () => { const t = Date.now() + 2; while (Date.now() < t) { /* hold */ } n++; });
+        try {
+          withStoreLock(${JSON.stringify(dir)}, () => { holds.push(monotonic()); const t = Date.now() + 2; while (Date.now() < t) { /* hold */ } });
+        } catch (e) {
+          if (!/yielded to a waiting process/.test(e.message)) throw e;
+          yielded++;
+        }
       }
-      process.stdout.write(String(n));
+      process.stdout.write(JSON.stringify({holds, yielded}));
     `);
-    // counts one key with update(), timing each
+    // counts one key with update(), logging when it announced (if it had to)
+    // and when it got the lock
     const waiter = run(`
+      const fs = require('fs');
+      let announced = null;
+      const rename = fs.renameSync;
+      fs.renameSync = function(from, to) {
+        const r = rename.apply(this, arguments);
+        if (String(to).endsWith('.lock.waiting') && announced == null) announced = monotonic();
+        return r;
+      };
       const f = openJsonFile(${JSON.stringify(file)});
-      let n = 0, worst = 0;
+      const waits = [];
       const next = () => {
-        const t = Date.now();
-        f.update('n', (v) => (v || 0) + 1, (err) => {
+        announced = null;
+        let got = null;
+        f.update('n', (v) => { got = monotonic(); return (v || 0) + 1; }, (err) => {
           if (err) { process.stderr.write(err.message); process.exit(1); }
-          worst = Math.max(worst, Date.now() - t);
-          if (++n < 40) return next();
+          waits.push({announced, got});
+          if (waits.length < 40) return next();
           f.close();
-          process.stdout.write(String(worst));
+          process.stdout.write(JSON.stringify(waits));
         });
       };
       setTimeout(next, 100);
     `);
-    const [hammered, worst] = await Promise.all([hammer, waiter]);
-    assert.ok(Number(hammered) > 0, 'the hammer never took the lock');
-    assert.ok(Number(worst) < 2000, `an update waited ${worst} ms`);
+    const [{holds}, waits] = (await Promise.all([hammer, waiter])).map((out) => JSON.parse(out));
+    assert.ok(holds.length > 0, 'the hammer never took the lock');
+    // (the two contended: some updates had to announce, so the yield was tested)
+    const contended = waits.filter((w) => w.announced != null);
+    assert.ok(contended.length > 0, `no update had to announce (${holds.length} holds): nothing was tested`);
+    const after = contended.map((w) => holds.filter((h) => h >= w.announced && h < w.got).length);
+    assert.ok(Math.max(...after) <= 3, `once announced, an update waited through ${Math.max(...after)} of the other process's holds (${JSON.stringify(after)})`);
     assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).n, 40);
   });
 });
