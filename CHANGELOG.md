@@ -10,6 +10,22 @@ the auth config.
 
 ## Unreleased
 
+### Added — the server's instructions, and `countinghouse_overview`
+
+A first-run user's agent can now learn what countinghouse is and what is
+installed. `initialize` and `server/discover` carry one fixed paragraph of
+`instructions`, the same for every caller. The new platform tool
+`countinghouse_overview`, listed to every caller, answers what is
+installed here: each pack's state (ready, off or not loaded), what it does,
+its tools and example requests, and what is still missing, such as a
+credential the user adds in their own terminal, with the command. It shows
+only what the caller can already use, writes nothing and takes no
+arguments. Its answer is data, sent as JSON text and as `structuredContent`,
+at most 8 KiB the two together; what a module wrote (its description and
+example requests) stands only under each pack's `byTheModule`, each one
+line, cleaned. Under `ch-local` it reads the install record and the new
+`--heldBackFile` (set by `ch-local`). tools/list gains the tool.
+
 ### Added — requests whose API key doesn't resolve are limited per address
 
 An unauthenticated loop cost one auth-provider lookup per request, with

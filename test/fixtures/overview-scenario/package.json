@@ -1,0 +1,8 @@
+{
+  "name": "@acme-test/overview-scenario",
+  "version": "1.0.0",
+  "countinghouse": {
+    "role": "scenario"
+  },
+  "description": "stdio 49 (B-firstrun): a scenario whose package name is not its friendlyName"
+}

@@ -201,6 +201,18 @@ if (options.settingsFile != null && options.singleIdentity !== true) {
     JSON.stringify(String(options.settingsFile)) + ')');
   process.exit(2);
 }
+// --heldBackFile (B-firstrun): ch-local's held-back modules, read by
+// countinghouse_overview, only beside --settingsFile (refused elsewhere, not
+// ignored: an ignored flag would read as working)
+if (options.heldBackFileInvalid === true) {
+  console.error('--heldBackFile needs a path (--heldBackFile <file>)');
+  process.exit(2);
+}
+if (options.heldBackFile != null && options.settingsFile == null) {
+  console.error('--heldBackFile is only with --settingsFile (ch-local start), where countinghouse_overview reads it (got ' +
+    JSON.stringify(String(options.heldBackFile)) + ')');
+  process.exit(2);
+}
 // --remoteOriginMap moves where a credential goes, so it is honoured only
 // with COUNTINGHOUSE_ACCEPTANCE=1 in this process's own environment (which a
 // module never sees: every COUNTINGHOUSE_* is withheld), checked whole here,
@@ -456,6 +468,10 @@ try {
   console.error(e.message);
   process.exit(2);
 }
+// ch-local's held-back list, its first read begun now (off the main thread
+// on Windows, where its ACL is a PowerShell run): countinghouse_overview
+// waits for it (lib/held-back.js)
+if (options.heldBackFile != null) require('./lib/held-back').start();
 var identityReady = Promise.resolve();
 if (options.debug === true && require('./lib/auth').identitySource(options) != null) {
   // --debug bypasses auth, but the single-identity profile still indexes its

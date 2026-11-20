@@ -38,6 +38,7 @@ function argsTable(scanDir) {
   return {
     countinghouse_check_balance:                                {args: {}, expect: 'ok'},
     countinghouse_usage_report:                                 {args: {groupBy: 'tool'}, expect: 'ok'},
+    countinghouse_overview:                                     {args: {}, expect: 'ok'},
     composite_demo_compositeservice_run:                        {args: {text: 'hi'}, expect: 'ok'},
     echo_device_client_x_api:                                   {args: {}, expect: 'ok'},
     echo_device_client_errtestservice_testerrorinfo:            {args: {foo: 'x'}, expect: 'error'},
