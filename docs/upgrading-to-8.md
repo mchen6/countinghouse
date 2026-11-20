@@ -674,12 +674,16 @@ says how to write a module for this.
   One live runtime per server id on a Redis: a start whose id another live
   runtime holds (two runtimes on one data directory, or a directory or
   image copied with its `.server-id`) is refused, exit 2, naming the
-  holder; give each server its own data directory, or remove `.server-id`
-  from the copy. (ch-local's runtimes share a data directory with
-  `--store local`, which has no Redis queue and makes no claim.) The start
-  that finds nothing left under the old prefix and keys records that in
+  holder, before it serves; give each server its own data directory, or
+  remove `.server-id` from the copy. A claim whose holder is gone is taken
+  over: at once when it was a process of this host that has ended, else
+  once it goes a heartbeat (about 12 s) without renewal, so a replaced pod
+  waits that long before it serves. (ch-local's runtimes share a data
+  directory with `--store local`, which has no Redis queue and makes no
+  claim.) The start whose scan finds no old job history records that in
   Redis (`countinghouse:legacy-jobs-none`, db 5), and later starts no longer
-  look. Jobs
+  scan for it; the old jobs and schedulers are a few cheap reads, counted
+  at every start. Jobs
   and schedulers queued before the upgrade, under the old shared
   `{cdifJob}`, are not moved: the start logs how many, once, and leaves them;
   re-create any you still want once no older runtime serves that prefix.
