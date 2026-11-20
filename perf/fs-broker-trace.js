@@ -4,7 +4,10 @@
 // packages), W (readdir + stat over 3 000 files), the tree's seeding (mkdir
 // -p and small files) and S (small writes), under enforce. Prints,
 // per workload, the calls by op and the most frequent pairs of consecutive
-// calls on one path (what a compound op would fold).
+// calls on one path (what a compound op would fold). A descriptor op is
+// traced as 'fd' whatever the descriptor, and the pairs are over one stream
+// of every broker's calls: right for these workloads (one module, one
+// descriptor at a time), not for one with several descriptors or brokers.
 //   node perf/fs-broker-trace.js [top=15]
 const fs = require('fs');
 const os = require('os');
@@ -28,12 +31,12 @@ function summarise(lines) {
   return {calls: lines.length, byOp: top(ops), samePathPairs: top(pairs)};
 }
 
+let base = null;
+let server = null;
 (async () => {
-  const base = fs.mkdtempSync(path.join(os.homedir(), '.ch-fsb-trace-'));
+  base = fs.mkdtempSync(path.join(os.homedir(), '.ch-fsb-trace-'));
   const trace = path.join(base, 'trace.jsonl');
   // the workloads script's module copy, with L's node_modules
-  const {execFileSync} = require('child_process');
-  void execFileSync;
   const mod = path.join(base, 'fs-bench');
   fs.cpSync(path.join(__dirname, 'fixtures', 'fs-bench'), mod, {recursive: true});
   const names = [];
@@ -46,18 +49,26 @@ function summarise(lines) {
     names.push(`dep-${i}`);
   }
   fs.writeFileSync(path.join(mod, 'deps.json'), JSON.stringify(names));
-  const server = await startServer(PORT, ['--workerThread', '--moduleSandbox', 'enforce', '--debug', '--debugKey', KEY, '--requestTimeout', '300000',
+  // (the preload in the server's own node flags: nothing it spawns loads it,
+  // and a path with a space stays one argument)
+  server = await startServer(PORT, ['--workerThread', '--moduleSandbox', 'enforce', '--debug', '--debugKey', KEY, '--requestTimeout', '300000',
     '--moduleDataPath', path.join(base, 'data'), '--loadModule', mod],
-  {env: {NODE_OPTIONS: `--require ${path.join(__dirname, 'fixtures', 'trace-broker-ops.js')}`, CH_FSB_TRACE_OUT: trace}});
+  {nodeArgs: ['--require', path.join(__dirname, 'fixtures', 'trace-broker-ops.js')], env: {CH_FSB_TRACE_OUT: trace}});
   const read = () => fs.readFileSync(trace, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
-  try {
-    await mcpCall(PORT, KEY, 'fs_bench_benchservice_loaded', {});
+  const loaded = async () => {
+    const r = await mcpCall(PORT, KEY, 'fs_bench_benchservice_loaded', {});
+    if (r.structuredContent == null || r.structuredContent.deps !== names.length) throw new Error(`the dependencies were not loaded: ${JSON.stringify(r)}`);
+  };
+  {
+    await loaded();
     await mcpCall(PORT, KEY, 'fs_bench_benchservice_seedtree', {dirs: 30, files: 100});
-    // L: one reload
+    // L: one reload, checked as the workloads script checks it: answered 200,
+    // and the module back with every dependency loaded
     fs.writeFileSync(trace, '');
-    await post(PORT, KEY, '/reload-module', {path: mod});
+    const reloaded = await post(PORT, KEY, '/reload-module', {path: mod});
+    if (reloaded.status !== 200) throw new Error(`the reload was refused: ${JSON.stringify(reloaded.body)}`);
     await waitFor(async () => {
-      try { return (await mcpCall(PORT, KEY, 'fs_bench_benchservice_loaded', {})).structuredContent != null; } catch (e) { return false; }
+      try { await loaded(); return true; } catch (e) { return false; }
     }, 120000, 'back');
     const L = summarise(read());
     // W: one walk
@@ -72,8 +83,9 @@ function summarise(lines) {
     await mcpCall(PORT, KEY, 'fs_bench_benchservice_smallwrites', {writes: 100, size: 100});
     const S = summarise(read());
     console.log(JSON.stringify({L, W, seed, S}, null, 2));
-  } finally {
-    stopServer(server);
-    fs.rmSync(base, {recursive: true, force: true});
   }
-})().catch((e) => { console.error(e); process.exit(1); });
+})().catch((e) => { console.error(e); process.exitCode = 1; }).finally(() => {
+  // every path: the server stopped, the tree removed (an early failure too)
+  if (server != null) stopServer(server);
+  if (base != null) fs.rmSync(base, {recursive: true, force: true});
+});
