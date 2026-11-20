@@ -223,6 +223,15 @@ const STEPS = {
       } finally { Buffer.prototype.toString = realToString; Buffer.from = realFrom; Object.assign = realAssign; }
       out.push(calls === 0 && got === 'f.js' ? 'same' : `moduleCodeInRead(${calls} ${got})`);
     }
+    // (the medium review of 9685cb1f: an object whose prototype chain holds
+    // a Proxy, handed to findPackageJSON, runs none of its traps inside it)
+    if (typeof(M.findPackageJSON) === 'function') {
+      let traps = 0;
+      const odd = Object.create(new Proxy({}, {getPrototypeOf() { traps++; return URL.prototype; }}));
+      let got;
+      try { got = String(M.findPackageJSON(odd, __filename)); } catch (e) { got = String(e.code); }
+      out.push(traps === 0 ? 'same' : `protoTrap(${traps} ${got})`);
+    } else out.push('same');
     // (#465's Fable pass, F2 and F3: a require whose parent is the root
     // itself -- createRequire('/app') -- is refused before Node, as a missing
     // name is, while createRequire('/app/'), a directory, still requires
