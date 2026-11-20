@@ -5,8 +5,12 @@ handful of things that fail quietly if you skip them.
 
 ## Prerequisites
 
-- **Node >= 24.15** (`package.json`'s `engines`). Development runs on 24.21;
-  CI tests 24.15.0, the newest 24.x and the newest 26.x.
+- **Node >= 22.16** (`package.json`'s `engines`). Development runs on 24.21;
+  CI runs the whole suite on 22.16.0, 24.15.0, the newest 24.x and the
+  newest 26.x, and the sandbox, file broker and single-thread tests on the
+  newest 22.x, 24.0 and 24.14. Below 24.15 a compatibility shim routes
+  `require.resolve` through the sandbox's hooks; multi-tenant hosting of
+  third-party modules should run 24.15 or later.
 - **Redis** reachable at `redis://127.0.0.1:6379`. Most of the suite needs it —
   metering, rate limiting and the job queue all use it. Check with
   `redis-cli ping`, expecting `PONG`. The runtime uses several numbered
