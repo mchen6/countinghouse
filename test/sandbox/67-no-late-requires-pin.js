@@ -54,7 +54,7 @@ const REVIEWED = [
   // set-options and boot, before the lockdown
   [/^lib\/lean-worker\.js$/, /^\.\/fs-broker\/(identity|patch)$/, 'boot and set-options: before the lockdown', FOLLOW, 1],
   [/^lib\/lean-worker\.js$/, /^\.\/module-lockdown$/, 'set-options: the lockdown itself', FOLLOW, 1],
-  [/^lib\/fs-broker\/identity\.js$/, /^(fs|\.\/roots)$/, 'the main thread\'s code roots, insideHostFor at load, and install\'s real paths of the install for its stack names (at set-options, before the lockdown)', FOLLOW, 4],
+  [/^lib\/fs-broker\/identity\.js$/, /^(fs|\.\/roots)$/, 'the main thread\'s code roots, and insideHostFor at load', FOLLOW, 3],
   [/^lib\/fs-broker\/identity\.js$/, /^os$/, 'install: at set-options, before the lockdown', FOLLOW, 1],
   [/^lib\/fs-broker\/patch\.js$/, /^\.\/roots$/, 'install: at boot', FOLLOW, 1],
   [/^lib\/lean-worker\.js$/, /^postman-request$/, 'warm, at set-options before the lockdown, for a module that declares net', FOLLOW, 2],
