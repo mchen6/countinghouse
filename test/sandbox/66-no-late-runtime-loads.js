@@ -269,17 +269,31 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       EE.prototype.removeListener = rl0;
       // _aborted, and write after abort, as postman-request's
       const afterAbort = {aborted: r3._aborted, write: r3.write('x')};
-      // a URL as the uri: its parts
-      const r9 = CHUtil.request({uri: new URL('http://not-granted.example.invalid/p?q=1')});
+      // a string uri: its parts
+      const r9 = CHUtil.request({uri: 'http://not-granted.example.invalid/p?q=1'});
       r9.on('error', () => {});
       const uriParts = r9.uri == null ? null : {host: r9.uri.host, path: r9.uri.path, protocol: r9.uri.protocol};
+      // a URL object whose searchParams has its own toString, made dirty by
+      // the real append: any URL getter runs it (Node 22.16 to 26.13). The
+      // stand-in reads none, and its uri is null (the reviewer on #474, from
+      // C's medium on #465). The one run counted is the host check's
+      // (normaliseRequestOptions reads the uri's href once, in the module's
+      // own call, and checks and hands on what that read gave)
+      let urlToStringRan = 0;
+      const own = new URL('http://not-granted.example.invalid/p?q=1');
+      const sp = own.searchParams;
+      sp.toString = function() { urlToStringRan++; return 'evil=1'; };
+      URLSearchParams.prototype.append.call(sp, 'k', 'v');
+      const r10 = CHUtil.request({uri: own});
+      r10.on('error', () => {});
+      const urlObjectUri = r10.uri;
       return {ran, viaCallback, piped, onceCalls, prependOnceCalls, after, viaForm, abortErr, aborted, uri: r4.uri && r4.uri.href, method: r4.method,
-        assigned, lateThenAbort, nested, removeRan, afterAbort, uriParts};
+        assigned, lateThenAbort, nested, removeRan, afterAbort, uriParts, urlToStringRan, urlObjectUri};
     `);
     assert.deepStrictEqual(out, {ran: 0, viaCallback: 'ERR_ACCESS_DENIED', piped: 'dest', onceCalls: 1, prependOnceCalls: 1, after: 0, viaForm: 'ERR_ACCESS_DENIED',
       abortErr: 0, aborted: 1, uri: 'http://not-granted.example.invalid/x', method: 'POST',
       assigned: true, lateThenAbort: 0, nested: 'ERR_ACCESS_DENIED', removeRan: 0, afterAbort: {aborted: true},
-      uriParts: {host: 'not-granted.example.invalid', path: '/p?q=1', protocol: 'http:'}}, JSON.stringify(out));
+      uriParts: {host: 'not-granted.example.invalid', path: '/p?q=1', protocol: 'http:'}, urlToStringRan: 1, urlObjectUri: null}, JSON.stringify(out));
   }));
 
   // the stand-in's method list can't drift from postman-request's Request
