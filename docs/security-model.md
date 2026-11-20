@@ -300,7 +300,7 @@ any module code). Stops:
   | `require-in-the-middle`, a `Hook` | works | works | throws | throws |
   | `resolve-from`, from `__dirname` | works | works | works | works |
   | `import-fresh`, a relative name | works | works | works | works |
-  | `import-fresh` or `resolve-from`, an absolute path from `__dirname` | works | works | works | works |
+  | `import-fresh` or `resolve-from`, an absolute path from `__dirname` | works | works below Node 24.15 | works below Node 24.15 | works below Node 24.15 |
   | `module.findPackageJSON` from `__filename` | works | works | works | not in the reduced `module` |
   | `module-alias`, `addAlias` | works | no alias | no alias | throws |
   | `process.emitWarning = fn` | works | works | works | works |

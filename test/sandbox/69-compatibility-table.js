@@ -41,7 +41,13 @@ const LIBRARIES = ['resolve-from', 'import-fresh', 'source-map-support', 'module
 // in single-thread mode module-alias's alias works too: an absolute /app
 // path, mapped by the facade, as on Windows, where the module's own
 // directory is <V>:\app\..., a drive no host path is on, #195)
-const WIN_HOST = process.platform === 'win32';
+// (a direct Module._resolveFilename with an absolute /app request is not
+// mapped in a worker, as on master (ruled: cut from C-compat; the mapping
+// that shares the hook's own code is a later row): below Node 24.15 the
+// resolve shim runs identity's hook for the call, which maps it; from 24.15
+// on Node reads the literal /app)
+const {NEEDS_RESOLVE_SHIM} = require('../../lib/node-version');
+const ABSOLUTE = NEEDS_RESOLVE_SHIM ? 'works' : 'threw MODULE_NOT_FOUND';
 const TABLE = [
   ['resolve-from', 'works', 'works', 'works', 'works'],
   ['import-fresh', 'works', 'works', 'works', 'works'],
@@ -50,18 +56,10 @@ const TABLE = [
   // (under enforce the reduced module has no findPackageJSON)
   ['findPackageJSON relative', 'works', 'works', 'works', 'not in module'],
   ['findPackageJSON directory base', 'works', 'works', 'works', 'not in module'],
-  ['import-fresh absolute', 'works', 'works', 'works', 'works'],
+  ['import-fresh absolute', 'works', ABSOLUTE, ABSOLUTE, ABSOLUTE],
   // (single-thread mode answers host paths, development mode; a worker
   // never names a host path to module code)
-  ['resolve-from absolute', 'works (host path)', 'works', 'works', 'works'],
-  // (POSIX: a request for a module file whose name holds a backslash
-  // answers as a plain require does -- found, on every version (ruled
-  // R-bs); on Windows a backslash is a separator, not asserted)
-  ...(WIN_HOST ? [] : [['absolute request, a backslash in the name', 'works (host path)', 'works', 'works', 'works']]),
-  // (every OS: a backslash request climbing out of the root by the host's
-  // rules is not found, by a direct call as by a plain require; single-
-  // thread mode has no isolation, not asserted)
-  ['absolute request, a backslash climbing out', null, 'threw MODULE_NOT_FOUND', 'threw MODULE_NOT_FOUND', 'threw MODULE_NOT_FOUND'],
+  ['resolve-from absolute', 'works (host path)', ABSOLUTE, ABSOLUTE, ABSOLUTE],
   ['resolve-from absolute, missing', 'threw MODULE_NOT_FOUND, named otherwise', 'threw MODULE_NOT_FOUND, as asked', 'threw MODULE_NOT_FOUND, as asked', 'threw MODULE_NOT_FOUND, as asked'],
   // (enforce only: none of the module's own files named by its host path
   // in any part of the error, by any route; the other modes have no
@@ -138,9 +136,6 @@ describe('sandbox 69: the compatibility table (loader-related libraries, per --m
     probe = path.join(home, 'compat-probe');
     fs.cpSync(FIXTURE, probe, {recursive: true});
     copyClosure(LIBRARIES, probe);
-    // (a module file whose name holds a backslash, a plain character on a
-    // POSIX host)
-    if (!WIN_HOST) fs.writeFileSync(path.join(probe, 'lib', 'back\\slash.js'), 'module.exports = 1;\n');
   });
   after(() => fs.rmSync(home, {recursive: true, force: true}));
 

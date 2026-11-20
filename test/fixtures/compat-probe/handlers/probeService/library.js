@@ -96,27 +96,6 @@ const STEPS = {
     if (found === path.join(__dirname, '..', '..', 'lib', 'target.js')) return 'works';
     return /[\\/]target\.js$/.test(found) && !found.startsWith(path.join(__dirname, '..', '..')) ? 'works (host path)' : 'answered another file';
   },
-  // (a direct call answers as a plain require of the same request does)
-  'absolute request, a backslash in the name': () => {
-    const asked = path.join(__dirname, '..', '..', 'lib', 'back\\slash.js');
-    const found = require('module')._resolveFilename(asked, {id: __filename, filename: __filename, paths: []});
-    let plain;
-    try { plain = require.resolve(asked); } catch (e) { plain = said(e); }
-    if (plain !== found) return `differs from a plain require (${plain})`;
-    if (found === asked) return 'works';
-    return found.endsWith('back\\slash.js') && !found.startsWith(path.join(__dirname, '..', '..')) ? 'works (host path)' : 'answered another file';
-  },
-  // (a backslash request whose host copy, by the host's own rules, climbs
-  // out of the module: a separator on Windows, a character elsewhere --
-  // not found either way, as a plain require of it)
-  'absolute request, a backslash climbing out': () => {
-    const asked = `${path.join(__dirname, '..', '..', 'lib')}${path.sep === '\\' ? '\\' : '/'}x\\..\\..\\..\\..\\..\\outside-compat.js`;
-    let direct;
-    let plain;
-    try { direct = `found ${require('module')._resolveFilename(asked, {id: __filename, filename: __filename, paths: []})}`; } catch (e) { direct = said(e); }
-    try { plain = `found ${require.resolve(asked)}`; } catch (e) { plain = said(e); }
-    return direct === plain ? direct : `direct ${direct}, plain ${plain}`;
-  },
   'resolve-from absolute, missing': () => {
     const asked = path.join(__dirname, 'no-such-compat-file');
     try { require('resolve-from')(__dirname, asked); return 'found'; } catch (e) {

@@ -842,10 +842,13 @@ own, as on 24.15 and later.
   module's own `__dirname`: work in every mode, single-thread included.
   Your module's directory is `/app/...`; it reaches Node's resolver in its
   host form, inside your module only.
-- Node's own `Module._resolveFilename`, called with a relative request or
-  an absolute one built from `__dirname`, and `module.findPackageJSON`, from
-  one of your files: work the same way. Under `enforce` the `module` your
-  code gets has no `findPackageJSON`.
+- Node's own `Module._resolveFilename` called with a relative request, and
+  `module.findPackageJSON`, from one of your files: work the same way. Under
+  `enforce` the `module` your code gets has no `findPackageJSON`.
+- `Module._resolveFilename` called directly with an absolute `/app/...`
+  request (`importFresh(path.join(__dirname, 'x'))`, say) isn't mapped in a
+  worker on Node 24.15 and later: pass a relative request, or require it
+  normally. Single-thread mode maps it.
 - `require-in-the-middle` (APM agents' module hooks): throws at
   `new Hook()` under `audit` and `enforce`; a module can't hook the
   runtime's module loading.
