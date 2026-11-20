@@ -1457,7 +1457,8 @@ a module's text or an answer:
   could be shown for (outcome `unavailable`: a pass, run again, never a
   call, counted in the usage report's `unavailable`; so is one whose
   question found no room among the tasks waiting on questions); and a task
-  cancelled while it ran.
+  cancelled while a pass of it ran (one cancelled between two passes runs
+  nothing more and records nothing more: its passes are recorded).
 
 These events are **not recorded in this release**:
 - a stored result's id and size per item, a read of one refused or

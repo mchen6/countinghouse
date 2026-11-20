@@ -389,6 +389,46 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
   // its asking pass completes the job, and BullMQ's completed event must not
   // forget the job's session, which the answered run needs (the review of
   // #374, M1: it ran with no session, so with none of the session's limits).
+  // (#487's high, round 1: the gateway's own before hook -- a run started
+  // again reads the task's tombstone after its record, and a read that
+  // fails, either, rejects: never a run as if nothing were known)
+  describe('the gateway\'s before hook', () => {
+    const tombstones = require('../../lib/task-tombstones');
+    const options = require('../../lib/cli-options');
+    let savedGet;
+    let saved;
+    before(() => { savedGet = tombstones.get; saved = {moduleQuestions: options.moduleQuestions}; options.moduleQuestions = true; });
+    after(() => { tombstones.get = savedGet; Object.assign(options, saved); });
+    // (no module loaded: the hook's target lookup finds none)
+    const cdif = {deviceManager: {getAllDeviceSpecs: () => ({})}};
+    const beforeOf = (jobData, t, run) => require('../../lib/mcp/gateway').jobHooks(cdif).ask.before(jobData, t, run);
+    const jobData = {era: 'modern', asks: true, asking: 1, deviceID: 'd', serviceID: 's', actionName: 'a'};
+    it('a run started again for a task cancelled meanwhile (its tombstone) runs nothing: {skip, cancelled}', async () => {
+      const t = id();
+      assert.ok((await ask(t)).asked != null);
+      await taskAsks.answer(t, {q1: {action: 'decline'}}, {session: SESSION, ofAsker});
+      tombstones.get = () => Promise.resolve({owner: 'o'});
+      assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true, cancelled: true});
+      tombstones.get = () => Promise.resolve(null);
+      const r = await beforeOf(jobData, t, {rerun: false});
+      assert.ok(r.skip !== true && moduleAsk.isState(r.state), JSON.stringify(r));
+    });
+    it('a tombstone that can\'t be read rejects; so does a record that can\'t be read', async () => {
+      const t = id();
+      assert.ok((await ask(t)).asked != null);
+      await taskAsks.answer(t, {q1: {action: 'decline'}}, {session: SESSION, ofAsker});
+      tombstones.get = () => Promise.reject(new Error('tombstones down'));
+      await assert.rejects(beforeOf(jobData, t, {rerun: false}), /tombstones down/);
+      tombstones.get = () => Promise.resolve(null);
+      taskAsks.configure({kv: () => ({get: (k, cb) => setImmediate(cb, new Error('store down'))})});
+      try {
+        await assert.rejects(beforeOf(jobData, t, {rerun: true}), /store down/);
+      } finally {
+        taskAsks.configure({kv: () => kv});
+      }
+    });
+  });
+
   // A run started again within itself (a question no form could be shown
   // for, or no room) runs its next pass at once, bounded by the run's time
   // limit counted from its first pass (JOB_TIMEOUT), the same in both
@@ -448,6 +488,15 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
         assert.ifError(err);
         assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
         assert.deepStrictEqual([log.completed[0][1], log.ended.map(([, o]) => o), log.started.length], ['ok', ['unavailable', 'unavailable', 'unavailable'], 4], JSON.stringify(log));
+      } finally { done(api); }
+    });
+    it(`${label}: a before that fails (a store read) runs nothing; the run fails with a call of its own`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true}), before: () => Promise.reject(new Error('store down'))});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.deepStrictEqual([log.passes, log.started, log.completed[0][0], log.completed[0][1]], [0, [1], 1, 'store down'], JSON.stringify(log));
       } finally { done(api); }
     });
     it(`${label}: a task cancelled between two passes runs no next pass and opens no call`, async () => {
