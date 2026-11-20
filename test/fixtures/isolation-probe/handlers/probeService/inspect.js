@@ -788,6 +788,46 @@ const STEPS = {
     return stuck.length === 0 ? 'none replaced' : `replaced: ${stuck.join(' ')}`;
   },
   // S: an entry planted in Node's path cache reads as never there
+  // (F4-1's follow-ups: every error the load hook throws -- its own read of a
+  // module file, Node's next step -- and resolution's past not-found names no
+  // host path, in its message, any own property or a cause; input.needles,
+  // the host paths. A stack's frames are the stack hold's, C-lows, pinned
+  // by stackFrames)
+  loadHookErrors: async (input) => {
+    const needles = Array.isArray(input && input.needles) ? input.needles.filter((n) => typeof(n) === 'string' && n.length > 1) : [];
+    const M = module.constructor;
+    const texts = (e, depth = 0) => {
+      if (e == null || typeof(e) !== 'object' || depth > 3) return [String(e)];
+      const out = [];
+      for (const k of Object.getOwnPropertyNames(e)) {
+        if (k === 'stack') continue;
+        let v;
+        try { v = e[k]; } catch (x) { continue; }
+        if (typeof(v) === 'string') out.push(`${k}=${v}`);
+        else if (k === 'cause') out.push(...texts(v, depth + 1).map((t) => `cause.${t}`));
+      }
+      return out;
+    };
+    const cases = {
+      extJsMissing: () => require.extensions['.js']({_compile() {}, id: '/app/nope.js', filename: '/app/nope.js', paths: []}, '/app/nope.js'),
+      extJsDir: () => require.extensions['.js']({_compile() {}, id: '/app/handlers', filename: '/app/handlers', paths: []}, '/app/handlers'),
+      moduleLoadDir: () => new M('/app/handlers', module).load('/app/handlers'),
+      moduleLoadMissing: () => new M('/app/nope2.js', module).load('/app/nope2.js')
+    };
+    // (and resolution's errors past not-found: a subpath "exports" refuses,
+    // by require and import; an ES module's missing file, its e.url)
+    cases.requireNotExported = () => require('expo/sub');
+    cases.importNotExported = () => import('expo/sub');
+    cases.importMissing = () => import('./nope-f41.mjs');
+    const hits = [];
+    for (const [name, fn] of Object.entries(cases)) {
+      try { await fn(); hits.push(`${name}:no-error`); } catch (e) {
+        const found = texts(e).filter((t) => needles.some((n) => t.includes(n)));
+        if (found.length > 0) hits.push(`${name}:${found[0].slice(0, 160)}`);
+      }
+    }
+    return hits.length === 0 ? 'none' : hits.join(' | ');
+  },
   pathCache: () => {
     const key = `planted\0${ROOT}`;
     try { M._pathCache[key] = '/nowhere/planted.js'; } catch (e) { /* refused */ }

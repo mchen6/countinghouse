@@ -71,6 +71,10 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     fs.mkdirSync(path.join(probe, 'node_modules', 'dep'), {recursive: true});
     fs.writeFileSync(path.join(probe, 'node_modules', 'dep', 'package.json'), JSON.stringify({name: 'dep'}));
     fs.writeFileSync(path.join(probe, 'node_modules', 'dep', 'index.js'), 'module.exports = "dep";\n');
+    // (F4-1's follow-ups: a package whose "exports" refuses a subpath)
+    fs.mkdirSync(path.join(probe, 'node_modules', 'expo'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'node_modules', 'expo', 'package.json'), JSON.stringify({name: 'expo', exports: {'.': './i.js'}}));
+    fs.writeFileSync(path.join(probe, 'node_modules', 'expo', 'i.js'), 'module.exports = "expo";\n');
     // (a package named with a '?', where the platform allows one)
     if (process.platform !== 'win32') {
       fs.mkdirSync(path.join(probe, 'node_modules', 'q?x'), {recursive: true});
@@ -240,6 +244,12 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       // through the resolve hook; the loader's helpers called directly answer
       // truthfully under audit, unreported, as every lookup does there)
       else assert.ok(await waitFor({get output() { return server.output.slice(from); }}, /violation require json-stringify-safe/), server.output.slice(-1500));
+    });
+    // (F4-1's follow-ups: the load hook's errors name no host path -- a load
+    // of the module's own in every mode, the seal or none)
+    it('every error the load hook throws -- its own read, Node\'s next step -- names no host path', async () => {
+      const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'loadHookErrors', needles: [probe, ROOT]});
+      assert.strictEqual(detail(r), 'none', JSON.stringify(r).slice(0, 1500));
     });
     if (mode === 'enforce') {
       // (the compatibility PR: the reduced module's two statics, confined)
