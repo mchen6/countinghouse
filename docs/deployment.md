@@ -263,7 +263,10 @@ start and written nowhere ([security model](security-model.md)).
 A `--stdio` runtime on Redis is one session: its job queue is its own
 process's (`{chj-<server id>-<8 hex>}`), so several on one data directory
 and one Redis (each MCP client spawning its own) run side by side, none
-refused, and the tasks an earlier process queued are not run.
+refused, and the tasks an earlier process queued are not run. Its finished
+jobs are removed three hours after they finish (a task's question is kept
+two); the few keys its queue leaves on Redis when the process ends (the
+queue's meta, its id counter and its events stream) stay.
 
 Writes reach the store's files on a schedule (metering within about half
 a second, a module's `ctx.redis` data within five seconds), and at once

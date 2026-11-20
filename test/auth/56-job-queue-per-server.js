@@ -322,6 +322,13 @@ describe('auth 56: two --stdio runtimes on one data directory and one Redis', fu
       const keys = await kv11.keys(`{chj-${id}-*}:job-queue:*`);
       const suffixes = new Set(keys.map((k) => k.slice(`{chj-${id}-`.length, `{chj-${id}-`.length + 8)));
       assert.strictEqual(suffixes.size, 2, JSON.stringify([...suffixes]));
+      // each session's finished job is removed by age (3 h), not kept for good
+      const jobHashes = (await Promise.all(keys.filter((k) => /:job-queue:\d+$/.test(k)).map(async (k) => ((await kv11.type(k)) === 'hash' ? k : null)))).filter(Boolean);
+      assert.strictEqual(jobHashes.length, 2, JSON.stringify(keys));
+      for (const k of jobHashes) {
+        const opts = JSON.parse(await kv11.hget(k, 'opts'));
+        assert.deepStrictEqual([opts.removeOnComplete, opts.removeOnFail], [{age: 10800}, {age: 10800}], k);
+      }
       assert.deepStrictEqual(await kv11.keys(`chj-claim:{chj-${id}*`), [], 'no claim made');
       // and no job history: nothing a later process could read
       const kv5 = new (require('ioredis'))(redisConnectionFor(5));
