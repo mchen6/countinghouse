@@ -1,15 +1,18 @@
 'use strict';
 // unauth-limit (release-1 hardening): requests whose API key doesn't resolve
 // are limited per client address (lib/unauth-limit.js), counted at
-// lib/user-auth.js's one refusal site. Over budget: 429 UNAUTH_RATE_LIMITED
-// with Retry-After, before any provider lookup, the same for every
-// unresolvable key and every route or tool named; a key that resolved
+// lib/user-auth.js, where every key is looked up: a lookup holds a place
+// while in flight and keeps it unless the key resolved. Over budget: 429
+// UNAUTH_RATE_LIMITED with Retry-After, before any provider lookup, the same
+// for every unresolvable key and every route or tool named; no lookup once
+// over budget inside a request either (a legacy batch); a key that resolved
 // lately still passes (and still goes to the provider).
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const {createLimiter, addressKeyOf, WINDOW_MS} = require('../../lib/unauth-limit');
+const unauthLimit = require('../../lib/unauth-limit');
+const {createLimiter, addressKeyOf, keyResolvedBy, WINDOW_MS} = unauthLimit;
 const {deviceIDForName} = require('../../lib/call-address');
 const {testPort} = require('../helpers/test-env');
 
@@ -27,10 +30,34 @@ describe('auth 59: the limiter (lib/unauth-limit.js)', () => {
     assert.strictEqual(l.retryAfterMs('a'), 0, 'the oldest refusal has left the window');
   });
 
-  it('the process as a whole is limited at ten times an address\'s budget (a spray from many addresses)', () => {
+  it('the process as a whole is limited at ten times an address\'s budget (a spray from many addresses), never an address with nothing in its window', () => {
     const l = createLimiter({perMinute: 2, now: clock});
     for (let i = 0; i < 20; i++) l.refused(`spray-${i}`);
-    assert.ok(l.retryAfterMs('fresh') > 0, 'a fresh address waits once the process cap is reached');
+    assert.ok(l.retryAfterMs('spray-0') > 0, 'an address with a refusal waits once the process cap is reached');
+    assert.strictEqual(l.retryAfterMs('fresh'), 0, 'a new client still has its first lookup (a key that resolves is then remembered)');
+    l.refused('fresh');
+    assert.ok(l.retryAfterMs('fresh') > 0);
+  });
+
+  it('a counted lookup taken back (its key resolved) frees its place', () => {
+    const l = createLimiter({perMinute: 2, now: clock});
+    const a = l.count('a');
+    l.count('a');
+    assert.ok(l.retryAfterMs('a') > 0);
+    l.uncount('a', a);
+    assert.strictEqual(l.retryAfterMs('a'), 0);
+    assert.strictEqual(l.sizes().refusals, 1);
+  });
+
+  it('only an answer or a known key without the device is a key that resolved; anything else counts (fails closed)', () => {
+    const coded = (code) => ({ok: false, err: Object.assign(new Error(code), {code})});
+    assert.strictEqual(keyResolvedBy(null, {ok: true}), true);
+    assert.strictEqual(keyResolvedBy(null, coded('USER_HAS_NO_DEVICE')), true);
+    assert.strictEqual(keyResolvedBy(null, coded('SYSTEM_ERROR_UNKNOWN_USER')), false);
+    assert.strictEqual(keyResolvedBy(null, coded('SOME_PROVIDER_CODE')), false);
+    assert.strictEqual(keyResolvedBy(null, {ok: false}), false);
+    assert.strictEqual(keyResolvedBy(new Error('down'), null), false);
+    assert.strictEqual(keyResolvedBy(null, null), false);
   });
 
   it('the address table is bounded: past its cap the least recently refused address goes; each holds at most perMinute times', () => {
@@ -65,6 +92,38 @@ describe('auth 59: the limiter (lib/unauth-limit.js)', () => {
     const l = createLimiter({perMinute: 0, now: clock});
     for (let i = 0; i < 100; i++) l.refused('a');
     assert.strictEqual(l.retryAfterMs('a'), 0);
+  });
+});
+
+describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () => {
+  const scope = require('../helpers/options-scope');
+  const options = require('../../lib/cli-options');
+  let kept = null;
+  before(() => { kept = scope.snapshot(); options.unauthRateLimit = 2; unauthLimit.resetForTests(); });
+  after(() => { scope.restore(kept); unauthLimit.resetForTests(); });
+  // a lookup of key inside a request from `ip`, as a route makes one; null
+  // when the middleware answers 429 itself (it sees lookups in flight too)
+  const inRequest = (ip, key) => {
+    let out = null;
+    const res = {set() { return res; }, status(code) { res.code = code; return res; }, json() { return res; }};
+    unauthLimit.middleware()({ip, headers: {'x-ch-key': key}, socket: {}}, res, () => { out = unauthLimit.beforeLookup(key); });
+    if (res.code != null) assert.strictEqual(res.code, 429);
+    return out;
+  };
+
+  it('lookups begun at once take the budget before any answers; one whose key resolves gives its place back; outside a request nothing is limited', () => {
+    const a = inRequest('192.0.2.1', 'k-one');
+    const b = inRequest('192.0.2.1', 'k-two');
+    assert.ok(a != null && b != null);
+    assert.strictEqual(inRequest('192.0.2.1', 'k-three'), null, 'two in flight fill a budget of two');
+    a.resolved();
+    const c = inRequest('192.0.2.1', 'k-three');
+    assert.ok(c != null, 'a resolved key frees its place');
+    b.refused();
+    c.refused();
+    assert.strictEqual(inRequest('192.0.2.1', 'k-four'), null);
+    assert.ok(inRequest('192.0.2.1', 'k-one') != null, 'a key that resolved lately passes');
+    assert.ok(unauthLimit.beforeLookup('k-five') != null, 'not in an HTTP request: no limit');
   });
 });
 
@@ -141,22 +200,72 @@ describe('auth 59: on a running server', function() {
     assert.strictEqual(again.status, 200, again.body);
     assert.ok(!JSON.parse(again.body).error, again.body);
     assert.ok(providerCalls() > before, 'a key let past the limiter still goes to the provider');
+    // a forged X-Forwarded-For is not believed without --trustProxy
+    const forged = await mcp(port, {'X-CH-Key': 'unknown-xff', 'X-Forwarded-For': '203.0.113.9'});
+    assert.strictEqual(forged.status, 429, 'a forged X-Forwarded-For does not escape the limit');
   });
 
-  it('X-Forwarded-For is ignored without --trustProxy, and names the client with it', async () => {
-    const plain = testPort(9678);   // the server above: its address is over budget
-    const r = await mcp(plain, {'X-CH-Key': 'unknown-xff', 'X-Forwarded-For': '203.0.113.9'});
-    assert.strictEqual(r.status, 429, 'a forged X-Forwarded-For does not escape the limit');
-    const port = testPort(9679);
-    await start(port, ['--trustProxy', 'loopback']);
-    for (let i = 0; i < 3; i++) await mcp(port, {'X-CH-Key': `unknown-${i}`, 'X-Forwarded-For': '203.0.113.9'});
-    assert.strictEqual((await mcp(port, {'X-CH-Key': 'unknown-3', 'X-Forwarded-For': '203.0.113.9'})).status, 429);
-    const other = await mcp(port, {'X-CH-Key': 'unknown-4', 'X-Forwarded-For': '198.51.100.20'});
-    assert.notStrictEqual(other.status, 429, 'another client behind the trusted proxy has its own budget');
+  // behind a trusted proxy (loopback): each case a client of its own, by
+  // X-Forwarded-For, so each has its own budget (the process cap, 30, is not
+  // reached by all of them together)
+  describe('behind a trusted proxy', () => {
+    let port = null;
+    before(async () => { port = testPort(9679); await start(port, ['--trustProxy', 'loopback']); });
+    const as = (ip, headers = {}) => Object.assign({'X-Forwarded-For': ip}, headers);
+
+    it('X-Forwarded-For names the client: another client behind the proxy has its own budget', async () => {
+      for (let i = 0; i < 3; i++) await mcp(port, as('203.0.113.9', {'X-CH-Key': `unknown-${i}`}));
+      assert.strictEqual((await mcp(port, as('203.0.113.9', {'X-CH-Key': 'unknown-3'}))).status, 429);
+      const other = await mcp(port, as('198.51.100.20', {'X-CH-Key': 'unknown-4'}));
+      assert.notStrictEqual(other.status, 429, 'another client behind the trusted proxy has its own budget');
+    });
+
+    it('requests sent at once cost no more lookups than the budget', async () => {
+      const before = providerCalls();
+      const answers = await Promise.all(Array.from({length: 12}, (_, i) => mcp(port, as('198.51.100.30', {'X-CH-Key': `at-once-${i}`}))));
+      assert.ok(providerCalls() - before <= 3, `${providerCalls() - before} lookups for 12 requests at once`);
+      assert.ok(answers.some((a) => a.status === 429 || a.body.includes('UNAUTH_RATE_LIMITED') || a.body.includes('Too many requests')), JSON.stringify(answers.map((a) => a.status)));
+    });
+
+    it('a legacy batch of 32 calls under one unknown key costs no more lookups than the budget', async () => {
+      const before = providerCalls();
+      const batch = Array.from({length: 32}, (_, i) => ({jsonrpc: '2.0', id: i + 1, method: 'tools/call', params: {name: 'echo_device_echoservice_echo', arguments: {}}}));
+      const r = await send(port, '/mcp', batch, as('198.51.100.40', {'X-CH-Key': 'batch-unknown'}));
+      assert.strictEqual(r.status, 200, r.body);
+      assert.ok(providerCalls() - before <= 3, `${providerCalls() - before} lookups for a batch of 32`);
+      const answers = JSON.parse(r.body);
+      assert.ok(answers[31].error != null && /Too many requests/.test(answers[31].error.message), JSON.stringify(answers[31]));
+    });
+
+    it('/device-list resolves its key first: an unknown key sees no device, is counted, and is limited', async () => {
+      const get = (headers) => new Promise((resolve, reject) => {
+        http.get({host: '127.0.0.1', port, path: '/device-list', headers}, (r) => {
+          let t = '';
+          r.on('data', (c) => { t += c; });
+          r.on('end', () => resolve({status: r.statusCode, retryAfter: r.headers['retry-after'], body: t}));
+        }).on('error', reject);
+      });
+      // the valid key first, from this client: it resolves (remembered)
+      const first = await get(as('198.51.100.50', {'X-CH-Key': KEY}));
+      assert.strictEqual(first.status, 200, first.body);
+      const before = providerCalls();
+      for (let i = 0; i < 3; i++) {
+        const r = await get(as('198.51.100.50', {'X-CH-Key': `dl-unknown-${i}`}));
+        assert.deepStrictEqual([r.status, r.body], [200, '[]']);
+      }
+      const limited = await get(as('198.51.100.50', {'X-CH-Key': 'dl-unknown-3'}));
+      assert.strictEqual(limited.status, 429, limited.body);
+      assert.ok(Number(limited.retryAfter) >= 1);
+      assert.strictEqual(providerCalls() - before, 3, 'one lookup each, none once limited');
+      const mine = await get(as('198.51.100.50', {'X-CH-Key': KEY}));
+      assert.strictEqual(mine.status, 200, 'a key that resolved lately still lists, over its address\'s budget');
+      assert.ok(JSON.parse(mine.body).length > 0, mine.body);
+    });
   });
 
   it('a start with a bad --unauthRateLimit or --trustProxy is refused (exit 2)', async () => {
-    for (const [flag, value] of [['--unauthRateLimit', '-1'], ['--unauthRateLimit', 'x'], ['--trustProxy', 'true'], ['--trustProxy', '10.0.0.1/40']]) {
+    for (const [flag, value] of [['--unauthRateLimit', '-1'], ['--unauthRateLimit', 'x'], ['--trustProxy', 'true'], ['--trustProxy', '10.0.0.1/40'],
+      ['--trustProxy', '0.0.0.0/0'], ['--trustProxy', '::/0'], ['--trustProxy', '11']]) {
       const s = await startServer(testPort(9701), ['--workerThread', flag, value], {expectExit: true});
       assert.strictEqual(s.exitCode, 2, `${flag} ${value}: ${s.output.slice(-400)}`);
       assert.ok(s.output.includes(flag), s.output.slice(-400));
