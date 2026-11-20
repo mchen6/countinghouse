@@ -1431,7 +1431,7 @@ fails if it is removed:
 | Cancellation | a request of the caller's own connection or session only; an unknown id ignored; no answer and no error text | mcp-contract 18, 19 |
 | Every read, get, completion and task method | the per-key rate limit, once the key resolves and before any lookup | auth 15, mcp-contract 24, 26, 30, 09 |
 | `tools/call` | the per-key rate limit (and `--globalRateLimit`) on the call's run, after its one answer for a tool the caller can't see is decided; a key that does not resolve is limited per address before its resolution (below) | auth 15 (a built-in), mcp-contract 37 (a task); auth 54 the order |
-| A key that does not resolve | `--unauthRateLimit` (30) lookups per client address (IPv6 by its /64) per minute, counted per lookup (a batch's each) and while in flight, kept unless the key resolved; ten times that across the process while the address table is full (a spray over more addresses than it keeps), never otherwise for an address under its own budget; only the request's own lookups, while it is answered and of a key it carried; then 429 `UNAUTH_RATE_LIMITED` with `Retry-After`, before any auth lookup, the same answer whatever the key and whatever is named (within a request already under way: that error, no lookup; on `/mcp` -32000 with the code in data); 10,000 addresses kept, the least recently counted out first | auth 59 |
+| A key that does not resolve | `--unauthRateLimit` (30) lookups per client address (IPv6 by its /64) per minute, counted per lookup (a batch's each) and while in flight, kept unless the key resolved; ten times that per wider prefix (IPv6 /48, IPv4 /24), a hundred times that across the process, all three always; only the request's own lookups, while it is answered and of a key it carried; then 429 `UNAUTH_RATE_LIMITED` with `Retry-After`, before any auth lookup, the same answer whatever the key and whatever is named (within a request already under way: that error, no lookup; on `/mcp` -32000 with the code in data); 10,000 addresses kept, the least recently counted out first | auth 59 |
 | The grant sets `tools/call` is answered by | a known key's only, kept by a digest of the key; at most 5 s old, refreshed by every list's read, all cleared by an auth reload; 1024 keys, the one written longest ago out first; a failed read never kept | mcp-contract 40, auth 54 |
 
 **Requests whose key doesn't resolve.** Without a limit, a loop of requests
@@ -1452,18 +1452,24 @@ is not made; every route answers it alike (429, `Retry-After`, the code; on
 `/mcp` the JSON-RPC error -32000 with the code in its data).
 
 Only the request's own lookups count against its address: those it makes
-while it is being answered, of a key it carried. A module's worker or a
+until its answer is sent (a client that drops the connection mid-batch is
+still counted), of a key it carried, or with no key when the route read
+none. A module's worker or a
 validator started while a request is served is started outside it, and a
 change notice's re-listing for another subscriber is another key's; neither
 is counted against, or refused for, the request that happened to start it.
 
-The process-wide cap (ten times the per-address budget) applies only while
-the table of addresses (10,000) is full of live windows: a spray over more
-addresses than it keeps, which would otherwise push each address out and
-start its window again, is then held to the cap, unseen addresses included.
-Below that, a full cap refuses no address under its own budget, so valid
-keys, and every client after a restart, are not shut out by others' bad
-requests.
+Three limits apply to every lookup at once, with no switch between them:
+the address (an IPv6 /64, an IPv4 address) at `--unauthRateLimit`; its
+wider prefix (an IPv6 /48, an IPv4 /24) at ten times that; and the process
+at a hundred times that. A spray over many addresses of one network is held
+by the prefix limit, and a spray over many networks by the process limit, so
+however many addresses a client cycles through, and however the table of
+windows (10,000 of each, kept for memory only) pushes old ones out, the
+lookups it costs stay bounded. A key that resolved in the last ten minutes
+passes all three. The accepted cost: under a spray wide enough to fill the
+process limit, a client whose key has not resolved in the last ten minutes
+-- a new one, or every one after a restart -- waits until it ebbs.
 
 `--trustProxy` belongs only behind a proxy you control: otherwise
 `X-Forwarded-For` is the client's to forge, and each forged value would get
