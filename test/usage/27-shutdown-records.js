@@ -31,7 +31,7 @@ const {readUsage} = require('../../lib/usage/read');
 const recordsUnder = (dir) => (fs.existsSync(dir) ? readUsage(dir) : []);
 
 const posix = process.platform === 'win32' ? describe.skip : describe;
-[['the local store (its own runner)', true, testPort(9703)], ['Redis (the BullMQ runner)', false, testPort(9704)]].forEach(([label, local, port]) => {
+[['the local store (its own runner)', true, testPort(9820)], ['Redis (the BullMQ runner)', false, testPort(9821)]].forEach(([label, local, port]) => {
   posix(`usage 27: stopped while a task and a direct call run, ${label} (B-shutdown-usage)`, function() {
     this.timeout(90000);
     const KEY = `k${require('crypto').randomBytes(12).toString('hex')}`;

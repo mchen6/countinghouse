@@ -68,13 +68,57 @@ describe('usage 26: every open call is closed at exit, cancelled (B-shutdown-usa
   it('a call whose failure was noted while its record was being written is recorded as that failure, not a cancel', () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1});
     const {taskHooks} = require('../../lib/usage/task');
-    const hooks = taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}), callerOf: () => 'c1', buildResult: () => ({content: []})});
+    const hooks = taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}), callerOf: () => 'c1',
+      buildResult: (err) => (err != null ? {content: [{type: 'text', text: err.message}], isError: true, _meta: {'countinghouse/code': err.code}} : {content: []})});
     const failing = hooks.start({apiKey: 'k'});
     const plain = hooks.start({apiKey: 'k'});
     hooks.failed({extra: failing}, Object.assign(new Error('timed out'), {code: 'JOB_TIMEOUT'}));
     assert.strictEqual(u.closeOpen(hooks.outcomeOf), 2);
     const outs = u.records().filter((r) => r.bytesOut !== undefined);
     assert.deepStrictEqual(outs.map((r) => [r.call, r.outcome, r.code]).sort(), [[failing.usageCall, 'error', 'JOB_TIMEOUT'], [plain.usageCall, 'cancelled', undefined]].sort());
+  });
+
+  // (the high review of #488, 1 and 3) a pass that settled -- answered and
+  // charged, or failed -- while its record was still being written is
+  // recorded at a stop as it settled: its answer's bytes, its error's code,
+  // whose fault as the result says (the one reading, outFieldsOf)
+  const {RESULT_KIND} = require('../../lib/countinghouse-error');
+  // (as the gateway's: an error result marked the caller's fault only when
+  // a module said so -- toolCallResult's origin rule)
+  const buildResult = (err, results) => {
+    if (err == null) return {content: [{type: 'text', text: JSON.stringify(results)}]};
+    const r = {content: [{type: 'text', text: `failed: ${err.message}`}], isError: true, _meta: {'countinghouse/code': err.code}};
+    if (err.origin === 'module' && err.kind === 'caller') Object.defineProperty(r, RESULT_KIND, {value: 'caller', enumerable: false});
+    return r;
+  };
+  const settledHooks = (u) => require('../../lib/usage/task').taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}), callerOf: () => 'c1', buildResult});
+
+  it('an answered pass still being written is recorded with its answer, not as a cancel; cancel() records it the same', () => {
+    const u = createUsage({usageDir: null, pid: 1, startMs: 1});
+    const hooks = settledHooks(u);
+    const a = hooks.start({apiKey: 'k'});
+    const b = hooks.start({apiKey: 'k'});
+    hooks.answered({extra: a}, {n: 12345});
+    hooks.answered({extra: b}, {n: 1});
+    hooks.cancel({}, {extra: b});
+    assert.strictEqual(u.closeOpen(hooks.outcomeOf), 1);
+    const byCall = new Map(u.records().filter((r) => r.bytesOut !== undefined).map((r) => [r.call, r]));
+    assert.deepStrictEqual([byCall.get(a.usageCall).outcome, byCall.get(a.usageCall).bytesOut], ['ok', JSON.stringify({n: 12345}).length]);
+    assert.deepStrictEqual([byCall.get(b.usageCall).outcome, byCall.get(b.usageCall).bytesOut], ['ok', JSON.stringify({n: 1}).length]);
+  });
+
+  it('a failed pass still being written: its code, its bytes, and the caller\'s fault only when a module said so', () => {
+    const u = createUsage({usageDir: null, pid: 1, startMs: 1});
+    const hooks = settledHooks(u);
+    const byModule = hooks.start({apiKey: 'k'});
+    const notModule = hooks.start({apiKey: 'k'});
+    hooks.failed({extra: byModule}, Object.assign(new Error('bad input'), {code: 'X_BAD_INPUT', kind: 'caller', origin: 'module'}));
+    hooks.failed({extra: notModule}, Object.assign(new Error('bad input'), {code: 'X_BAD_INPUT', kind: 'caller'}));
+    assert.strictEqual(u.closeOpen(hooks.outcomeOf), 2);
+    const byCall = new Map(u.records().filter((r) => r.bytesOut !== undefined).map((r) => [r.call, r]));
+    assert.deepStrictEqual([byCall.get(byModule.usageCall).outcome, byCall.get(byModule.usageCall).code], ['error', 'CALLER_ERROR']);
+    assert.deepStrictEqual([byCall.get(notModule.usageCall).outcome, byCall.get(notModule.usageCall).code], ['error', 'MODULE_ERROR']);
+    assert.ok(byCall.get(byModule.usageCall).bytesOut > 0, 'the error\'s text counted');
   });
 
   it('one call that cannot be recorded leaves the rest to be', () => {
