@@ -58,6 +58,10 @@ const TABLE = [
   // answers as a plain require does -- found, on every version (ruled
   // R-bs); on Windows a backslash is a separator, not asserted)
   ...(WIN_HOST ? [] : [['absolute request, a backslash in the name', 'works (host path)', 'works', 'works', 'works']]),
+  // (every OS: a backslash request climbing out of the root by the host's
+  // rules is not found, by a direct call as by a plain require; single-
+  // thread mode has no isolation, not asserted)
+  ['absolute request, a backslash climbing out', null, 'threw MODULE_NOT_FOUND', 'threw MODULE_NOT_FOUND', 'threw MODULE_NOT_FOUND'],
   ['resolve-from absolute, missing', 'threw MODULE_NOT_FOUND, named otherwise', 'threw MODULE_NOT_FOUND, as asked', 'threw MODULE_NOT_FOUND, as asked', 'threw MODULE_NOT_FOUND, as asked'],
   // (enforce only: none of the module's own files named by its host path
   // in any part of the error, by any route; the other modes have no
