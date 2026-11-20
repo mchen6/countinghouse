@@ -14,11 +14,16 @@
 // RUNS timed runs after a warm-up; median, min and max, each printed as it is
 // measured. Beside each workload's time, the CPU time of the server's main
 // thread over the call (Linux, /proc/<pid>/task/<pid>/stat): what the broker
-// costs the main thread, and steadier than wall-clock on a shared machine. --count instead prints the machine-independent counts for S and
+// costs the main thread, and steadier than wall-clock on a shared machine.
+// Each workload is printed as {ms, mainCpuMs} under R, S, W and L_reload
+// (before proposal 4: S_handler_ms, W_handler_ms, L_reload_ms, times only).
+// fs-probe (R's module) is loaded only when R runs, so S, W and L run on the
+// one-module server of the re-baseline. --count instead prints the
+// machine-independent counts for S and
 // W: bridge calls and libuv pool jobs (async fs calls on the main thread) per
 // operation, with the broker as the runtime makes it (createForWorker: the
 // always-denied set, the quota, the write guards).
-//   node perf/fs-broker-workloads.js [--count] [--only S,W,L]
+//   node perf/fs-broker-workloads.js [--count] [--only R,S,W,L]
 const fs = require('fs');
 const fsp = require('fs/promises');
 const os = require('os');
@@ -95,8 +100,8 @@ async function timed(fn, pid) {
 
 async function wallClock(label, flags, base, mod) {
   const server = await startServer(PORT, flags.concat(['--debug', '--debugKey', KEY, '--requestTimeout', '300000',
-    '--moduleDataPath', path.join(base, label.replace(/\W+/g, '-')), '--loadModule', mod,
-    '--loadModule', path.join(ROOT, 'test', 'fixtures', 'fs-probe')]));
+    '--moduleDataPath', path.join(base, label.replace(/\W+/g, '-')), '--loadModule', mod],
+    ONLY.includes('R') ? ['--loadModule', path.join(ROOT, 'test', 'fixtures', 'fs-probe')] : []));
   const pid = server.pid;
   try {
     const out = {mode: label};
