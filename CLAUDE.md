@@ -32,7 +32,10 @@ assuming a plan doc exists.
 - A device ID is derived from the module's name by one function,
   `deviceIDForName` in `lib/call-address.js`. Changing that derivation
   reassigns every device ID (grants and stored logs keyed by ID stop
-  matching); never compute or hard-code an ID anywhere else.
+  matching); never compute an ID anywhere else. Module code that must
+  name a device by ID holds a literal, which `test/composition/01-call-address.js`
+  pins against the derivation; a module that declares its callees in
+  `package.json` `calls` uses `ctx.call` by name instead.
 - The old sqlite3-based module manager is merged as `lib/device-db.js`,
   with no private-registry dependency.
 - Target: Node >= 22.16 (24.15+ for multi-tenant hosting; below 24.15 the
