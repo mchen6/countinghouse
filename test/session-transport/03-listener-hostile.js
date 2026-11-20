@@ -317,7 +317,7 @@ describe('session-transport 03: the listener against hostile peers (#245 review)
     });
   });
 
-  it('a refused connection stays in the pre-auth count until it is gone, so a full pool still refuses new ones', async() => {
+  it('a refused connection stays in the pre-auth count until it is gone, so a flood is held to the pool', async() => {
     await start({listener: {preAuthMax: 64, preAuthDeadlineMs: 10000}});
     const net = require('net');
     const conns = [];
@@ -331,13 +331,14 @@ describe('session-transport 03: the listener against hostile peers (#245 review)
       c.write(frames.encode('H', JSON.stringify({protocol: 2, nc: handshake.newChallenge().toString('base64')})));
       conns.push({c, closed: () => closed});
     }
-    // the server holds at most 64, counted server side (the first 64, refused
-    // their HELLO's bad proof by shut(), are half-open: their clients see no
-    // close within the grace); the newer ones were refused at once, closed
+    // the server holds at most 64, counted server side (one refused its
+    // HELLO's bad proof by shut() is half-open: its client sees no close
+    // within the grace); at least the 16 past the pool were turned away at
+    // once -- refused, or a silent one evicted for a new one (F1-6) -- closed
     await tick(300);
     const held = await new Promise((r) => listener.server.getConnections((e, n) => r(n)));
     assert.ok(held <= 64, `${held} held`);
-    assert.ok(await until(() => conns.slice(64).every((x) => x.closed()), 2000), 'the newer ones refused');
+    assert.ok(await until(() => conns.filter((x) => x.closed()).length >= 16, 2000), 'turned away');
     for (const x of conns) x.c.destroy();
   });
 

@@ -108,9 +108,10 @@ describe('session-transport 02: the listener and the registry', function() {
       assert.strictEqual(dispatched.length, 0);
     });
 
-    // (F1-6: a full pre-auth pool refuses the NEW connection -- one in its
-    // handshake is never evicted by a flood; each still has its deadline)
-    it('refuses the 65th pre-auth connection; one in its handshake is kept, and welcomed', async() => {
+    // (F1-6, ruled: a full pre-auth pool evicts its oldest connection that
+    // has sent no bytes, else refuses the new one -- one in its handshake is
+    // never evicted; each still has its deadline)
+    it('a full pool evicts its oldest silent connection; one in its handshake is kept, and welcomed', async() => {
       await start({listener: {preAuthMax: 64, preAuthDeadlineMs: 20000}});
       // the first, in its handshake: HELLO sent, PROVE back
       const first = await shim.connect(sock);
@@ -121,7 +122,8 @@ describe('session-transport 02: the listener and the registry', function() {
       const conns = [];
       for (let i = 0; i < 63; i++) conns.push(await shim.connect(sock));
       const newest = await shim.connect(sock);
-      assert.ok(await until(() => newest.closed(), 2000), 'the 65th is refused');
+      assert.ok(await until(() => conns[0].closed(), 2000), 'the oldest silent one is evicted');
+      assert.strictEqual(newest.closed(), false, 'the new one is taken');
       // the one in its handshake completes it
       const ns = Buffer.from(prove.ns, 'base64');
       first.send('A', {mc: handshake.clientMac(secret, 1, ns, nc).toString('base64')});
@@ -131,7 +133,25 @@ describe('session-transport 02: the listener and the registry', function() {
       const later = await shim.connect(sock);
       later.send('H', {protocol: 1, nc: handshake.newChallenge().toString('base64')});
       assert.ok(await later.json('P') != null, 'taken once there is room');
-      for (const c of conns.concat([first, later])) c.end();
+      for (const c of conns.concat([first, later, newest])) c.end();
+    });
+
+    it('a full pool whose every connection has sent bytes refuses the new one, keeping them all', async() => {
+      await start({listener: {preAuthMax: 64, preAuthDeadlineMs: 20000}});
+      const conns = [];
+      for (let i = 0; i < 64; i++) {
+        const c = await shim.connect(sock);
+        c.raw(Buffer.from([0x48]));   // a partial frame: bytes sent, no HELLO yet
+        conns.push(c);
+      }
+      // (each one's byte read by the server before the 65th arrives: its
+      // connections all held, then a moment for their bytes)
+      assert.ok(await until(async() => (await new Promise((r) => listener.server.getConnections((e, n) => r(n)))) === 64, 2000));
+      await tick(200);
+      const newest = await shim.connect(sock);
+      assert.ok(await until(() => newest.closed(), 2000), 'the new one is refused');
+      assert.ok(conns.every((c) => !c.closed()), 'every one that sent bytes is kept');
+      for (const c of conns) c.end();
     });
 
     it('closes one silent past its deadline, and the pool is empty again', async() => {
