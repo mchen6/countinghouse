@@ -1615,6 +1615,11 @@ and the short list of what the in-process sandbox cannot give.
   rules: no `..`, so a link leads only into its own directory, however that
   directory is later renamed), so a stale entry cannot either. A link a host
   process made, or one made before 8.0.0, is not covered by that.
+  An open whose parent directory did not exist when the broker checked it,
+  and appeared before the open, is decided on where it really landed; under
+  `enforce` a name there that is a link is refused outright, wherever it
+  leads, and reported as `link-appeared` (not as an escape): such a link
+  appeared in the race itself, and nothing legitimate needs one there.
 - **Host paths leak in one place.** For a CommonJS file imported directly by
   an ES module, Node 24 gives `__filename` and stack frames the host path.
 - **Descriptor and handle adoption is refused only under `enforce`.**
