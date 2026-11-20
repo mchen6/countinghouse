@@ -194,8 +194,9 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     const {progressTo, ...given} = ci.calls[0].extraArgs;
     assert.strictEqual(typeof(progressTo), 'function');
     assert.deepStrictEqual(given, {usageCall: 7, name: 'act'});
-    // and the run's session (M6: a task stores in its job's), none here
-    assert.deepStrictEqual(metas, [{extra: {usageCall: 7, name: 'act'}, session: null}]);
+    // and the run's session (M6: a task stores in its job's), none here, and
+    // its job's id (a task's tombstone tells a cancelled run: B-cancelled)
+    assert.deepStrictEqual(metas, [{extra: {usageCall: 7, name: 'act'}, session: null, jobId: String(r.id)}]);
     runner.close();
   });
 
