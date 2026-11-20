@@ -108,6 +108,19 @@ describe('auth 57: the server id (B-j1)', () => {
     assert.throws(() => serverId.initSync({moduleDataPath: dir}), (e) => e.code === 'SERVER_ID_INVALID' && /has 2 names \(hard links\)/.test(e.message));
   });
 
+  it('a publish cut short (its temporary name left as a second name of the file) does not stop the next start: the stray name is removed', function() {
+    if (!POSIX) this.skip();
+    const dir = tmp.mkdtemp('ch-auth-57-');
+    const file = path.join(dir, '.server-id');
+    const id = crypto.randomBytes(8).toString('hex');
+    fs.writeFileSync(file, id, {mode: 0o600});
+    fs.linkSync(file, `${file}.4242.tmp`);
+    serverId.initSync({moduleDataPath: dir});
+    assert.strictEqual(serverId.get(), id);
+    assert.deepStrictEqual(fs.readdirSync(dir), ['.server-id']);
+    assert.strictEqual(fs.statSync(file).nlink, 1);
+  });
+
   it('a start that lost the race waits for the winner to finish publishing (its temporary name still there), then takes its id', function() {
     if (!POSIX) this.skip();
     const privateFile = require('../../lib/private-file');
