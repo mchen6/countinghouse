@@ -190,8 +190,10 @@ const STEPS = {
       } else out.push('same');
       same('colonRequire', o(() => require('co_lon:pkg'), 'co_lon:pkg'), o(() => require('noco_lon:pkg'), 'noco_lon:pkg'));
       // (and it is the in-root resolver that answers such a name, never
-      // Node's walk: one with a decoy is refused as dep2 is, where Node
-      // alone would find it)
+      // Node's walk: one with a node_modules/node_modules copy imports as
+      // dep2 does, the copy Node's walk takes; and findPackageJSON, rebased
+      // to its level, answers nothing for it as for dep2, where Node's own
+      // findPackageJSON would name one)
       same('colonDecoy', await oi('co_lon:dec', 'co_lon:dec'), await oi('dep2', 'dep2'));
       if (typeof(M.findPackageJSON) === 'function') {
         same('colonDecoyFind', o(() => String(M.findPackageJSON('co_lon:dec', __filename)), 'co_lon:dec'), o(() => String(M.findPackageJSON('dep2', __filename)), 'dep2'));
@@ -261,8 +263,10 @@ const STEPS = {
     let protoOutcome;
     try { protoOutcome = await tryImport('#fallback'); } finally { for (const f of fields) delete Object.prototype[f]; }
     out.push(protoRan === 'not run' && protoOutcome === 'found' ? 'same' : `proto(${protoRan} ${protoOutcome})`);
-    // (a decoy where the walk would look first is refused, never loaded)
-    out.push((await tryImport('dep2')) !== 'found' ? 'same' : 'decoy');
+    // (a package with a node_modules/node_modules copy beside it loads the
+    // one Node's walk takes from here, the real one; the high review of
+    // #465, 2)
+    { let real; try { real = (await import('dep2')).default; } catch (e) { real = String(e.code); } out.push(real === 'real' ? 'same' : `decoy(${real})`); }
     // (an import from a script given a filename outside the root: judged
     // from the root, never walked from there)
     const vm = require('vm');

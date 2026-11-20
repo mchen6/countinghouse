@@ -161,11 +161,17 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
     write(path.join(selfDir, 'package.json'), JSON.stringify({name: 'selfpkg', exports: {'.': './main.js', './feature/*': './f/*.js'}}));
     write(path.join(selfDir, 'lib', 'x.js'), '');
     for (const spec of ['selfpkg', 'selfpkg/feature/a', 'selfpkg/nope']) cases.push({id: `self ${spec}`, spec, parent: path.join(selfDir, 'lib', 'x.js')});
-    // (a decoy in node_modules/node_modules: the sandbox refuses a package
-    // with one; Node, from the parent, resolves the real one)
+    // (a package in node_modules/node_modules too: resolved as Node walks,
+    // every directory up, one named node_modules included -- from the root
+    // the real one; from a parent inside node_modules/foo the nearer
+    // node_modules/node_modules one. findPackageJSON, whose base the sandbox
+    // rebases to the package's level, refuses a package with one: there
+    // Node's own walk would look in it first -- stricter for that alone)
     write(path.join(root, 'node_modules', 'decoyed', 'package.json'), JSON.stringify({name: 'decoyed', exports: './real.js'}));
     write(path.join(root, 'node_modules', 'node_modules', 'decoyed', 'package.json'), JSON.stringify({name: 'decoyed', exports: './decoy.js'}));
-    cases.push({id: 'decoy', spec: 'decoyed', parent, stricter: true});
+    write(path.join(root, 'node_modules', 'foo', 'x.js'), '');
+    cases.push({id: 'decoy from the root', spec: 'decoyed', parent, fpjStricter: true});
+    cases.push({id: 'node_modules/node_modules from inside node_modules/foo', spec: 'decoyed', parent: path.join(root, 'node_modules', 'foo', 'x.js'), fpjStricter: true});
     // (a name with a ':' the URL parser rejects: bare to Node, POSIX only)
     if (process.platform !== 'win32') {
       write(path.join(root, 'node_modules', 'co_lon:pkg', 'package.json'), JSON.stringify({name: 'co_lon:pkg', exports: {'.': './i.js', './x': './x.js'}}));
@@ -267,7 +273,7 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
       // the root; the sandbox never answers one Node doesn't)
       const fpjMismatches = [];
       cases.forEach((c, i) => {
-        if (c.spec.startsWith('#') || c.stricter === true) return;
+        if (c.spec.startsWith('#') || c.stricter === true || c.fpjStricter === true) return;
         const theirsPj = node[i][1];
         const mine = r.packageDir(c.spec, c.parent);
         const minePj = mine == null ? null : path.join(mine.pkgDir, 'package.json');
