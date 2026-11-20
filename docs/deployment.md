@@ -217,7 +217,10 @@ Notes:
 The same posture, in outline:
 
 - **A Deployment** of one replica: the gateway keeps in-memory state, so
-  scaling out needs more design first. Its pod spec has:
+  scaling out needs more design first. Two runtimes can't share a data
+  directory's server id (`.server-id`, which names the job queue): a second
+  live one on the same Redis is refused at start; for more capacity, see
+  this one-replica note. Its pod spec has:
   - `securityContext`: `runAsNonRoot: true`, `runAsUser: 1000`,
     `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`,
     `capabilities: {drop: [ALL]}`, `seccompProfile: {type: RuntimeDefault}`;
