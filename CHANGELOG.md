@@ -37,6 +37,14 @@ as a cancelled call (nothing sent, the time it had run), in one synchronous
 sequence at exit that runs before the local store's last write. SIGTERM
 ends the process through it, with status 143; SIGINT's status is unchanged
 (0).
+### Fixed — a module setting's own words are cleaned before a client sees them
+
+`countinghouse_settings get` returned a module setting's title and
+description (`byTheModule`) as the author wrote them, and the confirmation
+form quoted the title the same way; nothing on the way out cleaned them.
+Both now go through the module-text rule: a hidden character becomes a
+space, a title is one line of at most 64 characters, a description at most
+512, its line breaks kept.
 
 ### Fixed — each runtime's job queue is its own
 
