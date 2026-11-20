@@ -347,6 +347,28 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       parse: {port: '80', host: 'not-granted.example.invalid:80', query: 'q=1', hash: '#f', slashes: true, v6: '::1'}}, JSON.stringify(out));
   }));
 
+  // the reviewer on #474: audit previews enforce, so what it reports is what
+  // is sent. A uri object whose href getter names the granted host once and
+  // another after: the string read once is reported and handed on, and
+  // postman-request never reads the object again
+  it('audit: an object uri\'s href is read once, and that string is what is reported and handed on', () => {
+    const {inWorker, install} = require('../helpers/lockdown-worker');
+    const out = inWorker(`
+      let sent = null;
+      global.CHUtil = {request: (opts, cb) => { sent = opts; if (typeof(cb) === 'function') cb(null, {statusCode: 200}, ''); }};
+      ${install({mode: 'audit', net: [{host: 'late-load.example.invalid'}]})}
+      let reads = 0;
+      const uri = {get href() { reads++; return reads === 1 ? 'http://late-load.example.invalid/x' : 'http://elsewhere.example.invalid/x'; }};
+      await new Promise((resolve) => CHUtil.request({uri}, () => resolve()));
+      // what postman-request would use as the target (it reads an object's href)
+      const target = typeof(sent.uri) === 'string' ? sent.uri : sent.uri.href;
+      return {target, reads, reports};
+    `);
+    assert.strictEqual(out.target, 'http://late-load.example.invalid/x', JSON.stringify(out));
+    assert.strictEqual(out.reads, 1, JSON.stringify(out));
+    assert.ok(!out.reports.some((r) => /elsewhere/.test(r)), JSON.stringify(out.reports));
+  });
+
   // the stand-in's method list can't drift from postman-request's Request
   it('the stand-in answers every method postman-request\'s Request and caseless\'s httpify have', () => {
     const {REQUEST_METHODS} = require('../../lib/module-lockdown');
