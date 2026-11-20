@@ -194,6 +194,70 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       both: ['callback:ERR_ACCESS_DENIED', 'listener:ERR_ACCESS_DENIED'], initCalls: 0}, JSON.stringify(out));
   }));
 
+  // the reviewer's high review of #474: the stand-in is never built by
+  // assignment, nor by EventEmitter.init, so accessors module code puts on
+  // EventEmitter's prototype or Object's never run inside the refusal; a late
+  // once listener gets it once, a listener after it is delivered gets
+  // nothing; form(fields) answers the request; abort() means no refusal;
+  // uri and method say what was asked
+  [['a validation worker under enforce', {mode: 'enforce', noRequests: true}],
+    ['enforce, a host not granted', {mode: 'enforce'}]].forEach(([where, cfg]) => it(`${where}: the refused request's stand-in runs no module accessor; once is once; form, abort, uri as postman-request's`, () => {
+    const {inWorker, install} = require('../helpers/lockdown-worker');
+    const out = inWorker(`
+      global.CHUtil = {request: () => { throw new Error('the library was reached'); }};
+      ${install(Object.assign({net: [{host: 'late-load.example.invalid'}]}, cfg))}
+      const url = 'http://not-granted.example.invalid/x';
+      const EE = require('events');
+      // accessors module code plants: none may run inside the refusal
+      let ran = 0;
+      Object.defineProperty(EE.prototype, '_events', {configurable: true, get() { ran++; return undefined; }, set(v) { ran++; }});
+      Object.defineProperty(Object.prototype, 'toJSON', {configurable: true, get() { ran++; return undefined; }, set(v) { ran++; throw new Error('a module setter ran'); }});
+      Object.defineProperty(Object.prototype, 'pipe', {configurable: true, get() { ran++; return undefined; }, set(v) { ran++; }});
+      const viaCallback = await new Promise((resolve) => CHUtil.request(url, (e) => resolve(e.code)));
+      const piped = CHUtil.request(url).pipe('dest');
+      delete Object.prototype.toJSON; delete Object.prototype.pipe; delete EE.prototype._events;
+      // a late once (or prependOnce) listener: called once, not twice
+      const r2 = CHUtil.request(url);
+      const r2b = CHUtil.request(url);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      let onceCalls = 0;
+      let prependOnceCalls = 0;
+      r2.once('error', () => { onceCalls++; });
+      r2b.prependOnceListener('error', () => { prependOnceCalls++; });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      // a listener added after it was delivered: nothing
+      let after = 0;
+      r2.on('error', () => { after++; });
+      // form(fields) answers the request, its 'error' the refusal
+      const viaForm = await new Promise((resolve) => CHUtil.request(url).form({a: 1}).on('error', (e) => resolve(e.code)));
+      // abort(): no 'error', no callback; 'abort' emitted
+      let abortErr = 0;
+      let aborted = 0;
+      const r3 = CHUtil.request(url, () => { abortErr++; });
+      r3.on('abort', () => { aborted++; });
+      r3.on('error', () => { abortErr++; });
+      r3.abort();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const r4 = CHUtil.request({url, method: 'POST'});
+      r4.on('error', () => {});
+      return {ran, viaCallback, piped, onceCalls, prependOnceCalls, after, viaForm, abortErr, aborted, uri: r4.uri && r4.uri.href, method: r4.method};
+    `);
+    assert.deepStrictEqual(out, {ran: 0, viaCallback: 'ERR_ACCESS_DENIED', piped: 'dest', onceCalls: 1, prependOnceCalls: 1, after: 0, viaForm: 'ERR_ACCESS_DENIED',
+      abortErr: 0, aborted: 1, uri: 'http://not-granted.example.invalid/x', method: 'POST'}, JSON.stringify(out));
+  }));
+
+  // the stand-in's method list can't drift from postman-request's Request
+  it('the stand-in answers every method postman-request\'s Request and caseless\'s httpify have', () => {
+    const {REQUEST_METHODS} = require('../../lib/module-lockdown');
+    const Request = require('postman-request').Request;
+    const expected = Object.getOwnPropertyNames(Request.prototype).filter((k) => k !== 'constructor');
+    const headers = {};
+    const holder = {};
+    require('caseless').httpify(holder, headers);
+    for (const k of Object.keys(holder)) if (typeof(holder[k]) === 'function') expected.push(k);
+    assert.deepStrictEqual([...new Set(REQUEST_METHODS)].sort(), [...new Set(expected)].sort());
+  });
+
   // the runtime's loads of module files (the dispatcher's, CHUtil.loadFile's)
   // have the module's own anchor as parent, and the fixture's files carry the
   // CLI idiom (`if (!module.parent) throw`), so they load at all only with
