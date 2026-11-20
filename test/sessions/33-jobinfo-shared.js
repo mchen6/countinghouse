@@ -38,7 +38,24 @@ describe('sessions 33: a task\'s history record where nothing reads it (F1-5)', 
     options.singleIdentity = false;
     common.saveJobInfo(job(), 'completed');
     assert.strictEqual(pushed.length, 1);
-    // (this server's own list once an identity is set: B-j1; a bare process keeps the plain key)
-    assert.match(pushed[0][0], /^jobinfo:(\{chj-[0-9a-f]{16}\}:)?report$/);
+    // (this server's own list once it has a server id: B-j1; a bare process keeps the plain key)
+    const serverId = require('../../lib/server-id');
+    assert.strictEqual(pushed[0][0], serverId.ready() ? `jobinfo:{chj-${serverId.get()}}:report` : 'jobinfo:report');
+  });
+
+  it('with a server id, the record is in this server\'s own list: jobinfo:{chj-<server id>}:<name> (B-j1)', function() {
+    const serverId = require('../../lib/server-id');
+    if (serverId.ready()) this.skip();   // (an earlier file's id is never swapped)
+    const tmp = require('../helpers/test-tmp');
+    const dir = tmp.mkdtemp('ch-s33-server-id-');
+    try {
+      serverId.initSync({moduleDataPath: dir});
+      options.singleIdentity = false;
+      common.saveJobInfo(job(), 'completed');
+      assert.deepStrictEqual(pushed.map((p) => p[0]), [`jobinfo:{chj-${serverId.get()}}:report`]);
+    } finally {
+      serverId.reset();
+      tmp.remove(dir);
+    }
   });
 });

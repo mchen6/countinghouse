@@ -281,11 +281,12 @@ if (options.hardened === true && process.permission == null) {
     if (drive != null) process.env.COUNTINGHOUSE_VIRTUAL_DRIVE = drive;
   }
   // On Windows the child cannot run the PowerShell the identity secret's
-  // ACL check needs: it is created and checked here (lib/identity.js
-  // prepareForHardened)
+  // and the server id's ACL checks need: they are created and checked here
+  // (lib/identity.js, lib/server-id.js prepareForHardened)
   if (process.platform === 'win32') {
     try {
       require('./lib/identity').prepareForHardened(options);
+      require('./lib/server-id').prepareForHardened(options);
     } catch (e) {
       console.error(e.message);
       process.exit(2);
@@ -410,6 +411,9 @@ logger.I('countinghouse@' + packageJson.version + ' start with options:' + JSON.
 var identity = require('./lib/identity');
 try {
   identity.initSync(options);
+  // this server's own id, beside the secret (lib/server-id.js): its job
+  // queue's prefix and job history keys
+  require('./lib/server-id').initSync(options);
 } catch (e) {
   console.error(e.message);
   process.exit(2);

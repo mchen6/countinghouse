@@ -2,12 +2,13 @@
 // B-j1: each runtime's job queue is its own. The BullMQ prefix was
 // '{cdifJob}' for every runtime, so two runtimes on one Redis took each
 // other's jobs: a job for a module only one of them loaded ran on the
-// other and failed. Now it is derived from the server's identity secret
-// (lib/job-control-common.js jobQueuePrefix). Two runtimes on one (private)
-// Redis, each with its own module data directory and a module the other
-// does not have: every job each is given completes, in its own queue. Jobs
-// left under the old shared prefix are not moved: each start says so once,
-// and leaves them.
+// other and failed. Now it is named by the server's own id, random and kept
+// beside its data (lib/server-id.js; lib/job-control-common.js
+// jobQueuePrefix). Two runtimes on one (private) Redis, each with its own
+// module data directory and a module the other does not have: every job
+// each is given completes, in its own queue. Jobs left under the old shared
+// prefix, and history under the old unscoped keys, are not moved: each start
+// says so once, read-only, and leaves them.
 const assert = require('assert');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -16,7 +17,7 @@ const request = require('supertest');
 const {Queue} = require('bullmq');
 const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
 const {testPort, redisConnectionFor} = require('../helpers/test-env');
-const {prefixFor, prefixForSecret} = require('../helpers/job-queue');
+const {prefixFor} = require('../helpers/job-queue');
 const {deviceIDForName} = require('../../lib/call-address');
 const tmp = require('../helpers/test-tmp').forFile(['ch-auth-56-']);
 
@@ -29,18 +30,22 @@ const RUNTIMES = {
 };
 // (the count is whatever this Redis holds under the old prefix: the job
 // seeded here at least)
-const LEGACY_SAID = /job queue: (\d+) jobs? and \d+ schedulers? under the old shared prefix \{cdifJob\} were not moved to this server's queue/g;
+const LEGACY_SAID = /job queue: (\d+) jobs? and \d+ schedulers? under the old shared prefix \{cdifJob\} were not moved to this server's queue, and (\d+) job histor(?:y|ies) under the old jobinfo:<name> keys are not read/g;
+const LEGACY_HISTORY = `jobinfo:legacy-56-${process.pid}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 describe('auth 56: each runtime\'s job queue is its own (B-j1)', function() {
   this.timeout(120000);
   let legacy = null;
   let legacyJob = null;
+  let kv = null;   // the store's kv (Redis db 5): a history list left unscoped
 
   before(async () => {
     // a job left under the shared prefix by a runtime before B-j1
     legacy = new Queue('job-queue', {prefix: '{cdifJob}', connection: redisConnectionFor(11)});
     legacyJob = await legacy.add(`legacy-56-${process.pid}`, {left: true});
+    kv = new (require('ioredis'))(redisConnectionFor(5));
+    await kv.lpush(LEGACY_HISTORY, JSON.stringify({job: {name: 'legacy-56'}, state: 'completed'}));
     for (const r of Object.values(RUNTIMES)) {
       const dir = tmp.mkdtemp('ch-auth-56-');
       const auth = path.join(dir, 'auth.json');
@@ -58,15 +63,17 @@ describe('auth 56: each runtime\'s job queue is its own (B-j1)', function() {
     }
     if (legacyJob != null) await legacyJob.remove().catch(() => {});
     if (legacy != null) await legacy.close();
+    if (kv != null) { await kv.del(LEGACY_HISTORY).catch(() => {}); kv.disconnect(); }
   });
 
-  it('the prefix is the server\'s own: {chj-<16 hex>}, the same for one secret, another for another', () => {
+  it('the prefix is the server\'s own: {chj-<its 16-hex id>}, kept in its data directory; another directory, another', () => {
     const [a, b] = Object.values(RUNTIMES).map((r) => prefixFor(r.dataDir));
     for (const p of [a, b]) assert.match(p, /^\{chj-[0-9a-f]{16}\}$/);
     assert.notStrictEqual(a, b);
-    const secret = crypto.randomBytes(32).toString('hex');
-    assert.strictEqual(prefixForSecret(secret), prefixForSecret(secret));
-    assert.notStrictEqual(prefixForSecret(secret), prefixForSecret(crypto.randomBytes(32).toString('hex')));
+    for (const r of Object.values(RUNTIMES)) {
+      const id = fs.readFileSync(path.join(r.dataDir, '.server-id'), 'utf8');
+      assert.strictEqual(prefixFor(r.dataDir), `{chj-${id}}`);
+    }
   });
 
   it('two runtimes on one Redis each run only their own jobs, and every one completes', async () => {
@@ -103,7 +110,7 @@ describe('auth 56: each runtime\'s job queue is its own (B-j1)', function() {
     }
   });
 
-  it('a job left under the old shared prefix is said once by each start, and left where it is', async () => {
+  it('a job left under the old shared prefix, and an unscoped history, are said once by each start, and left where they are', async () => {
     // (said once its counts are read, after the start: waited for)
     const once = new RegExp(LEGACY_SAID.source);
     for (const r of Object.values(RUNTIMES)) {
@@ -111,8 +118,10 @@ describe('auth 56: each runtime\'s job queue is its own (B-j1)', function() {
       const said = [...r.server.output.matchAll(LEGACY_SAID)];
       assert.strictEqual(said.length, 1, r.server.output.slice(-2000));
       assert.ok(Number(said[0][1]) >= 1, said[0][0]);
+      assert.ok(Number(said[0][2]) >= 1, said[0][0]);
     }
     assert.strictEqual(await (await legacy.getJob(legacyJob.id)).getState(), 'waiting');
+    assert.strictEqual(await kv.llen(LEGACY_HISTORY), 1, 'the old history list is read, never changed');
   });
 
   tmp.hooks();
