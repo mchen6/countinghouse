@@ -88,6 +88,8 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
       await assert.rejects(t.broker.handle('copyFile', ['/data/src', '/data/late/out']), enoent('/data/late/out'));
       const out = path.join(t.dirs.outside, 'out');
       assert.ok(!fs.existsSync(out) || fs.readFileSync(out, 'utf8') === '', 'nothing written outside');
+      // (and on Linux the file the refused copy made there is gone)
+      if (process.platform === 'linux') assert.strictEqual(fs.existsSync(out), false, 'the destination the refused copy made is gone');
     } finally { await t.done(); }
   });
 
@@ -118,15 +120,10 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
   // (the FB2 follow-up, ruled 11-10 (L1): a leaf that is a link, appeared
   // with its parent in the race that left checkHost nothing to decide, is
   // refused under enforce wherever it leads -- reported as link-appeared,
-  // never as an escape. /proc's own check is stood down, so the leaf rule
-  // alone decides, as off Linux.)
+  // never as an escape; the leaf check runs ahead of /proc's, on every
+  // platform)
   it('a leaf that is a link, appeared with its parent, is refused wherever it leads, reported as link-appeared', async () => {
-    const realReadlink = fs.promises.readlink;
-    fs.promises.readlink = async function(p, o) {
-      if (String(p).startsWith('/proc/self/fd/')) throw Object.assign(new Error('stood down'), {code: 'ENOENT'});
-      return realReadlink.call(this, p, o);
-    };
-    try {
+    {
       for (const [target, flags] of [['data', 'r'], ['ro', 'r'], ['ro', 'r+'], ['outside', 'r']]) {
         const t = await setup('enforce', (syscall, host, dirs) => {
           if (syscall === 'open' && path.basename(path.dirname(host)) === 'late') {
@@ -143,7 +140,7 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
           assert.strictEqual(t.broker.fds.size, 0);
         } finally { await t.done(); }
       }
-    } finally { fs.promises.readlink = realReadlink; }
+    }
   });
 
   it('audit does not refuse it: the check after open is enforce-only, as before', async () => {
