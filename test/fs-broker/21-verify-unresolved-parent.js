@@ -429,7 +429,12 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
       fs.writeFileSync(path.join(t.dirs.data, 'target'), 't');
       fs.symlinkSync(path.join(t.dirs.data, 'target'), path.join(t.dirs.data, 'lnk'));
       await assert.rejects(t.broker.handle('open', ['/data/lnk', fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW]), (e) => e.code === 'ELOOP');
-      assert.ok(!t.reports.some((r) => r.startsWith('link-appeared')), t.reports.join(', '));
+      await assert.rejects(t.broker.handle('open', ['/data/lnk', fs.constants.O_WRONLY | fs.constants.O_NOFOLLOW]), (e) => e.code === 'ELOOP');
+      assert.strictEqual(fs.readFileSync(path.join(t.dirs.data, 'target'), 'utf8'), 't', 'the target untouched');
+      // (a dangling link, the lock idiom: ELOOP too, never link-dangling)
+      fs.symlinkSync(path.join(t.dirs.data, 'nothing'), path.join(t.dirs.data, 'lock'));
+      await assert.rejects(t.broker.handle('open', ['/data/lock', fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_NOFOLLOW]), (e) => e.code === 'ELOOP');
+      assert.ok(!t.reports.some((r) => r.startsWith('link-appeared') || r.startsWith('link-dangling')), t.reports.join(', '));
       assert.strictEqual(t.broker.fds.size, 0);
     } finally { await t.done(); }
   });
