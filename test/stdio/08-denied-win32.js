@@ -75,6 +75,16 @@ describe('stdio 08: the always-denied set on Windows, and sticky identities (iss
       }
     });
 
+    // B-j1: the server id beside the secret, in every spelling Windows opens
+    it('(b) the server id: drive, "/" and mixed forms, trailing dots or spaces, a stream suffix, another case', async () => {
+      const d = new DeniedSet(['C:\\ch\\moddata\\.server-id'], {platform: 'win32', hostFs});
+      for (const v of ['C:\\ch\\moddata\\.server-id', 'c:/CH/moddata/.SERVER-ID', 'C:\\ch/moddata\\.server-id', 'C:\\ch\\moddata\\.server-id.',
+        'C:\\ch\\moddata\\.server-id. .', 'C:\\ch\\moddata\\.server-id::$DATA', 'C:\\ch\\moddata\\.server-id:x']) {
+        assert.strictEqual(await d.matchesOutside(v, false), true, v);
+      }
+      assert.strictEqual(await d.matchesOutside('C:\\ch\\moddata\\.server-idx', false), false);
+    });
+
     // Round 7: identities are read as bigints (an NTFS file ID often passes
     // 2^53); an entry with ino 0 or no birthtime is matched while current
     // and never kept, so a later file given that dev+ino is not refused.

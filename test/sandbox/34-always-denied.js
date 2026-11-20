@@ -49,6 +49,7 @@ function world(tag) {
     store: path.join(base, 'store'),
     rw: path.join(base, 'rw'),
     secretPath: path.join(base, 'store', '.identity-secret'),
+    serverIdPath: path.join(base, 'store', '.server-id'),
     moduleTmp: path.join(base, 'store', NAME, 'tmp')
   };
   fs.mkdirSync(w.rw);
@@ -133,6 +134,26 @@ describe('sandbox 34: the always-denied set', function() {
         fs.symlinkSync(w.secretPath, path.join(w.moduleTmp, 'secret-link'));
         assert.deepStrictEqual(await read('/tmp/secret-link'), {content: null, code: 'EACCES'});
         await deniedLine(w.secretPath);
+      });
+
+      // B-j1: the id that names the server's job queue; a module that could
+      // rewrite, move or alias it would put the server on another's queue
+      it('the server id is EACCES to read, and refused to write, rename and hard-link; directly and through a symlink; the file unchanged', async () => {
+        const id = fs.readFileSync(w.serverIdPath, 'utf8');
+        const call = (name, input) => mcpCall(port, ADMIN, tool(name), input).then(toolOutput);
+        assert.deepStrictEqual(await read(w.serverIdPath), {content: null, code: 'EACCES'});
+        fs.symlinkSync(w.serverIdPath, path.join(w.moduleTmp, 'server-id-link'));
+        assert.deepStrictEqual(await read('/tmp/server-id-link'), {content: null, code: 'EACCES'});
+        for (const [name, input] of [['write', {path: w.serverIdPath, content: '0000000000000000'}],
+          ['rename', {from: w.serverIdPath, to: '/tmp/moved-server-id'}],
+          ['link', {from: w.serverIdPath, to: '/tmp/server-id-hard'}]]) {
+          const out = await call(name, input);
+          assert.strictEqual(out.ok, false, `${name}: ${JSON.stringify(out)}`);
+          assert.ok(['EACCES', 'EPERM', 'EROFS'].includes(out.code), `${name}: ${JSON.stringify(out)}`);
+        }
+        assert.strictEqual(fs.readFileSync(w.serverIdPath, 'utf8'), id);
+        assert.strictEqual(fs.statSync(w.serverIdPath).nlink, 1);
+        await deniedLine(w.serverIdPath);
       });
 
       it('a declared COUNTINGHOUSE_* variable does not reach the worker, and the load logs the denial', async () => {
