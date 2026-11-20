@@ -166,6 +166,11 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
     write(path.join(root, 'node_modules', 'decoyed', 'package.json'), JSON.stringify({name: 'decoyed', exports: './real.js'}));
     write(path.join(root, 'node_modules', 'node_modules', 'decoyed', 'package.json'), JSON.stringify({name: 'decoyed', exports: './decoy.js'}));
     cases.push({id: 'decoy', spec: 'decoyed', parent, stricter: true});
+    // (a name with a ':' the URL parser rejects: bare to Node, POSIX only)
+    if (process.platform !== 'win32') {
+      write(path.join(root, 'node_modules', 'co_lon:pkg', 'package.json'), JSON.stringify({name: 'co_lon:pkg', exports: {'.': './i.js', './x': './x.js'}}));
+      for (const spec of ['co_lon:pkg', 'co_lon:pkg/x', 'co_lon:pkg/nope']) cases.push({id: `colon ${spec}`, spec, parent, pkgDir: path.join(root, 'node_modules', 'co_lon:pkg')});
+    }
     // (a scope with an empty, '.' or '..' name part)
     for (const spec of ['@sc/..', '@sc/.', '@sc/']) cases.push({id: `scope part ${spec}`, spec, parent, stricter: true});
   });

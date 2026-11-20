@@ -148,6 +148,23 @@ const STEPS = {
     const deep = require('../../lib/deep/a/b/c/self.js');
     out.push(deep('isolation-probe/self-check') === 'counted' ? 'same' : `ownSelf(${deep('isolation-probe/self-check')})`);
     same('outerSelf', deep('outer-self').split('outer-self').join('PKG'), deep('no-such-outer').split('no-such-outer').join('PKG'));
+    // (a bare name with a ':' URL parsing rejects -- bare to Node -- above
+    // the root against a missing one, by import, findPackageJSON and
+    // require; POSIX, where a file name can hold one)
+    if (process.platform !== 'win32') {
+      same('colonImport', await oi('co_lon:pkg', 'co_lon:pkg'), await oi('noco_lon:pkg', 'noco_lon:pkg'));
+      if (typeof(M.findPackageJSON) === 'function') {
+        same('colonFind', o(() => String(M.findPackageJSON('co_lon:pkg', __filename)), 'co_lon:pkg'), o(() => String(M.findPackageJSON('noco_lon:pkg', __filename)), 'noco_lon:pkg'));
+      } else out.push('same');
+      same('colonRequire', o(() => require('co_lon:pkg'), 'co_lon:pkg'), o(() => require('noco_lon:pkg'), 'noco_lon:pkg'));
+      // (and it is the in-root resolver that answers such a name, never
+      // Node's walk: one with a decoy is refused as dep2 is, where Node
+      // alone would find it)
+      same('colonDecoy', await oi('co_lon:dec', 'co_lon:dec'), await oi('dep2', 'dep2'));
+      if (typeof(M.findPackageJSON) === 'function') {
+        same('colonDecoyFind', o(() => String(M.findPackageJSON('co_lon:dec', __filename)), 'co_lon:dec'), o(() => String(M.findPackageJSON('dep2', __filename)), 'dep2'));
+      } else out.push('same');
+    } else out.push('same', 'same', 'same', 'same', 'same');
     return out.join(' ');
   },
   // C-bare R0's layers past the judged _stat, each pinned alone by a

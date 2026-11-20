@@ -83,6 +83,16 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     // (C-bare R0: an "exports" target climbing out by '%2e' to the file
     // beside the root; a package.json above the root a self-reference from
     // deep in the tree would find were the root's own not there first)
+    if (process.platform !== 'win32') {
+      fs.mkdirSync(path.join(spaced, 'node_modules', 'co_lon:pkg'), {recursive: true});
+      fs.writeFileSync(path.join(spaced, 'node_modules', 'co_lon:pkg', 'package.json'), JSON.stringify({name: 'co_lon:pkg'}));
+      fs.writeFileSync(path.join(spaced, 'node_modules', 'co_lon:pkg', 'index.js'), 'module.exports = "above";\n');
+      for (const at of [path.join(probe, 'node_modules', 'co_lon:dec'), path.join(probe, 'node_modules', 'node_modules', 'co_lon:dec')]) {
+        fs.mkdirSync(at, {recursive: true});
+        fs.writeFileSync(path.join(at, 'package.json'), JSON.stringify({name: 'co_lon:dec', exports: {'.': './index.js'}}));
+        fs.writeFileSync(path.join(at, 'index.js'), 'module.exports = "dec";\n');
+      }
+    }
     fs.mkdirSync(path.join(probe, 'node_modules', 'dep6'), {recursive: true});
     fs.writeFileSync(path.join(probe, 'node_modules', 'dep6', 'package.json'), JSON.stringify({name: 'dep6', exports: {'./*': './.%2*/.%2*/.%2*/isolation-probe.js'}}));
     fs.writeFileSync(path.join(spaced, 'package.json'), JSON.stringify({name: 'outer-self', exports: './isolation-probe.js'}));
@@ -232,7 +242,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
         // deep self-reference finds the one above it)
         assert.deepStrictEqual(plainControl, [path.join(spaced, 'isolation-probe.js'), path.join(spaced, 'isolation-probe.js')]);
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'cjsJudged'});
-        assert.strictEqual(detail(r), 'same same same same same', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
       });
       // (each layer past the judged _stat, alone: removing any one fails
       // this; POSIX, where a test makes a link without privileges)
