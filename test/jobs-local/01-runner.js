@@ -222,7 +222,7 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     assert.notStrictEqual(got.ownerKey, 'victim', 'the start hook named the owner');
     assert.deepStrictEqual([got.usageCall, got.timeoutMs], [8, 5000], JSON.stringify(got));
     const words = (opts) => call(runner, 'addJob', INTERNAL, Object.assign({name: 't'}, opts), 'd', 's', 'a', {}).then((x) => (x.err != null ? x.err.message : null));
-    const expected = new (require('../../lib/countinghouse-error').CountinghouseError)('ADD_JOB_ERROR', 'timeout must be a whole number of milliseconds, at least 1').message;
+    const expected = new (require('../../lib/countinghouse-error').CountinghouseError)('JOB_OPTS_INVALID', 'timeout must be a whole number of milliseconds, at least 1').message;
     assert.deepStrictEqual([await words({timeout: 0}), await words({timeout: -5}), await words({timeout: 'soon'}), await words({timeout: 1.5})], [expected, expected, expected, expected]);
     runner.close();
   });
@@ -230,9 +230,9 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
   it('refuses what job-control refuses, in the same words', async () => {
     const {runner} = runnerWith((i, cb) => setImmediate(cb, null, {}));
     assert.strictEqual((await call(runner, 'addJob', INTERNAL, {name: 'b', attempts: 11}, 'd', 's', 'a', {})).err.message,
-      new (require('../../lib/countinghouse-error').CountinghouseError)('ADD_JOB_ERROR', 'attempts must be a whole number from 1 to 10').message);
-    assert.strictEqual((await call(runner, 'addJob', INTERNAL, null, 'd', 's', 'a', {})).err.code, 'ADD_JOB_ERROR');
-    assert.strictEqual((await call(runner, 'removeJob', INTERNAL, 'b', '1', 'yes')).err.code, 'REMOVE_JOB_ERROR');
+      new (require('../../lib/countinghouse-error').CountinghouseError)('JOB_OPTS_INVALID', 'attempts must be a whole number from 1 to 10').message);
+    assert.strictEqual((await call(runner, 'addJob', INTERNAL, null, 'd', 's', 'a', {})).err.code, 'JOB_OPTS_INVALID');
+    assert.strictEqual((await call(runner, 'removeJob', INTERNAL, 'b', '1', 'yes')).err.code, 'JOB_OPTS_INVALID');
     runner.close();
   });
 

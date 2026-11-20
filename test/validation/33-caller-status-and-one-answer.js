@@ -56,6 +56,39 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
         {code: 'ACTION_NOT_FOUND', message: CODES.ACTION_NOT_FOUND.en, kind: 'caller', fault: {why: 1}});
     });
 
+    // the medium on caller 400, 1: a worker's or a validator's reply is
+    // decoded as a plain Error carrying its code
+    it('a plain Error carrying a catalogue code takes its row, whatever the thread mode; one marked a module\'s never does', () => {
+      const decoded = Object.assign(new Error('Input data validation failed'), {code: 'INPUT_DATA_VALIDATION_FAIL'});
+      assert.deepStrictEqual([statusOf(decoded), kindOf(decoded)], [400, 'caller']);
+      const service = Object.assign(new Error('x'), {code: 'SERVICE_NOT_FOUND'});
+      assert.deepStrictEqual([statusOf(service), kindOf(service)], [404, 'caller']);
+      const moduleOwn = Object.assign(new Error('x'), {code: 'INPUT_DATA_VALIDATION_FAIL', origin: 'module'});
+      assert.deepStrictEqual([statusOf(moduleOwn), kindOf(moduleOwn)], [500, 'runtime']);
+      const notOurs = Object.assign(new Error('x'), {code: 'ENOENT'});
+      assert.deepStrictEqual([statusOf(notOurs), kindOf(notOurs)], [500, 'runtime']);
+    });
+
+    it('a run refused for a missing or hidden action is never retried (ACTION_NOT_FOUND), nor a malformed job request\'s', () => {
+      const {notRetried} = require('../../lib/job-control-common');
+      assert.strictEqual(notRetried('ACTION_NOT_FOUND'), true);
+      assert.strictEqual(notRetried('MODULE_NOT_LISTED'), true);
+      assert.deepStrictEqual([CODES.JOB_OPTS_INVALID.kind, CODES.JOB_OPTS_INVALID.httpStatus], ['caller', 400]);
+    });
+
+    it('a job\'s run refuses a part a scenario took in (a scheduler made while it was listed), as add-job does', async () => {
+      const DeviceManager = require('../../lib/device-manager');
+      const dm = {deviceMap: {[PART]: device('part-mod', 'part')}, moduleManager: {unlisted: new Set(['part-mod'])},
+        ensureDeviceState: () => { throw new Error('dispatched'); }, discoveredTag: (e) => e};
+      const savedVis = visibility.configure({moduleOf: () => 'part-mod', isGone: () => true, changed: () => {}});
+      try {
+        const err = await new Promise((resolve) => DeviceManager.prototype.invokeJobsNow.call(dm, PART, SERVICE, 'act', {}, 'j1', resolve));
+        assert.strictEqual(err && err.code, 'MODULE_NOT_LISTED');
+      } finally {
+        visibility.configure(savedVis);
+      }
+    });
+
     it('every caller-kind catalogue row answers a 4xx; JOB_ACCESS_DENIED is gone, JOB_NOT_FOUND and SCHEMA_PATH_NOT_FOUND are 404', () => {
       for (const [code, e] of Object.entries(CODES)) {
         if (e.kind === 'caller') assert.ok(e.httpStatus >= 400 && e.httpStatus < 500, `${code}: ${e.httpStatus}`);
@@ -95,6 +128,8 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
         }
         if (actionName === 'named-missing') return session.callbackWithoutTimer(new CountinghouseError('ACTION_NOT_FOUND', actionName));
         if (actionName === 'crossed-missing') return session.callbackWithoutTimer(new CountinghouseError('ACTION_NOT_FOUND'));
+        // a missing service (named, as countinghouse-device raises it)
+        if (serviceID === 'urn:x:no-such-service') return session.callbackWithoutTimer(new CountinghouseError('SERVICE_NOT_FOUND', serviceID));
         return session.callbackWithoutTimer(null, {ok: true});
       },
       getDeviceSpec: (deviceID, session) => session.callbackWithoutTimer(null, {device: {serviceList: {}}}),
@@ -178,8 +213,17 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       assert.deepStrictEqual(invoked, [], 'the unusable action is never dispatched');
       const named = await call(ROUTES[0], LISTED, {serviceID: SERVICE, actionName: 'named-missing', input: {}});
       const crossed = await call(ROUTES[0], LISTED, {serviceID: SERVICE, actionName: 'crossed-missing', input: {}});
+      // (a missing service too: one whose actions are all hidden is not
+      // shown either; the medium on caller 400, 5)
+      const service = await call(ROUTES[0], LISTED, {serviceID: 'urn:x:no-such-service', actionName: 'act', input: {}});
       const expected = JSON.stringify({status: 404, body: {code: 'ACTION_NOT_FOUND', message: CODES.ACTION_NOT_FOUND.en, kind: 'caller'}});
-      assert.deepStrictEqual({hidden, named, crossed}, {hidden: expected, named: expected, crossed: expected});
+      assert.deepStrictEqual({hidden, named, crossed, service}, {hidden: expected, named: expected, crossed: expected, service: expected});
+    });
+
+    it('an unknown key is 401, with WWW-Authenticate', async () => {
+      authAnswer = new CountinghouseError('SYSTEM_ERROR_UNKNOWN_USER');
+      const res = await request(app).get(`/devices/${LISTED}/get-spec`).set('X-CH-Key', 'k');
+      assert.deepStrictEqual([res.status, res.headers['www-authenticate'], res.body.code, res.body.kind], [401, 'X-CH-Key', 'SYSTEM_ERROR_UNKNOWN_USER', 'caller']);
     });
 
     it('a request-shape error is 400, kind caller (was 500)', async () => {

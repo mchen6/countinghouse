@@ -20,7 +20,7 @@ describe('test4: invoke with unknown serviceID', function() {
     .expect('Content-Type', /[json | text]/)
     .expect(404, (err, res) => {
       if (err) return done(err);
-      if (res.body.code !== 'SERVICE_NOT_FOUND') {
+      if (res.body.code !== 'ACTION_NOT_FOUND') {  // (a missing service answers as a missing action: post-rel caller 400)
         console.error(chalk.white.bgRed.bold(`Request:${JSON.stringify(req)}`));
         console.error(chalk.white.bgRed.bold(`Response: ${JSON.stringify(res.body)}`));
         return done(new Error('test invoke with unknown serviceID fail'));

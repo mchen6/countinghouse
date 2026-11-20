@@ -4,7 +4,7 @@
 // least 1000 ms), and at most 10 attempts. Before, repeat.every: 1 with no
 // limit, or attempts: 1e9, turned one rate-limited request into unbounded
 // work billed to its owner. Anything that is not a whole number in range is
-// refused with ADD_JOB_ERROR and no job is created.
+// refused with JOB_OPTS_INVALID (400) and no job is created.
 const assert  = require('assert');
 const fs      = require('fs');
 const os      = require('os');
@@ -51,7 +51,8 @@ describe('auth 34: what one add-job may ask for is bounded', function() {
   const refused = async (opts, why) => {
     const r = await addJob(opts);
     assert.notStrictEqual(r.status, 200, `${why} was accepted: ${JSON.stringify(r.body)}`);
-    assert.strictEqual(r.body.code, 'ADD_JOB_ERROR', JSON.stringify(r.body));
+    // (the caller's fault: JOB_OPTS_INVALID, 400; post-rel caller 400)
+    assert.deepStrictEqual([r.status, r.body.code], [400, 'JOB_OPTS_INVALID'], JSON.stringify(r.body));
     return r.body;
   };
 

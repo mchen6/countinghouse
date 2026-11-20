@@ -161,7 +161,7 @@
             ],
             "_meta": {
               "countinghouse/code": "INPUT_DATA_VALIDATION_FAIL",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "caller"
             }
           }
         }
@@ -247,7 +247,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -328,7 +328,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_FAIL",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -850,7 +850,7 @@
             ],
             "_meta": {
               "countinghouse/code": "OUTPUT_DATA_VALIDATION_FAIL",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -1093,7 +1093,7 @@
             ],
             "_meta": {
               "countinghouse/code": "MODULE_CODE_RESERVED",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -1174,7 +1174,7 @@
             ],
             "_meta": {
               "countinghouse/code": "MODULE_CODE_RESERVED",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -1255,7 +1255,7 @@
             ],
             "_meta": {
               "countinghouse/code": "MODULE_CODE_RESERVED",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -1336,7 +1336,7 @@
             ],
             "_meta": {
               "countinghouse/code": "MODULE_CODE_RESERVED",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -1417,7 +1417,7 @@
             ],
             "_meta": {
               "countinghouse/code": "REMOTE_UNDECLARED",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -1498,7 +1498,7 @@
             ],
             "_meta": {
               "countinghouse/code": "REMOTE_ARGS_INVALID",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -1579,7 +1579,7 @@
             ],
             "_meta": {
               "countinghouse/code": "MESSAGE_TOO_LARGE",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -1665,7 +1665,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -1751,7 +1751,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -1837,7 +1837,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -1921,7 +1921,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -2005,7 +2005,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -2089,7 +2089,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -2173,7 +2173,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -2259,7 +2259,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -2340,7 +2340,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_FAIL",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -2425,7 +2425,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -2511,7 +2511,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -2592,7 +2592,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_FAIL",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
@@ -2673,7 +2673,7 @@
             ],
             "_meta": {
               "countinghouse/code": "DEVICE_INVOKE_FAIL",
-              "countinghouse/kind": "runtime"
+              "countinghouse/kind": "module"
             }
           }
         }
