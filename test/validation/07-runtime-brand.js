@@ -70,14 +70,14 @@ describe('validation 07: only the runtime issues runtime errors (d2b)', () => {
   });
 
   // (#482's high, round 2: what leaves a handler is the module's answer, kind
-  // module, 500; its code, origin and retryable stay the runtime's)
+  // module, 500, not retryable; its code and origin stay the runtime's)
   it('a runtime error the runtime issued keeps its code and origin when a handler passes it on, and is the module\'s answer', async () => {
     const a = await answer(() => issue(new CountinghouseError('MODULE_RELOADING')));
     assert.strictEqual(a.err.code, 'MODULE_RELOADING');
     assert.strictEqual(a.err.origin, 'runtime');
     assert.strictEqual(a.err.kind, 'module');
     assert.strictEqual(a.err.httpStatus, 500);
-    assert.strictEqual(a.err.retryable, true);
+    assert.strictEqual(a.err.retryable, false);
   });
 
   it('an issued error keeps its issued code and origin when the module changes them', async () => {

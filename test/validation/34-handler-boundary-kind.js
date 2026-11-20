@@ -12,7 +12,7 @@
 // alone, private and clamped; the mark crosses a reply, a task's failure
 // record and a job's public record; a crash fallback drops it.
 const assert = require('assert');
-require('../../lib/cli-options').setOptions({workerThread: false});
+const optionsScope = require('../helpers/options-scope');
 const {CountinghouseError, statusOf, kindOf, setRetryAfter, retryAfterOf, fromHandler} = require('../../lib/countinghouse-error');
 const {CODES} = require('../../lib/error-catalogue');
 const {buildCtx} = require('../../lib/handler-ctx');
@@ -53,14 +53,33 @@ const callRefusal = async () => {
   throw new Error('ctx.call did not reject');
 };
 const shape = (e) => [e.code, statusOf(e), kindOf(e)];
+const TMP = require('../helpers/test-tmp').forFile(['ch-v34-']);
 
 describe('validation 34: what leaves a module handler is the module\'s answer (#482\'s high, round 2)', () => {
+  // (single-thread mode, in this describe only: never at load, #477)
+  let keptOptions;
+  before(() => {
+    keptOptions = optionsScope.snapshot();
+    require('../../lib/cli-options').setOptions({workerThread: false});
+  });
+  after(() => optionsScope.restore(keptOptions));
+
   it('ctx.call: a refusal before the invoke (the part\'s device query, DEVICE_NOT_FOUND), passed on by the composer, answers 500, kind module', () =>
     withServiceClient(queryRefuses('DEVICE_NOT_FOUND'), async () => {
       const refusal = await callRefusal();
       assert.deepStrictEqual(shape(refusal), ['DEVICE_NOT_FOUND', 404, 'caller'], 'premise: as the composer holds it');
       const a = await answer(() => { throw refusal; });
       assert.deepStrictEqual(shape(a.err), ['DEVICE_NOT_FOUND', 500, 'module']);
+    }));
+
+  // (the medium on round 2, 7: the module's answer, whatever its row says,
+  // retryable too)
+  it('a passed-on RUNTIME_BUSY is the module\'s answer: 500, kind module, not retryable, no hint', () =>
+    withServiceClient(partRefuses(setRetryAfter(new CountinghouseError('RUNTIME_BUSY'), 500)), async () => {
+      const a = await answer(async() => { throw await callRefusal(); });
+      assert.deepStrictEqual([...shape(a.err), a.err.retryable, retryAfterOf(a.err)], ['RUNTIME_BUSY', 500, 'module', false, undefined]);
+      const crossed = CountinghouseError.fromReplyFields(CountinghouseError.replyFields(a.err));
+      assert.strictEqual(CountinghouseError.fromReply(crossed).retryable, false, 'the runtime\'s copy of it across a reply');
     }));
 
   it('ctx.call: the part\'s own refusal of the composer\'s input (INPUT_DATA_VALIDATION_FAIL), rethrown or called back, answers 500, kind module', () =>
@@ -104,9 +123,32 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
     const text = common.failureText(a.err, {era: 'modern'});
     const task = require('../../lib/mcp/gateway').taskFailureFor({job: {failedReason: text}});
     assert.deepStrictEqual(shape(task), ['DEVICE_NOT_FOUND', 500, 'module'], 'a task\'s failure');
-    const record = common.publicRecord({job: {failedReason: common.failureText(a.err)}});
+    const reason = common.failureText(a.err);
+    // (BullMQ keeps the rejected error's stack, whose first line repeats the
+    // reason: the medium on round 2, 3)
+    const record = common.publicRecord({job: {failedReason: reason, stacktrace: [`UnrecoverableError: ${reason}\n    at x (y.js:1:1)`]}});
     assert.strictEqual(record.job.failedKind, 'module');
     assert.ok(!record.job.failedReason.includes('\u001f'), 'no runner mark in the public record');
+    assert.ok(!record.job.failedReason.includes('fromHandler'));
+    assert.ok(!record.job.stacktrace[0].includes('fromHandler'), 'nor in its stacktrace');
+    assert.ok(record.job.stacktrace[0].includes('\n    at x'), 'the rest of the stack kept');
+    // (a legacy task's statusMessage, from the same reason: the medium on
+    // round 2, 1)
+    const legacy = require('../../lib/mcp/gateway').jobToTaskFor({state: 'failed', job: {id: 1, failedReason: reason, timestamp: 0, opts: {}}});
+    assert.ok(!legacy.statusMessage.includes('fromHandler'), legacy.statusMessage);
+    assert.ok(legacy.statusMessage.startsWith('DEVICE_NOT_FOUND: '));
+  });
+
+  it('a SETTING_REQUIRED\'s names are read back for a task, and never reach a job\'s public record', () => {
+    const common = require('../../lib/job-control-common');
+    const err = CountinghouseError.withFields('SETTING_REQUIRED', {missingSettings: ['apiToken', 'region']});
+    const reason = common.failureText(err, {era: 'modern'});
+    assert.deepStrictEqual(common.decodeFailedReason(reason).missingSettings, ['apiToken', 'region']);
+    const task = require('../../lib/mcp/gateway').taskFailureFor({job: {failedReason: reason}});
+    assert.deepStrictEqual([task.code, task.fields.missingSettings], ['SETTING_REQUIRED', ['apiToken', 'region']]);
+    const record = common.publicRecord({job: {failedReason: common.failureText(err)}});
+    assert.ok(!record.job.failedReason.includes('\u001f') && !record.job.failedReason.includes('missingSettings'), record.job.failedReason);
+    assert.strictEqual(record.job.failedKind, undefined);
   });
 
   it('a crash fallback carries no mark of the error it replaces', () => {
@@ -131,7 +173,10 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
     } finally {
       if (saved != null) Object.defineProperty(Error.prototype, 'retryAfterMs', saved); else delete Error.prototype.retryAfterMs;
     }
-    assert.strictEqual(setRetryAfter(new CountinghouseError('RUNTIME_BUSY'), 2500, 3000) && retryAfterOf(setRetryAfter(new CountinghouseError('RUNTIME_BUSY'), 2500, 3000)), 3);
+    assert.strictEqual(retryAfterOf(setRetryAfter(new CountinghouseError('RUNTIME_BUSY'), 2500, 3000)), 3);
+    // (a per-key limiter configured to a longer window: the hint is its own,
+    // within that window; the medium on round 2, 2)
+    assert.strictEqual(retryAfterOf(setRetryAfter(new CountinghouseError('RATE_LIMIT_EXCEEDED'), 45000, 60000)), 45);
   });
 
   // #482's high, round 2, 7: one shape everywhere
@@ -146,6 +191,38 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
     gate.guard(cdif, {appKey: 'k'}, res, () => { throw new Error('let through'); });
     await new Promise((r) => setImmediate(r));
     assert.deepStrictEqual([res.code, headers['Retry-After'], res.body.code], [429, '1', 'RATE_LIMIT_EXCEEDED']);
+    // (the limiter's window, as the provider reports it: a 60 s window's 45 s)
+    const long = {rateLimit: (k, cb) => cb(null, {limited: true, timeLeft: 45000, windowMs: 60000})};
+    const got45 = await new Promise((resolve) => gate.check(long, 'k', (limited, refusal) => resolve(refusal)));
+    assert.strictEqual(retryAfterOf(got45), 45);
+  });
+
+  it('the local metering provider says its window with a refusal', async () => {
+    const Local = require('../../lib/metering/local-provider');
+    const p = new Local({meter: true, storePath: TMP.mkdtemp('ch-v34-'), rateLimitMaxPerInterval: 1, rateLimitIntervalMs: 60000});
+    const ask = () => new Promise((resolve, reject) => p.rateLimit('k', (e, r) => (e != null ? reject(e) : resolve(r))));
+    await ask();
+    const second = await ask();
+    assert.deepStrictEqual([second.limited, second.windowMs], [true, 60000]);
+    assert.ok(second.timeLeft > 1000, 'premise: a long wait');
+  });
+
+  // the medium on round 2, 6: a per-session device out of the map
+  // (restarting, spawning) is refused at the route as one in it is
+  it('REST reaches no per-session device, in the map or out of it', () => {
+    const {restReaches} = require('../../lib/listing-scope');
+    const cliOptions = require('../../lib/cli-options');
+    const saved = cliOptions.sessionSocket;
+    cliOptions.sessionSocket = '/nonexistent.invalid/sock';
+    try {
+      const perSession = {name: 'session-mod', countinghouse: {state: 'per-session'}};
+      const shared = {name: 'shared-mod', countinghouse: {}};
+      const cdif = (pkg) => ({deviceManager: {deviceMap: {}, moduleOfDevice: () => pkg.name, packageOfModule: () => pkg, moduleManager: {}}});
+      assert.strictEqual(restReaches(cdif(perSession), 'd'), false, 'out of the map, per-session');
+      assert.strictEqual(restReaches(cdif(shared), 'd'), true);
+    } finally {
+      cliOptions.sessionSocket = saved;
+    }
   });
 
   // #482's high, round 2, 6: a job's run with no session, as a sessionless call
@@ -165,4 +242,5 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
       visibility.configure(saved);
     }
   });
+  TMP.hooks();
 });
