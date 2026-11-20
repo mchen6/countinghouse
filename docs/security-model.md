@@ -2283,6 +2283,8 @@ hostnames are used anywhere (Redis URL, module hosts):
 ExecStart=/usr/bin/node /opt/countinghouse/framework.js --workerThread --hardened --moduleSandbox enforce --modulePolicy /etc/countinghouse/policy.json --modulePath /var/lib/countinghouse/modules --moduleDataPath /var/lib/countinghouse/module_data --authConfigPath /var/lib/countinghouse/auth/auth.json
 WorkingDirectory=/var/lib/countinghouse
 User=countinghouse
+# a stop's SIGTERM ends the runtime with status 143 (its exit work done): a clean stop
+SuccessExitStatus=143
 ProtectSystem=strict
 ReadWritePaths=/var/lib/countinghouse/modules /var/lib/countinghouse/module_data /var/lib/countinghouse/auth
 NoNewPrivileges=yes
