@@ -424,7 +424,7 @@ A module sees its own namespace, in every mode:
 |---|---|---|
 | `/app` | the module's install directory | read-only: `EROFS` under `enforce`, `EACCES` under `audit` |
 | `/data` | `<moduleDataPath>/<name>/data` | read-write, quota, kept across restarts |
-| `/tmp` | `<moduleDataPath>/<name>/tmp` | read-write, quota, emptied when the worker starts |
+| `/tmp` | `<moduleDataPath>/<name>/tmp` | read-write, quota, emptied when the worker starts (only one the runtime made: "Only what the runtime made is deleted") |
 | each declared path, e.g. `/var/log/app` | the same host path | `r` or `rw` as the operator's policy narrows it; no quota |
 
 `<name>` is the package.json name the main thread verified. A load whose
@@ -649,6 +649,34 @@ the registry entry and deletes `<moduleDataPath>/<name>` unless `keepData`,
 never following links. It refuses while the module is loaded, restarting or
 suspended, and never removes the module's code under `--modulePath`.
 Unload, restart and reload never delete data.
+
+**Only what the runtime made is deleted.** Every recursive delete the
+runtime does is limited to directories it made:
+- `/tmp` emptied at a spawn (a worker, a session's worker, single-thread
+  mode);
+- a module's data removed by an uninstall;
+- a session's partition removed at its end or by the start's sweep.
+
+When it creates a module's or a session's `data` and `tmp`, it records each
+directory's identity (device, inode and birth time) in an owner-only marker,
+`.countinghouse-owned`, in the directory holding them: `<name>/`, or
+`<name>/sessions/<id>/`. No worker sees that directory. Before deleting, the
+directory as it is now must be the one recorded. A directory the runtime did
+not make, or one swapped in since (another at the same path, an inode number
+reused included), is never emptied or removed; it is kept and said once. The
+module's root and a session's root are never removed recursively, only by
+`rmdir` once empty.
+
+A directory made before this rule, by an earlier version, is adopted at its
+module's first spawn, or a session's at the start's sweep, only when:
+- it is at the path the runtime would have made it, with no link from
+  `--moduleDataPath` down to it;
+- the overlap judgement found no module's code inside it or around it.
+
+Nothing about a package name or a file layout is read to decide. The
+throwaway `<moduleDataPath>/.validate` of a validation is not under this
+rule: the runtime makes it fresh, under a dot name no module's name can
+take.
 
 **7. `--hardened`.** Re-launches the server under Node's permission model
 (`--permission`) with read access to the install directory, `--modulePath`,
