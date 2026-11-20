@@ -345,7 +345,7 @@ const out = {
   // bin/ch-local.js path, so it is checked by path, not here: one that is not
   // the home's own, or not safe in a quoted command, is dropped alone.
   heldBackFile: {
-    rule: 'exactly {v: 1, modules: [...], launcher?}; at most 256 modules, none named twice; each exactly {name, reason, root?, via?}; name an npm package name not starting with - or ~; reason one of credential, off, ceiling, missing, pin, withdrawn, stopped, restart, calls; root only on calls, one of the reasons but calls, or not-installed; via exactly when root is: a package name (not starting with - or ~), or for not-installed the callee\'s declared name (1 to 64 characters, no / or . or control character). The file is a regular file, one name, no link, 0600 (or a private ACL on Windows), this user\'s own, at most 65536 bytes.',
+    rule: 'exactly {v: 1, modules: [...], launcher?}; at most 256 modules, none named twice; each exactly {name, reason, root?, via?}; name an npm package name not starting with - or ~; reason one of credential, off, ceiling, missing, pin, withdrawn, stopped, restart, calls; root only on calls, one of credential, off, ceiling, missing, pin, withdrawn or not-installed; via exactly when root is: a package name (not starting with - or ~), or for not-installed the callee\'s declared name (1 to 64 characters, no / or . or control character). The file is a regular file, one name, no link, 0600 (or a private ACL on Windows), this user\'s own, at most 65536 bytes.',
     accepted: [
       {why: 'none held back', file: {v: 1, modules: []}},
       {why: 'each reason', file: {v: 1, modules: ['credential', 'off', 'ceiling', 'missing', 'pin', 'withdrawn', 'stopped', 'restart'].map((reason, i) => ({name: `@countinghouse/ch-m${i}`, reason}))}},
