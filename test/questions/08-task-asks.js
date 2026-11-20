@@ -213,24 +213,39 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     await taskAsks.remove(t);
   });
 
-  it('at most so many of an owner\'s tasks wait at once, and so many in all: one more waits for room (F2-2\'s ruling: no round, a backoff)', async () => {
+  it('at most so many of an owner\'s tasks wait at once, and so many in all: one more is unavailable at once (#487\'s high, round 1)', async () => {
     const mine = [id(), id(), id()];
     for (const t of mine) assert.ok((await ask(t)).asked != null);
-    // the owner is full: a new task of its may still ask (ruled, F2-2's
-    // medium: its first question waits for room as any other), and its pass
-    // waits for room, run again after a backoff -- never ASK_UNAVAILABLE at
-    // once
-    const first = await taskAsks.forRun(id(), {asks: true, asking: false, owner: 'owner-1', shownAs: 'm'});
-    assert.ok(moduleAsk.isState(first.state), JSON.stringify(first));
-    assert.deepStrictEqual(await ask(id()), {rerun: true, delayMs: 1000, waited: true});
+    // the owner is full: a new task of its starts with no one to ask, and a
+    // pass that asks anyway finds no room -- unavailable, a round, and the
+    // run starts again at once (as on master; the wait for room is cut)
+    assert.deepStrictEqual(await taskAsks.forRun(id(), {asks: true, asking: false, owner: 'owner-1', shownAs: 'm'}), {state: null});
+    const later = id();
+    assert.deepStrictEqual(await ask(later), {rerun: true});
+    assert.deepStrictEqual([(await taskAsks.get(later)).callRounds, (await taskAsks.get(later)).unavailable], [1, [KEY]]);
     // another owner still may, up to the total (5)
     const theirs = [id(), id()];
     for (const t of theirs) assert.ok((await ask(t, {owner: 'owner-2'})).asked != null);
-    assert.deepStrictEqual(await ask(id(), {owner: 'owner-3'}), {rerun: true, delayMs: 1000, waited: true}, 'the total is reached');
+    assert.deepStrictEqual(await ask(id(), {owner: 'owner-3'}), {rerun: true}, 'the total is reached');
     // answered or removed, a task no longer counts
     assert.strictEqual(await taskAsks.answer(mine[0], {q1: {action: 'decline'}}, {session: SESSION, ofAsker}), 'rerun');
     assert.ok((await ask(id(), {owner: 'owner-3'})).asked != null);
     for (const t of mine.concat(theirs)) await taskAsks.remove(t);
+  });
+
+  // (#487's high, round 1: a record that can't be read -- the store failed --
+  // rejects, in forRun and asked alike: never a fresh record, whose counts
+  // would start over)
+  it('a record that can\'t be read rejects forRun and asked, never a fresh record', async () => {
+    const broken = {get: (k, cb) => setImmediate(cb, new Error('store down'))};
+    const t = id();
+    taskAsks.configure({kv: () => broken});
+    try {
+      await assert.rejects(taskAsks.forRun(t, {asks: true, asking: true, owner: 'owner-r', shownAs: 'm', rerun: true}), /store down/);
+      await assert.rejects(taskAsks.asked(t, asking(), {owner: 'owner-r', session: null, ofAsker}), /store down/);
+    } finally {
+      taskAsks.configure({kv: () => kv});
+    }
   });
 
   // the review of #374: L1, L2, L3 (each a function of the kv it runs on, so
@@ -290,44 +305,6 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     assert.ok((await taskAsks.get(t)).unavailable.length <= moduleAsk.MAX_CALL_ROUNDS, 'the record grows no further');
   });
 
-  // the reviewer's ruling on F2-2 (a): a pass refused only because the
-  // waiting caps are full is no round: it waits for room, rate-bounded (a
-  // backoff from 1 s doubling to 30 s), and past a question's wait the
-  // question is unavailable, as one no form can be shown for
-  it('no room among the waiting tasks: no round spent, a backoff that doubles to 30 s, and unavailable past the question\'s wait', async () => {
-    for (let i = 0; i < 3; i++) await ask(id(), {owner: 'owner-full'});
-    const t = id();
-    made.add(t);
-    const delays = [];
-    for (let i = 0; i < 7; i++) {
-      const r = await taskAsks.asked(t, asking(), {owner: 'owner-full', session: null, ofAsker});
-      assert.strictEqual(r.rerun, true, JSON.stringify(r));
-      delays.push(r.delayMs);
-    }
-    assert.deepStrictEqual(delays, [1000, 2000, 4000, 8000, 16000, 30000, 30000]);
-    assert.strictEqual((await taskAsks.get(t)).callRounds, 0, 'no round spent waiting for room');
-    // past the question's wait with still no room (the owner's waiting tasks
-    // asked again since, so live): unavailable, a round, at once
-    now += taskAsks.WAIT_MS;
-    try {
-      for (let i = 0; i < 3; i++) await ask(id(), {owner: 'owner-full'});
-      // (as a runner gets there: the run started again is no run that runs
-      // nothing -- its record waits for room, no question shown -- and its
-      // view is working; F2-2's medium)
-      const next = await taskAsks.forRun(t, {asks: true, asking: true, owner: 'owner-full', shownAs: 'm'});
-      assert.ok(next.skip !== true && moduleAsk.isState(next.state), JSON.stringify(next));
-      assert.deepStrictEqual(await taskAsks.view(t, SESSION), {status: 'working'});
-      assert.deepStrictEqual(await taskAsks.asked(t, asking(), {owner: 'owner-full', session: null, ofAsker}), {rerun: true});
-      const r = await taskAsks.get(t);
-      assert.deepStrictEqual([r.callRounds, r.unavailable], [1, [KEY]]);
-    } finally {
-      now -= taskAsks.WAIT_MS;
-    }
-  });
-
-  // (ruled on F2-2's medium: inside a run started again, a record that is
-  // missing -- a read that failed -- is a fresh state, never a skip; a run
-  // started again after an answer whose record is gone still runs nothing)
   it('a pass of a run started again within itself whose record is missing asks afresh; an answered run\'s still runs nothing', async () => {
     const fresh = await taskAsks.forRun(id(), {asks: true, asking: true, owner: 'owner-r', shownAs: 'm', rerun: true});
     assert.ok(fresh.skip !== true && moduleAsk.isState(fresh.state), JSON.stringify(fresh));
@@ -335,44 +312,30 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     assert.deepStrictEqual(await taskAsks.forRun(id(), {asks: true, asking: true, owner: 'owner-r', shownAs: 'm'}), {skip: true});
   });
 
-  // (ruled on F2-2's medium: a wait for room spends no round while it
-  // waits, and one when it reaches the question's wait with still no room;
-  // so a handler that asks under another key each pass is bounded too:
-  // eight such waits, eight rounds, and nothing more is asked)
-  it('a handler changing its question\'s key each pass, never given room, is bounded: a round at each wait\'s end, eight in all', async () => {
+  // (#487's high, round 1: no room is unavailable at once and spends a
+  // round, so a handler that asks under another key each pass, never given
+  // room, is bounded too: eight rounds, and nothing more is asked)
+  it('a handler changing its question\'s key each pass, never given room, is bounded: a round each pass, eight in all', async () => {
     const owner = 'owner-keys';
     for (let i = 0; i < 3; i++) await ask(id(), {owner});
     const t = id();
     made.add(t);
-    let shifted = 0;
-    try {
-      for (let round = 1; round <= 8; round++) {
-        const state = asking();
-        state.pending.key = `${'k'.repeat(42)}${round}`;
-        const waited = await taskAsks.asked(t, state, {owner, session: null, ofAsker});
-        assert.strictEqual(waited.waited, true, JSON.stringify(waited));
-        assert.strictEqual((await taskAsks.get(t)).callRounds || 0, round - 1, 'no round while waiting');
-        now += taskAsks.WAIT_MS;
-        shifted += 1;
-        for (let i = 0; i < 3; i++) await ask(id(), {owner});
-        const again = asking();
-        again.pending.key = state.pending.key;
-        assert.deepStrictEqual(await taskAsks.asked(t, again, {owner, session: null, ofAsker}), {rerun: true});
-        assert.strictEqual((await taskAsks.get(t)).callRounds, round, 'a round at the wait\'s end');
-      }
-      // past its eight rounds: its next pass asks nothing, a new key's
-      // question too (module-ask's own decide)
-      const next = await taskAsks.forRun(t, {asks: true, asking: true, owner, shownAs: 'm'});
-      assert.strictEqual(next.state.callRounds, 8);
-      const spec = {device: {serviceList: {s: {actionList: [{name: 'a', questions: {confirm: {message: 'Go {v}?', schema: '/s/a/questions/confirm'}}}]}}}};
-      const decided = (state) => { try { moduleAsk.decide({state, module: 'm', deviceID: 'd', serviceID: 's', actionName: 'a', spec}, 'confirm', {v: 'ninth'}); return 'answered'; } catch (e) { return e.code; } };
-      // (a control: the same question one round short still asks)
-      const short = await taskAsks.forRun(t, {asks: true, asking: true, owner, shownAs: 'm'});
-      short.state.callRounds = moduleAsk.MAX_CALL_ROUNDS - 1;
-      assert.deepStrictEqual([decided(short.state), decided(next.state)], ['ASK_PENDING', 'ASK_UNAVAILABLE']);
-    } finally {
-      now -= shifted * taskAsks.WAIT_MS;
+    for (let round = 1; round <= 8; round++) {
+      const state = asking();
+      state.pending.key = `${'k'.repeat(42)}${round}`;
+      assert.deepStrictEqual(await taskAsks.asked(t, state, {owner, session: null, ofAsker}), {rerun: true});
+      assert.strictEqual((await taskAsks.get(t)).callRounds, round);
     }
+    // past its eight rounds: its next pass asks nothing, a new key's
+    // question too (module-ask's own decide)
+    const next = await taskAsks.forRun(t, {asks: true, asking: true, owner, shownAs: 'm'});
+    assert.strictEqual(next.state.callRounds, 8);
+    const spec = {device: {serviceList: {s: {actionList: [{name: 'a', questions: {confirm: {message: 'Go {v}?', schema: '/s/a/questions/confirm'}}}]}}}};
+    const decided = (state) => { try { moduleAsk.decide({state, module: 'm', deviceID: 'd', serviceID: 's', actionName: 'a', spec}, 'confirm', {v: 'ninth'}); return 'answered'; } catch (e) { return e.code; } };
+    // (a control: the same question one round short still asks)
+    const short = await taskAsks.forRun(t, {asks: true, asking: true, owner, shownAs: 'm'});
+    short.state.callRounds = moduleAsk.MAX_CALL_ROUNDS - 1;
+    assert.deepStrictEqual([decided(short.state), decided(next.state)], ['ASK_PENDING', 'ASK_UNAVAILABLE']);
   });
 
   it('a form that can\'t be shown (its asker gone): unavailable, and the run starts again', async () => {
@@ -426,30 +389,33 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
   // its asking pass completes the job, and BullMQ's completed event must not
   // forget the job's session, which the answered run needs (the review of
   // #374, M1: it ran with no session, so with none of the session's limits).
-  // A wait for room ends at whichever comes first, the question's wait
-  // (unavailable, from the ask hook) or the run's time limit counted from
-  // the pass that began it (JOB_TIMEOUT): the same in both runners (F2-2's
-  // medium, ruled). `api` is the runner; each pass's usage call is closed,
-  // and a failure between two passes gets a call of its own.
+  // A run started again within itself (a question no form could be shown
+  // for, or no room) runs its next pass at once, bounded by the run's time
+  // limit counted from its first pass (JOB_TIMEOUT), the same in both
+  // runners; each pass's usage call is closed, a failure between two passes
+  // gets a call of its own, and a task cancelled between two passes runs
+  // nothing more and opens no call (#487's high, round 1). `api` is the
+  // runner. Each asking pass takes 100 ms here, as a handler's would.
   const waitOrders = (label, getApi, done = () => {}) => {
-    const harness = (api, {timeout, answers, okAt}) => {
-      let passes = 0;
+    const harness = (api, {timeout, answers, okAt, before = null}) => {
+      const log = {started: [], ended: [], completed: [], at: [], passes: 0};
       const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
         invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
-          passes += 1;
-          if (okAt != null && passes >= okAt) return setImmediate(callback, null, {output: {done: true}});
+          log.passes += 1;
+          if (okAt != null && log.passes >= okAt) return setImmediate(callback, null, {output: {done: true}});
           asking(extraArgs.ask);
-          return setImmediate(callback, new CountinghouseError('ASK_PENDING'));
+          // (a worker told its run ended answers nothing more)
+          return setTimeout(() => { if (typeof(cancelled) !== 'function' || !cancelled()) callback(new CountinghouseError('ASK_PENDING')); }, 100);
         }};
       api.authorizeRun = () => Promise.resolve();
       api.initJobProcess(ci);
-      const log = {started: [], ended: [], completed: [], at: []};
       api.setStartHook(() => { log.started.push(log.started.length + 1); log.at.push(Date.now()); return {usageCall: log.started.length}; });
       api.setEndHook((data, run, outcome) => log.ended.push([run.extra.usageCall, outcome]));
-      api.setCompletionHook((data, results, run) => { log.completed.push([run.extra.usageCall, run.error != null ? String(run.error.message).split(':')[0] : 'ok', Date.now()]); return null; });
+      api.setCompletionHook((data, results, run) => { log.completed.push([run.extra != null ? run.extra.usageCall : null, run.error != null ? String(run.error.message).split(':')[0] : 'ok', Date.now()]); return null; });
       let n = 0;
+      let b = 0;
       api.setAskHooks({
-        before: () => Promise.resolve({state: moduleAsk.newState({askable: true, shownAs: 'm'})}),
+        before: (data, taskId, run) => { b += 1; return Promise.resolve(before != null ? before(b, run) : {state: moduleAsk.newState({askable: true, shownAs: 'm'})}); },
         asked: () => { n += 1; return Promise.resolve(answers(n)); },
         settled: () => Promise.resolve(),
         holdMs: () => 60000
@@ -460,79 +426,39 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       for (const end = Date.now() + ms; Date.now() < end;) { if (await check()) return true; await new Promise((r) => setTimeout(r, 20)); }
       return false;
     };
-    it(`${label}: the run's limit first -- JOB_TIMEOUT, counted from the first pass of the run started again, its failure a call of its own`, async () => {
+    it(`${label}: the run's limit -- JOB_TIMEOUT, counted from the first pass of the run started again, its failure a call of its own`, async () => {
       const api = getApi();
       try {
-        const {err, log} = await harness(api, {timeout: 500, answers: () => ({rerun: true, delayMs: 200, waited: true})});
+        const {err, log} = await harness(api, {timeout: 500, answers: () => ({rerun: true})});
         assert.ifError(err);
         assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
         const [call, outcome, at] = log.completed[0];
         assert.strictEqual(outcome, 'JOB_TIMEOUT', JSON.stringify(log));
         assert.ok(at - log.at[0] >= 450 && at - log.at[0] < 1500, `failed ${at - log.at[0]} ms after the first pass`);
-        // every pass's call closed as waited (for room), and the failure's own call
-        // is none of them
-        assert.ok(log.ended.length > 0 && log.ended.every(([, o]) => o === 'waited'), JSON.stringify(log.ended));
+        // every pass's call closed as unavailable, and the failure's call is
+        // none of those closed
+        assert.ok(log.ended.length > 0 && log.ended.every(([, o]) => o === 'unavailable'), JSON.stringify(log.ended));
         assert.ok(!log.ended.some(([c]) => c === call), `the failure's call ${call} was closed already: ${JSON.stringify(log)}`);
       } finally { done(api); }
     });
-    // (the same order through task-asks itself, as the runners call it: the
-    // owner full, two passes wait for room, then the question's wait ends
-    // with still no room -- unavailable by forRun and asked, the run goes on)
-    it(`${label}: the question's wait first, through task-asks -- unavailable at its end, the run completes`, async () => {
-      const api = getApi();
-      const owner = `owner-w-${label.length}`;
-      for (let i = 0; i < 3; i++) await ask(id(), {owner});
-      let passes = 0;
-      let shifted = false;
-      const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
-        invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
-          passes += 1;
-          if (extraArgs.ask != null && extraArgs.ask.unavailable.has(KEY)) return setImmediate(callback, null, {output: {done: true}});
-          asking(extraArgs.ask);
-          return setImmediate(callback, new CountinghouseError('ASK_PENDING'));
-        }};
-      api.authorizeRun = () => Promise.resolve();
-      api.initJobProcess(ci);
-      const log = {ended: [], completed: []};
-      api.setStartHook(() => ({usageCall: 1}));
-      api.setEndHook((data, run, outcome) => log.ended.push(outcome));
-      api.setCompletionHook((data, results, run) => { log.completed.push(run.error != null ? String(run.error.message).split(':')[0] : 'ok'); return null; });
-      let n = 0;
-      api.setAskHooks({
-        before: (data, taskId) => taskAsks.forRun(taskId, {asks: true, asking: data.asking != null, owner, shownAs: 'm'}),
-        asked: async (data, taskId, state, run) => {
-          n += 1;
-          if (n === 3) {
-            // the question's wait over, the owner still full
-            now += taskAsks.WAIT_MS;
-            shifted = true;
-            for (let i = 0; i < 3; i++) await ask(id(), {owner});
-          }
-          const r = await taskAsks.asked(taskId, state, {owner, session: run.session, ofAsker});
-          return (r != null && r.delayMs != null) ? Object.assign({}, r, {delayMs: 50}) : r;
-        },
-        settled: (data, taskId) => taskAsks.remove(taskId),
-        holdMs: () => 60000
-      });
-      const t = id();
-      made.add(t);
-      try {
-        const added = await new Promise((resolve) => api.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: t, era: 'modern', asks: true, timeout: 10000}, 'd', 's', 'a', {}, (err) => resolve({err})));
-        assert.ifError(added.err);
-        assert.ok(await until(() => log.completed.length === 1), JSON.stringify({passes, log}));
-        assert.deepStrictEqual([log.completed, log.ended, passes, (await taskAsks.get(t) || {}).callRounds], [['ok'], ['waited', 'waited', 'unavailable'], 4, undefined], JSON.stringify({passes, log}));
-      } finally {
-        if (shifted) now -= taskAsks.WAIT_MS;
-        done(api);
-      }
-    });
-    it(`${label}: the question's wait first -- unavailable, the run goes on and completes`, async () => {
+    it(`${label}: passes with no question shown run again at once, and the run completes`, async () => {
       const api = getApi();
       try {
-        const {err, log} = await harness(api, {timeout: 5000, okAt: 4, answers: (n) => (n < 3 ? {rerun: true, delayMs: 100, waited: true} : {rerun: true})});
+        const {err, log} = await harness(api, {timeout: 5000, okAt: 4, answers: () => ({rerun: true})});
         assert.ifError(err);
         assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
-        assert.deepStrictEqual([log.completed[0][1], log.ended.map(([, o]) => o), log.started.length], ['ok', ['waited', 'waited', 'unavailable'], 4], JSON.stringify(log));
+        assert.deepStrictEqual([log.completed[0][1], log.ended.map(([, o]) => o), log.started.length], ['ok', ['unavailable', 'unavailable', 'unavailable'], 4], JSON.stringify(log));
+      } finally { done(api); }
+    });
+    it(`${label}: a task cancelled between two passes runs no next pass and opens no call`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true}),
+          before: (b) => (b === 1 ? {state: moduleAsk.newState({askable: true, shownAs: 'm'})} : {skip: true, cancelled: true})});
+        assert.ifError(err);
+        assert.ok(await until(() => log.ended.length === 1), JSON.stringify(log));
+        await new Promise((r) => setTimeout(r, 400));
+        assert.deepStrictEqual([log.passes, log.started, log.ended], [1, [1], [[1, 'unavailable']]], JSON.stringify(log));
       } finally { done(api); }
     });
   };
@@ -635,15 +561,17 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     // F2-2's code review: BullMQ runs every pass within one run, so a pass
     // with no form shown closes its usage call and the next pass starts its
     // own; a wait for room's delay is kept before the next pass
-    // (a real wait for room: the owner full, task-asks' own answer, its
-    // delay shortened; F2-2's medium)
-    it('a pass that waited for room closes its usage call as waited, and the next pass starts its own after the delay (BullMQ)', async () => {
+    // (no room at the run's start: the owner full, its first question has no
+    // one to ask -- the pass runs with no ask state, as on master; #487's
+    // high, round 1)
+    it('a task whose first question finds no room runs one pass with no one to ask (BullMQ)', async () => {
       for (let i = 0; i < 3; i++) await ask(id(), {owner: 'owner-b'});
-      const starts = [];
+      // (the handler, as one with no one to ask: ctx.ask is ASK_UNAVAILABLE,
+      // which it catches, and it completes)
+      const asks = [];
       const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
         invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
-          starts.push(Date.now());
-          if (starts.length === 1) { asking(extraArgs.ask); return setImmediate(callback, new CountinghouseError('ASK_PENDING')); }
+          asks.push(extraArgs.ask == null ? null : 'a state');
           return setImmediate(callback, null, {output: {done: true}});
         }};
       const started = [];
@@ -656,8 +584,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       JobControl.setCompletionHook((data, results, run) => { completed.push(run.extra.usageCall); return null; });
       JobControl.setAskHooks({
         before: (data, taskId) => taskAsks.forRun(taskId, {asks: data.asks === true, asking: data.asking != null, owner: 'owner-b', shownAs: 'm'}),
-        // no form shown (its record written), and a wait's delay as a wait for room asks
-        asked: (data, taskId, state, run) => taskAsks.asked(taskId, state, {owner: 'owner-b', session: run.session, ofAsker}).then((r) => Object.assign({}, r, r.delayMs != null ? {delayMs: 300} : {})),
+        asked: (data, taskId, state, run) => taskAsks.asked(taskId, state, {owner: 'owner-b', session: run.session, ofAsker}),
         settled: (data, taskId) => taskAsks.remove(taskId),
         holdMs: () => 60000
       });
@@ -671,51 +598,11 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
           return false;
         };
         assert.ok(await until(() => completed.length === 1), JSON.stringify({started, ended, completed}));
-        assert.deepStrictEqual([started, ended, completed], [[1, 2], [[1, 'waited']], [2]]);
-        assert.ok(starts[1] - starts[0] >= 290, `the next pass waited: ${starts[1] - starts[0]} ms`);
+        assert.deepStrictEqual([started, ended, completed, asks], [[1], [], [1], [null]]);
       } finally {
         JobControl.setStartHook(null);
         JobControl.setEndHook(null);
         JobControl.setCompletionHook(null);
-      }
-    });
-
-    // (F2-2's medium: a task cancelled during a wait for room's backoff runs
-    // no next pass; the call opened for it closes as cancelled)
-    it('a task cancelled during a wait for room\'s backoff runs no next pass (BullMQ)', async () => {
-      let passes = 0;
-      const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
-        invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
-          passes += 1;
-          asking(extraArgs.ask);
-          return setImmediate(callback, new CountinghouseError('ASK_PENDING'));
-        }};
-      JobControl.authorizeRun = () => Promise.resolve();
-      JobControl.initJobProcess(ci);
-      const ended = [];
-      JobControl.setStartHook(() => ({usageCall: ended.length + 1}));
-      JobControl.setEndHook((data, run, outcome) => ended.push(outcome));
-      let gone = false;
-      JobControl.setAskHooks({
-        before: () => Promise.resolve({state: moduleAsk.newState({askable: true, shownAs: 'm'})}),
-        asked: () => { gone = true; return Promise.resolve({rerun: true, delayMs: 200, waited: true}); },
-        cancelled: () => Promise.resolve(gone),
-        settled: () => Promise.resolve(),
-        holdMs: () => 60000
-      });
-      try {
-        const added = await new Promise((resolve) => JobControl.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: id(), era: 'modern', asks: true, timeout: 5000}, 'd', 's', 'a', {}, (err) => resolve({err})));
-        assert.ifError(added.err);
-        const until = async (check, ms = 5000) => {
-          for (const end = Date.now() + ms; Date.now() < end;) { if (await check()) return true; await new Promise((r) => setTimeout(r, 25)); }
-          return false;
-        };
-        assert.ok(await until(() => ended.length === 2), JSON.stringify({passes, ended}));
-        await new Promise((r) => setTimeout(r, 400));
-        assert.deepStrictEqual([passes, ended], [1, ['waited', 'cancelled']]);
-      } finally {
-        JobControl.setStartHook(null);
-        JobControl.setEndHook(null);
       }
     });
 
@@ -842,15 +729,17 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       runner.close();
     });
 
-    // (a real wait for room: the owner full, task-asks' own answer, its
-    // delay shortened; F2-2's medium)
-    it('a wait for room\'s delay is kept before the next pass, its pass closed as waited (the local runner)', async () => {
+    // (no room at the run's start: the owner full, its first question has no
+    // one to ask -- the pass runs with no ask state, as on master; #487's
+    // high, round 1)
+    it('a task whose first question finds no room runs one pass with no one to ask (the local runner)', async () => {
       for (let i = 0; i < 3; i++) await ask(id(), {owner: 'owner-d'});
-      const starts = [];
+      // (the handler, as one with no one to ask: ctx.ask is ASK_UNAVAILABLE,
+      // which it catches, and it completes)
+      const asks = [];
       const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
         invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
-          starts.push(Date.now());
-          if (starts.length === 1) { asking(extraArgs.ask); return setImmediate(callback, new CountinghouseError('ASK_PENDING')); }
+          asks.push(extraArgs.ask == null ? null : 'a state');
           return setImmediate(callback, null, {output: {done: true}});
         }};
       const runner = createRunner({jobTimeoutMs: 0});
@@ -861,8 +750,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       runner.setEndHook((data, run, outcome) => ended.push(outcome));
       runner.setAskHooks({
         before: (data, taskId) => taskAsks.forRun(taskId, {asks: data.asks === true, asking: data.asking != null, owner: 'owner-d', shownAs: 'm'}),
-        // no form shown (its record written), and a wait's delay as a wait for room asks
-        asked: (data, taskId, state, run) => taskAsks.asked(taskId, state, {owner: 'owner-d', session: run.session, ofAsker}).then((r) => Object.assign({}, r, r.delayMs != null ? {delayMs: 300} : {})),
+        asked: (data, taskId, state, run) => taskAsks.asked(taskId, state, {owner: 'owner-d', session: run.session, ofAsker}),
         settled: (data, taskId) => taskAsks.remove(taskId),
         holdMs: () => 60000
       });
@@ -870,9 +758,9 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       made.add(t);
       const added = await new Promise((resolve) => runner.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: t, era: 'modern', asks: true}, 'd', 's', 'a', {}, (err, r) => resolve({err, r})));
       assert.ifError(added.err);
-      assert.ok(await until(() => starts.length === 2), JSON.stringify(starts));
-      assert.ok(starts[1] - starts[0] >= 290, `the next pass waited: ${starts[1] - starts[0]} ms`);
-      assert.deepStrictEqual(ended, ['waited']);
+      assert.ok(await until(() => asks.length === 1), JSON.stringify(asks));
+      await new Promise((r) => setTimeout(r, 200));
+      assert.deepStrictEqual([asks, ended], [[null], []]);
       runner.close();
     });
 
@@ -897,7 +785,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       runner.setEndHook((data, run, outcome) => ended.push(outcome));
       runner.setAskHooks({
         before: () => Promise.resolve({state: moduleAsk.newState({askable: true, shownAs: 'm'})}),
-        asked: () => { runner.cancelSession(SESSION); return Promise.resolve({rerun: true, delayMs: 100, waited: true}); },
+        asked: () => { runner.cancelSession(SESSION); return Promise.resolve({rerun: true}); },
         settled: () => Promise.resolve(),
         holdMs: () => 60000
       });

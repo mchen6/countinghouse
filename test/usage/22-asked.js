@@ -200,19 +200,6 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       assert.deepStrictEqual(out.replaced.map((r) => [r.tool, r.scenarioCalls, r.serverCalls]), [['t', 0, 2]]);
     });
 
-    // (F2-2, ruled: a pass that waited for room is a pass too, counted apart
-    // from one no form could be shown for, and never a call)
-    it('a task\'s pass that waited for room is counted in profile.waitedForRoom, a pass, never a call or unavailable', async () => {
-      const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
-      for (const outcome of ['waited', 'waited', 'unavailable', 'ok']) {
-        const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-        u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome});
-      }
-      const report = await reportOf(u);
-      assert.deepStrictEqual([report.totals.calls, report.profile.unavailable, report.profile.waitedForRoom], [1, 1, 2], JSON.stringify(report.profile));
-      assert.strictEqual(require('../../lib/usage/aggregate').isPass({server: null, outcome: 'waited'}), true);
-    });
-
     it('the report and the CLI\'s aggregate tell an asked pass by one rule', () => {
       const {isAskedPass} = require('../../lib/usage/aggregate');
       assert.deepStrictEqual([isAskedPass({server: null, outcome: 'asked'}), isAskedPass({server: null, outcome: 'ok'}), isAskedPass({server: 'github', outcome: 'asked'})], [true, false, false]);

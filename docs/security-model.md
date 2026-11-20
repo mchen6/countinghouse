@@ -1455,10 +1455,9 @@ a module's text or an answer:
   line naming why: expired, used, and so on);
 - a task's question asked; a task's pass that ended on a question no form
   could be shown for (outcome `unavailable`: a pass, run again, never a
-  call, counted in the usage report's `unavailable`); a task's pass that
-  waited for room among the tasks waiting on questions (outcome `waited`:
-  a pass too, counted in `waitedForRoom`); and a task cancelled while it
-  ran.
+  call, counted in the usage report's `unavailable`; so is one whose
+  question found no room among the tasks waiting on questions); and a task
+  cancelled while it ran.
 
 These events are **not recorded in this release**:
 - a stored result's id and size per item, a read of one refused or
