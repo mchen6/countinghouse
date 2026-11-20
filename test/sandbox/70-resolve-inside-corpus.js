@@ -77,6 +77,12 @@ const LEGACY = [
   [{main: 'lib/a%20b.js'}, ['lib/a%20b.js', 'index.js']],
   [{main: 'lib\\main.js'}, ['lib/main.js', 'index.js']],
   [{main: 'lib/q.js?x'}, ['lib/q.js', 'index.js']],
+  // ("main" resolved first, then each extension appended, as Node's
+  // legacyMainResolve: '' is the package's own directory, so its index.js;
+  // 'lib/' tries lib.js before lib/index.js; the high review of #465, 3)
+  [{main: ''}, ['index.js']],
+  [{main: 'lib/'}, ['lib.js', 'lib/index.js']],
+  [{main: 'lib/'}, ['lib/index.js']],
   // (a "main" leaving the root: refused, never passed over for index.js,
   // which Node answers after statting outside -- stricter)
   [{main: '../../../../../../../../../../../../ch-no-such-outside.js'}, ['index.js'], true]
