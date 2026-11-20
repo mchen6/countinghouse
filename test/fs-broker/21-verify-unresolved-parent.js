@@ -333,6 +333,73 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
     } finally { await t.done(); }
   });
 
+  // (the medium review of b0076daf: 1, a closeAll during the O_TRUNC
+  // truncate -- the open still answers EIO, never registered; 2, a file that
+  // appeared in the race with more than one link -- a hard link to a
+  // protected file, matched by its path alone -- refused for writing; 3,
+  // copyfile's source swapped for a link after the check -- never followed;
+  // 4, copyfile onto an in-root link to a file -- its quota from that file)
+  it('the open path\'s last gaps: closeAll mid-truncate, a hard link appeared, copyfile\'s source, copyfile\'s old size', async function() {
+    if (fs.constants.O_NOFOLLOW === undefined || process.platform !== 'linux') return this.skip();
+    const count = () => fs.readdirSync('/proc/self/fd').length;
+    // 1
+    {
+      const t = await setup('enforce', () => {});
+      const probeFh = await fs.promises.open(__filename);
+      const proto = Object.getPrototypeOf(probeFh);
+      await probeFh.close();
+      const realTruncate = proto.truncate;
+      proto.truncate = async function(...a) { t.broker.closeAll(); return realTruncate.apply(this, a); };
+      try {
+        fs.writeFileSync(path.join(t.dirs.data, 'mid'), 'x');
+        const before = count();
+        await assert.rejects(t.broker.handle('open', ['/data/mid', 'w']), (e) => e.code === 'EIO');
+        assert.strictEqual(t.broker.fds.size, 0);
+        assert.strictEqual(count(), before);
+      } finally { proto.truncate = realTruncate; await t.done(); }
+    }
+    // 2
+    {
+      const t = await setup('enforce', (syscall, host, dirs) => {
+        if (syscall === 'open' && path.basename(host) === 'hl') fs.linkSync(path.join(dirs.data, 'protected'), host);
+      });
+      try {
+        fs.writeFileSync(path.join(t.dirs.data, 'protected'), 'keep');
+        await assert.rejects(t.broker.handle('open', ['/data/hl', 'r+']), (e) => e.code === 'EACCES');
+        assert.ok(t.reports.includes('denied /data/hl'), t.reports.join(', '));
+      } finally { await t.done(); }
+    }
+    // 3
+    {
+      const t = await setup('enforce', (syscall, host, dirs) => {
+        if (syscall === 'copyfile' && path.basename(host) === 'src2') {
+          fs.unlinkSync(host);
+          fs.symlinkSync(path.join(dirs.outside, 'secret'), host);
+        }
+      });
+      try {
+        fs.writeFileSync(path.join(t.dirs.data, 'src2'), 'plain');
+        await assert.rejects(t.broker.handle('copyFile', ['/data/src2', '/data/out2']), (e) => e.code === 'ENOENT');
+        assert.ok(t.reports.includes('link-appeared /data/src2'), t.reports.join(', '));
+        assert.strictEqual(fs.existsSync(path.join(t.dirs.data, 'out2')), false);
+      } finally { await t.done(); }
+    }
+    // 4
+    {
+      const quota = new Quota({maxBytes: 1 << 20, maxEntries: 100, enforce: true, report: () => {}, bytes: 1000 + 10, entries: 3});
+      const t = await setup('enforce', () => {}, quota);
+      try {
+        fs.writeFileSync(path.join(t.dirs.data, 'big'), 'b'.repeat(1000));
+        fs.writeFileSync(path.join(t.dirs.data, 'small'), 's'.repeat(10));
+        fs.symlinkSync(path.join(t.dirs.data, 'big'), path.join(t.dirs.data, 'l'));
+        await t.broker.handle('copyFile', ['/data/small', '/data/l']);
+        assert.strictEqual(fs.readFileSync(path.join(t.dirs.data, 'big'), 'utf8'), 's'.repeat(10));
+        assert.strictEqual(quota.bytes, 10 + 10, 'the real file\'s old size given back');
+        assert.strictEqual(quota.entries, 3);
+      } finally { await t.done(); }
+    }
+  });
+
   // (ruled R-a, and the medium review of 5df938b7: where the check saw a
   // file -- through an in-root link it followed, or plain with a parent --
   // the open never creates: a link re-pointed outside, or a parent swapped
