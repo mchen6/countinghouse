@@ -788,6 +788,58 @@ const STEPS = {
     return stuck.length === 0 ? 'none replaced' : `replaced: ${stuck.join(' ')}`;
   },
   // S: an entry planted in Node's path cache reads as never there
+  // (C-lows: every stack module code can read names no host file of the
+  // runtime's -- its own frames by /app, Node's by node:, the runtime's by
+  // countinghouse: -- by every route: a plain stack, captureStackTrace, a
+  // V8 error, an async frame, an error the runtime made, and a function the
+  // module assigned to Error.prepareStackTrace, whose frames' getThis and
+  // getFunction answer nothing for a runtime frame)
+  stackFrames: async () => {
+    const files = [];
+    const look = (text) => {
+      for (const line of String(text).split('\n').slice(1)) {
+        const m = /\(?((?:file:\/\/)?[^\s()]+?):\d+:\d+\)?\s*$/.exec(line);
+        if (m) files.push(m[1]);
+      }
+    };
+    look(new Error('x').stack);
+    const o = {};
+    Error.captureStackTrace(o);
+    look(o.stack);
+    try { null.x; } catch (e) { look(e.stack); }
+    await Promise.resolve();
+    look(new Error('y').stack);
+    try { M._resolveFilename('no-such-c-lows-pkg', {id: __filename, filename: __filename, paths: []}); } catch (e) { look(e.stack); }
+    const saved = Error.prepareStackTrace;
+    const viaFn = [];
+    let objects = 0;
+    let custom = false;
+    try {
+      Error.prepareStackTrace = (e, frames) => {
+        for (const f of frames) {
+          const n = f.getFileName();
+          if (typeof(n) === 'string') viaFn.push(n);
+          if (typeof(n) === 'string' && n.startsWith('countinghouse:') && (f.getThis() !== undefined || f.getFunction() !== undefined)) objects++;
+        }
+        return 'custom';
+      };
+      custom = new Error('z').stack === 'custom';
+    } finally { Error.prepareStackTrace = saved; }
+    files.push(...viaFn);
+    const bad = files.filter((f) => !/^(\/app(\/|$)|[A-Z]:\\app(\\|$)|node:|countinghouse:|native$|<anonymous>$|evalmachine)/.test(f));
+    const runtime = files.filter((f) => f.startsWith('countinghouse:')).length;
+    return `${bad.length === 0 ? 'virtual' : `host(${bad.slice(0, 3).join('|')})`} ${objects === 0 ? 'no-objects' : 'objects'} ${custom && viaFn.length > 0 ? 'custom' : 'not-custom'} ${runtime > 0 ? 'runtime-frames' : 'no-runtime-frames'}`;
+  },
+  // (C-lows: Node's global lookup directories, as module.constructor
+  // exposes them -- the install's prefix and $HOME -- are none to module
+  // code under enforce)
+  globalPaths: () => {
+    const g = module.constructor.globalPaths;
+    if (!Array.isArray(g)) return `not a list: ${typeof(g)}`;
+    let pushed = false;
+    try { g.push('/nowhere'); pushed = true; } catch (e) { /* frozen */ }
+    return `${g.length === 0 ? 'none' : `${g.length} paths`} ${pushed ? 'writable' : 'frozen'}`;
+  },
   pathCache: () => {
     const key = `planted\0${ROOT}`;
     try { M._pathCache[key] = '/nowhere/planted.js'; } catch (e) { /* refused */ }

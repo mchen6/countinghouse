@@ -242,6 +242,16 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       else assert.ok(await waitFor({get output() { return server.output.slice(from); }}, /violation require json-stringify-safe/), server.output.slice(-1500));
     });
     if (mode === 'enforce') {
+      // (C-lows: Node's global lookup directories are none to module code)
+      it('module.constructor.globalPaths is an empty, frozen list', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'globalPaths'});
+        assert.strictEqual(detail(r), 'none frozen', JSON.stringify(r).slice(0, 1500));
+      });
+      // (C-lows: no stack module code can read names the install directory)
+      it('every stack module code reads names the runtime\'s frames countinghouse:, by every route; no runtime object through a frame', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'stackFrames'});
+        assert.strictEqual(detail(r), 'virtual no-objects custom runtime-frames', JSON.stringify(r).slice(0, 1500));
+      });
       // (the compatibility PR: the reduced module's two statics, confined)
       it('the reduced module\'s _nodeModulePaths and _resolveFilename: only inside the root, virtual answers, every refusal', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'reducedStatics'});
