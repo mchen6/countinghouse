@@ -102,6 +102,30 @@ const STEPS = {
       return String(e.message).split('\n')[0].includes(asked) ? `${said(e)}, as asked` : `${said(e)}, named otherwise`;
     }
   },
+  // (the whole error -- message, stack, requireStack -- names none of the
+  // module's own files by its host path, by any route a mapped request can
+  // fail: a missing file, a parent outside the module, a Proxy parent. The
+  // runtime's own frames in a stack are another matter, C-lows'.)
+  'absolute request, every path in its error virtual': () => {
+    const asked = path.join(__dirname, 'no-such-compat-file');
+    const R = require('module');
+    const host = [];
+    const look = (e) => {
+      const text = [String(e && e.message), String(e && e.stack), JSON.stringify((e && e.requireStack) || [])].join('\n');
+      for (const m of text.matchAll(/(?:^|[\s'"(\[,])((?:[A-Za-z]:)?[\\/][^\s'"():,\]]*)/g)) {
+        const own = /[\\/]handlers[\\/]probeService([\\/]|$)/.test(m[1]);
+        if (own && !/^([\\/]app([\\/]|$)|[A-Z]:\\app(\\|$))/.test(m[1])) host.push(m[1]);
+      }
+    };
+    const tries = [
+      () => R._resolveFilename(asked, {id: __filename, filename: __filename, paths: []}),
+      () => R._resolveFilename(asked, {id: '/etc/x.js', filename: '/etc/x.js', paths: []}),
+      () => R._resolveFilename(asked, new Proxy({filename: __filename, paths: []}, {}))
+    ];
+    let threw = 0;
+    for (const t of tries) { try { t(); } catch (e) { threw++; look(e); } }
+    return threw === tries.length ? (host.length === 0 ? 'clean' : `named ${host.length} other`) : `${tries.length - threw} answered`;
+  },
   '_resolveFilename relative': () => {
     const file = path.join(__dirname, 'library.js');
     const found = require('module')._resolveFilename('../../lib/target', {id: file, filename: file, paths: []});

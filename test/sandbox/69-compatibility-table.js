@@ -54,6 +54,11 @@ const TABLE = [
   // never names a host path to module code)
   ['resolve-from absolute', 'works (host path)', 'works', 'works', 'works'],
   ['resolve-from absolute, missing', 'threw MODULE_NOT_FOUND, named otherwise', 'threw MODULE_NOT_FOUND, as asked', 'threw MODULE_NOT_FOUND, as asked', 'threw MODULE_NOT_FOUND, as asked'],
+  // (enforce only: none of the module's own files named by its host path
+  // in any part of the error, by any route; the other modes have no
+  // isolation, and Node's own stack and message name host files there, by
+  // version)
+  ['absolute request, every path in its error virtual', null, null, null, 'clean'],
   ['_resolveFilename relative', 'works', 'works', 'works', 'works'],
   ['source-map-support', 'works', 'works', 'works', 'works'],
   ['source-map-support hookRequire', 'works', 'works', 'no hook', 'threw TypeError'],
@@ -133,7 +138,8 @@ describe('sandbox 69: the compatibility table (loader-related libraries, per --m
       server = await startServer(testPort(9777), ['--debug', '--debugKey', KEY, ...flags, '--loadModule', probe]);
     });
     after(() => { stopServer(server); server = null; });
-    for (const row of TABLE) {
+    // (a null cell: not asserted in that column)
+    for (const row of TABLE.filter((r) => r[column + 1] !== null)) {
       it(`${row[0]}: ${row[column + 1]}`, async () => {
         const r = await mcpCall(testPort(9777), KEY, TOOL, {name: row[0]});
         const outcome = r != null && r.structuredContent != null ? r.structuredContent.outcome : JSON.stringify(r).slice(0, 300);
