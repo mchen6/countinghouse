@@ -47,7 +47,7 @@ describe('auth 59: the limiter (lib/unauth-limit.js)', () => {
 
   it('a spray over many /64s of one /48 is held to the prefix limit, below any table limit (no cliff)', () => {
     const l = createLimiter({perMinute: 2, now: clock});
-    const taken = sprayed(l, Array.from({length: 9999}, (_, i) => v6('2001:db8:aa', i)));
+    const taken = sprayed(l, Array.from({length: 10 * 1000 - 1}, (_, i) => v6('2001:db8:aa', i)));
     assert.ok(taken <= 2 * PREFIX_FACTOR, `${taken} lookups over 9,999 /64s of one /48 (limit ${2 * PREFIX_FACTOR})`);
     assert.strictEqual(sprayed(l, ['10.9.9.9']), 1, 'another client, elsewhere, is not refused');
   });
