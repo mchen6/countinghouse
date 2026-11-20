@@ -30,13 +30,33 @@ describe('auth 59: the limiter (lib/unauth-limit.js)', () => {
     assert.strictEqual(l.retryAfterMs('a'), 0, 'the oldest refusal has left the window');
   });
 
-  it('the process as a whole is limited at ten times an address\'s budget (a spray from many addresses), never an address with nothing in its window', () => {
+  // the process cap (ten times an address's budget) applies only while the
+  // address table is full -- a spray over more addresses than it keeps --
+  // and then to every address, an unseen one too; otherwise an address
+  // under its own budget is never refused (the high review of #483, 1+3)
+  it('a spray cycling over more addresses than the table keeps is held to the process cap, and an address over budget does not come back under', () => {
+    const l = createLimiter({perMinute: 2, now: clock, maxAddresses: 5});
+    l.refused('over');
+    l.refused('over');
+    assert.ok(l.retryAfterMs('over') > 0);
+    let taken = 0;
+    for (let i = 0; i < 500; i++) {
+      const a = `cycle-${i}`;
+      if (l.retryAfterMs(a) === 0) { l.refused(a); taken++; }
+    }
+    assert.ok(taken <= 2 * 10, `${taken} lookups taken by a spray over 500 addresses (cap 20)`);
+    assert.ok(l.retryAfterMs('over') > 0, 'an address over its budget is still refused after the spray pushed it out of the table');
+    assert.ok(l.retryAfterMs('never-seen') > 0, 'while the table is full and the cap reached, an unseen address waits too');
+  });
+
+  it('below a full table, a full process cap refuses no address under its own budget (valid keys do not share it)', () => {
     const l = createLimiter({perMinute: 2, now: clock});
-    for (let i = 0; i < 20; i++) l.refused(`spray-${i}`);
-    assert.ok(l.retryAfterMs('spray-0') > 0, 'an address with a refusal waits once the process cap is reached');
-    assert.strictEqual(l.retryAfterMs('fresh'), 0, 'a new client still has its first lookup (a key that resolves is then remembered)');
-    l.refused('fresh');
-    assert.ok(l.retryAfterMs('fresh') > 0);
+    for (let i = 0; i < 10; i++) { l.refused(`bad-${i}`); l.refused(`bad-${i}`); }
+    assert.strictEqual(l.sizes().refusals, 20, 'the process cap is reached');
+    assert.strictEqual(l.retryAfterMs('fresh'), 0, 'a new client');
+    l.count('in-flight');
+    assert.strictEqual(l.retryAfterMs('in-flight'), 0, 'an address with one lookup in flight');
+    assert.ok(l.retryAfterMs('bad-0') > 0, 'an address over its own budget still waits');
   });
 
   it('a counted lookup taken back (its key resolved) frees its place', () => {
@@ -88,6 +108,17 @@ describe('auth 59: the limiter (lib/unauth-limit.js)', () => {
     assert.strictEqual(addressKeyOf('10.0.0.7'), '10.0.0.7');
   });
 
+  it('every spelling of one address lands in one bucket: case, the hex mapped form, a port, brackets, a zone (the high review of #483, 9)', () => {
+    const v4 = addressKeyOf('127.0.0.1');
+    for (const spelling of ['::ffff:7f00:1', '::FFFF:7F00:0001', '::ffff:127.0.0.1', '0:0:0:0:0:ffff:7f00:1', '127.0.0.1:8080', '[::ffff:127.0.0.1]:443', ' 127.0.0.1 ']) {
+      assert.strictEqual(addressKeyOf(spelling), v4, spelling);
+    }
+    const v6 = addressKeyOf('2001:db8:1:2::1');
+    for (const spelling of ['2001:DB8:1:2::1', '[2001:db8:1:2::1]', '[2001:db8:1:2::1]:443', '2001:0db8:0001:0002:0:0:0:1', 'fe80::1%eth0'.replace('fe80::1', '2001:db8:1:2::1')]) {
+      assert.strictEqual(addressKeyOf(spelling), v6, spelling);
+    }
+  });
+
   it('perMinute 0 turns it off', () => {
     const l = createLimiter({perMinute: 0, now: clock});
     for (let i = 0; i < 100; i++) l.refused('a');
@@ -101,15 +132,19 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
   let kept = null;
   before(() => { kept = scope.snapshot(); options.unauthRateLimit = 2; unauthLimit.resetForTests(); });
   after(() => { scope.restore(kept); unauthLimit.resetForTests(); });
+  const {EventEmitter} = require('events');
+  // a request from `ip` carrying `key`: a fake res (an emitter, as express's
+  // is), run through the middleware; fn runs inside it
+  const request = (ip, key, fn) => {
+    const res = Object.assign(new EventEmitter(), {set() { return res; }, status(code) { res.code = code; return res; }, json() { return res; }});
+    let out = null;
+    unauthLimit.middleware()({ip, headers: key != null ? {'x-ch-key': key} : {}, socket: {}}, res, () => { out = fn(); });
+    if (res.code != null) assert.strictEqual(res.code, 429);
+    return {out, res, end: () => res.emit('finish')};
+  };
   // a lookup of key inside a request from `ip`, as a route makes one; null
   // when the middleware answers 429 itself (it sees lookups in flight too)
-  const inRequest = (ip, key) => {
-    let out = null;
-    const res = {set() { return res; }, status(code) { res.code = code; return res; }, json() { return res; }};
-    unauthLimit.middleware()({ip, headers: {'x-ch-key': key}, socket: {}}, res, () => { out = unauthLimit.beforeLookup(key); });
-    if (res.code != null) assert.strictEqual(res.code, 429);
-    return out;
-  };
+  const inRequest = (ip, key) => request(ip, key, () => unauthLimit.beforeLookup(key)).out;
 
   it('lookups begun at once take the budget before any answers; one whose key resolves gives its place back; outside a request nothing is limited', () => {
     const a = inRequest('192.0.2.1', 'k-one');
@@ -125,6 +160,117 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
     assert.ok(inRequest('192.0.2.1', 'k-one') != null, 'a key that resolved lately passes');
     assert.ok(unauthLimit.beforeLookup('k-five') != null, 'not in an HTTP request: no limit');
   });
+
+  it('a key refused now leaves the set of keys that resolved: a revoked key is counted again (the high review of #483, 2)', () => {
+    const ip = '192.0.2.2';
+    inRequest(ip, 'k-revoked').resolved();
+    for (let i = 0; i < 2; i++) {
+      const l = inRequest(ip, 'k-revoked');
+      assert.ok(l != null, `lookup ${i + 1} of the revoked key`);
+      l.refused();
+    }
+    assert.strictEqual(inRequest(ip, 'k-revoked'), null, 'after two refusals (the budget) the revoked key is limited like any other');
+  });
+
+  // (the high review of #483, 4) the address is the request's own: a lookup
+  // after its request has ended (a worker it spawned, a listener it set up),
+  // or of another key than the request's (a change notice's re-listing for
+  // another subscriber), is not counted against it
+  it('a lookup made after its request ended, or of a key the request did not carry, is not counted against the request\'s address', () => {
+    const ip = '192.0.2.3';
+    const later = [];
+    const r = request(ip, 'k-own', () => { later.push(() => unauthLimit.beforeLookup('k-own')); return null; });
+    for (let i = 0; i < 3; i++) {
+      const other = request(ip, 'k-own', () => unauthLimit.beforeLookup('another-tenants-key')).out;
+      assert.ok(other != null);
+      other.refused();
+    }
+    r.end();
+    for (let i = 0; i < 3; i++) {
+      const l = later[0]();
+      assert.ok(l != null);
+      l.refused();
+    }
+    assert.ok(inRequest(ip, 'k-own') != null, 'none of those six refusals counted against the address');
+  });
+
+  it('a worker spawned while a request is served carries no address: its later messages are not counted against it', async () => {
+    const {Worker} = require('worker_threads');
+    const ip = '192.0.2.4';
+    let worker = null;
+    const r = request(ip, 'k-spawner', () => {
+      worker = unauthLimit.outsideRequest(() => new Worker('const {parentPort} = require("worker_threads"); parentPort.postMessage("hop"); parentPort.postMessage("hop"); parentPort.postMessage("hop");', {eval: true}));
+      return null;
+    });
+    let seen = 0;
+    await new Promise((resolve) => worker.on('message', () => {
+      // a module's hop, made with the spawning request's own key
+      const l = unauthLimit.beforeLookup('k-spawner');
+      assert.ok(l != null);
+      l.refused();
+      if (++seen === 3) resolve();
+    }));
+    await worker.terminate();
+    r.end();
+    assert.ok(inRequest(ip, 'k-spawner') != null, 'the worker\'s three refusals were not counted against the spawner\'s address');
+  });
+});
+
+// (the high review of #483, 8) --trustProxy never trusts a range wider than
+// an IPv4 /8 or an IPv6 /32, however it is spelled -- an IPv4-mapped form, or
+// several entries whose union is wider. The named ranges are Express's own
+// private ones (no public client's socket address is in them) and stand.
+describe('auth 59: --trustProxy refuses a range wider than a /8 (IPv4) or a /32 (IPv6), in any spelling', () => {
+  const scope = require('../helpers/options-scope');
+  const options = require('../../lib/cli-options');
+  let kept = null;
+  before(() => { kept = scope.snapshot(); });
+  after(() => { scope.restore(kept); });
+  const parsed = (value) => { options.setOptions({trustProxy: value}); return {trust: options.trustProxy, invalid: options.trustProxyInvalid}; };
+
+  it('refuses each wide form', () => {
+    for (const v of ['0.0.0.0/0', '::/0', '::ffff:0.0.0.0/96', '::ffff:0:0/96', '0.0.0.0/1,128.0.0.0/1', '10.0.0.0/7', '10.0.0.0/8,11.0.0.0/8',
+      '10.0.0.0/8,192.168.0.0/16', '::ffff:10.0.0.0/103', '2001:db8::/31', '2001:db8::/32,2001:db9::/32', 11, true, '']) {
+      const r = parsed(v);
+      assert.ok(r.trust == null && r.invalid != null, `${JSON.stringify(v)} was taken: ${JSON.stringify(r)}`);
+    }
+  });
+
+  it('takes a /8 or narrower, overlapping entries counted once, and the named ranges', () => {
+    for (const v of ['10.0.0.0/8', '203.0.113.7', '::ffff:10.0.0.0/104', '10.0.0.0/9,10.128.0.0/9', '10.0.0.0/8,10.1.0.0/16', '2001:db8::/32',
+      'loopback', 'loopback,linklocal,uniquelocal', 3]) {
+      const r = parsed(v);
+      assert.ok(r.trust != null && r.invalid == null, `${JSON.stringify(v)} was refused: ${JSON.stringify(r.invalid)}`);
+    }
+  });
+});
+
+// (the high review of #483, 6 and 7) a lookup refused for its address while
+// the request is under way answers as the middleware does, on every route:
+// 429, Retry-After, the code; on /mcp the JSON-RPC error -32000 with the code
+// in data (a single request 429, a batch's message in its 200).
+describe('auth 59: a refusal met under way answers one shape on every route', function() {
+  this.timeout(30000);
+  it('REST routes: 429, Retry-After, {code}; /mcp: -32000 with data.code, 429 for a single request', () => {
+    const {spawnSync} = require('child_process');
+    const run = spawnSync(process.execPath, [path.join(__dirname, '..', 'fixtures', 'unauth-limited-routes.js')], {encoding: 'utf8', timeout: 25000});
+    assert.strictEqual(run.status, 0, run.stderr);
+    const answers = JSON.parse(run.stdout);
+    for (const a of answers.slice(0, 4)) {
+      assert.deepStrictEqual([a.path, a.status, JSON.parse(a.body).code], [a.path, 429, 'UNAUTH_RATE_LIMITED'], a.body);
+      assert.ok(Number(a.retryAfter) >= 1, `${a.path}: Retry-After ${a.retryAfter}`);
+    }
+    const single = answers[4];
+    assert.strictEqual(single.status, 429, single.body);
+    assert.ok(Number(single.retryAfter) >= 1, String(single.retryAfter));
+    const one = JSON.parse(single.body);
+    assert.deepStrictEqual([one.id, one.error.code, one.error.data.code], [7, -32000, 'UNAUTH_RATE_LIMITED'], single.body);
+    const batched = answers[5];
+    assert.strictEqual(batched.status, 200, batched.body);
+    const [m] = JSON.parse(batched.body);
+    assert.deepStrictEqual([m.id, m.error.code, m.error.data.code], [8, -32000, 'UNAUTH_RATE_LIMITED'], batched.body);
+    assert.strictEqual(m.error.message, one.error.message);
+  });
 });
 
 // On running servers: an auth file with one key and the echo module.
@@ -137,6 +283,8 @@ describe('auth 59: on a running server', function() {
   const servers = [];
   let calls = null;
   const providerCalls = () => (fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').split('\n').filter(Boolean).length : 0);
+  // the provider's authenticate calls alone (the preload writes 'a' for one)
+  const authenticateCalls = () => (fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').split('\n').filter((l) => l === 'a').length : 0);
   after(() => { for (const s of servers) stopServer(s); });
 
   const start = async (port, extra = []) => {
@@ -261,6 +409,28 @@ describe('auth 59: on a running server', function() {
       assert.strictEqual(mine.status, 200, 'a key that resolved lately still lists, over its address\'s budget');
       assert.ok(JSON.parse(mine.body).length > 0, mine.body);
     });
+  });
+
+  // (the high review of #483, 5) with --authoringTools a tools/list looks
+  // its key up once: a keyless one not at all, an unknown key once
+  it('--authoringTools: a keyless tools/list is not looked up or counted; an unknown key is looked up and counted once per list', async () => {
+    const port = testPort(9702);
+    await start(port, ['--authoringTools', '--trustProxy', 'loopback']);
+    const list = (headers) => send(port, '/mcp', {jsonrpc: '2.0', id: 1, method: 'tools/list', params: {}}, headers);
+    const before = authenticateCalls();
+    for (let i = 0; i < 5; i++) {
+      const r = await list({'X-Forwarded-For': '198.51.100.60'});
+      assert.strictEqual(r.status, 200, r.body);
+    }
+    assert.strictEqual(authenticateCalls(), before, 'a keyless tools/list looks no key up');
+    for (let i = 0; i < 3; i++) {
+      const at = authenticateCalls();
+      const r = await list({'X-Forwarded-For': '198.51.100.61', 'X-CH-Key': `list-unknown-${i}`});
+      assert.strictEqual(r.status, 200, `list ${i + 1}: ${r.body}`);
+      assert.ok(!r.body.includes('Too many requests'), `list ${i + 1}: ${r.body}`);
+      assert.strictEqual(authenticateCalls() - at, 1, `list ${i + 1}: one lookup`);
+    }
+    assert.strictEqual((await list({'X-Forwarded-For': '198.51.100.61', 'X-CH-Key': 'list-unknown-3'})).status, 429, 'three lists spent a budget of three');
   });
 
   it('a start with a bad --unauthRateLimit or --trustProxy is refused (exit 2)', async () => {
