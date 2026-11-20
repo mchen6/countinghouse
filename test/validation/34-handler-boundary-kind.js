@@ -275,6 +275,13 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
         workerFor() { throw new Error('reached workerFor'); }, ensureDeviceState() { throw new Error('reached ensureDeviceState'); }, discoveredTag: (e) => e};
       const err = await new Promise((resolve) => DeviceManager.prototype.invokeJobsNow.call(dm, 'd', 's', 'a', {}, 'j', resolve, null, {}));
       assert.strictEqual(err && err.code, 'MODULE_NOT_LISTED');
+      // (one WITH a session, out of the map: the shared path's missing-device
+      // answer, as before round 3; never workerFor, which answers nothing
+      // for a device that is no record: the medium on round 3, 1)
+      const missing = new CountinghouseError('DEVICE_NOT_FOUND', 'd');
+      const withSession = Object.assign({}, dm, {ensureDeviceState: (id, cb) => cb(missing)});
+      const answered = await new Promise((resolve) => DeviceManager.prototype.invokeJobsNow.call(withSession, 'd', 's', 'a', {}, 'j', resolve, null, {session: 'a'.repeat(32)}));
+      assert.ok(answered === missing, String(answered && answered.message));
     } finally {
       cliOptions.sessionSocket = savedSocket;
       visibility.configure(saved);
