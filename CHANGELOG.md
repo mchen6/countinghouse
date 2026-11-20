@@ -10,6 +10,16 @@ the auth config.
 
 ## Unreleased
 
+### Fixed — each runtime's job queue is its own
+
+Every runtime opened its BullMQ job queue under one prefix, `{cdifJob}`, so
+two runtimes on one Redis took each other's jobs (a job for a module only
+one of them loaded ran on the other and failed). The prefix is now the
+server's own, `{chj-<16 hex>}`, derived from its identity secret: the same
+across restarts, another for a server with its own data directory. Jobs and
+schedulers left under `{cdifJob}` are not moved; a start says how many,
+once, and leaves them.
+
 ### Removed — the pack form, `--packsRoot`, a ceiling's `packs`, `fallbackEnv`
 
 Module-level configuration's cleanup (#413 rev 3, section 16, rule 7):

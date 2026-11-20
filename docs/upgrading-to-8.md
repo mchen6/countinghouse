@@ -653,6 +653,11 @@ says how to write a module for this.
 
 ## What operators get
 
+- **Each runtime's job queue is its own.** Its BullMQ prefix is derived
+  from the server's identity secret (`{chj-<16 hex>}`), so two runtimes on
+  one Redis no longer take each other's jobs. Jobs and schedulers queued
+  before the upgrade, under the old shared `{cdifJob}`, are not moved: the
+  start logs how many, once, and leaves them; re-create any you still want.
 - **The module registry is opt-in: `--moduleRegistry`.** A start with no
   `--loadModule` no longer reads the CDIF-era registry database
   (`lib/device-db`, `sqlite3`) or loads modules from it: it loads nothing,
