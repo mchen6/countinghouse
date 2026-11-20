@@ -15,7 +15,10 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 const validator = require('../../lib/validator');
 
 const SERVICE = 'urn:countinghouse-test:serviceID:notesService';
@@ -35,6 +38,9 @@ const refusedAt = async (spec, pathPart, what) => {
 const ACTION = `/device/serviceList/${SERVICE.replace(/~/g, '~0').replace(/\//g, '~1')}/actionList/0`;
 
 describe('module-authoring 06: the declarations a module may make (MCP completeness M0)', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   describe('the meta-schema: each field\'s shape and bounds', () => {
     it('a module that declares none of it is as it was', async () => {
       await accepted(specOf(), 'the plain action');
@@ -931,6 +937,9 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
 });
 
 describe('module-authoring 06: an icon read is checked by its exact inode', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   // (a file swapped between the lstat and the open for one whose inode
   // number differs only past 2^53, as a Windows file index can: as Numbers
   // they compare alike)

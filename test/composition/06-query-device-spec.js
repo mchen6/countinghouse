@@ -18,7 +18,10 @@ const assert = require('assert');
 const path   = require('path');
 const Worker = require('worker_threads').Worker;
 
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 const CHUtil   = require('../../lib/countinghouse-util');
 const CHDevice = require('../../lib/countinghouse-device');
 
@@ -36,6 +39,9 @@ function fakeCHDevice(spec) {
 }
 
 describe('CHUtil.queryDeviceSpec', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   afterEach(() => { delete CHUtil.dm; });
 
   it('errors on a null deviceID instead of proceeding', (done) => {

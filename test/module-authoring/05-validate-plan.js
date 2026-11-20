@@ -3,7 +3,10 @@
 // cheap early failure instead of a slow one after writing four files.
 const assert = require('assert');
 
-require('../../lib/cli-options').setOptions({workerThread: false});
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 const planValidator = require('../../lib/plan-validator');
 const callAddress   = require('../../lib/call-address');
 
@@ -16,6 +19,9 @@ const goodPlan = {
 };
 
 describe('plan-validator', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   it('accepts a well-formed plan', () => {
     const r = planValidator.validatePlan(goodPlan, []);
     assert.strictEqual(r.ok, true);
@@ -67,6 +73,9 @@ describe('plan-validator', () => {
 });
 
 describe('plan-validator: plan.calls', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); require('../../lib/cli-options').setOptions({workerThread: false}); });
+  after(() => { restoreOptions(keptOptions); });
   // Shaped like DeviceManager.prototype.getAllDeviceSpecs() output: a
   // deviceID -> device-spec map for one loaded "repo-scan" module exposing
   // scanService.scan. Deliberately includes an action with NO description --

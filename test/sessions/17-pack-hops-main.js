@@ -16,7 +16,10 @@
 const assert = require('assert');
 const EventEmitter = require('events');
 const options = require('../../lib/cli-options');
-options.setOptions({redisUrl: 'redis://127.0.0.1:1'});   // port 1: nothing listens there, a private Redis included
+// (the options are set in each describe's before(), the process's put back
+// in its after(): never at load, which every file of a folder run would
+// see -- B-loadopts-2)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 require('../../lib/logger').createLogger();
 const callTokens = require('../../lib/call-tokens');
 const sessions = require('../../lib/sessions');
@@ -24,6 +27,9 @@ const visibility = require('../../lib/module-visibility');
 const {CountinghouseError} = require('../../lib/countinghouse-error');
 
 describe('sessions 17: the listing check at every hop (shared runtime B3, Task 4, server-free; M5a)', () => {
+  let keptOptions = null;
+  before(() => { keptOptions = optionsNow(); options.setOptions({redisUrl: 'redis://127.0.0.1:1'}); });
+  after(() => { restoreOptions(keptOptions); });
   const A = 'a'.repeat(32);
   const B = 'b'.repeat(32);
   const MODULES = {'d-hidden': 'm-hidden', 'd-loose': 'm-loose'};
