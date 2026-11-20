@@ -17,6 +17,8 @@ const path = require('path');
 const {spawn} = require('child_process');
 const handshake = require('../../lib/session-transport/handshake');
 const shim = require('../session-transport/helpers/shim');
+// (one copy: the runtime's listening tell, null if it exited first)
+const {listening} = require('./helpers/per-session');
 
 const ROOT = path.join(__dirname, '..', '..');
 const FRAMEWORK = path.join(ROOT, 'framework.js');
@@ -57,11 +59,15 @@ function runtime(home, extra = []) {
   const child = spawn(process.execPath, [FRAMEWORK, '--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'),
     '--modulePath', path.join(home, 'modules'), '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc',
     '--sessionSocket', socket, ...extra], {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: ''})});
-  const r = {child, socket, run, err: '', out: ''};
-  child.on('message', (m) => { if (m != null && m.type === 'ready') child.send({id: 'restore-1', type: 'restore', sessions: [], declines: [], reset: []}); });
+  const r = {child, socket, run, err: '', out: '', told: []};
+  child.on('message', (m) => {
+    if (m != null && m.type === 'ready') child.send({id: 'restore-1', type: 'restore', sessions: [], declines: [], reset: []});
+    // (what the runtime tells unasked: its 'listening', among others)
+    if (m != null && m.id === undefined && m.type !== 'ready') r.told.push(m);
+  });
   child.stderr.on('data', (d) => { r.err += d; });
   child.stdout.on('data', (d) => { r.out += d; });
-  r.exited = new Promise((res) => child.on('exit', (code, signal) => res({code, signal})));
+  r.exited = new Promise((res) => child.on('exit', (code, signal) => { r.code = code; res({code, signal}); }));
   child.on('error', () => {});
   return r;
 }
@@ -97,7 +103,7 @@ describe('session-runtime 04: tasks by key and session, spawned (shared runtime 
 
   it('a session\'s tasks are its own: another session\'s id is one never issued, in both eras', async() => {
     r = runtime(home, ['--loadModule', scenario(home)]);
-    await until(async() => fs.existsSync(r.socket) && secretOf(r) != null);
+    assert.ok(await listening(r) != null, `the runtime is not listening (exit ${r.code}): ${(r.err || '').slice(-1500)}`);
     const secret = secretOf(r);
     const open = async() => { try { return await shim.session(r.socket, secret); } catch (e) { throw new Error(`${e.message}\n${r.err.slice(-2000)}`); } };
     const a = await open();
@@ -162,7 +168,7 @@ describe('session-runtime 04: tasks by key and session, spawned (shared runtime 
 
   it('A says bye with a task under way: it runs to its end (cooperative), and B\'s own task completes (B5 Task 4)', async() => {
     r = runtime(home, ['--loadModule', scenario(home)]);
-    await until(async() => fs.existsSync(r.socket) && secretOf(r) != null);
+    assert.ok(await listening(r) != null, `the runtime is not listening (exit ${r.code}): ${(r.err || '').slice(-1500)}`);
     const secret = secretOf(r);
     const a = await shim.session(r.socket, secret);
     const b = await shim.session(r.socket, secret);
