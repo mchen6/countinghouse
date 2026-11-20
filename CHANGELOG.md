@@ -22,6 +22,17 @@ pre-8.0 ID, with the new one (again after an auth reload). What is kept
 under a device ID is orphaned: device logs, and the metering's per-tool
 records (a per-tool free-call count or price record starts afresh). The examples' `auth.json` files are regenerated, and the tests,
 scripts and examples compute IDs with `deviceIDForName`.
+### Fixed — one shared-runtime session's stalling inputs no longer throttle the others
+
+The validator pool holds an input's stalls against its caller, and after
+three in five minutes refuses that caller's calls to the module
+(`VALIDATION_CALLER_THROTTLED`). In a shared runtime every session is the
+one local user's, one caller id, so one session's stalling inputs throttled
+every session. There the caller is now the caller and its session (calls,
+routed and direct hops, job runs, `prompts/get`): each session has its own
+three stalls, its own validation in flight, and its entries go when it
+ends. Over HTTP and `--stdio` it is the caller id, as before (a client
+choosing new session ids cannot slip its own throttle).
 
 ### Changed — the usage report counts a cancelled call apart: `profile.cancelled`
 

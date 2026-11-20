@@ -40,8 +40,8 @@ it to travel in.
 
 ## See it
 
-Needs Node.js 22.16 or later (CI runs the whole suite on 22.16, 24.15, the
-newest 24.x and the newest 26.x, and the sandbox, file broker and
+Needs Node.js 22.16 or later (CI runs the suite on 22.16, 24.15, the
+newest 24.x and the newest 26.x, the stdio tests on the newest 24.x, and the sandbox, file broker and
 single-thread tests on the newest 22.x, 24.0 and 24.14). Below 24.15 a
 compatibility shim routes `require.resolve` through the sandbox's hooks;
 multi-tenant hosting of third-party modules should run 24.15 or later,

@@ -326,6 +326,71 @@ describe('module-loading 24: the validator pool', function() {
       }
     });
 
+    // B-valsess (the Fable pass of 11-17): in a shared runtime every session
+    // is the one local user's, one caller id; the per-caller key is the
+    // caller and its session there (lib/sessions.js validationCallerOf), so
+    // one session's stalling inputs throttle that session alone. Elsewhere
+    // (HTTP: a client could pick new session ids; --stdio: one session) it
+    // stays the caller id.
+    it('in a shared runtime, session A\'s inputs stalling 3 times throttle session A on the module; session B of the same caller is not throttled', async () => {
+      const sessions = require('../../lib/sessions');
+      const p = newPool();
+      // (shared mode alone: attach would wire hooks no reset undoes, for the
+      // files after this one in the folder's process)
+      sessions.sharedForTests(true);
+      try {
+        const A = sessions.validationCallerOf('u_local', 's-a');
+        const B = sessions.validationCallerOf('u_local', 's-b');
+        assert.notStrictEqual(A, B);
+        const m = moduleWith(STALL, {}, {type: 'object'}, p);
+        await warmed(p);
+        for (let i = 0; i < 3; i++) {
+          assert.strictEqual(codeOf(await checkFrom(p, m, STALLING, A)), 'VALIDATION_TIMEOUT');
+          await counted(() => (p.callerStalls.get(`${A}\n${m.name}`) || []).length, i + 1);
+          await warmed(p);
+        }
+        await blocked(p, A, m);
+        assert.strictEqual(codeOf(await checkFrom(p, m, [1], A)), 'VALIDATION_CALLER_THROTTLED', 'session A');
+        assert.strictEqual(await checkFrom(p, m, [1], B), null, 'session B, the same caller');
+        // its end takes its entries with it (sessions.close: forgetSession)
+        p.forgetSession('s-a');
+        assert.ok(![...p.callerStalls.keys(), ...p.callerBlocked.keys(), ...p.callerStalledAt.keys()].some((k) => k.startsWith(A)), 'session A\'s entries gone');
+        assert.strictEqual(await checkFrom(p, m, [1], A), null, 'session A\'s key is free again');
+      } finally {
+        sessions.sharedForTests(false);
+        p.close();
+      }
+    });
+
+    it('outside a shared runtime the per-caller key is the caller id, whatever session a call names (HTTP: never a way out of a throttle)', () => {
+      const sessions = require('../../lib/sessions');
+      sessions.resetForTests();
+      assert.strictEqual(sessions.validationCallerOf('u_x', 's-a'), 'u_x');
+      assert.strictEqual(sessions.validationCallerOf('u_x', null), 'u_x');
+      assert.strictEqual(sessions.validationCallerOf(null, 's-a'), null);
+    });
+
+    // (a static pin: the places a validation's caller is taken -- every
+    // call, routed hop and job run through sendCounted, each with its own
+    // session; a direct peer-channel hop; prompts/get's arguments -- take it
+    // through validationCallerOf with the call's session)
+    it('every validation\'s caller is keyed through validationCallerOf with its session: sendCounted (its three sends), the peer hop, prompts/get', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const lib = (...p) => fs.readFileSync(path.join(__dirname, '..', '..', 'lib', ...p), 'utf8');
+      const dm = lib('device-manager.js');
+      assert.match(dm, /const caller = \(message != null && typeof\(message\.caller\) === 'string'\) \? sessionsLib\(\)\.validationCallerOf\(message\.caller, session\) : null;/);
+      assert.strictEqual((dm.match(/\bsendCounted\(/g) || []).length, 4, 'its definition and three sends');
+      // each send's session: the hop's token's, the job run's, the call's
+      for (const tail of [/\}, tokenEntry\.session, this\.deadline, settingsDM\);/, /\}, runSession, \(timeoutMs != null\)/, /\}, this\.sessionId, this\.deadline, settingsDM\);/]) assert.match(dm, tail);
+      assert.match(lib('peer-channel-broker.js'), /const caller = sessionsLib\(\)\.validationCallerOf\(deviceManagerLib\(\)\.hopCallerOf\(entry\.callerWM, tokenEntry\.billingKey\), tokenEntry\.session\);/);
+      const gw = lib('mcp', 'gateway.js');
+      assert.match(gw, /promptsLib\.checkArguments\(entry, args, sessionsLib\(\)\.validationCallerOf\(caller, session\)\)/);
+      assert.strictEqual((gw.match(/checkArguments\(/g) || []).length, 1, 'one prompts/get check');
+      // nothing else hands the pool a caller
+      for (const f of ['module-spec.js', 'mcp/prompts.js']) assert.ok(!/callerIdOf\(|hopCallerOf\(/.test(lib(...f.split('/'))), f);
+    });
+
     // the review of #321: a prompts/get's arguments are an input like a
     // call's. Before, their stalls were never counted, so one caller could
     // cost a replaced validator on every request, braked by the rate limit

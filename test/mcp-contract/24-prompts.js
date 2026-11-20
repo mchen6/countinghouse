@@ -26,9 +26,11 @@ const Z_ID = require('../../lib/call-address').deviceIDForName('ch-pack-z');
 fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: [NOTES_ID, Z_ID]}}));
 
 const options = require('../../lib/cli-options');
-// set again before this file's tests: a folder run requires every file first
 const OPTIONS = {redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10};
-options.setOptions(OPTIONS);
+// (set in the describe's before(), the process's put back in its after():
+// never at load, which every file of a folder run would see -- B-loadopts)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
+let keptOptions = null;
 require('../../lib/logger').createLogger();
 const gateway = require('../../lib/mcp/gateway');
 const moduleSpec = require('../../lib/module-spec');
@@ -119,6 +121,7 @@ describe('mcp-contract 24: prompts (M10)', function() {
   const usageSeen = [];
   let usageReal = null;
   before(async () => {
+    keptOptions = optionsNow();
     options.setOptions(OPTIONS);
     const FileAuthProvider = require('../../lib/auth/file-provider');
     const own = new FileAuthProvider({configPath: AUTH});
@@ -140,6 +143,7 @@ describe('mcp-contract 24: prompts (M10)', function() {
     if (provider != null) Object.assign(provider, real);
     if (usageReal != null) Object.assign(require('../../lib/usage/runtime').usage(), usageReal);
     fs.rmSync(home, {recursive: true, force: true});
+    restoreOptions(keptOptions);
   });
   afterEach(() => { limited = false; });
 

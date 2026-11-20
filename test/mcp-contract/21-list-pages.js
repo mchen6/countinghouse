@@ -25,12 +25,14 @@ const KEY_B = `test-b-${'b'.repeat(24)}`;
 fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['alpha', 'beta'], admin: true}, [KEY_B]: {userName: 'b', devices: ['beta']}}));
 
 const options = require('../../lib/cli-options');
-// Set again before this file's tests, with the auth provider routed to this
-// file's keys (as mcp-contract 09 does): a folder run (CI, the pre-commit
-// hook) requires every file first, and the process's one provider is built
-// from whichever file asked first.
+// Set in this file's before(), with the auth provider routed to this file's
+// keys (as mcp-contract 09 does): the process's one provider is built from
+// whichever file asked first.
 const OPTIONS = {redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10};
-options.setOptions(OPTIONS);
+// (set in the describe's before(), the process's put back in its after():
+// never at load, which every file of a folder run would see -- B-loadopts)
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
+let keptOptions = null;
 require('../../lib/logger').createLogger();
 const gateway = require('../../lib/mcp/gateway');
 const toolRegistry = require('../../lib/mcp/tool-registry');
@@ -91,6 +93,7 @@ describe('mcp-contract 21: tools/list in pages (M1)', function() {
   let provider = null;
   let real = null;
   before(() => {
+    keptOptions = optionsNow();
     options.setOptions(OPTIONS);
     const FileAuthProvider = require('../../lib/auth/file-provider');
     const own = new FileAuthProvider({configPath: AUTH});
@@ -102,6 +105,7 @@ describe('mcp-contract 21: tools/list in pages (M1)', function() {
   after(() => {
     if (provider != null) Object.assign(provider, real);
     fs.rmSync(home, {recursive: true, force: true});
+    restoreOptions(keptOptions);
   });
   afterEach(() => { options.authoringTools = false; });
 
