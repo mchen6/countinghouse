@@ -6,14 +6,15 @@
 // and no other. dataDir: the --moduleDataPath the runtime was given (the
 // default, $HOME/.countinghouse/module_data, when none). Read once the
 // runtime is up: it makes the secret at its first start.
-const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {JOB_QUEUE_LABEL, queuePrefixFrom} = require('../../lib/job-control-common');
+// (the runtime's own derivation, never a copy of it)
+const {deriveFrom} = require('../../lib/identity');
 
 function prefixForSecret(hex) {
-  return queuePrefixFrom(Buffer.from(crypto.hkdfSync('sha256', Buffer.from(hex, 'hex'), Buffer.alloc(0), JOB_QUEUE_LABEL, 32)));
+  return queuePrefixFrom(deriveFrom(Buffer.from(hex, 'hex'), JOB_QUEUE_LABEL));
 }
 
 function prefixFor(dataDir = null) {
