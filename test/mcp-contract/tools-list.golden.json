@@ -108,20 +108,29 @@
                   "not loaded"
                 ]
               },
-              "description": {
-                "type": "string"
-              },
               "tools": {
                 "type": "array",
                 "items": {
                   "type": "string"
                 }
               },
-              "examples": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
+              "toolsOmitted": {
+                "type": "integer"
+              },
+              "byTheModule": {
+                "type": "object",
+                "properties": {
+                  "description": {
+                    "type": "string"
+                  },
+                  "examples": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
               },
               "next": {
                 "type": "string"
@@ -131,8 +140,7 @@
               "name",
               "module",
               "state",
-              "tools",
-              "examples"
+              "tools"
             ],
             "additionalProperties": false
           }

@@ -19,10 +19,12 @@ installed. `initialize` and `server/discover` carry one fixed paragraph of
 installed here: each pack's state (ready, off or not loaded), what it does,
 its tools and example requests, and what is still missing, such as a
 credential the user adds in their own terminal, with the command. It shows
-only what the caller can already use, writes nothing, takes no arguments,
-and its answer is at most 8 KiB, every module-supplied string cleaned.
-Under `ch-local` it reads the install record and the new `--heldBackFile`
-(set by `ch-local`). tools/list gains the tool.
+only what the caller can already use, writes nothing and takes no
+arguments. Its answer is data, sent as JSON text and as `structuredContent`,
+at most 8 KiB the two together; what a module wrote (its description and
+example requests) stands only under each pack's `byTheModule`, each one
+line, cleaned. Under `ch-local` it reads the install record and the new
+`--heldBackFile` (set by `ch-local`). tools/list gains the tool.
 
 ### Added — requests whose API key doesn't resolve are limited per address
 
