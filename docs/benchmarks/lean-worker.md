@@ -32,8 +32,9 @@ emits `coverage.historyRebuilt`, which its own output schema forbids, so a
 call of it fails `OUTPUT_DATA_VALIDATION_FAIL` whenever its history is
 rebuilt (a first call, for one); the harness only loads the pack and never
 calls it, so its numbers stand. Step 5's "after" run is given pack 1 0.4.0
-(the version ch-local installs) by its `--pack`; the harness itself takes
-whatever `--pack` names, so the run's table states the version.
+(the version ch-local installs) by its `--pack`, and one run is given 0.5.0,
+the version the first release pins; the harness itself takes whatever
+`--pack` names, so the run's table states the version.
 perf/shared-runtime/measure.js, which calls the pack, refuses anything
 older than 0.4.0.
 
@@ -97,18 +98,28 @@ enough to compare across commits.
 
 \* overlapped another process's server start; its RSS agrees with attribution 1.
 
-Each row is `--runs 3`. The final "before" for step 5 will be re-run with
-`--runs 5` or more, in several sessions, at the "after" stage.
+Each row is `--runs 3`. Step 5's "before" below was run once, with
+`--runs 5`, in one session: not in several, as planned.
 
 ## Step 5: before and after (2026-11-20)
 
-`--runs 5`, in `scripts/run-in-docker.js` (Node 24, 2 CPUs, the container
-capped at 2 GB without swap), one step at a time. Each step was gated as
-above (no other container, at least 3 GB available, 30 s at least 90% idle),
-and watched while it ran: a step was aborted, and run again, if processes
-outside its container used more than 2.5 CPU-seconds in any 10 s. In the
-three kept, the most was 1.93. These are the first pack ready and worker
-boot figures quiet enough to compare across commits.
+`--runs 5`, in `scripts/run-in-docker.js` (Node 24, the VM's 2 CPUs), one
+step at a time, each in one session. The measurer's local copy of
+`run-in-docker.js` added a 2 GB, no-swap memory cap to the container; the
+committed script adds none. The gate was stricter than above: no other
+container, at least 3 GB available, and 30 s at least 90% idle. Each step
+was also watched while it ran: a step was aborted if processes outside its
+container used more than 2.5 CPU-seconds in any 10 s.
+- **before** and **after (0.4.0):** each aborted once and run again; the
+  kept runs peaked at 1.85 and 1.93.
+- **after, pack 1 0.5.0:** kept, with a caveat. Its windows peaked at 1.93
+  until the last one, which read 2.52 as the run finished, and the watcher
+  fired. Its figures are within the others' range, but it did not meet the
+  watcher's limit.
+
+These steps were quieter than the earlier points, but each configuration
+was measured in one session, so the session-to-session spread above (6.2 to
+12.3 s for one commit) is not shown to have shrunk.
 
 | | before (c407bfc0, pack 1 0.4.0) | after (285a31a4, pack 1 0.4.0) | after, pack 1 0.5.0 |
 |---|---|---|---|
@@ -131,10 +142,14 @@ The ladder, after (285a31a4, pack 1 0.4.0):
 | 5 modules | 5 | 3018 ms | 310 MB | 213 ms |
 | pack 1 | 9 | 4064 ms | 398.1 MB | 214 ms |
 
-- **The lean worker:** pack ready is 44% faster (7.2 → 4.1 s), the worker
-  boot median is 61% faster (554 → 214 ms), and the added RSS per worker is
-  halved (43.4 → 21.3 MB). Pack 1 0.5.0 adds about 0.4 s of ready time over
-  0.4.0, and nothing measurable in memory.
+- **The lean worker:** pack ready takes 44% less time (7.2 → 4.1 s), the
+  worker boot median 61% less (554 → 214 ms), and the added RSS per worker
+  is halved (43.4 → 21.3 MB). The RSS figures are stable across sessions;
+  the time figures are one session each.
+- **Pack 1 0.5.0 against 0.4.0:** 4466 against 4064 ms ready, and 250
+  against 214 ms boot, one run each. That difference is within the
+  session-to-session spread, so no difference between the versions is
+  established. Memory is the same.
 - **Within target:** pack ready.
 - **Over target:**
   - the worker boot median, 214–250 ms against 200 ms;
