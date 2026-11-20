@@ -21,9 +21,12 @@ const LISTED = 'bbbbbbbb-0000-5000-8000-000000000001';
 const PART = 'bbbbbbbb-0000-5000-8000-000000000002';
 const NOWHERE = 'bbbbbbbb-0000-5000-8000-000000000003';
 const GONE_LATE = 'bbbbbbbb-0000-5000-8000-000000000004';
+// a per-session device in shared mode: listed, but REST has no session to
+// reach it with (workerFor answers DEVICE_NOT_FOUND), #482's high, 3
+const PER_SESSION = 'bbbbbbbb-0000-5000-8000-000000000005';
 const SERVICE = 'urn:x:service';
 const device = (name, role) => ({packageInfo: {name, countinghouse: role != null ? {role} : {}}});
-const MODULE_OF = {[LISTED]: 'listed-mod', [PART]: 'part-mod', [GONE_LATE]: 'gone-mod'};
+const MODULE_OF = {[LISTED]: 'listed-mod', [PART]: 'part-mod', [GONE_LATE]: 'gone-mod', [PER_SESSION]: 'session-mod'};
 
 describe('validation 33: one status rule; one answer for a name the caller can\'t use (post-rel caller 400)', () => {
   describe('statusOf and kindOf', () => {
@@ -89,6 +92,54 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       }
     });
 
+    // #482's high, 1: the limiters say what they are
+    it('invoke-action\'s limiters: a key over its budget is RATE_LIMIT_EXCEEDED 429; the runtime at its limit is RUNTIME_BUSY 503 with Retry-After', () => {
+      const CdifInterface = require('../../lib/countinghouse-interface');
+      const told = [];
+      const session = {appKey: 'k', callbackWithoutTimer: (err) => told.push(err)};
+      const over = {rateLimiter: (k, cb) => cb(null, 0), rateLimit: (k, cb) => cb(null, {limited: true}), deviceManager: {emit() { throw new Error('dispatched'); }}};
+      const busy = {rateLimiter: (k, cb) => cb(null, 1500), rateLimit: () => { throw new Error('per-key asked'); }, deviceManager: {emit() { throw new Error('dispatched'); }}};
+      CdifInterface.prototype.invokeDeviceAction.call(over, LISTED, SERVICE, 'act', null, session);
+      CdifInterface.prototype.invokeDeviceAction.call(busy, LISTED, SERVICE, 'act', null, session);
+      assert.deepStrictEqual(told.map((e) => [e.code, statusOf(e), kindOf(e)]), [['RATE_LIMIT_EXCEEDED', 429, 'caller'], ['RUNTIME_BUSY', 503, 'runtime']]);
+      const headers = {};
+      const res = {setHeader: (k, v) => { headers[k] = v; }, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; }};
+      require('../../lib/countinghouse-error').answerError(res, told[1]);
+      assert.deepStrictEqual([res.code, headers['Retry-After'], res.body.code], [503, '2', 'RUNTIME_BUSY']);
+      assert.strictEqual(CODES.DENY_DEVICE_ACCESS, undefined, 'raised nowhere now: its row is gone');
+    });
+
+    // #482's high, 2: a part's runtime caller-kind refusal is the composer's
+    it('a runtime caller-kind code across a hop is the composer\'s: module, 500, across a reply too, never the one answer, retried in a job', () => {
+      const ce = require('../../lib/countinghouse-error');
+      const {oneActionAnswer} = require('../../lib/listing-scope');
+      const {notRetried} = require('../../lib/job-control-common');
+      for (const code of ['INPUT_DATA_VALIDATION_FAIL', 'ACTION_NOT_FOUND', 'SERVICE_NOT_FOUND', 'DEVICE_NOT_FOUND', 'PEER_NOT_GRANTED', 'INPUT_NOT_FOUND']) {
+        const direct = new CountinghouseError(code, 'x');
+        assert.strictEqual(kindOf(direct), 'caller', `premise: ${code} is the caller's`);
+        const hop = ce.hopError(direct);
+        assert.deepStrictEqual([hop.code, statusOf(hop), kindOf(hop), hop.kind, hop.httpStatus], [code, 500, 'module', 'module', 500], code);
+        const fields = CountinghouseError.replyFields(hop);
+        assert.strictEqual(fields.errHop, true, code);
+        const crossed = CountinghouseError.fromReplyFields(fields);
+        assert.deepStrictEqual([crossed.code, statusOf(crossed), kindOf(crossed)], [code, 500, 'module'], `${code} across a reply`);
+        const copied = CountinghouseError.fromReply(crossed);
+        assert.deepStrictEqual([statusOf(copied), kindOf(copied)], [500, 'module'], `${code} copied`);
+        assert.strictEqual(oneActionAnswer(crossed), crossed, `${code}: never folded into the caller's one answer`);
+        assert.strictEqual(notRetried(code, crossed), false, `${code}: a hop's refusal is retried`);
+      }
+    });
+
+    // #482's high, 4
+    it('a runtime error with no catalogue code is the runtime\'s, not a module\'s', () => {
+      const e = new CountinghouseError('NOT_A_CATALOGUE_CODE');
+      assert.deepStrictEqual([e.origin, e.kind, kindOf(e), statusOf(e)], ['runtime', 'runtime', 'runtime', 500]);
+      const replied = CountinghouseError.fromReply({message: 'a worker ended'});
+      assert.strictEqual(kindOf(replied), 'runtime');
+      const own = CountinghouseError.moduleOwn('MY_FAULT', 'it broke', null, 'probe');
+      assert.strictEqual(kindOf(own), 'module');
+    });
+
     it('every caller-kind catalogue row answers a 4xx; JOB_ACCESS_DENIED is gone, JOB_NOT_FOUND and SCHEMA_PATH_NOT_FOUND are 404', () => {
       for (const [code, e] of Object.entries(CODES)) {
         if (e.kind === 'caller') assert.ok(e.httpStatus >= 400 && e.httpStatus < 500, `${code}: ${e.httpStatus}`);
@@ -109,7 +160,7 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
     const userAuthId = require.resolve('../../lib/user-auth');
     const userRouteId = require.resolve('../../lib/routes/user');
     const dm = {
-      deviceMap: {[LISTED]: device('listed-mod', null), [PART]: device('part-mod', 'part'), [GONE_LATE]: device('gone-mod', null)},
+      deviceMap: {[LISTED]: device('listed-mod', null), [PART]: device('part-mod', 'part'), [GONE_LATE]: device('gone-mod', null), [PER_SESSION]: device('session-mod', null)},
       moduleOfDevice: () => null,
       packageOfModule: () => null,
       moduleManager: {unlisted: new Set(['part-mod']), modules: {}},
@@ -122,6 +173,9 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       // a device gone between the route's check and the dispatch
       invokeDeviceAction(deviceID, serviceID, actionName, args, session) {
         invoked.push([deviceID, serviceID, actionName]);
+        if (deviceID === PER_SESSION) return session.callbackWithoutTimer(new CountinghouseError('DEVICE_NOT_FOUND', deviceID));
+        // a composer whose part refused it: the composer's own fault, passed on
+        if (actionName === 'hop-refused') return session.callbackWithoutTimer(require('../../lib/countinghouse-error').hopError(new CountinghouseError('ACTION_NOT_FOUND', 'part-act')));
         if (deviceID === GONE_LATE) {
           delete dm.deviceMap[GONE_LATE];
           return session.callbackWithoutTimer(new CountinghouseError('DEVICE_NOT_FOUND', deviceID));
@@ -132,7 +186,8 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
         if (serviceID === 'urn:x:no-such-service') return session.callbackWithoutTimer(new CountinghouseError('SERVICE_NOT_FOUND', serviceID));
         return session.callbackWithoutTimer(null, {ok: true});
       },
-      getDeviceSpec: (deviceID, session) => session.callbackWithoutTimer(null, {device: {serviceList: {}}}),
+      getDeviceSpec: (deviceID, session) => (deviceID === PER_SESSION ? session.callbackWithoutTimer(new CountinghouseError('DEVICE_NOT_FOUND', deviceID))
+        : session.callbackWithoutTimer(null, {device: {serviceList: {}}})),
       getDeviceSchema: (deviceID, p, session) => session.callbackWithoutTimer(null, {}),
       getDevicePackageInfo: (deviceID, cb) => cb(null, {name: 'x', version: '1.0.0'})
     };
@@ -200,6 +255,18 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
         assert.deepStrictEqual(invoked, [], 'nothing dispatched');
       });
     }
+
+    it('a per-session device in shared mode (listed; REST has no session to reach it) is the one answer too, on invoke-action and get-spec', async () => {
+      const want = JSON.stringify({status: 404, body: {code: 'MODULE_NOT_LISTED', message: CODES.MODULE_NOT_LISTED.en, kind: 'caller'}});
+      assert.strictEqual(await call(ROUTES[0], PER_SESSION), want, 'invoke-action');
+      assert.strictEqual(await call(ROUTES[1], PER_SESSION), want, 'get-spec');
+    });
+
+    it('invoke-action: a composer passing on its part\'s refusal answers 500, the module\'s, never the caller\'s 404', async () => {
+      const res = await call(ROUTES[0], LISTED, {serviceID: SERVICE, actionName: 'hop-refused', input: {}});
+      const parsed = JSON.parse(res);
+      assert.deepStrictEqual([parsed.status, parsed.body.code, parsed.body.kind], [500, 'ACTION_NOT_FOUND', 'module'], res);
+    });
 
     it('invoke-action: a device gone between the check and the dispatch answers the same one answer', async () => {
       const late = await call(ROUTES[0], GONE_LATE);

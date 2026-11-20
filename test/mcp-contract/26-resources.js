@@ -99,8 +99,8 @@ function buildInterface(devices = DEVICES) {
     invokeDeviceAction(deviceID, serviceID, actionName, args, session) {
       const answer = (err, data) => setImmediate(() => session.localCallback(err, data));
       // its per-key limit first, as the real one's (lib/countinghouse-interface.js):
-      // a limited caller's call is refused DENY_DEVICE_ACCESS and never reaches the module
-      if (limited) return answer(new (require('../../lib/countinghouse-error').CountinghouseError)('DENY_DEVICE_ACCESS'), null);
+      // a limited caller's call is refused RATE_LIMIT_EXCEEDED (#482's high, 1) and never reaches the module
+      if (limited) return answer(new (require('../../lib/countinghouse-error').CountinghouseError)('RATE_LIMIT_EXCEEDED'), null);
       invoked.push({deviceID, serviceID, actionName, input: args.input});
       asked.push({action: actionName, askable: session.ask != null ? session.ask.askable : null});
       if (actionName === 'readNote' || actionName === 'readRun' || actionName === 'readPart') return answer(null, {output: `# ${JSON.stringify(args.input)}`});
@@ -652,7 +652,7 @@ describe('mcp-contract 26: module resources (M7)', function() {
       invoked.length = 0;
       const probe = await read(KEY_A, 'countinghouse://m/nobody/x/1');
       assert.strictEqual(probe.error && probe.error.code, -32603, JSON.stringify(probe));
-      assert.strictEqual(probe.error.data && probe.error.data['countinghouse/code'], 'DENY_DEVICE_ACCESS');
+      assert.strictEqual(probe.error.data && probe.error.data['countinghouse/code'], 'RATE_LIMIT_EXCEEDED');
       // a limited read of a real resource, refused by the call path's own limit: the same answer
       const real = await read(KEY_A, 'countinghouse://m/notes/notes/one');
       assert.deepStrictEqual(probe.error, real.error, 'the limit says nothing of what exists');
