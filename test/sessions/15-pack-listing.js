@@ -337,4 +337,26 @@ describe('sessions 15: a module going on or off is in no session\'s lists (B3 Ta
       visibility.show(['ch-pack-docs']);
     }
   });
+
+  // #458's medium round: the key resolved but its grants unread (the
+  // provider failing on that read): a module's tool answers the provider's
+  // failure, the same whatever the name; the runtime's own tools need no
+  // grants and are handled as ever
+  it('grants unread: a module tool gets the provider\'s failure; a runtime tool is still its own', async () => {
+    const real = toolRegistry.grantsForCall;
+    const down = Object.assign(new Error('the auth provider is unavailable'), {code: 'SYSTEM_ERROR_USERDB_NA'});
+    toolRegistry.grantsForCall = (key, identify, cb) => cb(null, undefined, down);
+    try {
+      for (const name of ['ci_failure_triage', 'no_such_tool']) {
+        const r = await request(ci, A, 'tools/call', {name, arguments: {}});
+        assert.deepStrictEqual(r.error, {code: -32603, message: down.message}, name);
+      }
+      // (outside the single-identity profile the settings tool is not listed: its own answer)
+      const own = await request(ci, A, 'tools/call', {name: 'countinghouse_settings', arguments: {action: 'get'}});
+      assert.strictEqual(own.error, undefined, JSON.stringify(own));
+      assert.ok(JSON.stringify(own.result).includes('MODULE_NOT_LISTED'), JSON.stringify(own));
+    } finally {
+      toolRegistry.grantsForCall = real;
+    }
+  });
 });
