@@ -187,7 +187,7 @@ describe('mcp-contract 39: one table of declared text fields', () => {
       'line(declaredText(`${e.instancePath ', 'line(declaredText(job.failedReason))', 'line(declaredText(codeMatch != null '],
     'lib/mcp/result-content.js': ['message(e.description)} : {})'],   // a call result's resource link (the module's output)
     'lib/mcp/tool-registry.js': ['line(action.description).trim() === '],   // a description of hidden characters alone is none
-    'lib/settings-tool.js': ['message(cutAt(d.description, MAX_DESCRIPTION))']   // a module setting's description (B-bythemodule)
+    'lib/module-settings.js': ['message(cutAt(d.description, MAX_DESCRIPTION))']   // a module setting's description (B-bythemodule: ownWords)
   };
   const MOD = String.raw`require\(\s*['"][^'"]*(?:client-text|module-text)['"]\s*\)`;
   // -> each use, as `line(...` or `message(...` and what follows it

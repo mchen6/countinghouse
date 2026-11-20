@@ -123,9 +123,17 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       const got = await make().get();
       const row = got.settings.find((r) => r.name === 'module.@acme/hidden-words.mode');
       assert.ok(row != null, JSON.stringify(got.settings.map((r) => r.name)));
-      assert.deepStrictEqual(row.byTheModule, {title: 'Mode evil title', description: 'Line one  here\nline two '});
+      assert.deepStrictEqual(row.byTheModule, {title: 'Mode evil title', description: 'Line one here\nline two'});
       const words = JSON.stringify(row.byTheModule);
       for (const c of ['\u202e', '\u200b', '\u2066']) assert.ok(!words.includes(c), `${JSON.stringify(c)} reached the client`);
+    });
+
+    it('a title or description of hidden characters alone is none: no empty field reaches the client', async () => {
+      const H = pkgOf('@acme/blank-words', {mode: {type: 'enum', values: ['a', 'b'], default: 'a', title: '\u200b\u200b', description: '\u202e \u2066'}});
+      modules = [{name: H.name, version: H.version, part: false, pkg: H, state: ms.stateFor(H.name, H, {operator: false, net: []})}];
+      const got = await make().get();
+      const row = got.settings.find((r) => r.name === 'module.@acme/blank-words.mode');
+      assert.strictEqual(row.byTheModule, undefined, JSON.stringify(row));
     });
 
     it('the ceiling: a fixed value is the operator\'s; conversation off is the terminal\'s', async () => {
