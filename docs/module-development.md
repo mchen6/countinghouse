@@ -1059,6 +1059,15 @@ logged and the request still goes ahead; only `enforce` refuses it. Under
 `headers`, `body`, `json`, `qs`, `timeout`, ... but not `baseUrl`, `proxy`,
 `agent`, `har` and similar) and checks every redirect.
 
+A refused `CHUtil.request` answers with a stand-in for postman-request's
+`Request`. It is never `undefined`, and its Request methods do nothing.
+The refusal (`ERR_ACCESS_DENIED`) goes to your callback and to the
+request's `'error'` listeners, including one you add later. With neither,
+nothing is emitted, so a stream you piped it into is never ended. Listen
+for `'error'` when you stream. After `abort()`, nothing is delivered. A
+`URL` object given as `uri` leaves the stand-in's `uri` null; a string
+gives its parts.
+
 **Self-contained.** Every dependency of your module, followed through the
 whole tree, must be installed inside the module's own directory. Install
 with `npm install --prefix <module>` (or run `npm install` inside it), and
