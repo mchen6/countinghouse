@@ -153,17 +153,17 @@ const STEPS = {
     // as any bare name's is)
     out.push(o(() => require('..foo/../../../lib/stat-count.js'), 'x') === 'found' ? 'same' : `dotdotRelative(${o(() => require('..foo/../../../lib/stat-count.js'), 'x').slice(0, 200)})`);
     // (the climbing pairs: the 'a:b' side refused -- never found, which
-    // plain Node would answer for either side -- and by the same whole
-    // error as a missing name's climb)
+    // plain Node on POSIX answers for either side (on Windows 'a:b' is
+    // drive-relative, so there the pair's equality is what catches it) --
+    // and by the same whole error as a missing name's climb)
     const refusedPair = (tag, a, b) => out.push(!a.startsWith('found') && a === b ? 'same' : `${tag}(${a.slice(0, 200)} / ${b.slice(0, 200)})`);
     refusedPair('urlishClimb', o(() => require('a:b/../../lib/stat-count.js'), 'a:b'), o(() => require('nosuchdep/../../lib/stat-count.js'), 'nosuchdep'));
-    // (the same by require.resolve, which on Node 24.15 and later runs no
-    // hook: the direct call's own judgement)
+    // (the same by require.resolve, and by a direct Module._resolveFilename
+    // below: these pin the behaviour by each route module code has, not one
+    // layer -- on 24.21, with the direct wrapper's own line reverted, both
+    // still refused: another layer of identity's answers first)
     out.push(o(() => require.resolve('..foo/../../../lib/stat-count.js'), 'x') === 'found' ? 'same' : `dotdotResolve(${o(() => require.resolve('..foo/../../../lib/stat-count.js'), 'x').slice(0, 200)})`);
     refusedPair('urlishResolve', o(() => require.resolve('a:b/../../lib/stat-count.js'), 'a:b'), o(() => require.resolve('nosuchdep/../../lib/stat-count.js'), 'nosuchdep'));
-    // (and by a direct Module._resolveFilename: module code's direct call is
-    // judged by the require hook's own branch first; the wrapper's line is a
-    // backstop no route of module code's reaches alone)
     out.push(o(() => M._resolveFilename('..foo/../../../lib/stat-count.js', module), 'x') === 'found' ? 'same' : `dotdotDirect(${o(() => M._resolveFilename('..foo/../../../lib/stat-count.js', module), 'x').slice(0, 200)})`);
     refusedPair('urlishDirect', o(() => M._resolveFilename('a:b/../../lib/stat-count.js', module), 'a:b'), o(() => M._resolveFilename('nosuchdep/../../lib/stat-count.js', module), 'nosuchdep'));
     // (a bare name with a ':' URL parsing rejects -- bare to Node -- above
