@@ -235,6 +235,8 @@ describe('store 04: the review of B2', function() {
         } else {
           assert.strictEqual(fs.readFileSync(lock, 'utf8'), held, `${ageS} s: the live holder's lock is still its own`);
           assert.ok(!fs.existsSync(path.join(dir, 'm.json')), `${ageS} s: nothing was written while it held the lock`);
+          // released, so the close's flush does not wait the whole wait again
+          fs.unlinkSync(lock);
         }
         f.close();
       }
@@ -368,7 +370,8 @@ describe('store 04: the review of B2', function() {
         return true;
       });
       const took = Date.now() - started;
-      assert.ok(took >= 1900 && took < 4000, `failed after ${took} ms (the wait is 2000 ms)`);
+      const {LOCK_WAIT_MS} = require(MOD);
+      assert.ok(took >= LOCK_WAIT_MS - 100 && took < LOCK_WAIT_MS + 2000, `failed after ${took} ms (the wait is ${LOCK_WAIT_MS} ms)`);
     } finally {
       close();
     }
@@ -568,5 +571,70 @@ describe('store 04: a waiter is not starved (#150)', function() {
     const after = contended.map((w) => holds.filter((h) => h >= w.announced && h < w.got).length);
     assert.ok(Math.max(...after) <= 3, `once announced, an update waited through ${Math.max(...after)} of the other process's holds (${JSON.stringify(after)})`);
     assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).n, 40);
+  });
+});
+
+// B-storelock: the lock is fair under load (a waiter's longest wait was one
+// hold of the other process's, on a loaded Windows runner), but a hold is a
+// write and its fsync, and there a hold reached 1.1 s under a disk and CPU
+// load; on CI, past the waits' old 2 s. A wait outlasts a live holder's
+// slow hold, and the waiter's announcement stays fresh while it waits.
+describe('store 04: a wait outlasts a live holder\'s slow hold (B-storelock)', function() {
+  this.timeout(60000);
+  const HOLD_MS = 3000;   // a slow fsync on a loaded runner, past the old 2 s
+  // a live process holding the lock HOLD_MS -> Promise of the child, once held
+  const slowHolder = (dir) => {
+    const holder = spawn(process.execPath, ['-e', `
+      const {withStoreLock} = require(${JSON.stringify(MOD)});
+      withStoreLock(${JSON.stringify(dir)}, () => { process.stdout.write('held'); const t = Date.now() + ${HOLD_MS}; while (Date.now() < t) { /* a slow write */ } });
+    `], {stdio: ['ignore', 'pipe', 'ignore']});
+    return new Promise((resolve) => holder.stdout.once('data', () => resolve(holder)));
+  };
+  const exited = (p) => new Promise((resolve) => (p.exitCode != null ? resolve() : p.once('exit', resolve)));
+
+  it('update() waits for it and writes', async () => {
+    const dir = tmpStore();
+    const file = path.join(dir, 'm.json');
+    const holder = await slowHolder(dir);
+    const f = openJsonFile(file);
+    const t = Date.now();
+    try {
+      const value = await new Promise((resolve, reject) => f.update('n', (v) => (v || 0) + 1, (err, v) => (err ? reject(err) : resolve(v))));
+      assert.strictEqual(value, 1);
+      assert.ok(Date.now() - t >= HOLD_MS - 500, `got the lock after ${Date.now() - t} ms, while it was held`);
+      assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).n, 1);
+    } finally {
+      f.close();
+      await exited(holder);
+    }
+  });
+
+  it('withStoreLock (a flush, the exit flush, the seeding command) waits for it and runs', async () => {
+    const dir = tmpStore();
+    const holder = await slowHolder(dir);
+    try {
+      assert.strictEqual(withStoreLock(dir, () => 'ran'), 'ran');
+      assert.strictEqual(withStoreLock.waited, true);
+    } finally {
+      await exited(holder);
+    }
+  });
+
+  it('the waiter\'s announcement stays fresh while it waits, so another process still yields to it', async () => {
+    const dir = tmpStore();
+    const holder = await slowHolder(dir);
+    const f = openJsonFile(path.join(dir, 'm.json'));
+    const done = new Promise((resolve, reject) => f.update('n', () => 1, (err) => (err ? reject(err) : resolve())));
+    try {
+      // past the announcement's own 2 s: it was renewed meanwhile
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      const w = JSON.parse(fs.readFileSync(path.join(dir, '.lock.waiting'), 'utf8'));
+      assert.strictEqual(w.pid, process.pid);
+      assert.ok(Date.now() - w.at < 1500, `the announcement is ${Date.now() - w.at} ms old`);
+      await done;
+    } finally {
+      f.close();
+      await exited(holder);
+    }
   });
 });
