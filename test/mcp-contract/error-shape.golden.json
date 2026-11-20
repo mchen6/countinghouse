@@ -79,10 +79,11 @@
       }
     },
     "http invoke-action / bad input": {
-      "status": 500,
+      "status": 400,
       "body": {
         "code": "INPUT_DATA_VALIDATION_FAIL",
         "message": "Input data validation error",
+        "kind": "caller",
         "fault": {
           "reason": "data validation failed",
           "info": {
@@ -107,7 +108,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "INPUT_DATA_VALIDATION_FAIL"
+            "countinghouse/code": "INPUT_DATA_VALIDATION_FAIL",
+            "countinghouse/kind": "caller"
           }
         }
       }
@@ -158,7 +160,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "INPUT_DATA_VALIDATION_FAIL"
+              "countinghouse/code": "INPUT_DATA_VALIDATION_FAIL",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -169,6 +172,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "boom",
           "name": "Error",
@@ -190,7 +194,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -241,7 +246,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -251,7 +257,8 @@
       "status": 500,
       "body": {
         "code": "DEVICE_INVOKE_FAIL",
-        "message": "Device call failed"
+        "message": "Device call failed",
+        "kind": "module"
       }
     },
     "mcp tools/call / module callback error": {
@@ -268,7 +275,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_FAIL"
+            "countinghouse/code": "DEVICE_INVOKE_FAIL",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -319,7 +327,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_FAIL"
+              "countinghouse/code": "DEVICE_INVOKE_FAIL",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -329,7 +338,8 @@
       "status": 500,
       "body": {
         "code": "SHAPE_OFFLINE",
-        "message": "SHAPE_OFFLINE: shape probe"
+        "message": "SHAPE_OFFLINE: shape probe",
+        "kind": "module"
       }
     },
     "mcp tools/call / module typed error": {
@@ -346,7 +356,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "SHAPE_OFFLINE"
+            "countinghouse/code": "SHAPE_OFFLINE",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -397,17 +408,19 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "SHAPE_OFFLINE"
+              "countinghouse/code": "SHAPE_OFFLINE",
+              "countinghouse/kind": "runtime"
             }
           }
         }
       }
     },
     "http invoke-action / unknown tool": {
-      "status": 500,
+      "status": 404,
       "body": {
         "code": "ACTION_NOT_FOUND",
-        "message": "Action not found"
+        "message": "Action not found",
+        "kind": "caller"
       }
     },
     "mcp tools/call / unknown tool": {
@@ -438,7 +451,8 @@
       "status": 500,
       "body": {
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED: shape probe"
+        "message": "SHAPE_REJECTED: shape probe",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error returned": {
@@ -455,7 +469,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "SHAPE_REJECTED"
+            "countinghouse/code": "SHAPE_REJECTED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -506,7 +521,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "SHAPE_REJECTED"
+              "countinghouse/code": "SHAPE_REJECTED",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -516,7 +532,8 @@
       "status": 500,
       "body": {
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED: shape probe"
+        "message": "SHAPE_REJECTED: shape probe",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error returned async": {
@@ -533,7 +550,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "SHAPE_REJECTED"
+            "countinghouse/code": "SHAPE_REJECTED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -584,7 +602,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "SHAPE_REJECTED"
+              "countinghouse/code": "SHAPE_REJECTED",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -594,7 +613,8 @@
       "status": 500,
       "body": {
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED: shape probe"
+        "message": "SHAPE_REJECTED: shape probe",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error thrown": {
@@ -611,7 +631,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "SHAPE_REJECTED"
+            "countinghouse/code": "SHAPE_REJECTED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -662,7 +683,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "SHAPE_REJECTED"
+              "countinghouse/code": "SHAPE_REJECTED",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -672,7 +694,8 @@
       "status": 500,
       "body": {
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED: shape probe"
+        "message": "SHAPE_REJECTED: shape probe",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error called back": {
@@ -689,7 +712,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "SHAPE_REJECTED"
+            "countinghouse/code": "SHAPE_REJECTED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -740,7 +764,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "SHAPE_REJECTED"
+              "countinghouse/code": "SHAPE_REJECTED",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -751,6 +776,7 @@
       "body": {
         "code": "OUTPUT_DATA_VALIDATION_FAIL",
         "message": "Output data validation error",
+        "kind": "module",
         "fault": {
           "reason": "unexpected output argument: code",
           "info": ""
@@ -771,7 +797,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "OUTPUT_DATA_VALIDATION_FAIL"
+            "countinghouse/code": "OUTPUT_DATA_VALIDATION_FAIL",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -822,7 +849,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "OUTPUT_DATA_VALIDATION_FAIL"
+              "countinghouse/code": "OUTPUT_DATA_VALIDATION_FAIL",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -832,7 +860,8 @@
       "status": 500,
       "body": {
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED: shape probe"
+        "message": "SHAPE_REJECTED: shape probe",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error thrown sync": {
@@ -849,7 +878,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "SHAPE_REJECTED"
+            "countinghouse/code": "SHAPE_REJECTED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -900,7 +930,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "SHAPE_REJECTED"
+              "countinghouse/code": "SHAPE_REJECTED",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -910,7 +941,8 @@
       "status": 500,
       "body": {
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED: shape probe"
+        "message": "SHAPE_REJECTED: shape probe",
+        "kind": "module"
       }
     },
     "mcp tools/call / plain error with a module code": {
@@ -927,7 +959,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "SHAPE_REJECTED"
+            "countinghouse/code": "SHAPE_REJECTED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -978,7 +1011,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "SHAPE_REJECTED"
+              "countinghouse/code": "SHAPE_REJECTED",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -988,7 +1022,8 @@
       "status": 500,
       "body": {
         "code": "MODULE_CODE_RESERVED",
-        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error with a catalogue code": {
@@ -1005,7 +1040,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "MODULE_CODE_RESERVED"
+            "countinghouse/code": "MODULE_CODE_RESERVED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -1056,7 +1092,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "MODULE_CODE_RESERVED"
+              "countinghouse/code": "MODULE_CODE_RESERVED",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -1066,7 +1103,8 @@
       "status": 500,
       "body": {
         "code": "MODULE_CODE_RESERVED",
-        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error with a catalogue code set after": {
@@ -1083,7 +1121,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "MODULE_CODE_RESERVED"
+            "countinghouse/code": "MODULE_CODE_RESERVED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -1134,7 +1173,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "MODULE_CODE_RESERVED"
+              "countinghouse/code": "MODULE_CODE_RESERVED",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -1144,7 +1184,8 @@
       "status": 500,
       "body": {
         "code": "MODULE_CODE_RESERVED",
-        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error with a catalogue code and a forged origin": {
@@ -1161,7 +1202,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "MODULE_CODE_RESERVED"
+            "countinghouse/code": "MODULE_CODE_RESERVED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -1212,7 +1254,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "MODULE_CODE_RESERVED"
+              "countinghouse/code": "MODULE_CODE_RESERVED",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -1222,7 +1265,8 @@
       "status": 500,
       "body": {
         "code": "MODULE_CODE_RESERVED",
-        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error with a catalogue code from a callback": {
@@ -1239,7 +1283,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "MODULE_CODE_RESERVED"
+            "countinghouse/code": "MODULE_CODE_RESERVED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -1290,7 +1335,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "MODULE_CODE_RESERVED"
+              "countinghouse/code": "MODULE_CODE_RESERVED",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -1300,7 +1346,8 @@
       "status": 500,
       "body": {
         "code": "REMOTE_UNDECLARED",
-        "message": "ctx.call refused: the module declares no such remote in \"countinghouse.remotes\" (package.json)"
+        "message": "ctx.call refused: the module declares no such remote in \"countinghouse.remotes\" (package.json)",
+        "kind": "module"
       }
     },
     "mcp tools/call / remote refusal passed on (undeclared)": {
@@ -1317,7 +1364,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "REMOTE_UNDECLARED"
+            "countinghouse/code": "REMOTE_UNDECLARED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -1368,7 +1416,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "REMOTE_UNDECLARED"
+              "countinghouse/code": "REMOTE_UNDECLARED",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -1378,7 +1427,8 @@
       "status": 500,
       "body": {
         "code": "REMOTE_ARGS_INVALID",
-        "message": "ctx.call refused: a remote call takes the address remote:<name>/<tool> and a plain JSON object of arguments"
+        "message": "ctx.call refused: a remote call takes the address remote:<name>/<tool> and a plain JSON object of arguments",
+        "kind": "module"
       }
     },
     "mcp tools/call / remote refusal passed on (arguments)": {
@@ -1395,7 +1445,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "REMOTE_ARGS_INVALID"
+            "countinghouse/code": "REMOTE_ARGS_INVALID",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -1446,7 +1497,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "REMOTE_ARGS_INVALID"
+              "countinghouse/code": "REMOTE_ARGS_INVALID",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -1456,7 +1508,8 @@
       "status": 500,
       "body": {
         "code": "MESSAGE_TOO_LARGE",
-        "message": "A message from the module to the runtime was larger than allowed -- send less at once"
+        "message": "A message from the module to the runtime was larger than allowed -- send less at once",
+        "kind": "module"
       }
     },
     "mcp tools/call / remote refusal passed on (too large)": {
@@ -1473,7 +1526,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "MESSAGE_TOO_LARGE"
+            "countinghouse/code": "MESSAGE_TOO_LARGE",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -1524,7 +1578,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "MESSAGE_TOO_LARGE"
+              "countinghouse/code": "MESSAGE_TOO_LARGE",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -1535,6 +1590,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "shape probe",
           "name": "Error",
@@ -1556,7 +1612,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -1607,7 +1664,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -1618,6 +1676,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "shape probe",
           "name": "TypeError",
@@ -1639,7 +1698,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -1690,7 +1750,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -1701,6 +1762,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "socket hang up",
           "name": "Error",
@@ -1722,7 +1784,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -1773,7 +1836,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -1784,6 +1848,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "null"
         }
@@ -1803,7 +1868,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -1854,7 +1920,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -1865,6 +1932,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "undefined"
         }
@@ -1884,7 +1952,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -1935,7 +2004,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -1946,6 +2016,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "shape probe"
         }
@@ -1965,7 +2036,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -2016,7 +2088,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -2027,6 +2100,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "a thrown value whose properties cannot be read"
         }
@@ -2046,7 +2120,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -2097,7 +2172,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -2108,6 +2184,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "",
           "name": "Error",
@@ -2129,7 +2206,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -2180,7 +2258,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -2190,7 +2269,8 @@
       "status": 500,
       "body": {
         "code": "DEVICE_INVOKE_FAIL",
-        "message": "Device call failed"
+        "message": "Device call failed",
+        "kind": "module"
       }
     },
     "mcp tools/call / callback error with an object message": {
@@ -2207,7 +2287,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_FAIL"
+            "countinghouse/code": "DEVICE_INVOKE_FAIL",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -2258,7 +2339,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_FAIL"
+              "countinghouse/code": "DEVICE_INVOKE_FAIL",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -2269,6 +2351,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "db down",
           "name": "Error"
@@ -2289,7 +2372,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -2340,7 +2424,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -2351,6 +2436,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "x",
           "name": "Error",
@@ -2372,7 +2458,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -2423,7 +2510,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -2433,7 +2521,8 @@
       "status": 500,
       "body": {
         "code": "DEVICE_INVOKE_FAIL",
-        "message": "Device call failed"
+        "message": "Device call failed",
+        "kind": "module"
       }
     },
     "mcp tools/call / callback error with a circular message": {
@@ -2450,7 +2539,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_FAIL"
+            "countinghouse/code": "DEVICE_INVOKE_FAIL",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -2501,7 +2591,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_FAIL"
+              "countinghouse/code": "DEVICE_INVOKE_FAIL",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -2511,7 +2602,8 @@
       "status": 500,
       "body": {
         "code": "DEVICE_INVOKE_FAIL",
-        "message": "Device call failed"
+        "message": "Device call failed",
+        "kind": "module"
       }
     },
     "mcp tools/call / callback error with a blank message": {
@@ -2528,7 +2620,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_FAIL"
+            "countinghouse/code": "DEVICE_INVOKE_FAIL",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -2579,7 +2672,8 @@
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_INVOKE_FAIL"
+              "countinghouse/code": "DEVICE_INVOKE_FAIL",
+              "countinghouse/kind": "runtime"
             }
           }
         }
@@ -2667,17 +2761,19 @@
       }
     },
     "http invoke-action / missing device": {
-      "status": 500,
+      "status": 404,
       "body": {
-        "code": "DEVICE_NOT_FOUND",
-        "message": "Device not found: 00000000-0000-0000-0000-000000000000"
+        "code": "MODULE_NOT_LISTED",
+        "message": "This tool is not available to this caller here",
+        "kind": "caller"
       }
     },
     "http invoke-action / no access": {
-      "status": 500,
+      "status": 404,
       "body": {
-        "code": "USER_HAS_NO_DEVICE",
-        "message": "This apiKey does not have access to this device: ask the operator to add it to the apiKey's devices list in the auth config"
+        "code": "MODULE_NOT_LISTED",
+        "message": "This tool is not available to this caller here",
+        "kind": "caller"
       }
     },
     "mcp tools/call / no access": {
@@ -2705,10 +2801,11 @@
       }
     },
     "http invoke-action / unknown key": {
-      "status": 500,
+      "status": 401,
       "body": {
         "code": "SYSTEM_ERROR_UNKNOWN_USER",
-        "message": "Unknown user"
+        "message": "Unknown user",
+        "kind": "caller"
       }
     },
     "mcp tools/call / unknown key": {
@@ -2736,10 +2833,11 @@
       }
     },
     "http invoke-action / no key": {
-      "status": 500,
+      "status": 401,
       "body": {
         "code": "SYSTEM_ERROR_UNKNOWN_USER",
-        "message": "Unknown user"
+        "message": "Unknown user",
+        "kind": "caller"
       }
     },
     "mcp tools/call / no key": {
@@ -2796,10 +2894,11 @@
       }
     },
     "http invoke-action / bad input": {
-      "status": 500,
+      "status": 400,
       "body": {
         "code": "INPUT_DATA_VALIDATION_FAIL",
         "message": "Input data validation error",
+        "kind": "caller",
         "fault": {
           "reason": "data validation failed",
           "info": {
@@ -2824,7 +2923,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "INPUT_DATA_VALIDATION_FAIL"
+            "countinghouse/code": "INPUT_DATA_VALIDATION_FAIL",
+            "countinghouse/kind": "caller"
           }
         }
       }
@@ -2834,6 +2934,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception: boom",
+        "kind": "module",
         "fault": {
           "message": "boom",
           "name": "Error",
@@ -2855,7 +2956,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -2864,7 +2966,8 @@
       "status": 500,
       "body": {
         "code": "DEVICE_INVOKE_FAIL",
-        "message": "Device call failed: boom"
+        "message": "Device call failed: boom",
+        "kind": "module"
       }
     },
     "mcp tools/call / module callback error": {
@@ -2881,7 +2984,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_FAIL"
+            "countinghouse/code": "DEVICE_INVOKE_FAIL",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -2890,7 +2994,8 @@
       "status": 500,
       "body": {
         "code": "SHAPE_OFFLINE",
-        "message": "SHAPE_OFFLINE: shape probe"
+        "message": "SHAPE_OFFLINE: shape probe",
+        "kind": "module"
       }
     },
     "mcp tools/call / module typed error": {
@@ -2907,16 +3012,18 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "SHAPE_OFFLINE"
+            "countinghouse/code": "SHAPE_OFFLINE",
+            "countinghouse/kind": "module"
           }
         }
       }
     },
     "http invoke-action / unknown tool": {
-      "status": 500,
+      "status": 404,
       "body": {
         "code": "ACTION_NOT_FOUND",
-        "message": "Action not found: nope"
+        "message": "Action not found",
+        "kind": "caller"
       }
     },
     "mcp tools/call / unknown tool": {
@@ -2934,7 +3041,8 @@
       "status": 500,
       "body": {
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED: shape probe"
+        "message": "SHAPE_REJECTED: shape probe",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error returned": {
@@ -2951,7 +3059,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "SHAPE_REJECTED"
+            "countinghouse/code": "SHAPE_REJECTED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -2960,7 +3069,8 @@
       "status": 500,
       "body": {
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED: shape probe"
+        "message": "SHAPE_REJECTED: shape probe",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error returned async": {
@@ -2977,7 +3087,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "SHAPE_REJECTED"
+            "countinghouse/code": "SHAPE_REJECTED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -2986,7 +3097,8 @@
       "status": 500,
       "body": {
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED: shape probe"
+        "message": "SHAPE_REJECTED: shape probe",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error thrown": {
@@ -3003,7 +3115,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "SHAPE_REJECTED"
+            "countinghouse/code": "SHAPE_REJECTED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3012,7 +3125,8 @@
       "status": 500,
       "body": {
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED: shape probe"
+        "message": "SHAPE_REJECTED: shape probe",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error called back": {
@@ -3029,7 +3143,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "SHAPE_REJECTED"
+            "countinghouse/code": "SHAPE_REJECTED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3039,6 +3154,7 @@
       "body": {
         "code": "OUTPUT_DATA_VALIDATION_FAIL",
         "message": "Output data validation error",
+        "kind": "module",
         "fault": {
           "reason": "unexpected output argument: code",
           "info": ""
@@ -3059,7 +3175,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "OUTPUT_DATA_VALIDATION_FAIL"
+            "countinghouse/code": "OUTPUT_DATA_VALIDATION_FAIL",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3068,7 +3185,8 @@
       "status": 500,
       "body": {
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED: shape probe"
+        "message": "SHAPE_REJECTED: shape probe",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error thrown sync": {
@@ -3085,7 +3203,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "SHAPE_REJECTED"
+            "countinghouse/code": "SHAPE_REJECTED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3094,7 +3213,8 @@
       "status": 500,
       "body": {
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED: shape probe"
+        "message": "SHAPE_REJECTED: shape probe",
+        "kind": "module"
       }
     },
     "mcp tools/call / plain error with a module code": {
@@ -3111,7 +3231,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "SHAPE_REJECTED"
+            "countinghouse/code": "SHAPE_REJECTED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3120,7 +3241,8 @@
       "status": 500,
       "body": {
         "code": "MODULE_CODE_RESERVED",
-        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error with a catalogue code": {
@@ -3137,7 +3259,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "MODULE_CODE_RESERVED"
+            "countinghouse/code": "MODULE_CODE_RESERVED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3146,7 +3269,8 @@
       "status": 500,
       "body": {
         "code": "MODULE_CODE_RESERVED",
-        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error with a catalogue code set after": {
@@ -3163,7 +3287,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "MODULE_CODE_RESERVED"
+            "countinghouse/code": "MODULE_CODE_RESERVED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3172,7 +3297,8 @@
       "status": 500,
       "body": {
         "code": "MODULE_CODE_RESERVED",
-        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error with a catalogue code and a forged origin": {
@@ -3189,7 +3315,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "MODULE_CODE_RESERVED"
+            "countinghouse/code": "MODULE_CODE_RESERVED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3198,7 +3325,8 @@
       "status": 500,
       "body": {
         "code": "MODULE_CODE_RESERVED",
-        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use"
+        "message": "the module answered with the runtime's own code USER_HAS_NO_DEVICE, which a module may not use",
+        "kind": "module"
       }
     },
     "mcp tools/call / module error with a catalogue code from a callback": {
@@ -3215,7 +3343,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "MODULE_CODE_RESERVED"
+            "countinghouse/code": "MODULE_CODE_RESERVED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3224,7 +3353,8 @@
       "status": 500,
       "body": {
         "code": "REMOTE_UNDECLARED",
-        "message": "ctx.call refused: the module declares no such remote in \"countinghouse.remotes\" (package.json): error-shape-module declares no remote \"nowhere\""
+        "message": "ctx.call refused: the module declares no such remote in \"countinghouse.remotes\" (package.json): error-shape-module declares no remote \"nowhere\"",
+        "kind": "module"
       }
     },
     "mcp tools/call / remote refusal passed on (undeclared)": {
@@ -3241,7 +3371,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "REMOTE_UNDECLARED"
+            "countinghouse/code": "REMOTE_UNDECLARED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3250,7 +3381,8 @@
       "status": 500,
       "body": {
         "code": "REMOTE_ARGS_INVALID",
-        "message": "ctx.call refused: a remote call takes the address remote:<name>/<tool> and a plain JSON object of arguments: the arguments must be a plain JSON object"
+        "message": "ctx.call refused: a remote call takes the address remote:<name>/<tool> and a plain JSON object of arguments: the arguments must be a plain JSON object",
+        "kind": "module"
       }
     },
     "mcp tools/call / remote refusal passed on (arguments)": {
@@ -3267,7 +3399,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "REMOTE_ARGS_INVALID"
+            "countinghouse/code": "REMOTE_ARGS_INVALID",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3276,7 +3409,8 @@
       "status": 500,
       "body": {
         "code": "REMOTE_UNDECLARED",
-        "message": "ctx.call refused: the module declares no such remote in \"countinghouse.remotes\" (package.json): error-shape-module declares no remote \"nowhere\""
+        "message": "ctx.call refused: the module declares no such remote in \"countinghouse.remotes\" (package.json): error-shape-module declares no remote \"nowhere\"",
+        "kind": "module"
       }
     },
     "mcp tools/call / remote refusal passed on (too large)": {
@@ -3293,7 +3427,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "REMOTE_UNDECLARED"
+            "countinghouse/code": "REMOTE_UNDECLARED",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3303,6 +3438,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception: shape probe",
+        "kind": "module",
         "fault": {
           "message": "shape probe",
           "name": "Error",
@@ -3324,7 +3460,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3334,6 +3471,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception: shape probe",
+        "kind": "module",
         "fault": {
           "message": "shape probe",
           "name": "TypeError",
@@ -3355,7 +3493,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3365,6 +3504,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception: socket hang up",
+        "kind": "module",
         "fault": {
           "message": "socket hang up",
           "name": "Error",
@@ -3386,7 +3526,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3396,6 +3537,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "null"
         }
@@ -3415,7 +3557,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3425,6 +3568,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "undefined"
         }
@@ -3444,7 +3588,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3454,6 +3599,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception: shape probe",
+        "kind": "module",
         "fault": {
           "message": "shape probe"
         }
@@ -3473,7 +3619,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3483,6 +3630,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "a thrown value whose properties cannot be read"
         }
@@ -3502,7 +3650,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3512,6 +3661,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
+        "kind": "module",
         "fault": {
           "message": "",
           "name": "Error",
@@ -3533,7 +3683,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3542,7 +3693,8 @@
       "status": 500,
       "body": {
         "code": "DEVICE_INVOKE_FAIL",
-        "message": "Device call failed: {\"reason\":\"quota\"}"
+        "message": "Device call failed: {\"reason\":\"quota\"}",
+        "kind": "module"
       }
     },
     "mcp tools/call / callback error with an object message": {
@@ -3559,7 +3711,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_FAIL"
+            "countinghouse/code": "DEVICE_INVOKE_FAIL",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3569,6 +3722,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception: db down",
+        "kind": "module",
         "fault": {
           "message": "db down",
           "name": "Error"
@@ -3589,7 +3743,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3599,6 +3754,7 @@
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception: x",
+        "kind": "module",
         "fault": {
           "message": "x",
           "name": "Error",
@@ -3620,7 +3776,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3629,7 +3786,8 @@
       "status": 500,
       "body": {
         "code": "DEVICE_INVOKE_FAIL",
-        "message": "Device call failed: [unrenderable value]"
+        "message": "Device call failed: [unrenderable value]",
+        "kind": "module"
       }
     },
     "mcp tools/call / callback error with a circular message": {
@@ -3646,7 +3804,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_FAIL"
+            "countinghouse/code": "DEVICE_INVOKE_FAIL",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3655,7 +3814,8 @@
       "status": 500,
       "body": {
         "code": "DEVICE_INVOKE_FAIL",
-        "message": "Device call failed"
+        "message": "Device call failed",
+        "kind": "module"
       }
     },
     "mcp tools/call / callback error with a blank message": {
@@ -3672,7 +3832,8 @@
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_INVOKE_FAIL"
+            "countinghouse/code": "DEVICE_INVOKE_FAIL",
+            "countinghouse/kind": "module"
           }
         }
       }
@@ -3707,17 +3868,19 @@
       }
     },
     "http invoke-action / missing device": {
-      "status": 500,
+      "status": 404,
       "body": {
-        "code": "DEVICE_NOT_FOUND",
-        "message": "Device not found: 00000000-0000-0000-0000-000000000000"
+        "code": "MODULE_NOT_LISTED",
+        "message": "This tool is not available to this caller here",
+        "kind": "caller"
       }
     },
     "http invoke-action / no access": {
-      "status": 500,
+      "status": 404,
       "body": {
-        "code": "USER_HAS_NO_DEVICE",
-        "message": "This apiKey does not have access to this device: ask the operator to add it to the apiKey's devices list in the auth config"
+        "code": "MODULE_NOT_LISTED",
+        "message": "This tool is not available to this caller here",
+        "kind": "caller"
       }
     },
     "mcp tools/call / no access": {
@@ -3732,10 +3895,11 @@
       }
     },
     "http invoke-action / unknown key": {
-      "status": 500,
+      "status": 401,
       "body": {
         "code": "SYSTEM_ERROR_UNKNOWN_USER",
-        "message": "Unknown user"
+        "message": "Unknown user",
+        "kind": "caller"
       }
     },
     "mcp tools/call / unknown key": {
@@ -3750,10 +3914,11 @@
       }
     },
     "http invoke-action / no key": {
-      "status": 500,
+      "status": 401,
       "body": {
         "code": "SYSTEM_ERROR_UNKNOWN_USER",
-        "message": "Unknown user"
+        "message": "Unknown user",
+        "kind": "caller"
       }
     },
     "mcp tools/call / no key": {

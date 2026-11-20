@@ -183,7 +183,10 @@ pass `{kind: 'caller'}` as the fourth argument: the error's `kind` is then
 `'caller'`, and the usage report counts it as `CALLER_ERROR`, the caller's,
 not `MODULE_ERROR`. Only `'caller'` and `'module'` are taken; anything else
 is ignored, and a module never says an error is the runtime's. The answer
-itself is the same either way. A caller-kind error is not retried in a
+names the kind: over HTTP a caller-kind error answers `400` and a module
+error `500`, each body `{code, message, kind}`; over MCP the tool's error
+result carries `countinghouse/kind` in its `_meta`, beside
+`countinghouse/code`. A caller-kind error is not retried in a
 task: the same input fails the same way. When your module calls another
 one, a caller-kind error it gets back is your module's (you were its
 caller); if your caller is at fault, say so with your own `ctx.error`.

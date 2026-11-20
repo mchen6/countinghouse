@@ -18,7 +18,7 @@ describe('test12: invoke specify input validation', function() {
     .set('X-CH-Key', 'aabbcc')
     .send(req)
     .expect('Content-Type', /[json | text]/)
-    .expect(500, (err, res) => {
+    .expect(400, (err, res) => {
       if (err) return done(err);
 
       if (res.body.code !== 'INPUT_DATA_VALIDATION_FAIL'

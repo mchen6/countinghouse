@@ -142,7 +142,7 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     const {runner, ci} = runnerWith((i, cb) => setImmediate(cb, null, {}));
     const {r} = await call(runner, 'addJob', INTERNAL, {name: 'x', delay: 200}, 'd', 's', 'a', {});
     assert.deepStrictEqual((await call(runner, 'removeJob', INTERNAL, 'x', r.id, false)).r, {removed: true});
-    assert.strictEqual((await call(runner, 'getJob', INTERNAL, r.id)).err.message, new (require('../../lib/countinghouse-error').CountinghouseError)('GET_JOB_ERROR', 'unknown job').message);
+    assert.strictEqual((await call(runner, 'getJob', INTERNAL, r.id)).err.code, 'JOB_NOT_FOUND');
     await wait(400);
     assert.strictEqual(ci.calls.length, 0);
     runner.close();
@@ -163,10 +163,20 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     runner.close(); cron.runner.close();
   });
 
-  it('a job is its owner\'s: another key is refused, an admin is not, and listJobs filters', async () => {
+  it('a job is its owner\'s: another key is answered as for a job never issued, byte for byte; an admin is not refused; listJobs filters', async () => {
     const {runner} = runnerWith((i, cb) => setImmediate(cb, null, {}));
     const {r} = await call(runner, 'addJob', {appKey: 'a'}, {name: 'o'}, 'd', 's', 'a', {});
-    assert.strictEqual((await call(runner, 'getJob', {appKey: 'b'}, r.id)).err.code, 'JOB_ACCESS_DENIED');
+    // (post-rel caller 400: JOB_NOT_FOUND for both, so no key learns which
+    // job ids exist; get-job and remove-job alike)
+    const shape = (e) => JSON.stringify({code: e.code, message: e.message, kind: e.kind});
+    const notYours = (await call(runner, 'getJob', {appKey: 'b'}, r.id)).err;
+    const never = (await call(runner, 'getJob', {appKey: 'b'}, 'no-such-id')).err;
+    assert.strictEqual(notYours.code, 'JOB_NOT_FOUND');
+    assert.strictEqual(shape(notYours), shape(never));
+    const removeNotYours = (await call(runner, 'removeJob', {appKey: 'b'}, 'o', r.id, false)).err;
+    const removeNever = (await call(runner, 'removeJob', {appKey: 'b'}, 'o', 'no-such-id', false)).err;
+    assert.strictEqual(shape(removeNotYours), shape(removeNever));
+    assert.strictEqual(removeNotYours.code, 'JOB_NOT_FOUND');
     assert.strictEqual((await call(runner, 'getJob', {appKey: 'z', isAdmin: true}, r.id)).err, null);
     assert.strictEqual((await call(runner, 'listJobs', {appKey: 'a'})).r.length, 1);
     assert.strictEqual((await call(runner, 'listJobs', {appKey: 'b'})).r.length, 0);
@@ -179,7 +189,7 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     const {r} = await call(a.runner, 'addJob', INTERNAL, {name: 'e'}, 'd', 's', 'a', {});
     a.runner.close();
     const b = runnerWith((i, cb) => setImmediate(cb, null, {}));
-    assert.strictEqual((await call(b.runner, 'getJob', INTERNAL, r.id)).err.code, 'GET_JOB_ERROR');
+    assert.strictEqual((await call(b.runner, 'getJob', INTERNAL, r.id)).err.code, 'JOB_NOT_FOUND');
     b.runner.close();
   });
 
@@ -231,7 +241,7 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     const {r} = await call(runner, 'addJob', INTERNAL, {name: 'ttl'}, 'd', 's', 'a', {});
     assert.ok(await until(async () => (await state(runner, r.id)).state === 'completed'));
     await wait(400);
-    assert.strictEqual((await call(runner, 'getJob', INTERNAL, r.id)).err.code, 'GET_JOB_ERROR');
+    assert.strictEqual((await call(runner, 'getJob', INTERNAL, r.id)).err.code, 'JOB_NOT_FOUND');
     runner.close();
   });
 });

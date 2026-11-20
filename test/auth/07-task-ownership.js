@@ -214,8 +214,9 @@ describe('auth 07: MCP tasks/* and the HTTP job routes enforce per-tenant job ow
         if (res.status === 200 && res.body.removed === true) {
           return done(new Error('HTTP remove-job deleted another tenant\'s job'));
         }
-        if (res.body.code !== 'JOB_ACCESS_DENIED') {
-          return done(new Error(`expected JOB_ACCESS_DENIED, got: ${JSON.stringify(res.body)}`));
+        // (post-rel caller 400: answered as a job never issued, 404)
+        if (res.status !== 404 || res.body.code !== 'JOB_NOT_FOUND') {
+          return done(new Error(`expected 404 JOB_NOT_FOUND, got: ${res.status} ${JSON.stringify(res.body)}`));
         }
         return done();
       });

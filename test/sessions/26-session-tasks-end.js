@@ -158,7 +158,7 @@ describe('sessions 26: an ended session\'s tasks are cancelled (shared runtime B
       assert.deepStrictEqual(await ids(INTERNAL), [ofB, none].sort());
       assert.strictEqual(await stateOf(sched), 'gone');
       // the scheduler too: its next run is never made
-      assert.strictEqual((await call(runner, 'removeJob', IN(A), 'n', null, true)).err.code, 'REMOVE_JOB_ERROR');
+      assert.strictEqual((await call(runner, 'removeJob', IN(A), 'n', null, true)).err.code, 'JOB_NOT_FOUND');
     });
   });
 
@@ -196,7 +196,7 @@ describe('sessions 26: an ended session\'s tasks are cancelled (shared runtime B
       assert.ok(await until(async() => (await stateOf(active)) === 'gone'));
       // a session that comes later gets unknown for each of A's ids
       open(C);
-      for (const id of [completed, delayed, active]) assert.strictEqual((await call(runner, 'getJob', IN(C), id)).err.code, 'GET_JOB_ERROR');
+      for (const id of [completed, delayed, active]) assert.strictEqual((await call(runner, 'getJob', IN(C), id)).err.code, 'JOB_NOT_FOUND');
     });
 
     it('its reconnect window running out (\'window\') is an end too', async() => {

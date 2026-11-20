@@ -110,15 +110,17 @@ describe('auth 01: FileAuthProvider drives HTTP invoke-action, /device-list, and
     });
   });
 
-  it('HTTP invoke-action: scoped key can call its own device but is denied (USER_HAS_NO_DEVICE) on the other', (done) => {
+  // (post-rel caller 400: a device outside the key's grants is answered as
+  // one that isn't there or isn't listed, MODULE_NOT_LISTED 404)
+  it('HTTP invoke-action: scoped key can call its own device but is denied (MODULE_NOT_LISTED) on the other', (done) => {
     invoke(SCOPED_KEY, ECHO_DEVICE_ID, 'urn:countinghouse-com:serviceID:echoService', 'echo', {foo: [], bar: 'hi'}, (err, body) => {
       if (err) return done(err);
       if (body.output == null) return done(new Error(`scoped key should be able to invoke echo-device: ${JSON.stringify(body)}`));
 
       invoke(SCOPED_KEY, TRANSFORM_DEVICE_ID, 'urn:countinghouse-com:serviceID:transformService', 'uppercase', {text: 'hi'}, (err, body) => {
         if (err) return done(err);
-        if (body.code !== 'USER_HAS_NO_DEVICE') {
-          return done(new Error(`expected USER_HAS_NO_DEVICE denying transform-demo to scoped key, got: ${JSON.stringify(body)}`));
+        if (body.code !== 'MODULE_NOT_LISTED') {
+          return done(new Error(`expected MODULE_NOT_LISTED denying transform-demo to scoped key, got: ${JSON.stringify(body)}`));
         }
         return done();
       });

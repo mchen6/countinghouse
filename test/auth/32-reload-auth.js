@@ -61,9 +61,9 @@ describe('auth 32: reloading the auth config without a restart', function() {
   });
 
   it('a grant added to the file is refused until the reload, and allowed after', async () => {
-    assert.strictEqual((await invokeAs(ALICE)).body.code, 'USER_HAS_NO_DEVICE');
+    assert.strictEqual((await invokeAs(ALICE)).body.code, 'MODULE_NOT_LISTED');
     write([DEVICE_ID]);
-    assert.strictEqual((await invokeAs(ALICE)).body.code, 'USER_HAS_NO_DEVICE', 'applied without a reload');
+    assert.strictEqual((await invokeAs(ALICE)).body.code, 'MODULE_NOT_LISTED', 'applied without a reload');
     const r = await reload(ADMIN);
     assert.strictEqual(r.status, 200, JSON.stringify(r.body));
     assert.deepStrictEqual(r.body, {ok: true, entries: 2, changed: 1});
@@ -120,7 +120,7 @@ describe('auth 32: reloading the auth config without a restart', function() {
     const r = await tool(ADMIN);
     assert.strictEqual(r.body.result.isError, false, JSON.stringify(r.body));
     assert.deepStrictEqual(r.body.result.structuredContent, {ok: true, entries: 2, changed: 1});
-    assert.strictEqual((await invokeAs(ALICE)).body.code, 'USER_HAS_NO_DEVICE');
+    assert.strictEqual((await invokeAs(ALICE)).body.code, 'MODULE_NOT_LISTED');
     noKeys(r.body);
   });
 
