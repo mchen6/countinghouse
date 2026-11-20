@@ -172,6 +172,36 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
     assert.strictEqual(inRequest(ip, 'k-revoked'), null, 'after two refusals (the budget) the revoked key is limited like any other');
   });
 
+  // (the medium on round 1, 2) a provider that failed is not an answer: the
+  // lookup counts, but a key that resolved is not forgotten for it
+  it('a provider failure counts, but does not drop a valid key from those that resolved', () => {
+    const ip = '192.0.2.5';
+    inRequest(ip, 'k-flaky').resolved();
+    for (let i = 0; i < 3; i++) {
+      const l = inRequest(ip, 'k-flaky');
+      assert.ok(l != null);
+      l.refused(false);
+    }
+    assert.ok(inRequest(ip, 'k-flaky') != null, 'still a key that resolved lately, over its address\'s budget');
+    assert.strictEqual(inRequest(ip, 'k-other-unknown'), null, 'the failures counted');
+  });
+
+  // (the medium on round 1, 3 and 4) the request's store holds digests, not
+  // keys; a key that resolved lately passes the gate in any header a route reads
+  it('the request\'s store holds no raw key, and a resolved key in X-App-Key passes the gate behind a junk X-CH-Key', () => {
+    const ip = '192.0.2.6';
+    const secret = 'k-raw-secret-0123456789';
+    let seen = null;
+    request(ip, secret, () => { seen = JSON.stringify(unauthLimit.requestStoreForTests()); return null; });
+    assert.ok(seen != null && !seen.includes(secret), seen);
+    inRequest(ip, secret).resolved();
+    for (let i = 0; i < 2; i++) inRequest(ip, `junk-${i}`).refused();
+    let passed = false;
+    const res = Object.assign(new (require('events').EventEmitter)(), {set() { return res; }, status(code) { res.code = code; return res; }, json() { return res; }});
+    unauthLimit.middleware()({ip, headers: {'x-ch-key': 'junk-first', 'x-app-key': secret}, socket: {}}, res, () => { passed = true; });
+    assert.strictEqual(passed, true, `the gate answered ${res.code}`);
+  });
+
   // (the high review of #483, 4) the address is the request's own: a lookup
   // after its request has ended (a worker it spawned, a listener it set up),
   // or of another key than the request's (a change notice's re-listing for
@@ -237,7 +267,7 @@ describe('auth 59: --trustProxy refuses a range wider than a /8 (IPv4) or a /32 
   });
 
   it('takes a /8 or narrower, overlapping entries counted once, and the named ranges', () => {
-    for (const v of ['10.0.0.0/8', '203.0.113.7', '::ffff:10.0.0.0/104', '10.0.0.0/9,10.128.0.0/9', '10.0.0.0/8,10.1.0.0/16', '2001:db8::/32',
+    for (const v of ['2', '10.0.0.0/8', '203.0.113.7', '::ffff:10.0.0.0/104', '10.0.0.0/9,10.128.0.0/9', '10.0.0.0/8,10.1.0.0/16', '2001:db8::/32',
       'loopback', 'loopback,linklocal,uniquelocal', 3]) {
       const r = parsed(v);
       assert.ok(r.trust != null && r.invalid == null, `${JSON.stringify(v)} was refused: ${JSON.stringify(r.invalid)}`);
@@ -265,8 +295,20 @@ describe('auth 59: a refusal met under way answers one shape on every route', fu
     assert.ok(Number(single.retryAfter) >= 1, String(single.retryAfter));
     const one = JSON.parse(single.body);
     assert.deepStrictEqual([one.id, one.error.code, one.error.data.code], [7, -32000, 'UNAUTH_RATE_LIMITED'], single.body);
+    // (the medium on round 1, 5) a job's owner check met by the limit is retried, never failed for good
+    const job = spawnSync(process.execPath, ['-e', `
+      const path = require('path');
+      const ROOT = ${JSON.stringify(path.resolve(__dirname, '..', '..'))};
+      const {CountinghouseError} = require(path.join(ROOT, 'lib/countinghouse-error'));
+      require.cache[require.resolve(path.join(ROOT, 'lib/user-auth'))] = {id: 'stub', loaded: true,
+        exports: (req, res, d, k, s, a, cb, callback) => callback(new CountinghouseError('UNAUTH_RATE_LIMITED'))};
+      require(path.join(ROOT, 'lib/job-control-common')).authorizeOwner({apiKey: 'k', deviceID: 'd', serviceID: 's', actionName: 'a'}, 'j', 5000)
+        .then(() => console.log('resolved'), (e) => console.log(JSON.stringify({final: e.final})));
+    `], {encoding: 'utf8', timeout: 20000});
+    assert.strictEqual(job.stdout.trim(), '{"final":false}', job.stderr);
     const batched = answers[5];
     assert.strictEqual(batched.status, 200, batched.body);
+    assert.ok(Number(batched.retryAfter) >= 1, `a batch with a limited message carries Retry-After: ${batched.retryAfter}`);
     const [m] = JSON.parse(batched.body);
     assert.deepStrictEqual([m.id, m.error.code, m.error.data.code], [8, -32000, 'UNAUTH_RATE_LIMITED'], batched.body);
     assert.strictEqual(m.error.message, one.error.message);
