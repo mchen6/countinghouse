@@ -882,7 +882,7 @@ const STEPS = {
       try {
         const depth = util.getCallSites(200).length;
         const ten = Math.min(10, depth);
-        counts = `${util.getCallSites(2).length === Math.min(2, depth)} ${util.getCallSites({}).length === ten} ${util.getCallSites(undefined, {}).length === ten} ${util.getCallSites().length === ten} ${ownFirst(util.getCallSites(3))}`;
+        counts = `${util.getCallSites(2).length === Math.min(2, depth) && util.getCallSites(2.7).length === Math.min(2, depth)} ${util.getCallSites({}).length === ten} ${util.getCallSites(undefined, {}).length === ten} ${util.getCallSites().length === ten} ${ownFirst(util.getCallSites(3))}`;
         let refused = 'no';
         try { util.getCallSites(null, {}); } catch (e) { refused = String(e.code); }
         let refused2 = 'no';
