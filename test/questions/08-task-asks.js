@@ -385,10 +385,6 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     }
   });
 
-  // The BullMQ runner (the Redis store), against run-local's private Redis:
-  // its asking pass completes the job, and BullMQ's completed event must not
-  // forget the job's session, which the answered run needs (the review of
-  // #374, M1: it ran with no session, so with none of the session's limits).
   // (#487's high, round 1: the gateway's own before hook -- a run started
   // again reads the task's tombstone after its record, and a read that
   // fails, either, rejects: never a run as if nothing were known)
@@ -412,6 +408,12 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       tombstones.get = () => Promise.resolve(null);
       const r = await beforeOf(jobData, t, {rerun: false});
       assert.ok(r.skip !== true && moduleAsk.isState(r.state), JSON.stringify(r));
+    });
+    it('a run whose question still waits stays a skip whatever the tombstone read does', async () => {
+      const t = id();
+      assert.ok((await ask(t)).asked != null);
+      tombstones.get = () => Promise.reject(new Error('tombstones down'));
+      assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true});
     });
     it('a tombstone that can\'t be read rejects; so does a record that can\'t be read', async () => {
       const t = id();
@@ -438,7 +440,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
   // runner. Each asking pass takes 100 ms here, as a handler's would.
   const waitOrders = (label, getApi, done = () => {}) => {
     const harness = (api, {timeout, answers, okAt, before = null}) => {
-      const log = {started: [], ended: [], completed: [], at: [], passes: 0};
+      const log = {started: [], ended: [], completed: [], at: [], passes: 0, settled: 0};
       const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
         invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
           log.passes += 1;
@@ -457,7 +459,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       api.setAskHooks({
         before: (data, taskId, run) => { b += 1; return Promise.resolve(before != null ? before(b, run) : {state: moduleAsk.newState({askable: true, shownAs: 'm'})}); },
         asked: () => { n += 1; return Promise.resolve(answers(n)); },
-        settled: () => Promise.resolve(),
+        settled: () => { log.settled += 1; return Promise.resolve(); },
         holdMs: () => 60000
       });
       return new Promise((resolve) => api.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: id(), era: 'modern', asks: true, timeout}, 'd', 's', 'a', {}, (err) => resolve({err, log})));
@@ -499,6 +501,16 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
         assert.deepStrictEqual([log.passes, log.started, log.completed[0][0], log.completed[0][1]], [0, [1], 1, 'store down'], JSON.stringify(log));
       } finally { done(api); }
     });
+    it(`${label}: a before that fails between two passes runs nothing more; the run fails with a call of its own`, async () => {
+      const api = getApi();
+      try {
+        const {err, log} = await harness(api, {timeout: 5000, answers: () => ({rerun: true}),
+          before: (b) => (b === 1 ? {state: moduleAsk.newState({askable: true, shownAs: 'm'})} : Promise.reject(new Error('store down')))});
+        assert.ifError(err);
+        assert.ok(await until(() => log.completed.length === 1), JSON.stringify(log));
+        assert.deepStrictEqual([log.passes, log.ended, log.completed[0][0], log.completed[0][1]], [1, [[1, 'unavailable']], 2, 'store down'], JSON.stringify(log));
+      } finally { done(api); }
+    });
     it(`${label}: a task cancelled between two passes runs no next pass and opens no call`, async () => {
       const api = getApi();
       try {
@@ -508,10 +520,15 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
         assert.ok(await until(() => log.ended.length === 1), JSON.stringify(log));
         await new Promise((r) => setTimeout(r, 400));
         assert.deepStrictEqual([log.passes, log.started, log.ended], [1, [1], [[1, 'unavailable']]], JSON.stringify(log));
+        assert.ok(log.settled >= 1, `its question settled: ${JSON.stringify(log)}`);
       } finally { done(api); }
     });
   };
 
+  // The BullMQ runner (the Redis store), against run-local's private Redis:
+  // its asking pass completes the job, and BullMQ's completed event must not
+  // forget the job's session, which the answered run needs (the review of
+  // #374, M1: it ran with no session, so with none of the session's limits).
   describe('the BullMQ job runner', () => {
     const options = require('../../lib/cli-options');
     const jobSessions = require('../../lib/job-sessions');
