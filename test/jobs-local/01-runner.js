@@ -238,6 +238,8 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
 // The review of B5 (/code-review medium on 9795453).
 describe('jobs-local 01: the review of B5', function() {
   this.timeout(20000);
+  // (the job history's key is this server's: B-j1)
+  require('../helpers/server-id').useServerId();
   const options = require('../../lib/cli-options');
   let workerThread;
   before(() => { workerThread = options.workerThread; options.workerThread = true; });

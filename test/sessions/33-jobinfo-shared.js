@@ -9,6 +9,8 @@ const assert = require('assert');
 require('../../lib/logger').createLogger();
 
 describe('sessions 33: a task\'s history record where nothing reads it (F1-5)', () => {
+  // (the history's key is this server's: B-j1)
+  require('../helpers/server-id').useServerId();
   const common = require('../../lib/job-control-common');
   const redisAPI = require('../../lib/redis-api');
   const options = require('../../lib/cli-options');
@@ -34,28 +36,23 @@ describe('sessions 33: a task\'s history record where nothing reads it (F1-5)', 
     assert.deepStrictEqual(pushed, []);
   });
 
-  it('where HTTP is served, the record is written as before', () => {
+  it('where HTTP is served, the record is written as before, in this server\'s own list: jobinfo:{chj-<server id>}:<name> (B-j1)', () => {
     options.singleIdentity = false;
     common.saveJobInfo(job(), 'completed');
-    assert.strictEqual(pushed.length, 1);
-    // (this server's own list once it has a server id: B-j1; a bare process keeps the plain key)
-    const serverId = require('../../lib/server-id');
-    assert.strictEqual(pushed[0][0], serverId.ready() ? `jobinfo:{chj-${serverId.get()}}:report` : 'jobinfo:report');
+    assert.deepStrictEqual(pushed.map((p) => p[0]), [`jobinfo:{chj-${require('../../lib/server-id').get()}}:report`]);
   });
 
-  it('with a server id, the record is in this server\'s own list: jobinfo:{chj-<server id>}:<name> (B-j1)', function() {
-    const serverId = require('../../lib/server-id');
-    if (serverId.ready()) this.skip();   // (an earlier file's id is never swapped)
-    const tmp = require('../helpers/test-tmp');
-    const dir = tmp.mkdtemp('ch-s33-server-id-');
-    try {
-      serverId.initSync({moduleDataPath: dir});
-      options.singleIdentity = false;
-      common.saveJobInfo(job(), 'completed');
-      assert.deepStrictEqual(pushed.map((p) => p[0]), [`jobinfo:{chj-${serverId.get()}}:report`]);
-    } finally {
-      serverId.reset();
-      tmp.remove(dir);
-    }
+  it('with no server id there is no key: the record is refused, never written under the unscoped one of before (B-j1)', () => {
+    // (a process of its own: this one's id is never taken away under it)
+    const path = require('path');
+    const lib = (m) => JSON.stringify(path.join(__dirname, '..', '..', 'lib', m));
+    const r = require('child_process').spawnSync(process.execPath, ['-e', `
+      require(${lib('logger')}).createLogger();
+      const pushed = [];
+      require(${lib('redis-api')}).client = {lpush: (k) => pushed.push(k), ltrim: () => {}};
+      let refused = null;
+      try { require(${lib('job-control-common')}).saveJobInfo({id: '1', name: 'report', data: {}, opts: {}, progress: 0}, 'completed'); } catch (e) { refused = e.message; }
+      process.stdout.write(JSON.stringify({refused, pushed}));`], {encoding: 'utf8', timeout: 20000});
+    assert.deepStrictEqual(JSON.parse(r.stdout), {refused: 'server-id: not initialized', pushed: []}, r.stderr);
   });
 });

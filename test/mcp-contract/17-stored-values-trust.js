@@ -26,6 +26,8 @@ const until = async (fn, ms = 10000) => {
 
 describe('mcp-contract 17: stored values, in-process (M6)', function() {
   this.timeout(30000);
+  // (the BullMQ runner's queue and the job history are this server's: B-j1)
+  require('../helpers/server-id').useServerId();
   const options = require('../../lib/cli-options');
   let dir;
   let saved;
