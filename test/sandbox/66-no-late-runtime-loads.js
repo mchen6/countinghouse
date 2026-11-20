@@ -240,10 +240,46 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       await new Promise((resolve) => setTimeout(resolve, 30));
       const r4 = CHUtil.request({url, method: 'POST'});
       r4.on('error', () => {});
-      return {ran, viaCallback, piped, onceCalls, prependOnceCalls, after, viaForm, abortErr, aborted, uri: r4.uri && r4.uri.href, method: r4.method};
+      // (the medium on the high round) a module may wrap its own request's
+      // methods, in strict code too
+      const r5 = CHUtil.request(url);
+      let assigned = true;
+      try { (function() { 'use strict'; const emit = r5.emit; r5.emit = function(...a) { return emit.apply(this, a); }; })(); } catch (e) { assigned = String(e.message); }
+      r5.on('error', () => {});
+      // abort() in the tick a late listener is added: nothing
+      const r6 = CHUtil.request(url);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      let lateThenAbort = 0;
+      r6.on('error', () => { lateThenAbort++; });
+      r6.abort();
+      // an 'error' listener added inside a 'newListener' handler gets it
+      const r7 = CHUtil.request(url);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const nested = await new Promise((resolve) => {
+        r7.on('newListener', (ev) => { if (ev === 'response') r7.on('error', (e) => resolve(e.code)); });
+        r7.on('response', () => {});
+      });
+      // a replaced EventEmitter.prototype.removeListener never runs in the delivery
+      let removeRan = 0;
+      const rl0 = EE.prototype.removeListener;
+      EE.prototype.removeListener = function(...a) { removeRan++; return rl0.apply(this, a); };
+      const r8 = CHUtil.request(url);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      await new Promise((resolve) => r8.once('error', () => resolve()));
+      EE.prototype.removeListener = rl0;
+      // _aborted, and write after abort, as postman-request's
+      const afterAbort = {aborted: r3._aborted, write: r3.write('x')};
+      // a URL as the uri: its parts
+      const r9 = CHUtil.request({uri: new URL('http://not-granted.example.invalid/p?q=1')});
+      r9.on('error', () => {});
+      const uriParts = r9.uri == null ? null : {host: r9.uri.host, path: r9.uri.path, protocol: r9.uri.protocol};
+      return {ran, viaCallback, piped, onceCalls, prependOnceCalls, after, viaForm, abortErr, aborted, uri: r4.uri && r4.uri.href, method: r4.method,
+        assigned, lateThenAbort, nested, removeRan, afterAbort, uriParts};
     `);
     assert.deepStrictEqual(out, {ran: 0, viaCallback: 'ERR_ACCESS_DENIED', piped: 'dest', onceCalls: 1, prependOnceCalls: 1, after: 0, viaForm: 'ERR_ACCESS_DENIED',
-      abortErr: 0, aborted: 1, uri: 'http://not-granted.example.invalid/x', method: 'POST'}, JSON.stringify(out));
+      abortErr: 0, aborted: 1, uri: 'http://not-granted.example.invalid/x', method: 'POST',
+      assigned: true, lateThenAbort: 0, nested: 'ERR_ACCESS_DENIED', removeRan: 0, afterAbort: {aborted: true},
+      uriParts: {host: 'not-granted.example.invalid', path: '/p?q=1', protocol: 'http:'}}, JSON.stringify(out));
   }));
 
   // the stand-in's method list can't drift from postman-request's Request
@@ -256,6 +292,7 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
     require('caseless').httpify(holder, headers);
     for (const k of Object.keys(holder)) if (typeof(holder[k]) === 'function') expected.push(k);
     assert.deepStrictEqual([...new Set(REQUEST_METHODS)].sort(), [...new Set(expected)].sort());
+    assert.ok(Object.isFrozen(REQUEST_METHODS), 'the exported list is frozen');
   });
 
   // the runtime's loads of module files (the dispatcher's, CHUtil.loadFile's)
