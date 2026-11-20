@@ -335,8 +335,12 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       r16.on('error', () => {});
       const r17 = CHUtil.request('http:\\\\not-granted.example.invalid:8080/x');
       r17.on('error', () => {});
+      // (the medium on its last commits) a :81 after a backslash is the
+      // path's, not a port
+      const r18 = CHUtil.request('http://not-granted.example.invalid\\\\x:81/y');
+      r18.on('error', () => {});
       const parse = {port: r14.uri.port, host: r14.uri.host, query: r14.uri.query, hash: r14.uri.hash, slashes: r14.uri.slashes, v6: r15.uri.hostname,
-        tabbed: r16.uri && r16.uri.port, backslash: r17.uri && r17.uri.port};
+        tabbed: r16.uri && r16.uri.port, backslash: r17.uri && r17.uri.port, pathColon: r18.uri && r18.uri.port};
       // a uri whose href getter throws: refused, never a throw
       let hrefThrows;
       try {
@@ -351,7 +355,7 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       uriParts: {host: 'not-granted.example.invalid', path: '/p?q=1', protocol: 'http:'}, urlToStringRan: 1, urlObjectUri: null,
       afterRemoved: 'ERR_ACCESS_DENIED', plain: {said: 'to http://not-granted.example.invalid/u', has: true, frozen: false, json: 'function'}, capture: true,
       hrefThrows: 'ERR_ACCESS_DENIED', jsonShape: {uri: 'http://not-granted.example.invalid/u', method: 'GET', k: 'v'},
-      parse: {port: '80', host: 'not-granted.example.invalid:80', query: 'q=1', hash: '#f', slashes: true, v6: '::1', tabbed: '8081', backslash: '8080'}}, JSON.stringify(out));
+      parse: {port: '80', host: 'not-granted.example.invalid:80', query: 'q=1', hash: '#f', slashes: true, v6: '::1', tabbed: '8081', backslash: '8080', pathColon: null}}, JSON.stringify(out));
   }));
 
   // the reviewer on #474: audit previews enforce, so what it reports is what
@@ -369,11 +373,32 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       await new Promise((resolve) => CHUtil.request({uri}, () => resolve()));
       // what postman-request would use as the target (it reads an object's href)
       const target = typeof(sent.uri) === 'string' ? sent.uri : sent.uri.href;
-      return {target, reads, reports};
+      // (the medium on its last commits) a getter that throws on its first
+      // read: read once, reported invalid, nothing sent; never read again
+      let reads2 = 0;
+      const throwing = {get href() { reads2++; if (reads2 === 1) throw new Error('first'); return reads2 === 2 ? 'http://late-load.example.invalid/x' : 'http://elsewhere.example.invalid/x'; }};
+      await new Promise((resolve) => CHUtil.request({uri: throwing}, () => resolve()));
+      const afterThrow = {uri: sent.uri === undefined ? 'none' : sent.uri, reads: reads2};
+      // what enforce would send, normalised
+      await new Promise((resolve) => CHUtil.request({uri: {href: 'HTTP://LATE-LOAD.example.invalid/x'}}, () => resolve()));
+      const normalised = sent.uri;
+      // url's getter is never read when uri is given
+      let urlReads = 0;
+      await new Promise((resolve) => CHUtil.request({uri: 'http://late-load.example.invalid/y', url: {get href() { urlReads++; return 'http://elsewhere.example.invalid/'; }}}, () => resolve()));
+      const withUrl = {uri: sent.uri, url: sent.url === undefined ? 'none' : 'kept', urlReads};
+      // a plain string target is sent normalised too
+      await new Promise((resolve) => CHUtil.request('HTTP://late-load.example.invalid/z', () => resolve()));
+      const stringSent = sent;
+      return {target, reads, reports, afterThrow, normalised, withUrl, stringSent};
     `);
     assert.strictEqual(out.target, 'http://late-load.example.invalid/x', JSON.stringify(out));
     assert.strictEqual(out.reads, 1, JSON.stringify(out));
     assert.ok(!out.reports.some((r) => /elsewhere/.test(r)), JSON.stringify(out.reports));
+    assert.deepStrictEqual(out.afterThrow, {uri: 'none', reads: 1}, JSON.stringify(out));
+    assert.ok(out.reports.includes('net invalid'), JSON.stringify(out.reports));
+    assert.strictEqual(out.normalised, 'http://late-load.example.invalid/x');
+    assert.deepStrictEqual(out.withUrl, {uri: 'http://late-load.example.invalid/y', url: 'none', urlReads: 0}, JSON.stringify(out));
+    assert.strictEqual(out.stringSent, 'http://late-load.example.invalid/z');
   });
 
   // the stand-in's method list can't drift from postman-request's Request
