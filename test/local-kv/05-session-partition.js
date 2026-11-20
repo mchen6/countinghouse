@@ -102,11 +102,11 @@ describe('local-kv 05: a per-session module\'s partitions (R1)', () => {
       if (process.platform !== 'win32') assert.strictEqual(fs.statSync(a.data).mode & 0o777, 0o700);
       for (const k of [`${ns.sessionPrefixFor('mod', A)}k`, `${ns.sessionPrefixFor('mod', B)}k`, 'm:mod:k', `${ns.sessionPrefixFor('mod2', A)}k`]) await setKv(kv, k);
       const r = await partition.remove(data, kv, 'mod', A);
-      assert.deepStrictEqual(r, {keys: 1, dirs: true});
+      assert.deepStrictEqual(r, {keys: 1, dirs: true, kept: []});
       assert.ok(!fs.existsSync(path.join(data, 'mod', 'sessions', A)));
       assert.ok(fs.existsSync(path.join(b.data, 'x')), 'the other session\'s files stay');
       assert.deepStrictEqual(kv.keysWithPrefix('').sort(), ['m:mod:k', `${ns.sessionPrefixFor('mod', B)}k`, `${ns.sessionPrefixFor('mod2', A)}k`].sort());
-      assert.deepStrictEqual(await partition.remove(data, kv, 'mod', A), {keys: 0, dirs: false}, 'idempotent');
+      assert.deepStrictEqual(await partition.remove(data, kv, 'mod', A), {keys: 0, dirs: false, kept: []}, 'idempotent');
       await partition.remove(data, kv, 'mod', B);
       // an empty sessions/ stays: a new session's ensure may be making its
       // partition under it at any time (the start's sweep runs after listen)
@@ -202,6 +202,58 @@ describe('local-kv 05: a per-session module\'s partitions (R1)', () => {
       assert.ok(fs.existsSync(path.join(data, 'modz', 'sessions', C)), 'the failed one is left as it was');
     });
 
+    // A-overlap-rm: a partition's files are removed only when the runtime
+    // made them (its root's ownership marker); never by removing the root
+    // recursively. One from before markers is adopted at the start's sweep
+    // only where no module the runtime knows overlaps it.
+    const writeB = (at) => {
+      fs.mkdirSync(at, {recursive: true});
+      fs.writeFileSync(path.join(at, 'package.json'), '{"name": "b"}');
+      fs.writeFileSync(path.join(at, 'index.js'), 'module.exports = 1;');
+    };
+    it('a partition the runtime did not make, holding another module\'s code: its keys go, its files are kept and said once', async () => {
+      const d = moduleData.sessionDirsFor(data, 'mod', A);
+      fs.mkdirSync(d.tmp, {recursive: true});
+      writeB(path.join(d.data, 'b'));
+      await setKv(kv, `${ns.sessionPrefixFor('mod', A)}k`);
+      const said = [];
+      const r = await partition.remove(data, kv, 'mod', A, {say: (t) => said.push(t)});
+      // (data and tmp alike: neither was made by the runtime)
+      assert.deepStrictEqual([r.keys, r.dirs, r.kept], [1, true, [d.data, d.tmp]]);
+      assert.ok(fs.existsSync(path.join(d.data, 'b', 'index.js')), 'another module\'s code survives');
+      assert.strictEqual(said.length, 2, JSON.stringify(said));
+      // said once: a second removal says nothing new
+      await partition.remove(data, kv, 'mod', A, {say: (t) => said.push(t)});
+      assert.strictEqual(said.length, 2);
+    });
+
+    // the reviewer's high on #467, 4: a session's end adopts as the sweep does
+    it('a session\'s end (remove with adopt) removes a pre-marker partition of a restored session', async () => {
+      const d = moduleData.sessionDirsFor(data, 'mod', A);
+      fs.mkdirSync(d.data, {recursive: true});
+      fs.mkdirSync(d.tmp, {recursive: true});
+      fs.writeFileSync(path.join(d.data, 'x'), '1');
+      const r = await partition.remove(data, kv, 'mod', A, {adopt: true, code: {roots: []}});
+      assert.deepStrictEqual(r.kept, []);
+      assert.ok(!fs.existsSync(d.root));
+    });
+
+    it('the start\'s sweep adopts a partition from before markers (removed); one holding a module the runtime knows is kept, not counted removed', async () => {
+      // (from before markers: made by hand, no marker)
+      for (const id of [A, B]) {
+        const d = moduleData.sessionDirsFor(data, 'mod', id);
+        fs.mkdirSync(d.data, {recursive: true});
+        fs.mkdirSync(d.tmp, {recursive: true});
+      }
+      const known = moduleData.sessionDirsFor(data, 'mod', B).data;
+      writeB(path.join(known, 'b'));
+      const swept = await partition.sweep(data, kv, new Set(), {code: {roots: [path.join(known, 'b')]}});
+      assert.deepStrictEqual(sorted(swept.removed), ['mod/a']);
+      assert.deepStrictEqual(sorted(swept.kept), ['mod/b']);
+      assert.ok(!fs.existsSync(moduleData.sessionDirsFor(data, 'mod', A).root), 'adopted and removed');
+      assert.ok(fs.existsSync(path.join(known, 'b', 'index.js')), 'the known module\'s code survives');
+    });
+
     it('a name no directory can have is refused before any key is touched', async () => {
       await setKv(kv, `${ns.sessionPrefixFor('../x', A)}k`);
       await assert.rejects(partition.remove(data, kv, '../x', A));
@@ -265,7 +317,7 @@ describe('local-kv 05: a per-session module\'s partitions (R1)', () => {
       const data = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-kv-part-r-'));
       try {
         assert.deepStrictEqual(sorted((await partition.list(data, r)).partitions), ['mod/a', 'mod/b']);
-        assert.deepStrictEqual(await partition.remove(data, r, 'mod', A), {keys: 9, dirs: false});
+        assert.deepStrictEqual(await partition.remove(data, r, 'mod', A), {keys: 9, dirs: false, kept: []});
         assert.deepStrictEqual(r.keys(), ['jobinfo:1', 'm:mod:k', `${ns.sessionPrefixFor('mod', B)}k`]);
         // a glob character in a name is escaped in MATCH: a* never reaches axb
         const g = fakeRedis([`${ns.sessionPrefixFor('a*', A)}k`, `${ns.sessionPrefixFor('axb', A)}k`]);

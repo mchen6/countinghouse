@@ -108,7 +108,7 @@ What a module sees, in every mode, under `--workerThread`:
 |---|---|---|
 | `/app` | the module's install directory | read-only under `enforce` (`EROFS`); writes allowed and logged under `audit`, allowed under `off` |
 | `/data` | `<moduleDataPath>/<name>/data` | read-write, quota, kept across restarts |
-| `/tmp` | `<moduleDataPath>/<name>/tmp` | read-write, quota, emptied when the worker starts |
+| `/tmp` | `<moduleDataPath>/<name>/tmp` | read-write, quota, emptied when the worker starts (only one the runtime made: amended 2026-11-20) |
 | each declared path, e.g. `/var/log/app` | the same host path | `r` or `rw` as narrowed by the policy; no quota |
 
 - **`--moduleDataPath`** (new), default `$HOME/.countinghouse/module_data`
@@ -462,7 +462,9 @@ paths:
   Countinghouse APIs that take a path from module code (`CHUtil.loadFile`)
   translate at their boundary. No checks, quota or link rules.
 - The data directories are created and `/tmp` emptied at every module load
-  *(amended 2026-11-04)*.
+  *(amended 2026-11-04)*; only a `/tmp` the runtime made, or one from before
+  ownership marks that no module it knows overlaps *(amended 2026-11-20,
+  A-overlap-rm: security-model.md, "Only what the runtime made is deleted")*.
 - **Documented differences from worker mode:** `process.cwd()` stays real;
   stack frames, `module.filename`, `require.cache` keys and `require.resolve`
   stay host; paths given to non-`fs` APIs are not translated; a module can
