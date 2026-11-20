@@ -540,6 +540,35 @@ describe('mcp-contract 26: module resources (M7)', function() {
     assert.strictEqual(resp.result && resp.result._meta && resp.result._meta['countinghouse/code'], 'MODULE_NOT_LISTED', JSON.stringify(resp));
     assert.deepStrictEqual([spent, invoked], [[], []]);
   });
+  // #458's acceptance: a continuation that throws answers an internal error,
+  // so the call's in-flight registration is released, never left for a
+  // later cancel under a reused id to hit -- a built-in's, and a module run's
+  for (const [label, name, key, breakIt] of [
+    ['a built-in (countinghouse_check_balance)', 'countinghouse_check_balance', KEY_A, (c) => { c.checkBalance = () => { throw new Error('boom'); }; }],
+    ['a module run', 'notes_svc_save', KEY_A, (c) => { c.invokeDeviceAction = () => { throw new Error('boom'); }; }]
+  ]) {
+    it(`${label} that throws in a continuation answers an internal error and leaves no in-flight entry`, async () => {
+      require('../../lib/mcp/tool-registry').forgetGrants();
+      const broken = Object.assign({}, ci);
+      breakIt(broken);
+      let registered = null;
+      const opts = {cancellable: (fn) => { registered = fn; return () => { registered = null; }; }};
+      const LOG = require('../../lib/logger');
+      const logged = [];
+      const realE = LOG.E;
+      LOG.E = (e) => { logged.push(String(e && e.message)); };
+      try {
+        const r = await new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name, arguments: {}}}, broken, key,
+          (err, resp) => resolve(resp), opts));
+        assert.deepStrictEqual(r.error, {code: -32603, message: 'internal error'}, JSON.stringify(r));
+      } finally {
+        LOG.E = realE;
+      }
+      assert.strictEqual(registered, null, 'its in-flight registration released');
+      assert.ok(logged.includes('boom'), JSON.stringify(logged));
+    });
+  }
+
   it('a reserved name and a name never registered answer a cancel during the gate\'s read alike', async () => {
     const reserved = await during('countinghouse_check_balance', KEY_A, {}, {nth: 1});
     const never = await during('no_such_tool_anywhere', KEY_A, {}, {nth: 1});
