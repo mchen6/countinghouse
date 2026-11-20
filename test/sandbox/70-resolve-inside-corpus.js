@@ -203,6 +203,16 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
       write(path.join(dir, 'index.js'), '');
       cases.push({id: 'raw strimp #s', spec: '#s', parent: path.join(dir, 'index.js')});
     }
+    // (a parent in a directory whose name only ends in node_modules: Node's
+    // scope walk goes past it, to the root's package.json and its
+    // "imports"; the high review of #465, round 3, item 4)
+    {
+      const dir = path.join(root, 'xscope');
+      write(path.join(dir, 'package.json'), JSON.stringify({name: 'xscope', imports: {'#xs': './xs.js'}}));
+      write(path.join(dir, 'xs.js'), '');
+      write(path.join(dir, 'x_node_modules', 'a.js'), '');
+      cases.push({id: 'x_node_modules #xs', spec: '#xs', parent: path.join(dir, 'x_node_modules', 'a.js')});
+    }
     // (a scope with an empty, '.' or '..' name part)
     for (const spec of ['@sc/..', '@sc/.', '@sc/']) cases.push({id: `scope part ${spec}`, spec, parent, stricter: true});
   });
@@ -265,6 +275,19 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
     const i = LEGACY.findIndex((l) => l[2] === true);
     assert.ok(i >= 0);
     assert.strictEqual(r.resolve(`lm${i}`, path.join(root, 'index.js'), () => true).refuse, true);
+  });
+
+  // (createResolver runs at first use, after module code could replace
+  // Object.freeze: the one it calls is the one taken at load, and what it
+  // returns is frozen; the high review of #465, round 3, item 2)
+  it('a resolver built after Object.freeze is replaced never calls it, and is frozen', () => {
+    const realFreeze = Object.freeze;
+    let called = 0;
+    Object.freeze = function(o) { called++; return o; };
+    let r;
+    try { r = createResolver({root, insideRoot: () => true, stat: () => -2, readText: () => null, isBuiltin: Module.isBuiltin}); } finally { Object.freeze = realFreeze; }
+    assert.strictEqual(called, 0);
+    assert.strictEqual(Object.isFrozen(r), true);
   });
 
   // (a package.json read that fails -- the stat said a file -- is none for

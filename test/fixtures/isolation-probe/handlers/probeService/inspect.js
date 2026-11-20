@@ -205,6 +205,24 @@ const STEPS = {
       try { own = String(M.findPackageJSON('isolation-probe/self-check', __filename)); } catch (e) { own = String(e.code); }
       out.push(/\/app\/package\.json$|\\app\\package\.json$/.test(own) ? 'same' : `selfFind(${own})`);
     } else out.push('same');
+    // (the high review of #465, round 3, item 1: a package.json read for a
+    // resolution runs nothing of module code's -- Buffer.prototype.toString,
+    // Buffer.from and Object.assign replaced here are never called while a
+    // '#' name resolves from a scope no resolution has read yet)
+    {
+      let calls = 0;
+      const realToString = Buffer.prototype.toString;
+      const realFrom = Buffer.from;
+      const realAssign = Object.assign;
+      Buffer.prototype.toString = function(...a) { calls++; return realToString.apply(this, a); };
+      Buffer.from = function(...a) { calls++; return realFrom.apply(this, a); };
+      Object.assign = function(...a) { calls++; return realAssign.apply(this, a); };
+      let got;
+      try {
+        try { got = path.basename(String(M._resolveFilename('#f', {filename: '/app/lib/fresh2/x.js', paths: []}))); } catch (e) { got = String(e.code); }
+      } finally { Buffer.prototype.toString = realToString; Buffer.from = realFrom; Object.assign = realAssign; }
+      out.push(calls === 0 && got === 'f.js' ? 'same' : `moduleCodeInRead(${calls} ${got})`);
+    }
     // (#465's Fable pass, F2 and F3: a require whose parent is the root
     // itself -- createRequire('/app') -- is refused before Node, as a missing
     // name is, while createRequire('/app/'), a directory, still requires
