@@ -52,6 +52,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
   // it; the review of #440's second round)
   const spaced = path.join(ROOT, 'node_modules', '.ch-sb-68 probe');
   let probe;
+  let plainControl = null;
   before(async () => {
     noStore = !(await redisAnswers());
     fs.rmSync(spaced, {recursive: true, force: true});
@@ -61,6 +62,97 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     // refused at load under enforce, sandbox 03; here, what Node's own walk
     // does now that it is judged.)
     fs.writeFileSync(path.join(probe, 'lib', 'stat-count.js'), 'module.exports = "counted";\n');
+    // (C-bare: a package above the root, one of the module's own, a file of
+    // its own a bare subpath could climb back to, and '#' mappings to bare
+    // targets that climb)
+    fs.mkdirSync(path.join(spaced, 'node_modules', 'sibpkg'), {recursive: true});
+    fs.writeFileSync(path.join(spaced, 'node_modules', 'sibpkg', 'package.json'), JSON.stringify({name: 'sibpkg'}));
+    fs.writeFileSync(path.join(spaced, 'node_modules', 'sibpkg', 'index.js'), 'module.exports = 1;\n');
+    fs.mkdirSync(path.join(probe, 'node_modules', 'dep'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep', 'package.json'), JSON.stringify({name: 'dep'}));
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep', 'index.js'), 'module.exports = "dep";\n');
+    // (a package named with a '?', where the platform allows one)
+    if (process.platform !== 'win32') {
+      fs.mkdirSync(path.join(probe, 'node_modules', 'q?x'), {recursive: true});
+      fs.writeFileSync(path.join(probe, 'node_modules', 'q?x', 'package.json'), JSON.stringify({name: 'q?x'}));
+      fs.writeFileSync(path.join(probe, 'node_modules', 'q?x', 'index.js'), 'module.exports = 1;\n');
+      fs.mkdirSync(path.join(probe, 'node_modules', 't\tx'), {recursive: true});
+      // (found by its directory's name; its "name" plain, as a tab written
+      // into JSON is an escape, refused at load under enforce: K2)
+      fs.writeFileSync(path.join(probe, 'node_modules', 't\tx', 'package.json'), JSON.stringify({name: 'tab-dir-pkg'}));
+      fs.writeFileSync(path.join(probe, 'node_modules', 't\tx', 'index.js'), 'module.exports = 1;\n');
+    }
+    // (C-bare R0: an "exports" target climbing out by '%2e' to the file
+    // beside the root; a package.json above the root a self-reference from
+    // deep in the tree would find were the root's own not there first)
+    if (process.platform !== 'win32') {
+      fs.mkdirSync(path.join(spaced, 'node_modules', 'co_lon:pkg'), {recursive: true});
+      fs.writeFileSync(path.join(spaced, 'node_modules', 'co_lon:pkg', 'package.json'), JSON.stringify({name: 'co_lon:pkg'}));
+      fs.writeFileSync(path.join(spaced, 'node_modules', 'co_lon:pkg', 'index.js'), 'module.exports = "above";\n');
+      for (const at of [path.join(probe, 'node_modules', 'co_lon:dec'), path.join(probe, 'node_modules', 'node_modules', 'co_lon:dec')]) {
+        fs.mkdirSync(at, {recursive: true});
+        fs.writeFileSync(path.join(at, 'package.json'), JSON.stringify({name: 'co_lon:dec', exports: {'.': './index.js'}}));
+        fs.writeFileSync(path.join(at, 'index.js'), 'module.exports = "dec";\n');
+      }
+    }
+    // (a '#' name required from a scope with no "imports": Node's
+    // CommonJS lookup falls through to node_modules, where this is)
+    fs.mkdirSync(path.join(probe, 'node_modules', '#hashpkg'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'node_modules', '#hashpkg', 'index.js'), 'module.exports = "hash";\n');
+    fs.mkdirSync(path.join(probe, 'lib', 'selfscope'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'lib', 'selfscope', 'req.js'), 'module.exports = (s) => { try { return require(s); } catch (e) { return String(e.code); } };\n');
+    // (a scope no resolution has read yet: the high review of #465,
+    // round 3, item 1)
+    fs.mkdirSync(path.join(probe, 'lib', 'fresh2'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'lib', 'fresh2', 'package.json'), JSON.stringify({name: 'fresh2', imports: {'#f': './f.js'}}));
+    fs.writeFileSync(path.join(probe, 'lib', 'fresh2', 'f.js'), 'module.exports = "f";\n');
+    fs.mkdirSync(path.join(probe, 'node_modules', 'dep6'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep6', 'package.json'), JSON.stringify({name: 'dep6', exports: {'./*': './.%2*/.%2*/.%2*/isolation-probe.js'}}));
+    fs.writeFileSync(path.join(spaced, 'package.json'), JSON.stringify({name: 'outer-self', exports: './isolation-probe.js'}));
+    fs.mkdirSync(path.join(probe, 'lib', 'deep', 'a', 'b', 'c'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'lib', 'deep', 'a', 'b', 'c', 'self.js'),
+      'module.exports = (spec) => { try { return require(spec); } catch (e) { return `${e.code}|${e.message}`; } };\n');
+    fs.mkdirSync(path.join(probe, 'node_modules', 'dep5'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep5', 'package.json'), JSON.stringify({name: 'dep5', exports: {'.': './index.js'}}));
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep5', 'index.js'), 'module.exports = 5;\n');
+    fs.mkdirSync(path.join(probe, 'node_modules', 'dep4'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep4', 'package.json'), JSON.stringify({name: 'dep4', exports: {'./*': './*'}}));
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep4', 'index.js'), 'module.exports = 4;\n');
+    fs.mkdirSync(path.join(probe, 'node_modules', 'dep', 'esm'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep', 'esm', 'package.json'), JSON.stringify({type: 'module'}));
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep', 'esm', 'x.mjs'), 'export default 1;\n');
+    fs.writeFileSync(path.join(probe, 'lib', 'bare-target.mjs'), 'export default "own";\n');
+    // (a file module in node_modules, as CommonJS finds one)
+    fs.writeFileSync(path.join(probe, 'node_modules', 'filedep.js'), 'module.exports = "file";\n');
+    const probePkg = JSON.parse(fs.readFileSync(path.join(probe, 'package.json'), 'utf8'));
+    probePkg.exports = {'./self-check': './lib/stat-count.js', './link-self': './lib/link-self.js', './link-none': './lib/link-none.js',
+      './link-self2': './lib/link-self2.js', './link-none2': './lib/link-none2.js'};
+    // (the high review of #465, 5: a '#' mapping by conditions, answered
+    // alike by a direct call, which takes Node's own CommonJS conditions,
+    // and by the require hook)
+    for (const f of ['cond-ms.js', 'cond-req.js', 'cond-def.js']) fs.writeFileSync(path.join(probe, 'lib', f), `module.exports = ${JSON.stringify(f)};\n`);
+    probePkg.imports = Object.assign({}, probePkg.imports, {'#cond': {'module-sync': './lib/cond-ms.js', require: './lib/cond-req.js', default: './lib/cond-def.js'},'#sibclimb': 'sibpkg/../../isolation-probe/lib/bare-target.mjs',
+      '#nosibclimb': 'nosuchsib/../../isolation-probe/lib/bare-target.mjs',
+      '#builtin': {node: 'node:crypto', default: './lib/bare-target.mjs'}, '#bare': 'crypto', '#fallback': ['https://x.invalid/a.js', './lib/bare-target.mjs'],
+      '#emptyArr': {node: [], default: './lib/bare-target.mjs'}, '#badFirst': ['./lib/../lib/bare-target.mjs', './lib/bare-target.mjs'],
+      '#pat/*': './lib/pat/*', '#noext': './lib/bare-target', '#z': {node: ['https://x.invalid/a.js', {browser: './nope.mjs'}], default: './lib/bare-target.mjs'}});
+    fs.mkdirSync(path.join(probe, 'lib', 'pat'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'lib', 'pat', 'x.mjs'), 'export default "pat";\n');
+    fs.mkdirSync(path.join(probe, 'node_modules', 'dep3'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep3', 'package.json'), JSON.stringify({name: 'dep3', exports: false}));
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep3', 'index.js'), 'module.exports = 3;\n');
+    // (a decoy in node_modules/node_modules beside a real dep2)
+    fs.mkdirSync(path.join(probe, 'node_modules', 'dep2'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep2', 'package.json'), JSON.stringify({name: 'dep2', exports: {'.': './index.js'}}));
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep2', 'index.js'), 'module.exports = "real";\n');
+    fs.mkdirSync(path.join(probe, 'node_modules', 'node_modules', 'dep2'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'node_modules', 'node_modules', 'dep2', 'package.json'), JSON.stringify({name: 'dep2'}));
+    fs.writeFileSync(path.join(probe, 'node_modules', 'node_modules', 'dep2', 'index.js'), 'module.exports = "decoy";\n');
+    fs.mkdirSync(path.join(probe, 'lib', 'selfscope'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'lib', 'selfscope', 'package.json'), JSON.stringify({name: 'sibpkg', exports: null}));
+    fs.writeFileSync(path.join(probe, 'lib', 'selfscope', 'try.js'),
+      'module.exports = async (spec) => { try { await import(spec); return "found"; } catch (e) { return String(e.code); } };\n');
+    fs.writeFileSync(path.join(probe, 'package.json'), JSON.stringify(probePkg));
     // (a directory required once, for the warning Node gives for a "main"
     // that names nothing)
     fs.mkdirSync(path.join(probe, 'lib', 'main-warn'));
@@ -77,6 +169,20 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     const nestedOut = path.relative(path.join(probe, 'lib', 'main-in-nested'), path.join(ROOT, 'lib')).split(path.sep).join('/');
     fs.writeFileSync(path.join(probe, 'lib', 'main-in-nested', 'package.json'), JSON.stringify({main: './index.js', config: {main: nestedOut}}));
     fs.writeFileSync(path.join(probe, 'lib', 'main-in-nested', 'index.js'), 'module.exports = "nested";\n');
+    {
+      const {createRequire} = require('module');
+      const pj = path.join(probe, 'package.json');
+      const climb = createRequire(path.join(probe, 'index.js')).resolve('dep6/e');
+      fs.renameSync(pj, `${pj}.away`);
+      let above;
+      // (in a child of its own: Node keeps the package.json it read once)
+      try {
+        const r = require('child_process').spawnSync(process.execPath, ['-e', 'try { process.stdout.write(require("module").createRequire(process.argv[1]).resolve("outer-self")); } catch (e) { process.stdout.write(String(e.code)); }',
+          path.join(probe, 'lib', 'deep', 'a', 'b', 'c', 'self.js')], {encoding: 'utf8'});
+        above = r.stdout;
+      } finally { fs.renameSync(`${pj}.away`, pj); }
+      plainControl = [climb, above];
+    }
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sb-68-'));
     policy = path.join(home, 'policy.json');
     fs.writeFileSync(policy, JSON.stringify({modules: {'isolation-probe': {approve: 'as-declared'}}}));
@@ -141,9 +247,47 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'importOracle'});
         assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
       });
+      // (C-bare, Fable's pass on #452, F1 and F2)
+      it('a bare name\'s subpath, or a \'#\' mapping to one, never walks above the root: a sibling there and a missing one, one answer; nothing of module code\'s runs in Node\'s step; its own dependency loads', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'bareSubpath'});
+        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
+      });
+      // (C-bare R0, with the reviewer's pins)
+      it('a bare require is CommonJS\'s own judged lookup: an "exports" target climbing out by \'%2e\' reads as a missing name, a self-reference from deep finds the root\'s package.json and nothing above', async () => {
+        // (plain Node, the control, taken before any server: the climb finds
+        // the file beside the root; with the root's package.json away, the
+        // deep self-reference finds the one above it)
+        assert.deepStrictEqual(plainControl, [path.join(spaced, 'isolation-probe.js'), path.join(spaced, 'isolation-probe.js')]);
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'cjsJudged'});
+        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
+      });
+      // (each layer past the judged _stat, alone: removing any one fails
+      // this; POSIX, where a test makes a link without privileges)
+      (process.platform === 'win32' ? it.skip : it)('a link inside the root to a file outside, made after the load: _findPath\'s answer check, the direct call\'s, and the require hook\'s bound() each answer a missing name', async () => {
+        const beside = path.join(spaced, 'isolation-probe.js');
+        const links = [path.join(probe, 'node_modules', 'linkpkg', 'index.js'), path.join(probe, 'lib', 'link-self.js'), path.join(probe, 'lib', 'link-self2.js')];
+        try {
+          fs.mkdirSync(path.join(probe, 'node_modules', 'linkpkg'), {recursive: true});
+          for (const l of links) fs.symlinkSync(beside, l);
+          const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'linkLayers'});
+          assert.strictEqual(detail(r), 'same same same', JSON.stringify(r).slice(0, 1500));
+        } finally {
+          for (const l of links) fs.rmSync(l, {force: true});
+          fs.rmSync(path.join(probe, 'node_modules', 'linkpkg'), {recursive: true, force: true});
+        }
+      });
       it('whether a runtime package is installed is no answer, by the whole error: a forged parent inside it, findPackageJSON\'s base and climbing specifier, _findPath\'s array-like paths, a primitive parent', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'parentPackage'});
         assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
+      });
+    }
+    if (mode === 'audit') {
+      // (the red side of the enforce test above: the same step, nothing
+      // refused, finds the file the '%2e' climb names, beside the root --
+      // so that test tells the escape from its absence)
+      it('audit: the same "exports" climb by \'%2e\' finds the file beside the root', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'cjsJudged'});
+        assert.ok(/^requireClimb\(found \/ /.test(detail(r)), JSON.stringify(r).slice(0, 1500));
       });
     }
     it(`a require made for a runtime file by createRequire is module code's: ${mode === 'enforce' ? 'the reduced module' : 'its watched built-in reported'}`, async () => {

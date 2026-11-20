@@ -156,7 +156,12 @@ needs worker mode; without it the mode is `off`. countinghouse 8 needs Node
 22.16 or later. Below 24.15 a compatibility shim routes `require.resolve`
 through the sandbox's hooks (`lib/resolve-shim.js`); multi-tenant hosting of
 third-party modules should run 24.15 or later, where Node's own hook covers
-it.
+it. Below 24.15, a `#` name resolved under `enforce` by `require.resolve`
+or a direct `Module._resolveFilename` takes the CommonJS conditions Node's
+hooks brought with the worker's first `require` (Node's own, flags and
+all); only before any `require` has run in the worker does it take Node's
+default list (`require`, `node`, `node-addons`, `module-sync`). A plain
+`require` always resolves with its own.
 
 | | `off` | `audit` (default) | `enforce` |
 |---|---|---|---|
@@ -545,6 +550,33 @@ walk included: the two are installed through Node's own setters, the only
 way its walk calls them (before, they answered only a module's direct
 calls, and a package's `"main"` leading outside could tell module code
 whether a host file existed).
+
+Under `enforce` the sandbox resolves `#` imports, a bare `import` and
+`findPackageJSON` inside the module root itself, and reads each
+`package.json` with `JSON.parse`, while Node's own reader is a different
+parser. So that the two can't read a package differently, the load is
+refused (and under `audit` reported) when any `package.json` in the module
+has any of these:
+
+- bytes that aren't valid UTF-8 (a `'utf8'` read turns them into U+FFFD,
+  where Node's reader throws);
+- a top-level `"imports"`, `"exports"`, `"name"`, `"main"` or `"type"` key
+  written twice (`JSON.parse` keeps the last copy, Node's reader may keep
+  another) or written with an escape (`"\u0069mports"`, which Node's reader
+  doesn't take as `"imports"`);
+- a backslash escape in the string value of `"name"`, `"main"` or `"type"`,
+  which Node's reader decodes itself.
+
+Node hands `"exports"` and `"imports"` back as raw text, which `JSON.parse`
+reads as the sandbox does, so what is nested in them is read alike. Known
+and left open, as not reaching resolution: other places the two parsers
+may differ outside those fields, such as a number too large to hold, or
+nesting deep enough to exhaust one of them.
+
+After the seal, `module.findPackageJSON` takes a primitive string only.
+Any object, a `URL` included, answers `undefined`, because reading a
+`URL`'s `href` runs its `searchParams.toString`, which module code can
+replace, and Node takes an object by its own `toString`.
 
 countinghouse's code roots are its own entries and the package directory of
 each package in its dependency closure, found the way Node finds them, so an
