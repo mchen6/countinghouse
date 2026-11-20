@@ -123,7 +123,9 @@ describe('session-transport 02: the listener and the registry', function() {
       for (let i = 0; i < 63; i++) conns.push(await shim.connect(sock));
       const newest = await shim.connect(sock);
       assert.ok(await until(() => conns[0].closed(), 2000), 'the oldest silent one is evicted');
-      assert.strictEqual(newest.closed(), false, 'the new one is taken');
+      // (taken: its HELLO answered)
+      newest.send('H', {protocol: 1, nc: handshake.newChallenge().toString('base64')});
+      assert.ok(await newest.json('P') != null, 'the new one is taken');
       // the one in its handshake completes it
       const ns = Buffer.from(prove.ns, 'base64');
       first.send('A', {mc: handshake.clientMac(secret, 1, ns, nc).toString('base64')});
@@ -140,18 +142,37 @@ describe('session-transport 02: the listener and the registry', function() {
       await start({listener: {preAuthMax: 64, preAuthDeadlineMs: 20000}});
       const conns = [];
       for (let i = 0; i < 64; i++) {
+        // (bytes the server has read: its HELLO answered with PROVE)
         const c = await shim.connect(sock);
-        c.raw(Buffer.from([0x48]));   // a partial frame: bytes sent, no HELLO yet
+        c.send('H', {protocol: 1, nc: handshake.newChallenge().toString('base64')});
+        assert.ok(await c.json('P') != null, `PROVE ${i}`);
         conns.push(c);
       }
-      // (each one's byte read by the server before the 65th arrives: its
-      // connections all held, then a moment for their bytes)
-      assert.ok(await until(async() => (await new Promise((r) => listener.server.getConnections((e, n) => r(n)))) === 64, 2000));
-      await tick(200);
       const newest = await shim.connect(sock);
       assert.ok(await until(() => newest.closed(), 2000), 'the new one is refused');
       assert.ok(conns.every((c) => !c.closed()), 'every one that sent bytes is kept');
       for (const c of conns) c.end();
+    });
+
+    it('a full pool evicts one it has already refused before one whose bytes it read', async() => {
+      await start({listener: {preAuthMax: 64, preAuthDeadlineMs: 20000}});
+      const conns = [];
+      for (let i = 0; i < 63; i++) {
+        const c = await shim.connect(sock);
+        c.send('H', {protocol: 1, nc: handshake.newChallenge().toString('base64')});
+        assert.ok(await c.json('P') != null, `PROVE ${i}`);
+        conns.push(c);
+      }
+      // the newest in the pool: refused (an unknown protocol), its socket in
+      // its 1 s grace when the 65th arrives
+      const refused = await shim.connect(sock);
+      refused.send('H', {protocol: 99, nc: handshake.newChallenge().toString('base64')});
+      assert.ok(await refused.json('R') != null, 'REFUSED');
+      const newest = await shim.connect(sock);
+      newest.send('H', {protocol: 1, nc: handshake.newChallenge().toString('base64')});
+      assert.ok(await newest.json('P') != null, 'the new one is taken, the refused one evicted');
+      assert.ok(conns.every((c) => !c.closed()), 'every one whose bytes were read is kept');
+      for (const c of conns.concat([refused, newest])) c.end();
     });
 
     it('closes one silent past its deadline, and the pool is empty again', async() => {

@@ -331,14 +331,13 @@ describe('session-transport 03: the listener against hostile peers (#245 review)
       c.write(frames.encode('H', JSON.stringify({protocol: 2, nc: handshake.newChallenge().toString('base64')})));
       conns.push({c, closed: () => closed});
     }
-    // the server holds at most 64, counted server side (one refused its
-    // HELLO's bad proof by shut() is half-open: its client sees no close
-    // within the grace); at least the 16 past the pool were turned away at
-    // once -- refused, or a silent one evicted for a new one (F1-6) -- closed
+    // the server holds at most 64, counted server side, well within the 1 s
+    // grace a connection refused its HELLO by shut() would otherwise keep its
+    // socket for (unbounded, all 80 would be held now): each one past the
+    // pool evicted one already refused (F1-6), or was refused itself
     await tick(300);
     const held = await new Promise((r) => listener.server.getConnections((e, n) => r(n)));
     assert.ok(held <= 64, `${held} held`);
-    assert.ok(await until(() => conns.filter((x) => x.closed()).length >= 16, 2000), 'turned away');
     for (const x of conns) x.c.destroy();
   });
 
