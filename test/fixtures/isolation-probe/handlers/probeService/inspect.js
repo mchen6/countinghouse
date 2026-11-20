@@ -226,6 +226,22 @@ const STEPS = {
     // -- under an "exports" pattern, is refused, never carried by it into a
     // sibling package; a plain subpath under it loads)
     out.push((await tryImport('dep4/index.js')) === 'found' && (await tryImport('dep4/.\t./dep/index.js')) !== 'found' ? 'same' : 'exportsSubpath');
+    // (Reflect.apply replaced by module code: the in-root resolver calls
+    // its own, so no host path ever reaches it)
+    const realApply = Reflect.apply;
+    let hostSeen = false;
+    Reflect.apply = function(fn, self, args) {
+      for (const a of [self].concat(Array.from(args || []))) if (typeof(a) === 'string' && a.includes('ch-sb-68')) hostSeen = true;
+      return realApply(fn, self, args);
+    };
+    try { await tryImport('dep'); await tryImport('#fallback'); } finally { Reflect.apply = realApply; }
+    out.push(hostSeen ? 'reflectApply' : 'same');
+    // (require.resolve with options.paths looks a bare name up from those,
+    // as a plugin loader does; a direct Module._resolveFilename from module
+    // code fails closed for any name, the virtual-paths compat gap)
+    let viaPaths;
+    try { viaPaths = require.resolve('dep5', {paths: ['/app/node_modules/dep']}); } catch (e) { viaPaths = `threw ${e.code}`; }
+    out.push(String(viaPaths).endsWith('/node_modules/dep5/index.js') ? 'same' : `paths(${viaPaths})`);
     // (and the module's own dependency still loads, by name and by subpath)
     out.push((await tryImport('dep')) === 'found' && (await tryImport('dep/index.js')) === 'found' && tryRequire('dep') === 'found' &&
       tryRequire('filedep') === 'found' ? 'same' : 'ownDep');

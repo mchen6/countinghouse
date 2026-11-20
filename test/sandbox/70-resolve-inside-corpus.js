@@ -52,7 +52,9 @@ const SYNTH_EXPORTS = [
 const SYNTH_IMPORTS = [
   {'#a': './a.js', '#b/*': './b/*.js', '#c': {node: './c-node.js', default: './c.js'}, '#d': 'crypto', '#e': 'node:crypto',
     '#f': ['https://x.invalid/a.js', './f.js'], '#g': null, '#h/*.js': './h/*.js', '#i': '../out.js', '#j': 'dep-inside/x',
-    '#k': {browser: './k.js'}, '#l': [], '#m/*': './m/.%2*/*'}
+    '#k': {browser: './k.js'}, '#l': [], '#m/*': './m/.%2*/*', '#n/*': ['./n/*', 'dep-inside/*']},
+  // (a '#/' name: Node 22 refuses one, 24 and later take it)
+  {'#/*': './lib/*.js'}
 ];
 // Packages with no "exports": a "main" and its fallbacks, on disk.
 const LEGACY = [
@@ -172,8 +174,9 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
         if (theirs.startsWith('THROW ') ? mine === 'REFUSE' : mine === theirs) return;
         // (the one direction allowed: the sandbox refusing what Node
         // answers outside the package, which it would then stat outside)
-        if (mine === 'REFUSE' && !theirs.startsWith('THROW ')) {
-          const pkgDir = path.join(root, 'node_modules', c.spec.split('/')[0]);
+        if (mine === 'REFUSE' && !theirs.startsWith('THROW ') && !c.spec.startsWith('#')) {
+          const scoped = c.spec.startsWith('@');
+          const pkgDir = path.join(root, 'node_modules', ...c.spec.split('/').slice(0, scoped ? 2 : 1));
           let outside = false;
           try { const p = url.fileURLToPath(theirs); outside = !(p === pkgDir || p.startsWith(`${pkgDir}${path.sep}`)); } catch (e) { outside = false; }
           if (c.stricter === true || outside) return;
