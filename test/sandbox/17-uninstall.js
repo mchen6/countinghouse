@@ -53,9 +53,29 @@ describe('sandbox 17: POST /uninstall-module', function() {
     assert.strictEqual(fs.existsSync(path.join(store(), 'fs-probe', 'data', 'x')), true);
     const gone = await uninstall({name: 'fs-probe'});
     assert.strictEqual(gone.status, 200, JSON.stringify(gone.body));
-    assert.deepStrictEqual({deleted: gone.body.dataDeleted, registry: gone.body.registryEntryRemoved}, {deleted: true, registry: false});
+    assert.deepStrictEqual({deleted: gone.body.dataDeleted, registry: gone.body.registryEntryRemoved, kept: gone.body.kept}, {deleted: true, registry: false, kept: []});
     assert.strictEqual(fs.existsSync(path.join(store(), 'fs-probe')), false);
     assert.strictEqual(fs.existsSync(path.join(PROBE, 'package.json')), true);
+  });
+
+  // A-overlap-rm: the uninstall removes only what the runtime made
+  // (lib/data-ownership.js). A data directory from before ownership marks,
+  // holding another module's code (one the runtime knows: it is loaded from
+  // there), is never adopted, so it survives, and the answer names it.
+  it('another module\'s code under a data directory the runtime did not make survives the uninstall, named in kept', async () => {
+    base = mkdtemp('uninstall-');
+    const data = path.join(store(), 'fs-probe', 'data');
+    const peer = path.join(data, 'peer');
+    fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'isolation-peer'), peer, {recursive: true});
+    server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleSandbox', 'audit',
+      '--moduleDataPath', store(), '--loadModule', PROBE, '--loadModule', peer]);
+    assert.strictEqual((await post(PORT, KEY, '/unload-module', {name: 'fs-probe'})).status, 200);
+    const r = await uninstall({name: 'fs-probe'});
+    assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+    assert.deepStrictEqual({deleted: r.body.dataDeleted, kept: r.body.kept}, {deleted: false, kept: [data]});
+    assert.ok(fs.existsSync(path.join(peer, 'package.json')), 'the other module\'s code survives');
+    assert.strictEqual(fs.existsSync(path.join(store(), 'fs-probe', 'tmp')), false, 'its tmp, which the runtime made, is removed');
+    assert.match(server.output, /fs-probe.*data was not made by this runtime \(no ownership mark for it\), so it is not removed/);
   });
 
   it('refuses a name that is not a package name, before building any path', async () => {
@@ -79,7 +99,8 @@ describe('sandbox 17: POST /uninstall-module', function() {
 
   it('a scoped name: deletes <store>/@scope/name and the empty scope directory (review M2)', async () => {
     server = await start();
-    fs.mkdirSync(path.join(store(), '@scope', 'probe', 'data'), {recursive: true});
+    // (made as the runtime makes a module's data, so its own: A-overlap-rm)
+    await require('../../lib/module-data').ensureDirs(store(), '@scope/probe');
     fs.writeFileSync(path.join(store(), '@scope', 'probe', 'data', 'x'), 'x');
     const r = await uninstall({name: '@scope/probe'});
     assert.strictEqual(r.status, 200, JSON.stringify(r.body));
@@ -135,7 +156,8 @@ describe('sandbox 17: POST /uninstall-module', function() {
       (e) => (e ? reject(e) : db.run("INSERT INTO module_info(name, version, path, deviceList) VALUES ('ghost-mod', '1.0.0', '/nonexistent', '[]')",
         (e2) => (e2 ? reject(e2) : resolve())))));
     await new Promise((resolve) => db.close(resolve));
-    fs.mkdirSync(path.join(store(), 'ghost-mod', 'data'), {recursive: true});
+    // (made as the runtime makes a module's data, so its own: A-overlap-rm)
+    await require('../../lib/module-data').ensureDirs(store(), 'ghost-mod');
     const first = await uninstall({name: 'ghost-mod'});
     assert.strictEqual(first.status, 200, JSON.stringify(first.body));
     assert.deepStrictEqual({removed: first.body.registryEntryRemoved, deleted: first.body.dataDeleted}, {removed: true, deleted: true});

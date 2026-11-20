@@ -611,12 +611,12 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       const view = await spawn(A);
       write(view, tmp(A, 't'), 2500);
       const before = quota().bytes;
-      await mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'), null);
+      await mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'), null, {holder: path.join(env.dataRoot, 'ps', 'sessions', A)});
       assert.strictEqual(quota().bytes, before, 'no view: emptied, nothing given back');
       write(view, tmp(A, 't2'), 1000);
       const {Quota} = require('../../lib/fs-broker/quota');
       const other = new Quota({maxBytes: 1, maxEntries: 1}).viewFor(A);
-      await mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'), other);
+      await mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'), other, {holder: path.join(env.dataRoot, 'ps', 'sessions', A)});
       assert.strictEqual(quota().bytes, before + 1000, 'another quota\'s view: nothing given back here');
     });
 
@@ -644,7 +644,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       write(view, data(A, 'kept'), 4000);
       fs.linkSync(data(A, 'kept'), tmp(A, 'alsoKept'));
       const before = quota().bytes;
-      await mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'), view);
+      await mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'), view, {holder: path.join(env.dataRoot, 'ps', 'sessions', A)});
       assert.strictEqual(quota().bytes, before - 2500, 't only: kept still has a name in /data');
       assert.deepStrictEqual(fs.readdirSync(path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp')), []);
       await end(A);

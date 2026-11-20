@@ -21,7 +21,9 @@ describe('fs-broker 15: the spawn walk', () => {
     fs.mkdirSync(path.join(tmp, 'd'), {recursive: true});
     fs.writeFileSync(path.join(tmp, 'd', 'f'), 'x');
     fs.symlinkSync(outside, path.join(tmp, 'link-to-outside'));
-    await walk.emptyTmp(tmp);
+    // (a /tmp the runtime made: lib/data-ownership.js)
+    await require('../../lib/data-ownership').record(base, {tmp});
+    assert.strictEqual(await walk.emptyTmp(tmp, {holder: base}), true);
     assert.deepStrictEqual(fs.readdirSync(tmp), []);
     assert.strictEqual(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8'), 'keep');
   });
@@ -31,7 +33,9 @@ describe('fs-broker 15: the spawn walk', () => {
     outside = fs.mkdtempSync(path.join(outsideParent(), '.ch-walk-outside-'));
     fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep');
     fs.symlinkSync(outside, path.join(base, 'tmp'));
-    await assert.rejects(walk.emptyTmp(path.join(base, 'tmp')), /not a directory/);
+    await assert.rejects(walk.emptyTmp(path.join(base, 'tmp'), {holder: base}), /not a directory/);
+    // and one with no owner named is a caller's mistake, refused
+    await assert.rejects(walk.emptyTmp(path.join(base, 'tmp')), /needs the directory holding its ownership marker/);
     assert.strictEqual(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8'), 'keep');
   });
 
