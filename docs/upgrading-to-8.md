@@ -657,7 +657,11 @@ says how to write a module for this.
   from the server's identity secret (`{chj-<16 hex>}`), so two runtimes on
   one Redis no longer take each other's jobs. Jobs and schedulers queued
   before the upgrade, under the old shared `{cdifJob}`, are not moved: the
-  start logs how many, once, and leaves them; re-create any you still want.
+  start logs how many, once, and leaves them; re-create any you still want
+  once no older runtime serves that prefix. The prefix follows the identity
+  secret: a new secret (a rotated `COUNTINGHOUSE_IDENTITY_SECRET`, or a data
+  directory restored without its `.identity-secret`) is a new queue, and
+  jobs queued under the old one are no longer run.
 - **The module registry is opt-in: `--moduleRegistry`.** A start with no
   `--loadModule` no longer reads the CDIF-era registry database
   (`lib/device-db`, `sqlite3`) or loads modules from it: it loads nothing,

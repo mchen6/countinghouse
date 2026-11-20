@@ -18,7 +18,8 @@ one of them loaded ran on the other and failed). The prefix is now the
 server's own, `{chj-<16 hex>}`, derived from its identity secret: the same
 across restarts, another for a server with its own data directory. Jobs and
 schedulers left under `{cdifJob}` are not moved; a start says how many,
-once, and leaves them.
+once, and leaves them. A new identity secret is a new queue: jobs queued
+under the old one are no longer run.
 
 ### Removed — the pack form, `--packsRoot`, a ceiling's `packs`, `fallbackEnv`
 
