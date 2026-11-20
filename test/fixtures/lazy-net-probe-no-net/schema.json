@@ -7,7 +7,7 @@
       "input": {
         "type": "object",
         "properties": {
-          "what": {"type": "string", "enum": ["loaded", "request", "outside", "patchWrap", "requireOutside", "wrapperProxy", "traceWrap"]},
+          "what": {"type": "string", "enum": ["loaded", "request", "streamRefused", "outside", "patchWrap", "requireOutside", "wrapperProxy", "traceWrap"]},
           "url": {"type": "string"}
         },
         "required": ["what"]
@@ -23,7 +23,9 @@
           "body": {"type": ["string", "null"]},
           "outside": {"type": "array"},
           "count": {"type": "integer"},
-          "patched": {"type": "boolean"}
+          "patched": {"type": "boolean"},
+          "shape": {"type": "object"},
+          "piped": {"type": ["boolean", "null"]}
         }
       }
     }
