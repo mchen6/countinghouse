@@ -25,6 +25,17 @@ directory. Its job history is its own too, under
 `{cdifJob}`, and the history kept under the old unscoped `jobinfo:<name>`
 keys, are not moved or read: a start counts them read-only, says how many in
 one line, once, and leaves them. Old job history is not carried over.
+### Changed — `tools/call` answers a tool outside the key's grants as an unknown tool
+
+A known key's `tools/call` of a tool outside its grants (an unlisted part's
+too) now answers `-32602 unknown tool: <name>`, as a name never registered
+does, instead of `-32603` with the no-access text: one answer for every tool
+a caller can't see, so a call no longer tells what is installed; so is a
+runtime tool not listed to the key (an authoring tool for a non-admin key,
+which answered `ADMIN_REQUIRED`; the single-identity profile's hidden
+built-ins, which answered `MODULE_NOT_LISTED`). No key and
+an unknown key keep their auth refusal, now the same for every name,
+the runtime's own `countinghouse_*` tools included.
 
 ### Removed — the pack form, `--packsRoot`, a ceiling's `packs`, `fallbackEnv`
 

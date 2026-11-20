@@ -403,6 +403,13 @@ says how to write a module for this.
 
 ## What MCP clients will notice
 
+- **A tool outside your key's grants is an unknown tool.** `tools/call` of
+  one now answers `-32602 unknown tool: <name>`, as a name never registered
+  does, where it answered `-32603` "This apiKey does not have access to this
+  device". So is a runtime tool your key isn't listed: an authoring tool
+  for a key that is no admin's (it answered `ADMIN_REQUIRED`), and in the
+  single-identity profile the built-ins it hides (they answered
+  `MODULE_NOT_LISTED`). No key and an unknown key keep their auth refusal.
 - **A call can be cancelled while it runs.** For a 2026-07-28 request over
   HTTP, closing the POST before its answer cancels it; on stdio and the
   shared runtime, `notifications/cancelled` with the request's id does,

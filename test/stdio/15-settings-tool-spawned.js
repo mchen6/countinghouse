@@ -29,14 +29,15 @@ describe('stdio 15: countinghouse_settings, spawned', function() {
   };
   const call = (id, args) => io.request({jsonrpc: '2.0', id, method: 'tools/call', params: {name: 'countinghouse_settings', arguments: args}});
 
-  it('without --settingsFile: not listed, and refused by name', async () => {
+  // (a runtime tool the caller can't use: answered as a name never
+  // registered, #458's second high round, 3)
+  it('without --settingsFile: not listed, and answered as a name never registered', async () => {
     io = start(home);
     await io.request({...INITIALIZE, id: 1}, 30000);
     io.notify({jsonrpc: '2.0', method: 'notifications/initialized'});
     assert.ok(!(await listed()).includes('countinghouse_settings'), withoutRedisNoise(io.err));
     const r = await call(2, {action: 'get'});
-    assert.strictEqual(r.result.isError, true);
-    assert.strictEqual(r.result._meta['countinghouse/code'], 'MODULE_NOT_LISTED');
+    assert.deepStrictEqual(r.error, {code: -32602, message: 'unknown tool: countinghouse_settings'});
   });
 
   it('with --settingsFile: listed; get answers; a tightening set is written; a loosening is refused and changes nothing', async () => {
