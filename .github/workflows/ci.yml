@@ -7,13 +7,15 @@ on:
     branches: [master]
 
 # A new push to a pull request cancels that PR's superseded run (the group is
-# the PR number); a push to master is grouped by the branch, so a newer merge
-# cancels the run of an older one still queued or running. Every PR is gated by
-# its own run before it merges; master keeps the result of its newest commit,
-# and superseded master runs no longer queue ahead of every PR.
+# the PR number). Each push to master is its own group (its commit), so every
+# merge runs to completion: the full suite on that merge, and the per-commit
+# golden walk of that push's own commits. (Grouped by the branch, a newer merge
+# cancelled an older one's run, and GitHub keeps at most one waiting run per
+# group, so a cancelled push's commits were never walked;
+# 2026-11-20.)
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # The one invariant that must never break: no commit may move the MCP
