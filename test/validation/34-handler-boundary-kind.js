@@ -82,6 +82,23 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
       assert.strictEqual(CountinghouseError.fromReply(crossed).retryable, false, 'the runtime\'s copy of it across a reply');
     }));
 
+  // (#482's high, round 3, 1: one rule, whatever the code: what left a
+  // handler is not retried, as it is not retryable)
+  it('a job\'s run is not retried for any error that left a handler, whatever its code, across a reply too', async () => {
+    const {notRetried} = require('../../lib/job-control-common');
+    for (const code of ['SERVICE_NOT_FOUND', 'DEVICE_NOT_FOUND', 'MODULE_RELOADING', 'ACTION_NOT_FOUND', 'RUNTIME_BUSY']) {
+      const a = await withServiceClient(refusedBefore(code), async () => answer(async() => {
+        throw await new Promise((resolve) => buildCtx(boundDevice(), {}, {}).serviceClient({deviceID: 'd', serviceID: 's'}, (e) => resolve(e)));
+      }));
+      assert.strictEqual(fromHandler(a.err), true, `premise: ${code} left a handler`);
+      assert.strictEqual(notRetried(a.err.code, a.err), true, code);
+      const crossed = CountinghouseError.fromReplyFields(CountinghouseError.replyFields(a.err));
+      assert.strictEqual(notRetried(crossed.code, crossed), true, `${code} across a reply`);
+    }
+    // (the runtime's own, never through a handler: as before)
+    assert.strictEqual(notRetried('MODULE_RELOADING', new CountinghouseError('MODULE_RELOADING')), false);
+  });
+
   it('ctx.call: the part\'s own refusal of the composer\'s input (INPUT_DATA_VALIDATION_FAIL), rethrown or called back, answers 500, kind module', () =>
     withServiceClient(partRefuses(new CountinghouseError('INPUT_DATA_VALIDATION_FAIL')), async () => {
       const refusal = await callRefusal();
