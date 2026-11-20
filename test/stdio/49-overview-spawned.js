@@ -88,7 +88,7 @@ describe('stdio 49: countinghouse_overview, spawned (B-firstrun)', function() {
     assert.deepStrictEqual(got.result.content.map((c) => c.type), ['text']);
     assert.deepStrictEqual(JSON.parse(got.result.content[0].text), got.result.structuredContent);
     assert.ok(!got.result.content[0].text.includes('\n'), 'no line of the module\'s making');
-    assert.ok(2 * Buffer.byteLength(got.result.content[0].text) <= 8192);
+    assert.ok(Buffer.byteLength(JSON.stringify(got.result.structuredContent)) + Buffer.byteLength(JSON.stringify(got.result.content[0].text)) - 2 <= 8192);
     // ch-local's applier saw a credential added and the module turned on: the file again
     writeHeld(held, JSON.stringify({v: 1, modules: [{name: 'ch-off-mod', reason: 'off'}], launcher: L}));
     const reply = await io.control({type: 'reread', what: 'held-back'});

@@ -98,7 +98,13 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
     it('at most 8 KiB, the JSON text and structuredContent together: a pack that does not fit left out, the ones after it still tried, and counted', () => {
       const many = Array.from({length: 200}, (_, i) => pack({name: `ch-pack-${i}`, module: `ch-m-${i}`, description: 'd'.repeat(400), tools: [`t_${i}_a`, `t_${i}_b`]}));
       const data = overview.build({version: '1', packs: many});
-      assert.ok(2 * Buffer.byteLength(JSON.stringify(data)) <= overview.MAX_BYTES, String(Buffer.byteLength(JSON.stringify(data))));
+      // as sent: the structured JSON, and the text inside the result's JSON
+      const wire = (d) => Buffer.byteLength(JSON.stringify({content: [{type: 'text', text: JSON.stringify(d)}], structuredContent: d}));
+      const ENVELOPE = Buffer.byteLength(JSON.stringify({content: [{type: 'text', text: ''}], structuredContent: null})) - 4;
+      assert.ok(wire(data) - ENVELOPE <= overview.MAX_BYTES, String(wire(data)));
+      // (the review on #490's round 1, 8) text a JSON string escapes again
+      const escaped = overview.build({version: '1', packs: Array.from({length: 60}, (_, i) => pack({name: `p${i}`, module: `m${i}`, description: '"\\'.repeat(150)}))});
+      assert.ok(escaped.omitted > 0 && wire(escaped) - ENVELOPE <= overview.MAX_BYTES, String(wire(escaped)));
       assert.ok(data.omitted > 0 && data.packs.length + data.omitted === 200, JSON.stringify({kept: data.packs.length, omitted: data.omitted}));
       // (the high review of #490, 5) one big pack hides neither itself's
       // neighbours nor the ones after it
@@ -125,14 +131,24 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
     const spec = (n) => ({device: {friendlyName: n, modelDescription: `${n} does things.`}, serviceList: {}});
     const entries = [{name: 'up_run', target: {deviceID: 'd-up'}}, {name: 'down_run', target: {deviceID: 'd-down'}}, {name: 'here_run', target: {deviceID: 'd-here'}}];
     const gather = (dm) => require('../../lib/mcp/gateway').overviewFor({deviceManager: dm}, null, entries, [], {isAdmin: false});
+    // (the gateway and the device manager loaded first, unhurried: a first
+    // require of them takes most of a second, and more on a busy machine)
+    before(function() {
+      this.timeout(60000);
+      require('../../lib/mcp/gateway');
+      require('../../lib/device-manager');
+    });
 
-    // (the high review of #490, 4) its spec kept, its device out of the map
-    it('a module its supervisor holds down (restarting, suspended): not loaded, never ready', () => {
-      const dm = {getAllDeviceSpecs: () => ({'d-up': spec('up'), 'd-down': spec('down')}), deviceMap: {'d-up': {hostModuleName: 'ch-up'}},
-        moduleOfDevice: (id) => ({'d-up': 'ch-up', 'd-down': 'ch-down'})[id]};
+    // (the high review of #490, 4) its spec kept, its device out of the map;
+    // the supervisor's state decides, as a reload is out of the map too
+    it('a module its supervisor holds down (restarting, suspended): not loaded; one reloading: still ready', () => {
+      const dm = {getAllDeviceSpecs: () => ({'d-up': spec('up'), 'd-down': spec('down'), 'd-here': spec('here')}), deviceMap: {'d-up': {moduleName: 'ch-up'}},
+        moduleOfDevice: (id) => ({'d-up': 'ch-up', 'd-down': 'ch-down', 'd-here': 'ch-here'})[id],
+        moduleManager: {supervisor: {errorForDevice: (id) => (id === 'd-down' ? {code: 'MODULE_RESTARTING', module: 'ch-down'} : null)}}};
       const by = Object.fromEntries(gather(dm).packs.map((p) => [p.name, p]));
       assert.deepStrictEqual([by['ch-up'].state, by['ch-up'].tools], ['ready', ['up_run']]);
       assert.deepStrictEqual([by['ch-down'].state, by['ch-down'].tools, by['ch-down'].byTheModule], ['not loaded', [], undefined]);
+      assert.deepStrictEqual([by['ch-here'].state, by['ch-here'].tools], ['ready', ['here_run']], 'reloading: its tools still listed, its calls retryable');
     });
 
     // (the high review of #490, 3) in-process: the device's own moduleName,
@@ -172,6 +188,15 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.deepStrictEqual([...l.modules.values()].map((m) => [m.reason, m.root, m.via]),
         [['ceiling', null, null], ['calls', 'ceiling', 'p'], ['calls', 'not-installed', 'ch-access-github']]);
       assert.throws(() => heldBack.parse(doc([{name: 'a', reason: 'not-installed'}]), h.settings), Error, 'not-installed is a root only');
+      // a callee nothing installed is named as declared: a call address's
+      // module part, which need not be a package name
+      const free = heldBack.parse(doc([{name: 'c', reason: 'calls', root: 'not-installed', via: 'GitHub Access'}]), h.settings);
+      assert.strictEqual(free.modules.get('c').via, 'GitHub Access');
+      for (const via of ['a/b', 'a.b', 'x'.repeat(65), '', 'a\nb']) {
+        assert.throws(() => heldBack.parse(doc([{name: 'c', reason: 'calls', root: 'not-installed', via}]), h.settings), Error, JSON.stringify(via));
+      }
+      assert.throws(() => heldBack.parse(doc([{name: 'c', reason: 'calls', root: 'credential', via: 'GitHub Access'}]), h.settings), Error,
+        'a credential\'s via is a package: it goes into a command');
       // neither is the user's to turn on, nor a credential: the status hint
       const L = '/home/u/.ch/bin/ch-local.js';
       const packs = overview.build({version: '1', settingsProfile: true, launcher: L, packs: [
