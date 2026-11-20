@@ -1303,7 +1303,11 @@ and every one is bounded.
   cleared every key -- is resolved before its grants are read, so an
   unknown key costs one provider read and a valid key's first call one
   serial read more; a key in the cache whose 5 s have lapsed has both read
-  side by side, and a fresh one neither.
+  side by side, and a fresh one neither. Whether the key is an admin's is
+  kept with it the same way, to choose an answer only: for up to 5 s a
+  just-promoted admin is answered "unknown tool" for an authoring tool,
+  and a just-demoted one costs one fresh read before the same answer (an
+  admin's call is always read fresh before it runs).
 
 **Bounds.** Each is enforced on the main thread, and each has a test that
 fails if it is removed:
