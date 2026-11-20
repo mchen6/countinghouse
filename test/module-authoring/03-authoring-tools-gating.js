@@ -269,15 +269,17 @@ describe('authoring tools: present with --authoringTools', function() {
   // identity does not even resolve (no key at all -- and --debugKey is set,
   // so a missing key fails doUserAuth's debug branch too, exactly like it
   // would fail AuthProvider.authenticate under real auth) must get the
-  // same unknown-tool response an unregistered name gets, not a distinct
-  // auth-failure result -- otherwise the response shape is a second oracle
-  // for reserved names, one gate past the flag check.
-  it('an anonymous caller gets the same unknown-tool response as an unregistered name', (done) => {
+  // same response an unregistered name gets -- since #458, the caller's auth
+  // refusal, for every name it can't use -- not a distinct one: otherwise
+  // the response shape is a second oracle for reserved names, one gate past
+  // the flag check.
+  it('an anonymous caller gets the same response as for an unregistered name: the auth refusal', (done) => {
     toolsCall(PORT, null, 5, 'countinghouse_validate_module', {path: '.'}, (err, anonBody) => {
       assert.ifError(err);
       toolsCall(PORT, null, 5, CONTROL_NAME, {}, (err, controlBody) => {
         assert.ifError(err);
         assert.ok(anonBody.error != null, 'an unresolvable caller must get a JSON-RPC error, not a result');
+        assert.strictEqual(anonBody.error.code, -32603, JSON.stringify(anonBody));
         assert.ok(sameEnvelope(anonBody, 'countinghouse_validate_module', controlBody, CONTROL_NAME),
           'anonymous-caller response differs from the unknown-tool control beyond the name:\n' +
           `  anon: ${JSON.stringify(anonBody)}\n  control: ${JSON.stringify(controlBody)}`);
@@ -510,33 +512,24 @@ describe('authoring tools: admin gate holds under real (non-debug) auth', functi
     });
   });
 
-  it('refuses a call from the non-admin key with ADMIN_REQUIRED', (done) => {
-    toolsCall(PORT, NON_ADMIN_KEY, 6, 'countinghouse_validate_module', {path: '.'}, (err, body) => {
-      assert.ifError(err);
-      assert.strictEqual(body.result.isError, true);
-      assert.ok(toolErrorCode(body.result) === 'ADMIN_REQUIRED',
-        `expected _meta['countinghouse/code'] === 'ADMIN_REQUIRED', got: ${JSON.stringify(body.result)}`);
-      done();
-    });
-  });
-
-  // Regression guard for the I5 review finding: the admin gate in
-  // dispatchAuthoringTool runs once, before the name-specific branches --
-  // this had only ever been exercised via countinghouse_validate_module.
-  // countinghouse_load_module and countinghouse_call_tool share the exact
-  // same gate (same function, same early check), but that was never
-  // actually asserted for either of them -- --debug (every other describe
-  // block in this file) forces isAdmin: true unconditionally, so it cannot
-  // exercise this at all; this block is the only one with a real non-admin
-  // identity to call them with.
-  ['countinghouse_load_module', 'countinghouse_call_tool'].forEach((name) => {
-    it(`refuses a ${name} call from the non-admin key with ADMIN_REQUIRED`, (done) => {
+  // A non-admin key is not listed the authoring tools, so each is a name it
+  // can't use: answered exactly as a name never registered, whatever
+  // --authoringTools says, so the answer tells nothing of the server's
+  // configuration (#458's second high round, 2). Every authoring name goes
+  // through dispatchAuthoringTool's one gate (validate_module, load_module
+  // and call_tool here: --debug forces isAdmin in every other describe, so
+  // this block is the only one with a real non-admin identity).
+  ['countinghouse_validate_module', 'countinghouse_load_module', 'countinghouse_call_tool'].forEach((name) => {
+    it(`a ${name} call from the non-admin key is answered as a name never registered`, (done) => {
       toolsCall(PORT, NON_ADMIN_KEY, 6, name, {path: '.', name: 'x'}, (err, body) => {
         assert.ifError(err);
-        assert.strictEqual(body.result.isError, true);
-        assert.ok(toolErrorCode(body.result) === 'ADMIN_REQUIRED',
-          `expected _meta['countinghouse/code'] === 'ADMIN_REQUIRED', got: ${JSON.stringify(body.result)}`);
-        done();
+        toolsCall(PORT, NON_ADMIN_KEY, 6, CONTROL_NAME, {}, (err2, control) => {
+          assert.ifError(err2);
+          assert.ok(sameEnvelope(body, name, control, CONTROL_NAME),
+            `differs from the unknown-tool control beyond the name:\n  ${JSON.stringify(body)}\n  ${JSON.stringify(control)}`);
+          assert.strictEqual(body.error.code, -32602);
+          done();
+        });
       });
     });
   });

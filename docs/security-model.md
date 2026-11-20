@@ -1280,6 +1280,34 @@ and every one is bounded.
   URL.
 - **Prompt text** is declared and reviewed. An argument is substituted
   once, as text, and bounded.
+- **A tool the caller can't see** gets one answer on `tools/call`, decided
+  before anything module-specific, so no probe tells what is installed. No
+  key, or a key the auth layer does not know: its auth refusal, decided
+  first, the same for every name -- a module's tool, an unlisted part's,
+  one never registered, and the runtime's own `countinghouse_*` tools,
+  enabled or not. A known key: a name never registered, a tool outside its
+  grants (an unlisted part's too) and one hidden while its module goes on
+  or off all answer `unknown tool: <name>`, byte for byte, and so does a
+  runtime tool not listed to it: an authoring tool for a key that is no
+  admin's (whatever `--authoringTools` says), and in the single-identity
+  profile the built-ins it hides (outside it, `countinghouse_settings`). A
+  key granted an unlisted part still learns it is not listed. The grant set that chooses
+  the answer is kept per known key (by a SHA-256 digest of the key, never
+  the key) for at most 5 s; authorisation is still `userAuth`'s read on
+  every call, so within those 5 s a revoked grant's tool gets the auth
+  refusal (which tells it from a name never registered), and a new grant's
+  answers "unknown tool". A reload of the auth config ends that window at
+  once for the file provider; the sqlite and CouchDB providers have no
+  change signal, so for them the 5 s is the bound. The cost: a key not in
+  the cache -- never seen, pushed out past the 1024, or after a reload
+  cleared every key -- is resolved before its grants are read, so an
+  unknown key costs one provider read and a valid key's first call one
+  serial read more; a key in the cache whose 5 s have lapsed has both read
+  side by side, and a fresh one neither. Whether the key is an admin's is
+  kept with it the same way, to choose an answer only: for up to 5 s a
+  just-promoted admin is answered "unknown tool" for an authoring tool,
+  and a just-demoted one costs one fresh read before the same answer (an
+  admin's call is always read fresh before it runs).
 
 **Bounds.** Each is enforced on the main thread, and each has a test that
 fails if it is removed:
@@ -1298,7 +1326,9 @@ fails if it is removed:
 | A task's question | at most 64 of an owner's tasks waiting, 10,000 in all; a wait of an hour, then `ASK_EXPIRED` | questions 08 |
 | Progress | 4 a second and 240 per call | mcp-contract 10 (progress) |
 | Cancellation | a request of the caller's own connection or session only; an unknown id ignored; no answer and no error text | mcp-contract 18, 19 |
-| Every read, get, completion and task method | the per-key rate limit, before any lookup | auth 15, mcp-contract 24, 26, 30, 09 |
+| Every read, get, completion and task method | the per-key rate limit, once the key resolves and before any lookup | auth 15, mcp-contract 24, 26, 30, 09 |
+| `tools/call` | the per-key rate limit (and `--globalRateLimit`) on the call's run, after its one answer for a tool the caller can't see is decided; the key's resolution and grant read before it are not limited, as no limiter exists for a key that does not resolve (registered after the first release) | auth 15 (a built-in), mcp-contract 37 (a task); auth 54 the order |
+| The grant sets `tools/call` is answered by | a known key's only, kept by a digest of the key; at most 5 s old, refreshed by every list's read, all cleared by an auth reload; 1024 keys, the one written longest ago out first; a failed read never kept | mcp-contract 40, auth 54 |
 
 A module resource read takes its token from the call path, after the
 listing lookup that finds its action: a probe of a URI that reads nothing

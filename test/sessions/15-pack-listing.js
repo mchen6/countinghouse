@@ -299,4 +299,66 @@ describe('sessions 15: a module going on or off is in no session\'s lists (B3 Ta
       options.singleIdentity = savedSingle;
     }
   });
+
+  // B-uniform (the reviewer's ruling on #457's probe): every tool a caller
+  // can't see -- outside its grants, an unlisted part outside them, one whose
+  // module is hidden while it goes on or off, a name never registered --
+  // takes the same path to the same answer: the key's grant set read once
+  // (tool-registry grantsForCall), then the unknown tool's, byte for byte.
+  it('a tool the caller can\'t see: one grant read, then the unknown tool\'s answer, whatever the reason', async () => {
+    const real = toolRegistry.grantsForCall;
+    let reads = 0;
+    let granted = new Set(['d3', 'd4']);
+    toolRegistry.grantsForCall = (key, identify, cb) => { reads++; cb(null, granted); };
+    try {
+      const table = toolRegistry.buildToolTargets(ci, {includeUnlisted: true});
+      const nameOf = (d) => Object.keys(table).find((n) => table[n].deviceID === d);
+      visibility.hide(['ch-pack-docs']);
+      const cases = {'outside the grants': nameOf('d1'), 'an unlisted part outside them': nameOf('d2'),
+        'hidden while it goes on or off': nameOf('d3'), 'never registered': 'no_such_tool'};
+      const seen = {};
+      for (const [why, name] of Object.entries(cases)) {
+        assert.ok(typeof(name) === 'string', why);
+        const before = reads;
+        const r = await request(ci, A, 'tools/call', {name, arguments: {}});
+        seen[why] = `${reads - before} ${JSON.stringify(r).split(name).join('<name>')}`;
+      }
+      const want = seen['never registered'];
+      assert.ok(want.startsWith('1 ') && want.includes('unknown tool: <name>'), want);
+      assert.deepStrictEqual(seen, Object.fromEntries(Object.keys(cases).map((k) => [k, want])));
+      // a name an object inherits is no tool, even to a key granted every device
+      granted = null;
+      for (const name of ['constructor', 'toString', '__proto__']) {
+        const r = await request(ci, A, 'tools/call', {name, arguments: {}});
+        assert.strictEqual(JSON.stringify(r).split(name).join('<name>'), want.slice(2), name);
+      }
+    } finally {
+      toolRegistry.grantsForCall = real;
+      visibility.show(['ch-pack-docs']);
+    }
+  });
+
+  // #458's medium round: the key resolved but its grants unread (the
+  // provider failing on that read): a module's tool answers the provider's
+  // failure, the same whatever the name; the runtime's own tools need no
+  // grants and are handled as ever
+  it('grants unread: a module tool gets the provider\'s failure; a runtime tool is still its own', async () => {
+    const real = toolRegistry.grantsForCall;
+    const down = Object.assign(new Error('the auth provider is unavailable'), {code: 'SYSTEM_ERROR_USERDB_NA'});
+    toolRegistry.grantsForCall = (key, identify, cb) => cb(null, undefined, down);
+    try {
+      // (the settings tool, outside the single-identity profile, is a name
+      // the caller can't use: answered as every such name)
+      for (const name of ['ci_failure_triage', 'no_such_tool', 'countinghouse_settings']) {
+        const r = await request(ci, A, 'tools/call', {name, arguments: {}});
+        assert.deepStrictEqual(r.error, {code: -32603, message: down.message}, name);
+      }
+      // a runtime tool the caller can use needs no grants: served as ever
+      const own = await request(ci, A, 'tools/call', {name: 'countinghouse_usage_report', arguments: {}});
+      assert.ok(own.error == null || own.error.message !== down.message, JSON.stringify(own));
+      assert.ok(own.result != null, JSON.stringify(own));
+    } finally {
+      toolRegistry.grantsForCall = real;
+    }
+  });
 });
