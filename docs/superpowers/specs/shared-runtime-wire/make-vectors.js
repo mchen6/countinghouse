@@ -297,7 +297,7 @@ const out = {
     const slot = 'COUNTINGHOUSE_CREDENTIAL_1';
     const creds = {'@countinghouse/ch-access-example': {'https://api.example.com': {EXAMPLE_TOKEN: slot}}};
     return {
-      rule: 'load names one top-level module (name) and reload one or more (names), each by its package name, with dirs: the absolute directory of each module of their closures, by package name, 1 to 64; credentials (optional) is the per-module allowance of the version 2 --remoteCredentials file, each environment name a slot, each package one dirs names. unload names one top-level module; its notice is told once, as given, on the next result of any tool, unless it carries reason: "off" (the module turned off), the runtime serves the settings tool (the single-identity profile with --settingsFile) and its settings file holds enabled.<name> false, when it tells every session its own off text instead: what went with it (the callers loaded at that unload; one unloaded before it is told by its own unload) and both ways back. With reason: "calls" and because: <the package it went with>, on such a runtime whose settings file holds enabled.<because> false, it tells "<name> unloaded: it calls <because>, which is turned off for all your sessions (turning <because> on brings it back)." reason and because are optional and not checked: any other value, or none, is the notice as given. A module-form message carries no scenario, pack, global or remoteCredentials. notice: module a package name or null, and text. reread: what is module-settings. module-stopped (the runtime to ch-local, unasked, no id): name, code, when start or restart',
+      rule: 'load names one top-level module (name) and reload one or more (names), each by its package name, with dirs: the absolute directory of each module of their closures, by package name, 1 to 64; credentials (optional) is the per-module allowance of the version 2 --remoteCredentials file, each environment name a slot, each package one dirs names. unload names one top-level module; its notice is told once, as given, on the next result of any tool, unless it carries reason: "off" (the module turned off), the runtime serves the settings tool (the single-identity profile with --settingsFile) and its settings file holds enabled.<name> false, when it tells every session its own off text instead: what went with it (the callers loaded at that unload; one unloaded before it is told by its own unload) and both ways back. With reason: "calls" and because: <the package it went with>, on such a runtime whose settings file holds enabled.<because> false, it tells "<name> unloaded: it calls <because>, which is turned off for all your sessions (turning <because> on brings it back)." reason and because are optional and not checked: any other value, or none, is the notice as given. A module-form message carries no scenario, pack, global or remoteCredentials. notice: module a package name or null, and text. reread: what is module-settings or held-back (the --heldBackFile list), and it carries nothing but id, type and what. module-stopped (the runtime to ch-local, unasked, no id): name, code, when start or restart',
       packagePattern: '^(?:@[a-z0-9~-][a-z0-9._~-]*/)?[a-z0-9~-][a-z0-9._~-]*$',
       slotPattern: '^COUNTINGHOUSE_CREDENTIAL_[1-9][0-9]{0,3}$',
       accepted: [
@@ -312,6 +312,7 @@ const out = {
         {why: 'an unload of a module turned off, said so: the runtime tells every session its full off text', message: {id: 9, type: 'unload', name: scenario, notice: 'example turned off', reason: 'off'}},
         {why: 'an unload of a caller, with the module turned off it went with: the runtime tells its line with the way back', message: {id: 10, type: 'unload', name: '@countinghouse/ch-pack-other', notice: 'ch-pack-other unloaded: it calls ch-pack-example, which is turned off', reason: 'calls', because: scenario}},
         {why: 'a reread of the module settings', message: {id: 6, type: 'reread', what: 'module-settings'}},
+        {why: 'a reread of the held-back list (--heldBackFile; countinghouse_overview)', message: {id: 21, type: 'reread', what: 'held-back'}},
         {why: 'a notice about a module', message: {id: 7, type: 'notice', module: scenario, text: 'example upgraded 1.0.0 → 1.1.0'}},
         {why: 'a notice about no module', message: {id: 8, type: 'notice', module: null, text: 'requestTimeout set to 60 s'}},
         {why: 'the runtime stopped a module for good', message: {type: 'module-stopped', name: scenario, code: 'MODULE_SUSPENDED', when: 'restart'}}
@@ -330,8 +331,10 @@ const out = {
           remoteCredentials: '/home/example/.countinghouse/run/start-1/remote-credentials.json'}},
         // M6: a notice carrying the pack form's fields is refused too
         {why: 'a notice with a leftover pack field', reason: 'old-field', message: {id: 20, type: 'notice', module: null, text: 'x', pack: 'example'}},
-        // M2a: reread names only the module settings
-        {why: 'a reread of anything but the module settings', reason: 'name', message: {id: 19, type: 'reread', what: 'everything'}}
+        // M2a: reread names only the module settings, and since B-firstrun
+        // the held-back list; nothing else rides on it
+        {why: 'a reread of anything but the module settings or the held-back list', reason: 'name', message: {id: 19, type: 'reread', what: 'everything'}},
+        {why: 'a reread with a field beside id, type and what', reason: 'name', message: {id: 22, type: 'reread', what: 'held-back', file: '/home/example/.countinghouse/run/held-back.json'}}
       ]
     };
   })(),
