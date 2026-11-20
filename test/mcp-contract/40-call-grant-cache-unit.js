@@ -23,13 +23,16 @@ describe('mcp-contract 40: the grant set a tools/call is answered by (unit)', ()
   // required once Redis points at port 1, where nothing listens)
   let registry;
   let savedOptions;
+  const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
   before(() => {
-    savedOptions = {redisUrl: options.redisUrl, debug: options.debug};
+    // every option kept and put back (a setOptions of a few would reset the
+    // rest to their defaults for the files after this one: B-loadopts)
+    savedOptions = optionsNow();
     options.setOptions({redisUrl: 'redis://127.0.0.1:1'});
     require('../../lib/logger').createLogger();
     registry = require('../../lib/mcp/tool-registry');
   });
-  after(() => { options.setOptions(savedOptions); });
+  after(() => { restoreOptions(savedOptions); });
   let t;
   let reads;
   let ids;

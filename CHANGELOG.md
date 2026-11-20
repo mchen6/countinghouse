@@ -33,6 +33,18 @@ own too, under `jobinfo:{chj-<server id>}:<name>`. Jobs and schedulers left unde
 `{cdifJob}`, and the history kept under the old unscoped `jobinfo:<name>`
 keys, are not moved or read: a start counts them read-only, says how many in
 one line, once, and leaves them. Old job history is not carried over.
+### Fixed — one shared-runtime session's stalling inputs no longer throttle the others
+
+The validator pool holds an input's stalls against its caller, and after
+three in five minutes refuses that caller's calls to the module
+(`VALIDATION_CALLER_THROTTLED`). In a shared runtime every session is the
+one local user's, one caller id, so one session's stalling inputs throttled
+every session. There the caller is now the caller and its session (calls,
+routed and direct hops, job runs, `prompts/get`): each session has its own
+three stalls, its own validation in flight, and its entries go when it
+ends. Over HTTP and `--stdio` it is the caller id, as before (a client
+choosing new session ids cannot slip its own throttle).
+
 ### Changed — the usage report counts a cancelled call apart: `profile.cancelled`
 
 A call cancelled while it ran (M19) was counted among the report's errors.
