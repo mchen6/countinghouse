@@ -509,6 +509,14 @@ function serve() {
   var routeManager = new RouteManager(mm);
 
   monitor.init();
+  // At exit, one synchronous sequence before the local store's exit flush
+  // (lib/exit-sequence.js; B-shutdown-usage): the job runner's passes still
+  // running ended, then every usage call still open (a tools/call still
+  // running too) ended as a cancelled one, so a call begun is always ended
+  // in the record.
+  const exitSequence = require('./lib/exit-sequence');
+  if (options.workerThread === true) exitSequence.atExit(() => require('./lib/store').jobs.close());
+  exitSequence.atExit(() => require('./lib/usage/runtime').closeOpen());
 
   var redisAPI = require('./lib/redis-api');
   redisAPI.init();
@@ -525,6 +533,7 @@ function serve() {
     const jobHooks = require('./lib/mcp/gateway').jobHooks(routeManager.cdifInterface);
     JobControl.setStartHook(jobHooks.start);
     JobControl.setCompletionHook(jobHooks.complete);
+    JobControl.setCancelHook(jobHooks.cancel);
     // a 2026-07-28 task's question (M22, lib/task-asks.js)
     JobControl.setAskHooks(jobHooks.ask);
   }
