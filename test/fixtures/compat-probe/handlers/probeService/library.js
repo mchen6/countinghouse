@@ -102,10 +102,12 @@ const STEPS = {
       return String(e.message).split('\n')[0].includes(asked) ? `${said(e)}, as asked` : `${said(e)}, named otherwise`;
     }
   },
-  // (the whole error -- message, stack, requireStack -- names none of the
-  // module's own files by its host path, by any route a mapped request can
-  // fail: a missing file, a parent outside the module, a Proxy parent. The
-  // runtime's own frames in a stack are another matter, C-lows'.)
+  // (the whole error -- message, stack, requireStack -- of a direct call
+  // with an absolute /app request names none of the module's own files by
+  // its host path, with the module's own parent, one outside the module and
+  // a Proxy parent: below Node 24.15 by the route identity's hook maps it
+  // on, through the resolve shim; from 24.15 on, unmapped. The runtime's
+  // own frames in a stack are another matter, C-lows'.)
   'absolute request, every path in its error virtual': () => {
     const asked = path.join(__dirname, 'no-such-compat-file');
     const R = require('module');

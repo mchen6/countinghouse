@@ -967,10 +967,10 @@ checks, quota or link rules. The differences from worker mode:
   module resolves from (`createRequire`, `require.resolve`'s parent, an
   absolute request, a `module.findPackageJSON` base) is mapped through your
   module's own directory. Each answer is a host path.
-- countinghouse itself installed under a real `/app` (a container's
-  working directory, say) isn't supported in single-thread mode: its own
-  paths there can't be told apart from your module's `/app`. Use worker
-  mode there.
+- countinghouse itself, or its module path, installed under a real `/app`
+  (a container's working directory, say) isn't supported in single-thread
+  mode: the real paths there can't be told apart from your module's
+  `/app`. Use worker mode there.
 - A module can require countinghouse's own dependencies through `NODE_PATH`.
 
 Upgrading a module or a deployment from 7.x: see
