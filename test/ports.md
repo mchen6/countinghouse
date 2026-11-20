@@ -66,7 +66,7 @@ one) as well as the ports it binds.
 | `test/auth/46-redis-down-binary-result.js` | 9667 (its Redis proxy: a free port each run) |
 | `test/auth/53-no-keys-reach-reads.js` | 9757 |
 | `test/auth/54-routes-listing-scope.js` | 9794 |
-| `test/auth/58-pre8-device-grants.js` | 9675, 9676 |
+| `test/auth/58-pre8-device-grants.js` | 9675, 9676, 9677 |
 | `test/benchmark/test001.js` | 9527 |
 | `test/benchmark/test002.js` | 9527 |
 | `test/composition/02-ctx-call.js` | 9556–9557, 9560 |

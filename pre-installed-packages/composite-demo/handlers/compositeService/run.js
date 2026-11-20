@@ -6,14 +6,11 @@
 // this module's own identity -- so a caller needs no grant to transform-demo
 // or echo-device-module. See docs/composite-tools.md.
 
-// deviceIDs are deterministic (UUIDv5 of a fixed namespace + the target
-// module's api.json friendlyName -- see lib/countinghouse-device.js), so they
-// can be computed offline rather than discovered at runtime.
-const ECHO_DEVICE_ID      = 'e18f97d6-340a-5517-be3a-91820edc1075'; // echo-device-module ("echo-device")
-const TRANSFORM_DEVICE_ID = 'e66f514d-b9d7-5096-831a-d99ff2d0f015'; // transform-demo
-
-const ECHO_SERVICE      = 'urn:countinghouse-com:serviceID:echoService';
-const TRANSFORM_SERVICE = 'urn:countinghouse-com:serviceID:transformService';
+// The two hops are called by name (ctx.call), as package.json's
+// "countinghouse.calls" declares them: the runtime resolves each to its
+// device, never this module (no device ID here).
+const TRANSFORM = 'transform-demo/transformService.uppercase';
+const ECHO      = 'echo-device/echoService.echo';
 
 // The identity the inner hops are AUTHORIZED as is the operator's
 // runsModules binding for this module, never named here (R2-1); billing goes
@@ -25,28 +22,11 @@ const TRANSFORM_SERVICE = 'urn:countinghouse-com:serviceID:transformService';
 // comes from the platform's own automatic metering instead.
 const HOP_COST = 1;
 
-function clientFor(ctx, deviceID, serviceID) {
-  return new Promise((resolve, reject) => {
-    ctx.serviceClient({deviceID: deviceID, serviceID: serviceID}, (err, client) => {
-      if (err != null) return reject(err);
-      return resolve(client);
-    });
-  });
-}
-
-// platformMetering is the 3rd, additive argument on every cross-worker
-// ServiceClient.invoke reply, on both hop paths. It is deliberately never
-// merged into `data`: `data` is the hop's own validated output, and a module
-// passing it straight through as its own return value would fail validation
-// on the injected field.
-function invokeHop(client, actionName, input) {
-  return new Promise((resolve, reject) => {
-    client.invoke({actionName: actionName, input: input}, (err, data, platformMetering) => {
-      if (err != null) return reject(err);
-      return resolve({data: data, platformMetering: platformMetering});
-    });
-  });
-}
+// ctx.call with detail: {data, platformMetering}. platformMetering is
+// deliberately never merged into `data`: `data` is the hop's own validated
+// output, and a module passing it straight through as its own return value
+// would fail validation on the injected field.
+const hop = (ctx, address, input) => ctx.call(address, input, {detail: true});
 
 module.exports = async (input, ctx) => {
   if (input == null || typeof(input.text) !== 'string') {
@@ -68,13 +48,10 @@ module.exports = async (input, ctx) => {
     });
   };
 
-  const transformClient = await clientFor(ctx, TRANSFORM_DEVICE_ID, TRANSFORM_SERVICE);
-  const echoClient      = await clientFor(ctx, ECHO_DEVICE_ID, ECHO_SERVICE);
-
   // hop 1: transform-demo/uppercase
   let first;
   try {
-    first = await invokeHop(transformClient, 'uppercase', {text: input.text});
+    first = await hop(ctx, TRANSFORM, {text: input.text});
   } catch (e) {
     return ctx.error('INNER_CALL_FAILED', e.message, {cause: e});
   }
@@ -84,7 +61,7 @@ module.exports = async (input, ctx) => {
   // {foo: array, bar: string}, so the uppercased text rides along as `bar`
   let second;
   try {
-    second = await invokeHop(echoClient, 'echo', {foo: [], bar: first.data.output.text});
+    second = await hop(ctx, ECHO, {foo: [], bar: first.data.output.text});
   } catch (e) {
     return ctx.error('INNER_CALL_FAILED', e.message, {cause: e});
   }

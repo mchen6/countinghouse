@@ -80,16 +80,22 @@ describe('call-address: deviceID derivation (8.0: countinghouse\'s own namespace
     assert.deepStrictEqual(found, []);
   });
 
-  it('module code\'s hard-coded device IDs are their modules\' IDs now', () => {
+  // module code names a device by ID only where it cannot call it by name
+  // (the CDIF-era echo-device-client handlers, which declare no calls):
+  // there the literal is pinned to the derivation; a module that declares
+  // its calls holds no ID at all (ctx.call by name)
+  it('module code\'s hard-coded device IDs are their modules\' IDs now; a module that declares its calls holds none', () => {
     const at = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
     for (const [f, names] of [
-      ['pre-installed-packages/composite-demo/handlers/compositeService/run.js', ['echo-device', 'transform-demo']],
-      ['pre-installed-packages/perf-caller-demo/handlers/perfCallerService/run.js', ['perf-callee-demo']],
       ['pre-installed-packages/echo-device-client-module/handlers/errTestService/testErrorInfo.js', ['echo-device']],
-      ['pre-installed-packages/echo-device-client-module/handlers/服务名称/API名称.js', ['echo-device']],
-      ['test/fixtures/ctx-compose-module/actions.js', ['echo-device']]
+      ['pre-installed-packages/echo-device-client-module/handlers/服务名称/API名称.js', ['echo-device']]
     ]) {
       for (const n of names) assert.ok(at(f).includes(addr.deviceIDForName(n)), `${f}: ${n}`);
+    }
+    const UUID_LITERAL = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
+    for (const f of ['pre-installed-packages/composite-demo/handlers/compositeService/run.js',
+      'pre-installed-packages/perf-caller-demo/handlers/perfCallerService/run.js', 'test/fixtures/ctx-compose-module/actions.js']) {
+      assert.doesNotMatch(at(f), UUID_LITERAL, f);
     }
   });
 });
