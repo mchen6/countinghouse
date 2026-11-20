@@ -127,6 +127,39 @@ const STEPS = {
     }
     return out.join(' ');
   },
+  // The reduced module's confined statics (enforce; the compatibility PR):
+  // lookup paths only for a virtual directory inside the root, only those
+  // inside it; a resolution through the file broker's confined
+  // _resolveFilename, answered by a virtual name, never a host path, with
+  // every refusal enforce has (outside the root, a primitive or odd parent,
+  // the one refusal for a bare or '#' name it can't resolve)
+  reducedStatics: () => {
+    const R = require('module');
+    if (typeof(R._nodeModulePaths) !== 'function' || typeof(R._resolveFilename) !== 'function') return 'not reduced';
+    const h = handle();
+    const root = h != null ? path.dirname(path.dirname(h.module.filename)) : null;
+    const out = [];
+    const lookups = R._nodeModulePaths(__dirname);
+    out.push(lookups.length > 0 && lookups.every((p) => /^(\/app(\/|$)|[A-Z]:\\app)/.test(p)) ? 'virtual' : `paths(${lookups.join(',')})`);
+    out.push(R._nodeModulePaths('/etc').length === 0 && (root == null || R._nodeModulePaths(root).length === 0) && R._nodeModulePaths('/app/../etc').length === 0 ? 'none' : 'outside');
+    const parent = {id: __filename, filename: __filename, paths: lookups};
+    let own;
+    try { own = R._resolveFilename('../../lib/data.json', parent); } catch (e) { own = `threw ${e.code}`; }
+    out.push(/^(\/app\/|[A-Z]:\\app\\)lib[\\/]data\.json$/.test(own) ? 'own' : `own(${own})`);
+    const whole = (fn, name) => { try { fn(); return 'found'; } catch (e) { return `${e.code}|${e.message}`.split(name).join('NAME'); } };
+    const refusal = (fn) => {
+      try { fn(); return 'found'; } catch (e) { return /\(countinghouse module sandbox\)$/.test(String(e.message)) && e.code === 'MODULE_NOT_FOUND' ? 'refused' : `${e.code}|${String(e.message).slice(0, 80)}`; }
+    };
+    out.push(refusal(() => R._resolveFilename('x', 1)));
+    out.push(refusal(() => R._resolveFilename('./x', {filename: '/app/../etc/f.js', paths: []})));
+    out.push(refusal(() => R._resolveFilename('./x', {filename: '/app', paths: []})));
+    // (a path outside the root answers as a missing one: by the whole error)
+    out.push(root == null ? 'no handle' : (whole(() => R._resolveFilename(path.join(root, 'lib', 'node-version.js'), parent), 'node-version.js') ===
+      whole(() => R._resolveFilename(path.join(root, 'lib', 'no-such-isolation.js'), parent), 'no-such-isolation.js') ? 'same' : 'differs'));
+    out.push(whole(() => R._resolveFilename('json-stringify-safe', parent), 'json-stringify-safe') === whole(() => R._resolveFilename('no-such-isolation-pkg', parent), 'no-such-isolation-pkg') ? 'same' : 'differs');
+    out.push(whole(() => R._resolveFilename('#p/json-stringify-safe', parent), 'json-stringify-safe') === whole(() => R._resolveFilename('#p/no-such-isolation-pkg', parent), 'no-such-isolation-pkg') ? 'same' : 'differs');
+    return out.join(' ');
+  },
   // F4 (#194's PR 3): an import() from an ES module is no existence oracle
   // (C-bare, Fable's pass on #452: a bare name's subpath, or a '#' mapping
   // to one, never walks or stats above the root; a package found above it

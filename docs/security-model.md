@@ -297,9 +297,9 @@ any module code). Stops:
   | --- | --- | --- | --- | --- |
   | `source-map-support`, `install()` | works | works | works | works |
   | `source-map-support`, `install({hookRequire: true})` | works | works | no hook (reported) | throws |
-  | `require-in-the-middle`, a `Hook` | works | works | throws | no hook |
-  | `resolve-from`, from `__dirname` | fails (works on Windows) | fails (works below Node 24.15) | fails (works below Node 24.15) | throws |
-  | `import-fresh`, a relative name | fails (works on Windows) | fails (works below Node 24.15) | fails (works below Node 24.15) | throws |
+  | `require-in-the-middle`, a `Hook` | works | works | throws | throws |
+  | `resolve-from`, from `__dirname` | works | works | works | works |
+  | `import-fresh`, a relative name | works | works | works | works |
   | `module-alias`, `addAlias` | no alias (works on Windows) | no alias | no alias | throws |
   | `process.emitWarning = fn` | works | works | works | works |
   | `process.emitWarning = null` | throws on the next call | throws on the next call | throws on the next call | warnings off |
@@ -310,23 +310,26 @@ any module code). Stops:
 
   Why:
   - a module's own directory is virtual (`/app/...`) in every mode,
-    single-thread included, and these three hand a path made from it to
-    Node's resolver, which reads it as the host's own `/app`; on Windows
-    in single-thread mode it is `<V>:\app\...`, on a drive no host path is
-    on, and they work;
+    single-thread included. A parent a library makes from it (as
+    `resolve-from` and `import-fresh` do) reaches Node's resolver in its
+    host form, confined to the module's root: in a worker by the file
+    broker's mapping, which answers a module file by its virtual name; in
+    single-thread mode by the facade, through the root of the module that
+    called, answering the host path (development mode, no isolation).
+    Under `enforce` the reduced `module` gives them `_nodeModulePaths` and
+    `_resolveFilename`, confined to the root, with every refusal `enforce`
+    has and never a host path;
   - in a worker a module's requires are resolved by the file broker with
     Node's own resolver, so `module-alias`'s replaced `_resolveFilename` is
-    never asked;
+    never asked: use relative requires instead;
   - under `audit` the loader's statics and `process.getBuiltinModule` are
     held, so a replacement is reported and never takes;
-  - under `enforce` the reduced `module` has no prototype, statics or
-    `_nodeModulePaths` to reach.
+  - under `enforce` the reduced `module` has no prototype or other statics
+    to replace.
 
   So a dependency that hooks the loader (`hookRequire`,
   `require-in-the-middle`) needs `--moduleSandbox off` or single-thread
-  mode, and one that resolves from the module's own directory
-  (`resolve-from`, `import-fresh`, `module-alias`) fails in every mode
-  until a module's own paths reach Node's resolver in their host form;
+  mode;
 - other routes to files: `module.enableCompileCache`, `process.report`'s
   file output and `process.setSourceMapsEnabled` are locked;
   `process.loadEnvFile` goes through the file broker. Of `process.report`'s

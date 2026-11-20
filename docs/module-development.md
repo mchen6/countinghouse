@@ -836,6 +836,17 @@ conditions Node brought with the first `require` in your module's worker
 there would it use Node's default list. A plain `require` always uses its
 own, as on 24.15 and later.
 
+### Libraries that work with module paths, or hook module loading
+
+- `resolve-from`, `import-fresh` and the like, which resolve from your
+  module's own `__dirname`: work in every mode, single-thread included.
+  Your module's directory is `/app/...`; it reaches Node's resolver in its
+  host form, inside your module only.
+- `require-in-the-middle` (APM agents' module hooks): throws at
+  `new Hook()` under `audit` and `enforce`; a module can't hook the
+  runtime's module loading.
+- `module-alias`: no alias takes in a worker; use relative requires.
+
 Under `enforce` your module's directory may not hold a link to a
 directory: the load is refused ("holds a directory link at ..."), and
 under `audit` it is reported. Node's ES resolver reads a package's

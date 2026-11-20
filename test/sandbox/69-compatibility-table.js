@@ -22,32 +22,35 @@ const LIBRARIES = ['resolve-from', 'import-fresh', 'source-map-support', 'module
 
 // [the use, its outcome in single-thread mode, then in a worker under off,
 // audit, enforce]. Why each fails is in docs/security-model.md's table:
-// - resolve-from, import-fresh, module-alias: they hand Node's resolver a
-//   path made from the module's own directory, which is virtual (/app/...)
-//   in every mode, single-thread included, and Node reads that name as the
-//   host's own /app; under enforce the reduced `module` has no
-//   _nodeModulePaths or statics either;
+// - resolve-from, import-fresh: they hand Node's resolver a parent made from
+//   the module's own directory, which is virtual (/app/...) in every mode,
+//   single-thread included; it reaches Node in its host form (the file
+//   broker's mapping in a worker, the single-thread facade's by the calling
+//   module there), and under enforce the reduced `module` has confined
+//   _nodeModulePaths and _resolveFilename, so they work in every mode;
+// - module-alias: in a worker a module's requires are resolved by the file
+//   broker with Node's own resolver, so its replaced _resolveFilename is
+//   never asked (F4-1): use relative requires;
 // - source-map-support's hookRequire, require-in-the-middle, module-alias:
 //   they replace the loader's statics, held in both modes (S, F7), or
 //   process.getBuiltinModule (held); module-alias's alias is never asked in
 //   a worker, whose resolution is the file broker's own (F4-1); under
 //   enforce the reduced `module` has no prototype or statics to replace.
-// (below Node 24.15 the resolve shim, lib/resolve-shim.js, takes
-// Module._resolveFilename through the file broker's hook, which maps the
-// module's virtual parent: there resolve-from and import-fresh work in a
-// worker under off and audit)
-// (on Windows, in single-thread mode, the module's own directory is
-// <V>:\app\..., a drive no host path is on, and these three work: measured
-// on the Windows subset, #195)
-const SHIM = require('../../lib/node-version').NEEDS_RESOLVE_SHIM;
+// (resolve-from and import-fresh: a module's virtual parent reaches Node in
+// its host form, confined to the module's root, in every mode -- C-compat;
+// on Windows, in single-thread mode, module-alias's alias works too: the
+// module's own directory is <V>:\app\..., a drive no host path is on, #195)
 const WIN = process.platform === 'win32';
 const TABLE = [
-  ['resolve-from', WIN ? 'works' : 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', 'threw TypeError'],
-  ['import-fresh', WIN ? 'works' : 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', 'threw TypeError'],
+  ['resolve-from', 'works', 'works', 'works', 'works'],
+  ['import-fresh', 'works', 'works', 'works', 'works'],
   ['source-map-support', 'works', 'works', 'works', 'works'],
   ['source-map-support hookRequire', 'works', 'works', 'no hook', 'threw TypeError'],
   ['module-alias', WIN ? 'works' : 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'threw TypeError'],
-  ['require-in-the-middle', 'works', 'works', 'threw TypeError', 'no hook'],
+  // (under enforce the reduced module's confined _resolveFilename (C-compat)
+  // takes it past its own abort, onto a Module.prototype there is none of:
+  // it throws at new Hook(), as under audit -- ruled R1)
+  ['require-in-the-middle', 'works', 'works', 'threw TypeError', 'threw TypeError'],
   // (a module's own code and the process-wide warning and error switches:
   // under enforce what Node's walk reads is held, #451)
   ['emitWarning assigned', 'works', 'works', 'works', 'works'],
