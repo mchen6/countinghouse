@@ -413,7 +413,16 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       const t = id();
       assert.ok((await ask(t)).asked != null);
       tombstones.get = () => Promise.reject(new Error('tombstones down'));
-      assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true});
+      assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true, waiting: true});
+    });
+    // (a real cancel takes the record and leaves the tombstone: the run
+    // started again finds neither question nor record, and is cancelled)
+    it('a run for a task whose cancel took its record (its tombstone left) runs nothing: {skip, cancelled}', async () => {
+      const t = id();
+      assert.ok((await ask(t)).asked != null);
+      await taskAsks.remove(t);
+      tombstones.get = () => Promise.resolve({owner: 'o'});
+      assert.deepStrictEqual(await beforeOf(jobData, t, {rerun: false}), {skip: true, cancelled: true});
     });
     it('a tombstone that can\'t be read rejects; so does a record that can\'t be read', async () => {
       const t = id();
@@ -831,6 +840,36 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     });
 
     waitOrders('the local runner', () => createRunner({jobTimeoutMs: 0}), (api) => api.close());
+
+    // (the asked hook closes the pass's call when it writes the question; a
+    // throw after that fails the job with a call of its own, never on the
+    // closed one -- the medium of fe7c1d5e)
+    it('a throw after the question was written fails the job with a call of its own (the local runner)', async () => {
+      const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
+        invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
+          asking(extraArgs.ask);
+          return setImmediate(callback, new CountinghouseError('ASK_PENDING'));
+        }};
+      const runner = createRunner({jobTimeoutMs: 0});
+      runner.authorizeRun = () => Promise.resolve();
+      runner.initJobProcess(ci);
+      const started = [];
+      const completed = [];
+      runner.setStartHook(() => { started.push(started.length + 1); return {usageCall: started.length}; });
+      runner.setCompletionHook((data, results, run) => { completed.push([run.extra != null ? run.extra.usageCall : null, run.error != null ? 'failed' : 'ok']); return null; });
+      runner.setAskHooks({
+        before: () => Promise.resolve({state: moduleAsk.newState({askable: true, shownAs: 'm'})}),
+        asked: () => Promise.resolve({asked: {round: 1}}),
+        settled: () => Promise.resolve(),
+        holdMs: () => { throw new Error('hold broken'); }
+      });
+      try {
+        const added = await new Promise((resolve) => runner.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: id(), era: 'modern', asks: true}, 'd', 's', 'a', {}, (err, r) => resolve({err, r})));
+        assert.ifError(added.err);
+        assert.ok(await until(() => completed.length === 1), JSON.stringify({started, completed}));
+        assert.deepStrictEqual([started, completed], [[1, 2], [[2, 'failed']]]);
+      } finally { runner.close(); }
+    });
 
     // (F2-2's medium: a session that ends while its pass's question is being
     // written closes that pass's usage call, never leaves it open)
