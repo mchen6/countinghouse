@@ -136,20 +136,21 @@ describe('mcp-contract 40: the grant set a tools/call is answered by (unit)', ()
     assert.deepStrictEqual(registry.grantKeysForTests(), []);
   });
 
-  it('one path: the key resolved and its grants read side by side, whatever the key, then kept once', async () => {
+  it('a key never seen is resolved first and its grants read only if it resolves; a lapsed key\'s two reads run side by side', async () => {
     const order = [];
     const slowIdentify = (key, cb) => { order.push(`identify ${key}`); setImmediate(() => { order.push(`identified ${key}`); cb(knownKeys.has(key) ? null : UNKNOWN); }); };
     registry.resetGrantsForTests({now: () => t, read: (key, cb) => { order.push(`read ${key}`); setImmediate(cb, null, {devices: grants[key] || []}); }});
     const callWith = (key) => new Promise((resolve, reject) => registry.grantsForCall(key, slowIdentify, (err, g) => (err ? reject(err) : resolve(g))));
     await callWith('key-a');
-    assert.deepStrictEqual(order.slice(0, 2).sort(), ['identify key-a', 'read key-a'], 'both begun before either answers');
+    assert.deepStrictEqual(order, ['identify key-a', 'identified key-a', 'read key-a'], 'never seen: the key first');
     order.length = 0;
     t += registry.GRANT_TTL_MS;
     await callWith('key-a');
-    assert.deepStrictEqual(order.slice(0, 2).sort(), ['identify key-a', 'read key-a'], 'lapsed: both again, side by side');
+    assert.deepStrictEqual(order.slice(0, 2).sort(), ['identify key-a', 'read key-a'], 'lapsed: both begun before either answers');
     order.length = 0;
     await assert.rejects(callWith('never-seen'), (e) => e === UNKNOWN);
-    assert.deepStrictEqual(registry.grantKeysForTests().length, 1, 'the unknown key is not kept');
+    assert.deepStrictEqual(order, ['identify never-seen', 'identified never-seen'], 'an unknown key costs one read');
+    assert.strictEqual(registry.grantKeysForTests().length, 1, 'and is not kept');
   });
 
   it('a call\'s resolution renews that the key is known even when a later list read kept the set (#458\'s high review, 4)', async () => {
