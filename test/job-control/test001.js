@@ -20,24 +20,27 @@ module.exports = function (cp, isSingleThread) {
     this.timeout(0);
 
     it('should complete added job after module is loaded', (done) => {
+      // (one answer: a completion, a failure or the add's error, whichever is first)
+      let answered = false;
+      const once = (err) => { if (answered) return; answered = true; done(err); };
       waitForReady.inText(() => cp.log, (readyErr) => {
-        if (readyErr != null) return done(readyErr);
+        if (readyErr != null) return once(readyErr);
         jobQueue = new Queue('job-queue', {prefix: prefixFor(), connection: connection});
         queueEvents = new QueueEvents('job-queue', {prefix: prefixFor(), connection: connection});
 
           queueEvents.on('failed', (args) => {
-            return done(new Error(args.failedReason));
+            return once(new Error(args.failedReason));
           });
 
           queueEvents.on('stalled', (args) => {
-            return done(new Error('stalled'));
+            return once(new Error('stalled'));
           });
 
           queueEvents.on('completed', (args) => {
             console.log(`Job completed with result ${JSON.stringify(args.returnvalue)}`);
 
             request(url).post('/shutdown').set('X-CH-Key', 'aabbcc').end(() => {}); // /shutdown is now admin-gated, shared with test5.js's debugKey
-            return done();
+            return once();
           });
 
           // the events stream is read before the job is added: a quick job's
@@ -47,7 +50,7 @@ module.exports = function (cp, isSingleThread) {
             serviceID:'urn:countinghouse-com:serviceID:echoService',
             actionName: 'echo',
             input: {foo: [], bar: 'inputString'}
-          })).catch((err) => done(new Error(`job add error: ${err.message}`)));
+          })).catch((err) => once(new Error(`job add error: ${err.message}`)));
       });
     });
   });
