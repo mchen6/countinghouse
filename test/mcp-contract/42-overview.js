@@ -24,6 +24,10 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.strictEqual(F.notLoaded(null), 'Not loaded: run `ch-local status` in your own terminal to see why.');
       assert.strictEqual(F.notLoaded('/home/u/.ch/bin/ch-local.js'), 'Not loaded: run `node "/home/u/.ch/bin/ch-local.js" status` in your own terminal to see why.');
       assert.strictEqual(F.notLoadedHosted, 'Not loaded on this runtime.');
+      // (ch-local's stopped and restart, 2026-11-20)
+      assert.strictEqual(F.stopped(null), 'Stopped by countinghouse: it loads again once its version changes. Run `ch-local status` in your own terminal to see why.');
+      assert.strictEqual(F.stopped('/home/u/.ch/bin/ch-local.js'), 'Stopped by countinghouse: it loads again once its version changes. Run `node "/home/u/.ch/bin/ch-local.js" status` in your own terminal to see why.');
+      assert.strictEqual(F.restart, 'Restart your client to load it.');
       assert.strictEqual(F.scenarios, `To build a scenario that combines modules, see the module development guide (${GUIDE}).`);
       assert.strictEqual(F.authoring, 'The authoring tools are enabled for you: countinghouse_validate_plan, countinghouse_validate_module and countinghouse_load_module.');
       // the output schema's word on which fields are whose (#490's high round 2, 2)
@@ -220,6 +224,28 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
         pack({name: 'p-a', module: 'a', loaded: false, held: l.modules.get('a')}), pack({name: 'p-b', module: 'b', loaded: false, held: l.modules.get('b')}),
         pack({name: 'p-c', module: 'c', loaded: false, held: l.modules.get('c')})]}).packs;
       assert.deepStrictEqual(packs.map((p) => [p.state, p.next]), packs.map(() => ['not loaded', overview.FIXED.notLoaded(L)]));
+    });
+
+    // (ch-local's applier, 2026-11-20: a module the runtime stopped for good,
+    // kept out until its version changes; one whose load waits for the
+    // client's restart)
+    it('stopped and restart: each its own fixed line, never another pack\'s', () => {
+      const h = home();
+      const l = heldBack.parse(doc([{name: 's', reason: 'stopped'}, {name: 'r', reason: 'restart'}]), h.settings);
+      const L = '/home/u/.ch/bin/ch-local.js';
+      const by = Object.fromEntries(overview.build({version: '1', settingsProfile: true, launcher: L, packs: [
+        pack({name: 'p-s', module: 's', loaded: false, held: l.modules.get('s')}), pack({name: 'p-r', module: 'r', loaded: false, held: l.modules.get('r')})]}).packs.map((p) => [p.name, p]));
+      assert.deepStrictEqual([by['p-s'].state, by['p-s'].next], ['not loaded', overview.FIXED.stopped(L)]);
+      assert.deepStrictEqual([by['p-r'].state, by['p-r'].next], ['not loaded', overview.FIXED.restart]);
+    });
+
+    // the shared vectors ch-local's writer pins against
+    it('the held-back file\'s vectors: every accepted file read, every refused one refused whole', () => {
+      const V = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'superpowers', 'specs', 'shared-runtime-wire', 'vectors.json'), 'utf8')).heldBackFile;
+      const h = home();
+      for (const {why, file} of V.accepted) assert.doesNotThrow(() => heldBack.parse(JSON.stringify(file), h.settings), why);
+      for (const {why, file} of V.refused) assert.throws(() => heldBack.parse(JSON.stringify(file), h.settings), Error, why);
+      assert.ok(V.accepted.length >= 5 && V.refused.length >= 16);
     });
 
     it('refuses the whole of anything else: never "all ready"', () => {

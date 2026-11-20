@@ -338,6 +338,40 @@ const out = {
       ]
     };
   })(),
+  // the held-back file ch-local writes for --heldBackFile (lib/held-back.js
+  // parse; #490), read by countinghouse_overview: ch-local pins its writer,
+  // the runtime its reader. Accepted files and one refused file per rule
+  // (any refusal empties the whole list). The launcher is the home's real
+  // bin/ch-local.js path, so it is checked by path, not here: one that is not
+  // the home's own, or not safe in a quoted command, is dropped alone.
+  heldBackFile: {
+    rule: 'exactly {v: 1, modules: [...], launcher?}; at most 256 modules, none named twice; each exactly {name, reason, root?, via?}; name an npm package name not starting with - or ~; reason one of credential, off, ceiling, missing, pin, withdrawn, stopped, restart, calls; root only on calls, one of the reasons but calls, or not-installed; via exactly when root is: a package name (not starting with - or ~), or for not-installed the callee\'s declared name (1 to 64 characters, no / or . or control character). The file is a regular file, one name, no link, 0600 (or a private ACL on Windows), this user\'s own, at most 65536 bytes.',
+    accepted: [
+      {why: 'none held back', file: {v: 1, modules: []}},
+      {why: 'each reason', file: {v: 1, modules: ['credential', 'off', 'ceiling', 'missing', 'pin', 'withdrawn', 'stopped', 'restart'].map((reason, i) => ({name: `@countinghouse/ch-m${i}`, reason}))}},
+      {why: 'a part blocked by a credential', file: {v: 1, modules: [{name: '@countinghouse/ch-pack-example', reason: 'calls', root: 'credential', via: '@countinghouse/ch-access-example'}]}},
+      {why: 'a part turned off by the ceiling', file: {v: 1, modules: [{name: 'ch-pack-a', reason: 'calls', root: 'ceiling', via: 'ch-part-b'}]}},
+      {why: 'a callee nothing installed, by its declared name', file: {v: 1, modules: [{name: 'ch-pack-a', reason: 'calls', root: 'not-installed', via: 'GitHub Access'}]}}
+    ],
+    refused: [
+      {why: 'another version', file: {v: 2, modules: []}},
+      {why: 'a top-level field not read', file: {v: 1, modules: [], token: 'x'}},
+      {why: 'a module field not read', file: {v: 1, modules: [{name: 'a', reason: 'off', note: 'x'}]}},
+      {why: 'not a package name', file: {v: 1, modules: [{name: 'Example Pack', reason: 'off'}]}},
+      {why: 'a name read as an option', file: {v: 1, modules: [{name: '-x', reason: 'off'}]}},
+      {why: 'a name read as a home', file: {v: 1, modules: [{name: '~x', reason: 'off'}]}},
+      {why: 'a name twice', file: {v: 1, modules: [{name: 'a', reason: 'off'}, {name: 'a', reason: 'pin'}]}},
+      {why: 'a reason not known', file: {v: 1, modules: [{name: 'a', reason: 'gone'}]}},
+      {why: 'not-installed as a reason', file: {v: 1, modules: [{name: 'a', reason: 'not-installed'}]}},
+      {why: 'a root on an entry that is not calls', file: {v: 1, modules: [{name: 'a', reason: 'off', root: 'credential', via: 'b'}]}},
+      {why: 'calls as a root', file: {v: 1, modules: [{name: 'a', reason: 'calls', root: 'calls', via: 'b'}]}},
+      {why: 'a root without via', file: {v: 1, modules: [{name: 'a', reason: 'calls', root: 'credential'}]}},
+      {why: 'a credential\'s via that is not a package name', file: {v: 1, modules: [{name: 'a', reason: 'calls', root: 'credential', via: 'GitHub Access'}]}},
+      {why: 'a not-installed via with a /', file: {v: 1, modules: [{name: 'a', reason: 'calls', root: 'not-installed', via: 'a/b'}]}},
+      {why: 'a not-installed via over 64 characters', file: {v: 1, modules: [{name: 'a', reason: 'calls', root: 'not-installed', via: 'x'.repeat(65)}]}},
+      {why: 'more than 256 modules', file: {v: 1, modules: Array.from({length: 257}, (_, i) => ({name: `m${i}`, reason: 'off'}))}}
+    ]
+  },
   // ch-local daemon's restore rows (#236 section 6): one shape for
   // countinghouse's restore.js, ch-local's session-table.js and B2's export,
   // which all read these cases

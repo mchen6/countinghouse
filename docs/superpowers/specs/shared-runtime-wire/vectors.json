@@ -1210,6 +1210,1325 @@
       }
     ]
   },
+  "heldBackFile": {
+    "rule": "exactly {v: 1, modules: [...], launcher?}; at most 256 modules, none named twice; each exactly {name, reason, root?, via?}; name an npm package name not starting with - or ~; reason one of credential, off, ceiling, missing, pin, withdrawn, stopped, restart, calls; root only on calls, one of the reasons but calls, or not-installed; via exactly when root is: a package name (not starting with - or ~), or for not-installed the callee's declared name (1 to 64 characters, no / or . or control character). The file is a regular file, one name, no link, 0600 (or a private ACL on Windows), this user's own, at most 65536 bytes.",
+    "accepted": [
+      {
+        "why": "none held back",
+        "file": {
+          "v": 1,
+          "modules": []
+        }
+      },
+      {
+        "why": "each reason",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "@countinghouse/ch-m0",
+              "reason": "credential"
+            },
+            {
+              "name": "@countinghouse/ch-m1",
+              "reason": "off"
+            },
+            {
+              "name": "@countinghouse/ch-m2",
+              "reason": "ceiling"
+            },
+            {
+              "name": "@countinghouse/ch-m3",
+              "reason": "missing"
+            },
+            {
+              "name": "@countinghouse/ch-m4",
+              "reason": "pin"
+            },
+            {
+              "name": "@countinghouse/ch-m5",
+              "reason": "withdrawn"
+            },
+            {
+              "name": "@countinghouse/ch-m6",
+              "reason": "stopped"
+            },
+            {
+              "name": "@countinghouse/ch-m7",
+              "reason": "restart"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a part blocked by a credential",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "@countinghouse/ch-pack-example",
+              "reason": "calls",
+              "root": "credential",
+              "via": "@countinghouse/ch-access-example"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a part turned off by the ceiling",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "ch-pack-a",
+              "reason": "calls",
+              "root": "ceiling",
+              "via": "ch-part-b"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a callee nothing installed, by its declared name",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "ch-pack-a",
+              "reason": "calls",
+              "root": "not-installed",
+              "via": "GitHub Access"
+            }
+          ]
+        }
+      }
+    ],
+    "refused": [
+      {
+        "why": "another version",
+        "file": {
+          "v": 2,
+          "modules": []
+        }
+      },
+      {
+        "why": "a top-level field not read",
+        "file": {
+          "v": 1,
+          "modules": [],
+          "token": "x"
+        }
+      },
+      {
+        "why": "a module field not read",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "a",
+              "reason": "off",
+              "note": "x"
+            }
+          ]
+        }
+      },
+      {
+        "why": "not a package name",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "Example Pack",
+              "reason": "off"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a name read as an option",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "-x",
+              "reason": "off"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a name read as a home",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "~x",
+              "reason": "off"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a name twice",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "a",
+              "reason": "off"
+            },
+            {
+              "name": "a",
+              "reason": "pin"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a reason not known",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "a",
+              "reason": "gone"
+            }
+          ]
+        }
+      },
+      {
+        "why": "not-installed as a reason",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "a",
+              "reason": "not-installed"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a root on an entry that is not calls",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "a",
+              "reason": "off",
+              "root": "credential",
+              "via": "b"
+            }
+          ]
+        }
+      },
+      {
+        "why": "calls as a root",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "a",
+              "reason": "calls",
+              "root": "calls",
+              "via": "b"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a root without via",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "a",
+              "reason": "calls",
+              "root": "credential"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a credential's via that is not a package name",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "a",
+              "reason": "calls",
+              "root": "credential",
+              "via": "GitHub Access"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a not-installed via with a /",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "a",
+              "reason": "calls",
+              "root": "not-installed",
+              "via": "a/b"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a not-installed via over 64 characters",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "a",
+              "reason": "calls",
+              "root": "not-installed",
+              "via": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            }
+          ]
+        }
+      },
+      {
+        "why": "more than 256 modules",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "m0",
+              "reason": "off"
+            },
+            {
+              "name": "m1",
+              "reason": "off"
+            },
+            {
+              "name": "m2",
+              "reason": "off"
+            },
+            {
+              "name": "m3",
+              "reason": "off"
+            },
+            {
+              "name": "m4",
+              "reason": "off"
+            },
+            {
+              "name": "m5",
+              "reason": "off"
+            },
+            {
+              "name": "m6",
+              "reason": "off"
+            },
+            {
+              "name": "m7",
+              "reason": "off"
+            },
+            {
+              "name": "m8",
+              "reason": "off"
+            },
+            {
+              "name": "m9",
+              "reason": "off"
+            },
+            {
+              "name": "m10",
+              "reason": "off"
+            },
+            {
+              "name": "m11",
+              "reason": "off"
+            },
+            {
+              "name": "m12",
+              "reason": "off"
+            },
+            {
+              "name": "m13",
+              "reason": "off"
+            },
+            {
+              "name": "m14",
+              "reason": "off"
+            },
+            {
+              "name": "m15",
+              "reason": "off"
+            },
+            {
+              "name": "m16",
+              "reason": "off"
+            },
+            {
+              "name": "m17",
+              "reason": "off"
+            },
+            {
+              "name": "m18",
+              "reason": "off"
+            },
+            {
+              "name": "m19",
+              "reason": "off"
+            },
+            {
+              "name": "m20",
+              "reason": "off"
+            },
+            {
+              "name": "m21",
+              "reason": "off"
+            },
+            {
+              "name": "m22",
+              "reason": "off"
+            },
+            {
+              "name": "m23",
+              "reason": "off"
+            },
+            {
+              "name": "m24",
+              "reason": "off"
+            },
+            {
+              "name": "m25",
+              "reason": "off"
+            },
+            {
+              "name": "m26",
+              "reason": "off"
+            },
+            {
+              "name": "m27",
+              "reason": "off"
+            },
+            {
+              "name": "m28",
+              "reason": "off"
+            },
+            {
+              "name": "m29",
+              "reason": "off"
+            },
+            {
+              "name": "m30",
+              "reason": "off"
+            },
+            {
+              "name": "m31",
+              "reason": "off"
+            },
+            {
+              "name": "m32",
+              "reason": "off"
+            },
+            {
+              "name": "m33",
+              "reason": "off"
+            },
+            {
+              "name": "m34",
+              "reason": "off"
+            },
+            {
+              "name": "m35",
+              "reason": "off"
+            },
+            {
+              "name": "m36",
+              "reason": "off"
+            },
+            {
+              "name": "m37",
+              "reason": "off"
+            },
+            {
+              "name": "m38",
+              "reason": "off"
+            },
+            {
+              "name": "m39",
+              "reason": "off"
+            },
+            {
+              "name": "m40",
+              "reason": "off"
+            },
+            {
+              "name": "m41",
+              "reason": "off"
+            },
+            {
+              "name": "m42",
+              "reason": "off"
+            },
+            {
+              "name": "m43",
+              "reason": "off"
+            },
+            {
+              "name": "m44",
+              "reason": "off"
+            },
+            {
+              "name": "m45",
+              "reason": "off"
+            },
+            {
+              "name": "m46",
+              "reason": "off"
+            },
+            {
+              "name": "m47",
+              "reason": "off"
+            },
+            {
+              "name": "m48",
+              "reason": "off"
+            },
+            {
+              "name": "m49",
+              "reason": "off"
+            },
+            {
+              "name": "m50",
+              "reason": "off"
+            },
+            {
+              "name": "m51",
+              "reason": "off"
+            },
+            {
+              "name": "m52",
+              "reason": "off"
+            },
+            {
+              "name": "m53",
+              "reason": "off"
+            },
+            {
+              "name": "m54",
+              "reason": "off"
+            },
+            {
+              "name": "m55",
+              "reason": "off"
+            },
+            {
+              "name": "m56",
+              "reason": "off"
+            },
+            {
+              "name": "m57",
+              "reason": "off"
+            },
+            {
+              "name": "m58",
+              "reason": "off"
+            },
+            {
+              "name": "m59",
+              "reason": "off"
+            },
+            {
+              "name": "m60",
+              "reason": "off"
+            },
+            {
+              "name": "m61",
+              "reason": "off"
+            },
+            {
+              "name": "m62",
+              "reason": "off"
+            },
+            {
+              "name": "m63",
+              "reason": "off"
+            },
+            {
+              "name": "m64",
+              "reason": "off"
+            },
+            {
+              "name": "m65",
+              "reason": "off"
+            },
+            {
+              "name": "m66",
+              "reason": "off"
+            },
+            {
+              "name": "m67",
+              "reason": "off"
+            },
+            {
+              "name": "m68",
+              "reason": "off"
+            },
+            {
+              "name": "m69",
+              "reason": "off"
+            },
+            {
+              "name": "m70",
+              "reason": "off"
+            },
+            {
+              "name": "m71",
+              "reason": "off"
+            },
+            {
+              "name": "m72",
+              "reason": "off"
+            },
+            {
+              "name": "m73",
+              "reason": "off"
+            },
+            {
+              "name": "m74",
+              "reason": "off"
+            },
+            {
+              "name": "m75",
+              "reason": "off"
+            },
+            {
+              "name": "m76",
+              "reason": "off"
+            },
+            {
+              "name": "m77",
+              "reason": "off"
+            },
+            {
+              "name": "m78",
+              "reason": "off"
+            },
+            {
+              "name": "m79",
+              "reason": "off"
+            },
+            {
+              "name": "m80",
+              "reason": "off"
+            },
+            {
+              "name": "m81",
+              "reason": "off"
+            },
+            {
+              "name": "m82",
+              "reason": "off"
+            },
+            {
+              "name": "m83",
+              "reason": "off"
+            },
+            {
+              "name": "m84",
+              "reason": "off"
+            },
+            {
+              "name": "m85",
+              "reason": "off"
+            },
+            {
+              "name": "m86",
+              "reason": "off"
+            },
+            {
+              "name": "m87",
+              "reason": "off"
+            },
+            {
+              "name": "m88",
+              "reason": "off"
+            },
+            {
+              "name": "m89",
+              "reason": "off"
+            },
+            {
+              "name": "m90",
+              "reason": "off"
+            },
+            {
+              "name": "m91",
+              "reason": "off"
+            },
+            {
+              "name": "m92",
+              "reason": "off"
+            },
+            {
+              "name": "m93",
+              "reason": "off"
+            },
+            {
+              "name": "m94",
+              "reason": "off"
+            },
+            {
+              "name": "m95",
+              "reason": "off"
+            },
+            {
+              "name": "m96",
+              "reason": "off"
+            },
+            {
+              "name": "m97",
+              "reason": "off"
+            },
+            {
+              "name": "m98",
+              "reason": "off"
+            },
+            {
+              "name": "m99",
+              "reason": "off"
+            },
+            {
+              "name": "m100",
+              "reason": "off"
+            },
+            {
+              "name": "m101",
+              "reason": "off"
+            },
+            {
+              "name": "m102",
+              "reason": "off"
+            },
+            {
+              "name": "m103",
+              "reason": "off"
+            },
+            {
+              "name": "m104",
+              "reason": "off"
+            },
+            {
+              "name": "m105",
+              "reason": "off"
+            },
+            {
+              "name": "m106",
+              "reason": "off"
+            },
+            {
+              "name": "m107",
+              "reason": "off"
+            },
+            {
+              "name": "m108",
+              "reason": "off"
+            },
+            {
+              "name": "m109",
+              "reason": "off"
+            },
+            {
+              "name": "m110",
+              "reason": "off"
+            },
+            {
+              "name": "m111",
+              "reason": "off"
+            },
+            {
+              "name": "m112",
+              "reason": "off"
+            },
+            {
+              "name": "m113",
+              "reason": "off"
+            },
+            {
+              "name": "m114",
+              "reason": "off"
+            },
+            {
+              "name": "m115",
+              "reason": "off"
+            },
+            {
+              "name": "m116",
+              "reason": "off"
+            },
+            {
+              "name": "m117",
+              "reason": "off"
+            },
+            {
+              "name": "m118",
+              "reason": "off"
+            },
+            {
+              "name": "m119",
+              "reason": "off"
+            },
+            {
+              "name": "m120",
+              "reason": "off"
+            },
+            {
+              "name": "m121",
+              "reason": "off"
+            },
+            {
+              "name": "m122",
+              "reason": "off"
+            },
+            {
+              "name": "m123",
+              "reason": "off"
+            },
+            {
+              "name": "m124",
+              "reason": "off"
+            },
+            {
+              "name": "m125",
+              "reason": "off"
+            },
+            {
+              "name": "m126",
+              "reason": "off"
+            },
+            {
+              "name": "m127",
+              "reason": "off"
+            },
+            {
+              "name": "m128",
+              "reason": "off"
+            },
+            {
+              "name": "m129",
+              "reason": "off"
+            },
+            {
+              "name": "m130",
+              "reason": "off"
+            },
+            {
+              "name": "m131",
+              "reason": "off"
+            },
+            {
+              "name": "m132",
+              "reason": "off"
+            },
+            {
+              "name": "m133",
+              "reason": "off"
+            },
+            {
+              "name": "m134",
+              "reason": "off"
+            },
+            {
+              "name": "m135",
+              "reason": "off"
+            },
+            {
+              "name": "m136",
+              "reason": "off"
+            },
+            {
+              "name": "m137",
+              "reason": "off"
+            },
+            {
+              "name": "m138",
+              "reason": "off"
+            },
+            {
+              "name": "m139",
+              "reason": "off"
+            },
+            {
+              "name": "m140",
+              "reason": "off"
+            },
+            {
+              "name": "m141",
+              "reason": "off"
+            },
+            {
+              "name": "m142",
+              "reason": "off"
+            },
+            {
+              "name": "m143",
+              "reason": "off"
+            },
+            {
+              "name": "m144",
+              "reason": "off"
+            },
+            {
+              "name": "m145",
+              "reason": "off"
+            },
+            {
+              "name": "m146",
+              "reason": "off"
+            },
+            {
+              "name": "m147",
+              "reason": "off"
+            },
+            {
+              "name": "m148",
+              "reason": "off"
+            },
+            {
+              "name": "m149",
+              "reason": "off"
+            },
+            {
+              "name": "m150",
+              "reason": "off"
+            },
+            {
+              "name": "m151",
+              "reason": "off"
+            },
+            {
+              "name": "m152",
+              "reason": "off"
+            },
+            {
+              "name": "m153",
+              "reason": "off"
+            },
+            {
+              "name": "m154",
+              "reason": "off"
+            },
+            {
+              "name": "m155",
+              "reason": "off"
+            },
+            {
+              "name": "m156",
+              "reason": "off"
+            },
+            {
+              "name": "m157",
+              "reason": "off"
+            },
+            {
+              "name": "m158",
+              "reason": "off"
+            },
+            {
+              "name": "m159",
+              "reason": "off"
+            },
+            {
+              "name": "m160",
+              "reason": "off"
+            },
+            {
+              "name": "m161",
+              "reason": "off"
+            },
+            {
+              "name": "m162",
+              "reason": "off"
+            },
+            {
+              "name": "m163",
+              "reason": "off"
+            },
+            {
+              "name": "m164",
+              "reason": "off"
+            },
+            {
+              "name": "m165",
+              "reason": "off"
+            },
+            {
+              "name": "m166",
+              "reason": "off"
+            },
+            {
+              "name": "m167",
+              "reason": "off"
+            },
+            {
+              "name": "m168",
+              "reason": "off"
+            },
+            {
+              "name": "m169",
+              "reason": "off"
+            },
+            {
+              "name": "m170",
+              "reason": "off"
+            },
+            {
+              "name": "m171",
+              "reason": "off"
+            },
+            {
+              "name": "m172",
+              "reason": "off"
+            },
+            {
+              "name": "m173",
+              "reason": "off"
+            },
+            {
+              "name": "m174",
+              "reason": "off"
+            },
+            {
+              "name": "m175",
+              "reason": "off"
+            },
+            {
+              "name": "m176",
+              "reason": "off"
+            },
+            {
+              "name": "m177",
+              "reason": "off"
+            },
+            {
+              "name": "m178",
+              "reason": "off"
+            },
+            {
+              "name": "m179",
+              "reason": "off"
+            },
+            {
+              "name": "m180",
+              "reason": "off"
+            },
+            {
+              "name": "m181",
+              "reason": "off"
+            },
+            {
+              "name": "m182",
+              "reason": "off"
+            },
+            {
+              "name": "m183",
+              "reason": "off"
+            },
+            {
+              "name": "m184",
+              "reason": "off"
+            },
+            {
+              "name": "m185",
+              "reason": "off"
+            },
+            {
+              "name": "m186",
+              "reason": "off"
+            },
+            {
+              "name": "m187",
+              "reason": "off"
+            },
+            {
+              "name": "m188",
+              "reason": "off"
+            },
+            {
+              "name": "m189",
+              "reason": "off"
+            },
+            {
+              "name": "m190",
+              "reason": "off"
+            },
+            {
+              "name": "m191",
+              "reason": "off"
+            },
+            {
+              "name": "m192",
+              "reason": "off"
+            },
+            {
+              "name": "m193",
+              "reason": "off"
+            },
+            {
+              "name": "m194",
+              "reason": "off"
+            },
+            {
+              "name": "m195",
+              "reason": "off"
+            },
+            {
+              "name": "m196",
+              "reason": "off"
+            },
+            {
+              "name": "m197",
+              "reason": "off"
+            },
+            {
+              "name": "m198",
+              "reason": "off"
+            },
+            {
+              "name": "m199",
+              "reason": "off"
+            },
+            {
+              "name": "m200",
+              "reason": "off"
+            },
+            {
+              "name": "m201",
+              "reason": "off"
+            },
+            {
+              "name": "m202",
+              "reason": "off"
+            },
+            {
+              "name": "m203",
+              "reason": "off"
+            },
+            {
+              "name": "m204",
+              "reason": "off"
+            },
+            {
+              "name": "m205",
+              "reason": "off"
+            },
+            {
+              "name": "m206",
+              "reason": "off"
+            },
+            {
+              "name": "m207",
+              "reason": "off"
+            },
+            {
+              "name": "m208",
+              "reason": "off"
+            },
+            {
+              "name": "m209",
+              "reason": "off"
+            },
+            {
+              "name": "m210",
+              "reason": "off"
+            },
+            {
+              "name": "m211",
+              "reason": "off"
+            },
+            {
+              "name": "m212",
+              "reason": "off"
+            },
+            {
+              "name": "m213",
+              "reason": "off"
+            },
+            {
+              "name": "m214",
+              "reason": "off"
+            },
+            {
+              "name": "m215",
+              "reason": "off"
+            },
+            {
+              "name": "m216",
+              "reason": "off"
+            },
+            {
+              "name": "m217",
+              "reason": "off"
+            },
+            {
+              "name": "m218",
+              "reason": "off"
+            },
+            {
+              "name": "m219",
+              "reason": "off"
+            },
+            {
+              "name": "m220",
+              "reason": "off"
+            },
+            {
+              "name": "m221",
+              "reason": "off"
+            },
+            {
+              "name": "m222",
+              "reason": "off"
+            },
+            {
+              "name": "m223",
+              "reason": "off"
+            },
+            {
+              "name": "m224",
+              "reason": "off"
+            },
+            {
+              "name": "m225",
+              "reason": "off"
+            },
+            {
+              "name": "m226",
+              "reason": "off"
+            },
+            {
+              "name": "m227",
+              "reason": "off"
+            },
+            {
+              "name": "m228",
+              "reason": "off"
+            },
+            {
+              "name": "m229",
+              "reason": "off"
+            },
+            {
+              "name": "m230",
+              "reason": "off"
+            },
+            {
+              "name": "m231",
+              "reason": "off"
+            },
+            {
+              "name": "m232",
+              "reason": "off"
+            },
+            {
+              "name": "m233",
+              "reason": "off"
+            },
+            {
+              "name": "m234",
+              "reason": "off"
+            },
+            {
+              "name": "m235",
+              "reason": "off"
+            },
+            {
+              "name": "m236",
+              "reason": "off"
+            },
+            {
+              "name": "m237",
+              "reason": "off"
+            },
+            {
+              "name": "m238",
+              "reason": "off"
+            },
+            {
+              "name": "m239",
+              "reason": "off"
+            },
+            {
+              "name": "m240",
+              "reason": "off"
+            },
+            {
+              "name": "m241",
+              "reason": "off"
+            },
+            {
+              "name": "m242",
+              "reason": "off"
+            },
+            {
+              "name": "m243",
+              "reason": "off"
+            },
+            {
+              "name": "m244",
+              "reason": "off"
+            },
+            {
+              "name": "m245",
+              "reason": "off"
+            },
+            {
+              "name": "m246",
+              "reason": "off"
+            },
+            {
+              "name": "m247",
+              "reason": "off"
+            },
+            {
+              "name": "m248",
+              "reason": "off"
+            },
+            {
+              "name": "m249",
+              "reason": "off"
+            },
+            {
+              "name": "m250",
+              "reason": "off"
+            },
+            {
+              "name": "m251",
+              "reason": "off"
+            },
+            {
+              "name": "m252",
+              "reason": "off"
+            },
+            {
+              "name": "m253",
+              "reason": "off"
+            },
+            {
+              "name": "m254",
+              "reason": "off"
+            },
+            {
+              "name": "m255",
+              "reason": "off"
+            },
+            {
+              "name": "m256",
+              "reason": "off"
+            }
+          ]
+        }
+      }
+    ]
+  },
   "restoreRows": {
     "rule": "a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 2 (one per cap), one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool's bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; nothing else is overridden (a pack's or a module's on/off is never a session's own: a well-formed pack.<n> override from before M5a, with a boolean value, over null and a semver version, is dropped from its row, the rest of the row taken and its session told once; any other pack.<n> override refuses the restore); locks distinct kinds of maxOutputBytes, requestTimeout, enabled, module (every enabled.<module> is the one kind enabled, every module.<package>.<setting> the one kind module; the kind pack, from a runtime before M5b, is taken as enabled in locks, unanswered and declines, deduped, a kind both locked and unanswered after it staying locked, and said once (mapped); a kind this runtime has none of, of a kind's shape (a letter, then letters and digits, at most 64), in a row's locks or unanswered is dropped from it when nothing else in the row refuses, the rest of the row (its known locks, its forms) taken; a decline of such a kind is dropped (kindsDropped); anything else in a kind's place refuses the restore); formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: \"restore\", sessions, declines, reset}: reset lists the sessions (each a row's) that lost loosenings in a handoff, to be told so",
     "accepted": [
