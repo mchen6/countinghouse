@@ -19,6 +19,8 @@ const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
 const {testPort, redisConnectionFor, redisUrlFor} = require('../helpers/test-env');
 const {prefixFor} = require('../helpers/job-queue');
 const {deviceIDForName} = require('../../lib/call-address');
+// the runtime's job queue db (lib/store.js), never a literal
+const JOB_DB = require('../../lib/store').JOB_QUEUE_REDIS_DB;
 const tmp = require('../helpers/test-tmp').forFile(['ch-owner-']);
 
 const DEVICE  = deviceIDForName('job-snoop');
@@ -36,7 +38,7 @@ const balance = (url, key) => request(url).post('/mcp').set('X-CH-Key', key).set
 // every value under the queue's prefix, as text: hashes, strings, lists,
 // sorted sets (with scores) and sets, read by type
 async function queueText(prefix) {
-  const client = redis.createClient(redisUrlFor(), {db: 11});
+  const client = redis.createClient(redisUrlFor(), {db: JOB_DB});
   client.on('error', () => {});
   const cmd = (name, ...args) => new Promise((resolve, reject) => client[name](...args, (e, r) => (e ? reject(e) : resolve(r))));
   try {
@@ -92,7 +94,7 @@ describe('auth 61: a job names its owner by id, never by the key (B-meter-keys (
       fs.writeFileSync(authPath, JSON.stringify({[ALICE]: {userName: 'alice', devices: [DEVICE]}}));
       server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath, '--mcpToolCallCost', '1',
         '--moduleDataPath', store, '--loadModule', FIXTURE], {env: {COUNTINGHOUSE_API_KEY: ENVKEY}});
-      queue = new Queue('job-queue', {prefix: prefixFor(store), connection: redisConnectionFor(11)});
+      queue = new Queue('job-queue', {prefix: prefixFor(store), connection: redisConnectionFor(JOB_DB)});
     });
     after(async () => {
       if (queue != null) {
@@ -132,9 +134,15 @@ describe('auth 61: a job names its owner by id, never by the key (B-meter-keys (
       }
       const job = await queue.getJob(added.body.id);
       assert.strictEqual(state, 'completed', String(job.failedReason));
-      // (billing is fire-and-forget: read once it has settled)
-      let after = null;
-      for (let i = 0, last = null; i < 30; i++, last = after) { after = await balance(URL, ENVKEY); if (after === last && after !== before) break; await sleep(200); }
+      // (billing is fire-and-forget: a settled value -- two reads 300 ms apart
+      // that agree -- never polled for the one expected)
+      let after = await balance(URL, ENVKEY);
+      for (let i = 0; i < 20; i++) {
+        await sleep(300);
+        const now = await balance(URL, ENVKEY);
+        if (now === after) break;
+        after = now;
+      }
       assert.strictEqual(after, before - 1, `billed to its owner: before ${before}, after ${after}`);
     });
   });
@@ -158,7 +166,7 @@ describe('auth 61: a job names its owner by id, never by the key (B-meter-keys (
       cli('set-admin', ADMIN, 'true');
       server = await startServer(PORT, ['--workerThread', '--authProvider', 'sqlite', '--authConfigPath', db,
         '--moduleDataPath', store, '--loadModule', FIXTURE]);
-      queue = new Queue('job-queue', {prefix: prefixFor(store), connection: redisConnectionFor(11)});
+      queue = new Queue('job-queue', {prefix: prefixFor(store), connection: redisConnectionFor(JOB_DB)});
     });
     after(async () => {
       if (queue != null) { await queue.obliterate({force: true}).catch(() => {}); await queue.close(); }
@@ -191,7 +199,7 @@ describe('auth 61: a job names its owner by id, never by the key (B-meter-keys (
       base = tmp.mkdtemp('ch-owner-debug-');
       store = path.join(base, 'store');
       server = await start();
-      queue = new Queue('job-queue', {prefix: prefixFor(store), connection: redisConnectionFor(11)});
+      queue = new Queue('job-queue', {prefix: prefixFor(store), connection: redisConnectionFor(JOB_DB)});
     });
     after(async () => {
       if (queue != null) { await queue.obliterate({force: true}).catch(() => {}); await queue.close(); }

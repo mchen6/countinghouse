@@ -27,12 +27,12 @@ describe('jobs-local 05: close() ends a running pass\'s usage call as cancelled 
 
   it('a pass whose call never answers: close() records it cancelled, and a later answer records nothing more', async () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1});
-    const hooks = taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}), callerOf: () => 'c1',
+    const hooks = taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}),
       buildResult: (err) => ({content: [{type: 'text', text: err != null ? 'failed' : 'ok'}], isError: err != null})});
     let answerLater = null;
     const ci = {recordCall: (k, t, c, cb) => cb && cb(null), invokeJobs: (d, s, a, input, jobID, callback) => { answerLater = callback; }};
     const runner = createRunner({jobTimeoutMs: 0});
-    runner.authorizeRun = () => Promise.resolve();
+    runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
     runner.initJobProcess(ci);
     runner.setStartHook(hooks.start);
     runner.setCompletionHook((data, results, run) => hooks.complete(data, results, run));

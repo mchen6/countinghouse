@@ -50,7 +50,7 @@ describe('sessions 21: tasks by key and session (shared runtime B5, Task 2)', fu
     const ci = {recordCall: (k, t, c, cb) => cb && cb(null),
       invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback) => { release.then(() => setImmediate(callback, null, {output: {ok: 1}})); }};
     runner = createRunner({jobTimeoutMs: 0});
-    runner.authorizeRun = () => Promise.resolve();
+    runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
     runner.initJobProcess(ci);
   });
   afterEach(() => { runner.close(); Object.assign(options, saved); sessions.resetForTests(); jobSessions.resetForTests(); });
@@ -66,7 +66,7 @@ describe('sessions 21: tasks by key and session (shared runtime B5, Task 2)', fu
       sessions.resetForTests();
       runner.close();
       runner = createRunner({jobTimeoutMs: 0});
-      runner.authorizeRun = () => Promise.resolve();
+      runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
       runner.initJobProcess({recordCall: (k, t, c, cb) => cb && cb(null), invokeJobs: () => {}});
       assert.strictEqual((await add({appKey: 'k'})).r.id, '1');
     });

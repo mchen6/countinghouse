@@ -349,6 +349,95 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
     });
   });
 
+  // #518's high round: rebuilds by generation, the refill a miss waits for,
+  // the --debug set's LRU, and the single-identity profile under --debug
+  describe('the index under refills (#518\'s high, M1, L3, L4 b)', () => {
+    const run = (body) => {
+      const script = `
+        const identity = require(${JSON.stringify(path.join(LIB, 'identity'))});
+        identity.initSync({moduleDataPath: ${JSON.stringify(path.join(os.tmpdir(), 'ch-identity-unused'))}});
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        (async () => { const out = await (async () => { ${body} })(); process.stdout.write('OUT ' + JSON.stringify(out) + '\\n'); })();`;
+      const r = spawnSync(process.execPath, ['-e', script], {encoding: 'utf8', timeout: 30000,
+        env: Object.assign({}, process.env, {COUNTINGHOUSE_IDENTITY_SECRET: hex(32)})});
+      const line = (r.stdout || '').split('\n').find((l) => l.startsWith('OUT '));
+      assert.ok(line != null, `no output: ${r.stdout} ${r.stderr}`);
+      return JSON.parse(line.slice(4));
+    };
+
+    it('a slow rebuild that started first never drops a key a later refill added', () => {
+      const out = run(`
+        const old = {entries: (cb) => setTimeout(() => cb(null, [{apiKey: 'k-a', userName: 'a'}]), 300)};
+        const now = {entries: (cb) => cb(null, [{apiKey: 'k-a', userName: 'a'}, {apiKey: 'k-b', userName: 'b'}])};
+        const slow = identity.rebuild(old);
+        await sleep(20);
+        const b = await identity.know('k-b', () => now);
+        await slow;
+        return {b, kept: identity.lookup(b) != null};`);
+      assert.strictEqual(out.kept, true, 'the slow, older read did not drop the newer key');
+    });
+
+    it('a miss inside the throttle waits for a refill that asks the provider after it, never one from before', () => {
+      const out = run(`
+        // (the throttle's wait passes at once: an injected clock, no real 5 s)
+        identity.stateForTests().setClock({now: () => Date.now(), setTimeout: (fn, ms) => (ms <= 5000 ? setImmediate(fn) : setTimeout(fn, ms))});
+        let list = [{apiKey: 'k-a', userName: 'a'}];
+        let reads = 0;
+        const p = {entries: (cb) => { reads++; cb(null, list.slice()); }};
+        await identity.freshRefill(p);
+        // (the key is listed only now, inside the window)
+        list = list.concat([{apiKey: 'k-late', userName: 'late'}]);
+        const late = await identity.know('k-late', () => p);
+        return {late: late != null && identity.lookup(late) != null, reads};`);
+      assert.deepStrictEqual(out, {late: true, reads: 2});
+    });
+
+    it('a provider that never answers is refused at the deadline, and the refills after it still run', () => {
+      const out = run(`
+        // (the deadline passes at once: an injected clock)
+        identity.stateForTests().setClock({now: () => Date.now(), setTimeout: (fn, ms) => setImmediate(fn)});
+        const hung = {entries: () => {}};
+        const good = {entries: (cb) => cb(null, [{apiKey: 'k-good', userName: 'g'}])};
+        const first = await identity.know('k-x', () => hung).then(() => 'resolved', (e) => e.code);
+        const next = await identity.know('k-good', () => good).then((id) => identity.lookup(id) != null, (e) => e.code);
+        return {first, next};`);
+      assert.deepStrictEqual(out, {first: 'IDENTITY_REFILL_TIMEOUT', next: true});
+    });
+
+    it('a key remembered under --debug keeps its id once a provider lists it under a stable one: its jobs are not orphaned', () => {
+      const out = run(`
+        let list = [];
+        const p = {entries: (cb) => cb(null, list.slice())};
+        const kept = await identity.know('k-later', () => p, {rememberUnlisted: true});
+        list = [{apiKey: 'k-later', userName: 'l', id: 'later-stable'}];
+        await identity.rebuild(p);
+        return {old: identity.lookup(kept) != null, now: identity.idForKey('k-later') === identity.idFor({id: 'later-stable'}, 'x')};`);
+      assert.deepStrictEqual(out, {old: true, now: true});
+    });
+
+    it('--debug\'s remembered keys: a key used again is kept, the one used longest ago goes', function() {
+      this.timeout(60000);
+      const out = run(`
+        const max = identity.REMEMBERED_MAX;
+        const first = await identity.know('k-0', () => null);
+        const second = await identity.know('k-1', () => null);
+        for (let i = 2; i < max; i++) await identity.know('k-' + i, () => null);
+        await identity.know('k-0', () => null);
+        await identity.know('k-over', () => null);
+        return {first: identity.lookup(first) != null, second: identity.lookup(second) != null, text: identity.OWNER_LOST_WITHOUT_PROVIDER};`);
+      assert.deepStrictEqual([out.first, out.second], [true, false], 'used again, kept; untouched, evicted');
+      assert.match(out.text, /more than 1024 keys/);
+    });
+
+    it('rememberUnlisted (--debug\'s single-identity profile): a key the provider does not list is remembered, never refused', () => {
+      const out = run(`
+        const one = {entries: (cb) => cb(null, [{apiKey: 'the-one', userName: 'local'}])};
+        const other = await identity.know('another-key', () => one, {rememberUnlisted: true}).then((id) => identity.lookup(id) != null, (e) => e.code);
+        return {other};`);
+      assert.strictEqual(out.other, true);
+    });
+  });
+
   describe('(h) sqlite: a stable id per user', () => {
     let sqlite3 = null;
     try { sqlite3 = require('sqlite3'); } catch (e) { sqlite3 = null; }
