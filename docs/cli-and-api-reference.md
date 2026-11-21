@@ -120,9 +120,17 @@ rate-limit refusal adds `countinghouse/retryAfter`: when to retry, in whole
 seconds, the limiter's own, within its window (a REST 429 or 503 says the
 same in `Retry-After`). It appears only where a limiter wrote it: an error
 a module passes on from a part's call is the module's answer (kind
-`module`) and carries none. A JSON-RPC rate-limit error (`tools/list`,
-`prompts/list`, `completion/complete`, a resource read) carries the same
-three keys in its `error.data`.
+`module`) and carries none. Every limit's refusal on `/mcp` outside
+`tools/call` -- a key over its budget (`tools/list`, `prompts/list`,
+`prompts/get`, `completion/complete`, `tasks/*`, a resource read), an
+address over `--unauthRateLimit`, a key or session with as many
+subscriptions open as it may have (`TOO_MANY_SUBSCRIPTIONS`), and the
+runtime at its limit (`RUNTIME_BUSY`) -- is the JSON-RPC error -32000, the
+catalogue's message (or the subscription limit's own), and the same keys in
+its `error.data`. A single request's is sent with its code's HTTP status,
+429 (503 for `RUNTIME_BUSY`), and `Retry-After` when a hint was written. A
+legacy batch stays 200, with `Retry-After` the longest hint among its
+limited messages.
 
 **Module names.** A load (`/load-module`, `countinghouse_load_module`, `--loadModule`, the registry at startup, restarts) must use the module's package.json name; any other name is refused with `MODULE_NAME_MISMATCH`. `POST /load-module` may leave `name` out, and then uses the package.json name.
 
