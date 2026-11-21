@@ -19,6 +19,20 @@ describe('fs-broker 01: module data directories', () => {
       .forEach((n) => assert.strictEqual(md.safeName(n), false, JSON.stringify(n)));
   });
 
+  // (Windows drops a trailing dot or space from a path's part, so "x." and
+  // "x " would share x's directory: the reviewer's high on ch-local#113, 1)
+  it('refuses a part that ends in a dot or a space', () => {
+    ['my-tool.', 'my-tool ', '@acme./x', '@acme/x.', '@acme/x '].forEach((n) => assert.strictEqual(md.safeName(n), false, JSON.stringify(n)));
+  });
+
+  // (Windows: an 8.3 short name is another directory's alias, and a
+  // reserved device name is no directory at all: the medium on the
+  // follow-up to ch-local#113)
+  it('refuses an 8.3 alias form and a Windows device name, in any part', () => {
+    ['abcdef~1', '@acme/abc~2x', 'nul', 'con', 'con.txt', 'COM3', '@acme/lpt1', 'aux.data'].forEach((n) => assert.strictEqual(md.safeName(n), false, JSON.stringify(n)));
+    ['console', 'nullable', 'a~b', 'com', 'lpt', 'auxiliary', '@prn/x'].forEach((n) => assert.strictEqual(md.safeName(n), true, JSON.stringify(n)));
+  });
+
   it('lays scoped names out as node_modules does', () => {
     const d = md.dirsFor('/srv/data', '@acme/x');
     // the host's form of the path (D:\srv\data\... on Windows)

@@ -89,6 +89,15 @@ describe('module-authoring 08: an own module\'s folder, as the profile reads it 
     assert.ok(r.problems.some((p) => /neither a file nor a folder \(api\.json\)/.test(p)), JSON.stringify(r.problems));
   });
 
+  // (validate_module says what the load would refuse: MODULE_NAME_INVALID)
+  it('pkgProblems: a name the load refuses as a data directory\'s is said', () => {
+    for (const name of ['my-tool.', 'nul', 'abcdef~1']) {
+      const problems = check.pkgProblems({name, countinghouse: {role: 'scenario'}});
+      assert.ok(problems.some((p) => /package\.json's name can't name a module's data folder/.test(p)), `${name}: ${JSON.stringify(problems)}`);
+    }
+    assert.deepStrictEqual(check.pkgProblems({name: 'my-tool', countinghouse: {role: 'scenario'}}), []);
+  });
+
   it('scrub: whatever follows "cannot be parsed" or "cannot be read" is cut, whatever the parser said', () => {
     assert.strictEqual(check.scrub('api.json cannot be parsed: Unexpected token \'x\', "x;SECRET\nMORE" is not valid JSON'), 'api.json cannot be parsed');
     assert.strictEqual(check.scrub('package.json cannot be read: EACCES'), 'package.json cannot be read');

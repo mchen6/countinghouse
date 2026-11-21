@@ -10,6 +10,17 @@ the auth config.
 
 ## Unreleased
 
+### Changed — a module's name maps to one data folder on every system
+
+A module whose name has a part that ends in a dot or a space ("my-tool."), has
+"~" followed by a digit (an 8.3 short name's form, "abcdef~1"), or is a
+Windows device name (con, prn, aux, nul, com0–com9, lpt0–lpt9, with or
+without an extension: "nul.txt") is refused at load (`MODULE_NAME_INVALID`)
+on every system, Windows or not. Windows would put each one in another
+module's data folder, or in no folder at all. `validate_module` reports such a
+name before the load does. A hosted runtime that loaded a module with such a
+name now refuses it: rename the package.
+
 ### Changed — one answer for every limit on `/mcp`
 
 A key over its rate limit on `/mcp` (outside `tools/call`) was answered
