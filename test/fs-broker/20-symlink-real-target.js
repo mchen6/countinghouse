@@ -79,8 +79,9 @@ describe('fs-broker 20: a symlink is decided by its real target, and takes no ".
         assert.strictEqual(fs.readFileSync(path.join(t.dirs.data, 'b', 'l2', 'f'), 'utf8'), 'ok', mode);
         // (the dangling l3: made, moved with its directory, and once what it
         // names is created there it leads inside, to that)
-        // (Windows stores a link's target in its own separators, as plain Node there does)
-        assert.strictEqual(fs.readlinkSync(path.join(t.dirs.data, 'b', 'l3')), process.platform === 'win32' ? 'missing\\later' : 'missing/later', mode);
+        // (Windows stores a file link's target in its own separators: Node's
+        // fs.symlink rewrites "/" for a 'file' or 'dir' link there)
+        assert.strictEqual(fs.readlinkSync(path.join(t.dirs.data, 'b', 'l3')), path.join('missing', 'later'), mode);
         await t.broker.handle('mkdir', ['/data/b/missing']);
         // (written through the dangling link itself: under enforce and audit
         // refused, a link to nothing being followed nowhere it was judged
