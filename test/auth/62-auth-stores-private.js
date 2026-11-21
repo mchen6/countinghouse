@@ -648,7 +648,7 @@ describe('auth 62: the sqlite store and its users CLI (B-meter-keys 4r)', functi
     const r = cli(db, ['add-user', KEY], `${KEY}\n`);
     assert.notStrictEqual(r.status, 0);
     assert.ok(!`${r.stdout}${r.stderr}`.includes(KEY), r.stdout + r.stderr);
-    assert.match(r.stderr, /is the API key/);
+    assert.match(r.stderr, /holds the API key/);
     assert.ok(!cli(db, ['list']).stdout.includes(KEY));
   });
 

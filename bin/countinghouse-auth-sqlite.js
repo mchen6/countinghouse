@@ -142,7 +142,7 @@ function main() {
       // name -- would be stored as a name or a grant, and shown: refused,
       // never echoed)
       if (parsed.args.slice(1).some((a) => String(a).includes(key))) {
-        console.error('an argument is the API key: give the key on stdin only, and the user name, devices or id as arguments');
+        console.error('an argument holds the API key: give the key on stdin only, and the user name, devices or id as arguments');
         process.exit(1);
       }
       return run(parsed, command, key);
