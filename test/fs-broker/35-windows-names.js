@@ -46,6 +46,7 @@ describe('fs-broker 35: a namespace path Windows reads as other than its text (d
           await assert.rejects(t.broker.handle('stat', [p, {}]), (e) => e.code === 'ENOENT', p);
           assert.strictEqual(await t.broker.handle('exists', [p]), false, p);
           await t.broker.handle('rm', [p, {force: true}]);
+          await assert.rejects(t.broker.handle('rm', [p, {}]), (e) => e.code === 'ENOENT', `${p}: without force`);
           assert.ok(t.reports.includes(`win-name ${p}`), t.reports.join(', '));
         } else {
           fs.mkdirSync(path.join(t.dirs.data, ...rel.slice(0, -1)), {recursive: true});
@@ -53,8 +54,13 @@ describe('fs-broker 35: a namespace path Windows reads as other than its text (d
           assert.strictEqual(fs.readFileSync(path.join(t.dirs.data, ...rel), 'utf8'), 'x', p);
         }
       }
-      // (a two-path op with such a name second: refused there too)
+      // (a two-path op with such a name second: refused there too; mkdtemp
+      // judged by the name it makes, so a prefix like "con" or "build." works)
       if (WIN) await assert.rejects(t.broker.handle('copyFile', ['/data/note', '/data/copy.', 0]), (e) => e.code === 'ENOENT');
+      for (const prefix of ['/tmp/con', '/tmp/build.']) assert.ok(typeof(await t.broker.handle('mkdtemp', [prefix])) === 'string', prefix);
+      // (rm with force swallows only the Windows rule's own answer: a path
+      // outside the namespace stays refused, on every OS)
+      await assert.rejects(t.broker.handle('rm', [path.join(t.base, 'elsewhere'), {force: true}]));
       // (on Windows note. would have been note: untouched)
       assert.strictEqual(fs.readFileSync(path.join(t.dirs.data, 'note'), 'utf8'), 'the note');
     } finally { await t.done(); }
@@ -67,7 +73,8 @@ describe('fs-broker 35: a namespace path Windows reads as other than its text (d
         // (on Windows "note." is note itself, trimmed by Windows)
         const st = await t.broker.handle('stat', ['/data/note.', {}]).catch((e) => e.code);
         if (WIN) {
-          assert.notStrictEqual(st, 'ENOENT', 'let through');
+          // (note itself, 8 bytes, reached through Windows' trimming)
+          assert.ok(st != null && st.fields != null && Number(st.fields.size) === 8, `let through to note: ${JSON.stringify(st)}`);
           assert.strictEqual(t.reports.includes('win-name /data/note.'), mode === 'audit', t.reports.join(', '));
         } else {
           assert.strictEqual(st, 'ENOENT', 'POSIX: no file of that name');
