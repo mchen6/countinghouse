@@ -24,6 +24,7 @@ const {FsBroker} = require('../../lib/fs-broker/broker');
 const tmp = require('../helpers/test-tmp').forFile(['broker-shapes-']);
 
 const SCRIPT = path.join(__dirname, 'scripts', 'node-shapes.js');
+const WIN = process.platform === 'win32';
 
 async function setup(mode, {guarded = true} = {}) {
   const base = tmp.mkdtemp('broker-shapes-');
@@ -54,25 +55,33 @@ describe('fs-broker 36: Node\'s own answers, through the broker (the final pass,
     it(`${mode}: readdir and opendir of a missing directory answer ENOENT, unreported (A1)`, async () => {
       const t = await setup(mode);
       try {
-        fs.symlinkSync(path.join(t.dirs.data, 'gone'), path.join(t.dirs.data, 'dangling'));
+        let linked = true;
+        try {
+          fs.symlinkSync(path.join(t.dirs.data, 'gone'), path.join(t.dirs.data, 'dangling'));
+        } catch (e) {
+          if (e.code !== 'EPERM') throw e;
+          linked = false; // (Windows without the symlink privilege)
+        }
         await assert.rejects(t.broker.handle('readdir', ['/data/no-such-dir', {}]), code('ENOENT'));
-        await assert.rejects(t.broker.handle('readdir', ['/data/dangling', {}]), code('ENOENT'));
-        await assert.rejects(t.broker.handle('readdir', ['/data/f/x', {}]), code('ENOTDIR'));
+        if (linked) await assert.rejects(t.broker.handle('readdir', ['/data/dangling', {}]), code('ENOENT'));
+        await assert.rejects(t.broker.handle('readdir', ['/data/f/x', {}]), code(WIN ? 'ENOENT' : 'ENOTDIR'));
         assert.deepStrictEqual(t.reports, []);
-        assert.deepStrictEqual(await t.broker.handle('readdir', ['/data', {}]), ['dangling', 'f']);
+        assert.deepStrictEqual(await t.broker.handle('readdir', ['/data', {}]), linked ? ['dangling', 'f'] : ['f']);
       } finally { await t.done(); }
     });
 
     it(`${mode}: mkdtemp with a trailing separator makes the directory inside; a root's own name is refused (A2)`, async () => {
       const t = await setup(mode);
       try {
-        for (const [prefix, host] of [['/tmp/', t.dirs.tmp], ['/data/', t.dirs.data], [`${t.dirs.log}/`, t.dirs.log]]) {
+        // (a declared root is named by its host path: POSIX's here)
+        const declared = WIN ? [] : [[`${t.dirs.log}/`, t.dirs.log]];
+        for (const [prefix, host] of [['/tmp/', t.dirs.tmp], ['/data/', t.dirs.data], ...declared]) {
           const made = await t.broker.handle('mkdtemp', [prefix]);
           assert.ok(made.startsWith(prefix) && /^[A-Za-z0-9]{6}$/.test(made.slice(prefix.length)), `${prefix}: ${made}`);
           assert.ok(fs.statSync(path.join(host, path.posix.basename(made))).isDirectory(), prefix);
         }
         const before = fs.readdirSync(t.base).sort();
-        for (const prefix of ['/tmp', '/data', t.dirs.log]) {
+        for (const prefix of ['/tmp', '/data', ...(WIN ? [] : [t.dirs.log])]) {
           await assert.rejects(t.broker.handle('mkdtemp', [prefix]), code(mode === 'enforce' ? 'EROFS' : 'EACCES'), prefix);
         }
         assert.deepStrictEqual(fs.readdirSync(t.base).sort(), before, 'nothing made beside a root');
