@@ -136,6 +136,10 @@
               "next": {
                 "type": "string",
                 "description": "countinghouse's own guidance for a pack that is not loaded: the only field in a pack that is."
+              },
+              "own": {
+                "type": "boolean",
+                "description": "True for a module the user added themselves (ch-local add-module): their own code, unpinned, not a pack's."
               }
             },
             "required": [
