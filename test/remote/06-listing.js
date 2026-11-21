@@ -62,7 +62,9 @@ describe('remote 06: tools/list at load, in the registry', function() {
     registry.register('listing-probe', PROBE);
     const first = await registry.listing('listing-probe', 'probe');
     assert.ok(first != null, 'listed at load');
-    assert.deepStrictEqual(first.tools.map((t) => t.name), ['big', 'big_sse', 'echo_text', 'fails', 'slow', 'sse_text', 'structured']);
+    assert.deepStrictEqual(first.names, ['big', 'big_sse', 'echo_text', 'fails', 'slow', 'sse_text', 'structured']);
+    // (F3: only the names and the hash are kept, never the schemas)
+    assert.deepStrictEqual(Object.keys(first).sort(), ['names', 'sha256']);
     assert.match(first.sha256, /^[0-9a-f]{16}$/);
     registry.register('listing-probe', PROBE);
     assert.strictEqual((await registry.listing('listing-probe', 'probe')).sha256, first.sha256);

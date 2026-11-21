@@ -206,6 +206,54 @@ describe('remote 03: the client', function() {
 
   // Code review of step 4: a call that reaches a client after close() (a
   // reload while it waited) must not connect it again.
+  // (the reviewer's pre-work high on #508, F3: listTools had the SDK compile
+  // every outputSchema with Ajv, synchronously on main, with no bound on the
+  // tools or their size)
+  it('a tool\'s outputSchema is never compiled at listing: one Ajv cannot compile lists all the same', async () => {
+    server.listed = [{name: 'odd', inputSchema: {type: 'object'}, outputSchema: {type: 'object', properties: {n: {type: 'no-such-type'}}}}];
+    c = client();
+    const tools = await c.list();
+    assert.deepStrictEqual(tools.map((t) => t.name), ['odd']);
+  });
+
+  it('a listing past MAX_TOOLS tools is refused REMOTE_PROTOCOL, naming the cap, at the page that crosses it', async () => {
+    const {MAX_TOOLS} = require('../../lib/remote/client');
+    assert.ok(Number.isInteger(MAX_TOOLS) && MAX_TOOLS > 0, 'exported');
+    server.listed = Array.from({length: MAX_TOOLS + 1}, (_, i) => ({name: `t${i}`, inputSchema: {type: 'object'}}));
+    c = client();
+    const e = await c.list().then(() => null, (err) => err);
+    assert.ok(e != null && e.code === 'REMOTE_PROTOCOL', e && e.message);
+    assert.ok(e.message.includes(`more than ${MAX_TOOLS} tools`), e.message);
+    // paged, 64 a page: the listing stops at the page that crosses the cap
+    server.listed = Array.from({length: MAX_TOOLS + 9}, (_, i) => ({name: `t${i}`, inputSchema: {type: 'object'}}));
+    server.pageSize = 64;
+    server.setMode('paged');
+    server.methods.length = 0;
+    const p = await c.list().then(() => null, (err) => err);
+    assert.ok(p != null && p.code === 'REMOTE_PROTOCOL' && p.message.includes(`more than ${MAX_TOOLS} tools`), p && p.message);
+    const pages = server.methods.filter((m) => m === 'tools/list').length;
+    assert.ok(pages === Math.floor(MAX_TOOLS / 64) + 1, `pages asked: ${pages}`);
+  });
+
+  it('a listing past MAX_LISTING_CHARS is refused REMOTE_PROTOCOL, naming the budget', async () => {
+    const {MAX_LISTING_CHARS} = require('../../lib/remote/client');
+    assert.ok(Number.isInteger(MAX_LISTING_CHARS) && MAX_LISTING_CHARS > 0, 'exported');
+    const wide = {type: 'object', description: 'd'.repeat(Math.ceil(MAX_LISTING_CHARS / 3))};
+    server.listed = [0, 1, 2, 3].map((i) => ({name: `w${i}`, inputSchema: wide}));
+    c = client();
+    const e = await c.list().then(() => null, (err) => err);
+    assert.ok(e != null && e.code === 'REMOTE_PROTOCOL', e && e.message);
+    assert.ok(e.message.includes(`more than ${MAX_LISTING_CHARS} characters`), e.message);
+  });
+
+  it('a tool without a string name, or a page whose tools are not a list, is REMOTE_PROTOCOL', async () => {
+    c = client();
+    for (const listed of [[{name: 7, inputSchema: {type: 'object'}}], [{inputSchema: {type: 'object'}}], [{name: 'x', inputSchema: 'no'}]]) {
+      server.listed = listed;
+      assert.strictEqual(await codeOf(c.list()), 'REMOTE_PROTOCOL', JSON.stringify(listed));
+    }
+  });
+
   it('a closed client does not connect again', async () => {
     c = client();
     await c.call('echo_text', {});

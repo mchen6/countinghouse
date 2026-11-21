@@ -15,10 +15,12 @@
 // mode: 'ok' (default), '401' (every request), 'garbage' (200 with a body
 // that is not JSON-RPC), 'redirect' (302 to `redirectTo`), 'redirect-same'
 // (307 to /moved on this server, which answers as 'ok'), 'paged'
-// (tools/list in pages of two), 'loopcursor' (every page names cursor "0"
+// (tools/list in pages of two, or of `pageSize`), 'loopcursor' (every page names cursor "0"
 // next), '600', '404', '500', '503', '504' (that status on every
 // request), 'echo400' (400 whose body repeats the Authorization header's
 // token), 'slowall' (every request answered after 600 ms).
+// listed: when set, the raw tool objects tools/list answers with (paged
+// mode pages them too); methods: every JSON-RPC method received, in order.
 const http = require('http');
 const path = require('path');
 // The SDK copy lib/remote/client.js loads, found the same way.
@@ -49,10 +51,10 @@ function answer(name, args) {
 
 // -> Promise<{headers: [object], paths: [request path], calls: [tool name], connections(): number,
 // open(): number, sockets(): Set of the open ones, close(): Promise,
-// setMode(mode), extraTools: []}>
+// setMode(mode), extraTools: [], methods: [], listed (settable)}>
 function startRemoteServer(port, opts) {
   const o = Object.assign({mode: 'ok', redirectTo: null}, opts);
-  const state = {aborted: 0, cancelled: [], headers: [], paths: [], calls: [], connections: 0, open: 0, sockets: new Set(), mode: o.mode, extraTools: []};
+  const state = {aborted: 0, cancelled: [], headers: [], paths: [], calls: [], connections: 0, open: 0, sockets: new Set(), mode: o.mode, extraTools: [], listed: null, methods: [], pageSize: 2};
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (d) => { body += d; });
@@ -71,18 +73,19 @@ function startRemoteServer(port, opts) {
       if (state.mode === 'slowall') await new Promise((resolve) => setTimeout(resolve, 600));
       let message = null;
       try { message = body !== '' ? JSON.parse(body) : undefined; } catch (e) { res.writeHead(400); return res.end(); }
+      if (message != null && typeof message.method === 'string') state.methods.push(message.method);
       const callName = (message != null && message.method === 'tools/call' && message.params != null) ? message.params.name : null;
       if (callName != null) state.calls.push(callName);
       // a client's notifications/cancelled (M19: a cancelled call's remote call)
       if (message != null && message.method === 'notifications/cancelled' && message.params != null) state.cancelled.push(message.params.requestId);
       const s = new Server({name: 'remote-test', version: '1.0.0'}, {capabilities: {tools: {}}});
       s.setRequestHandler(ListToolsRequestSchema, async (r) => {
-        const all = TOOLS.concat(state.extraTools).map(tool);
+        const all = (state.listed != null) ? state.listed : TOOLS.concat(state.extraTools).map(tool);
         if (state.mode === 'loopcursor') return {tools: all.slice(0, 1), nextCursor: '0'};
         if (state.mode !== 'paged') return {tools: all};
         const at = (r.params != null && r.params.cursor != null) ? Number(r.params.cursor) : 0;
-        const page = {tools: all.slice(at, at + 2)};
-        if (at + 2 < all.length) page.nextCursor = String(at + 2);
+        const page = {tools: all.slice(at, at + state.pageSize)};
+        if (at + state.pageSize < all.length) page.nextCursor = String(at + state.pageSize);
         return page;
       });
       s.setRequestHandler(CallToolRequestSchema, async (r) => answer(r.params.name, r.params.arguments));
@@ -113,6 +116,10 @@ function startRemoteServer(port, opts) {
       sockets: () => new Set(state.sockets),
       setMode: (mode) => { state.mode = mode; },
       extraTools: state.extraTools,
+      methods: state.methods,
+      get listed() { return state.listed; },
+      set listed(v) { state.listed = v; },
+      set pageSize(n) { state.pageSize = n; },
       close: () => new Promise((done) => { server.closeAllConnections(); server.close(() => done()); })
     }));
   });

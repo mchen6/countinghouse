@@ -2070,6 +2070,12 @@ the main thread's, not the module's (spec:
   message or a result. `COUNTINGHOUSE_*` variables are still never handed
   to a worker; a remote's credential may be one of them, because only the
   main thread reads it.
+- **A remote's tools/list is bounded.** Taken at load, with no operator
+  allowance needed when the remote has no credential, it is held to at most
+  2,048 tools and 4 MiB of their JSON (as well as 100 pages of at most
+  `--remoteMaxBytes`-sized answers each), or it fails as `REMOTE_PROTOCOL` and
+  names the bound. The runtime compiles none of the remote's schemas, and
+  keeps only the names and a hash of the listing.
 - **The threat it answers.** A declaration is the module author's, and the
   token is the user's. If the declaration alone decided what is read, any
   installed module could name `GITHUB_TOKEN` and a `url` of its own, and
