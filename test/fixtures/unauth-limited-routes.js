@@ -24,7 +24,7 @@ const cdif = {deviceManager: {getAllDeviceSpecs: () => ({})}};
 app.use('/balance', require(path.join(ROOT, 'lib/routes/balance'))(null, cdif));
 app.use('/device-list', require(path.join(ROOT, 'lib/routes/device-list'))(null, cdif));
 app.post('/admin', require(path.join(ROOT, 'lib/routes/admin-only')), (req, res) => res.json({ran: true}));
-app.post('/devices/:deviceID/invoke-action', require(path.join(ROOT, 'lib/routes/user')), (req, res) => res.json({ran: true}));
+app.post('/devices/:deviceID/invoke-action', require(path.join(ROOT, 'lib/routes/user'))(cdif), (req, res) => res.json({ran: true}));
 app.use('/mcp', require(path.join(ROOT, 'lib/routes/mcp'))(null, cdif, null, {}));
 
 const server = app.listen(0, '127.0.0.1', async () => {

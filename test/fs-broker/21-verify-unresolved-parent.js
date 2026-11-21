@@ -207,6 +207,10 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
       fs.symlinkSync('nothing-here', path.join(t.dirs.data, 'lock'));
       await assert.rejects(t.broker.handle('open', ['/data/lock', 'wx']), (e) => e.code === 'EEXIST');
       await assert.rejects(t.broker.handle('copyFile', ['/data/plain', '/data/lock', fs.constants.COPYFILE_EXCL]), (e) => e.code === 'EEXIST');
+      // (and nothing is made where the link leads: on Windows a create-new
+      // follows a link to nothing, so the broker answers EEXIST before any
+      // open there -- C-win-excl)
+      assert.ok(!fs.existsSync(path.join(t.dirs.data, 'nothing-here')), 'nothing made where the link leads');
       assert.ok(!t.reports.includes('link-dangling ENOENT /data/lock'), t.reports.join(', '));
       // (O_EXCL without O_CREAT follows a link like any open: refused as one)
       await assert.rejects(t.broker.handle('open', ['/data/lock', fs.constants.O_RDONLY | fs.constants.O_EXCL]), enoent('/data/lock'));
@@ -214,6 +218,27 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
       await assert.rejects(t.broker.handle('copyFile', ['/data/missing', '/data/lock']), (e) => e.code === 'ENOENT' && e.path === '/data/missing');
     } finally { await t.done(); }
   });
+
+  // C-win-excl: a dangling link in /data leading outside the namespace. An
+  // exclusive create through it -- an open 'wx', a copyFile COPYFILE_EXCL --
+  // answers EEXIST and makes nothing outside, on every OS and in every mode
+  // that has a namespace (Windows' create-new would follow it and make the
+  // target, with the module's bytes for a copy, before the check refused)
+  for (const mode of ['enforce', 'audit']) {
+    it(`an exclusive create through a dangling link leading outside makes nothing there (${mode})`, async () => {
+      const t = await setup(mode, () => {});
+      try {
+        fs.writeFileSync(path.join(t.dirs.data, 'plain'), 'the module\'s bytes');
+        for (const [name, op] of [['opened', (l) => t.broker.handle('open', [l, 'wx'])],
+          ['copied', (l) => t.broker.handle('copyFile', ['/data/plain', l, fs.constants.COPYFILE_EXCL])]]) {
+          const target = path.join(t.dirs.outside, `made-${name}`);
+          fs.symlinkSync(target, path.join(t.dirs.data, `out-${name}`));
+          await assert.rejects(op(`/data/out-${name}`), (e) => e.code === 'EEXIST', name);
+          assert.ok(!fs.existsSync(target), `${name}: nothing made outside the namespace`);
+        }
+      } finally { await t.done(); }
+    });
+  }
 
   // (descriptors: a refused open that held one -- link-appeared, escape --
   // closes it exactly once; one refused before any open -- EISDIR by the
