@@ -23,13 +23,15 @@ function runnerWith(answer) {
   const ci = {recordCall: (k, t, c, cb) => cb && cb(null),
     invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => { calls.push({jobID, extraArgs}); return answer(callback); }};
   const runner = createRunner({jobTimeoutMs: 0});
-  runner.authorizeRun = () => Promise.resolve();
+  runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
   runner.initJobProcess(ci);
   return {runner, calls};
 }
 const ok = (cb) => setImmediate(cb, null, {ok: 1});
 
 describe('sessions 05: a job\'s session through the local runner (B1 Task 3)', function() {
+  // (its jobs' owners known to the identity index, as a server's: B-meter-keys (2))
+  require('../helpers/identity-scope').useIdentity(['k']);
   this.timeout(20000);
   let saved;
   beforeEach(() => {

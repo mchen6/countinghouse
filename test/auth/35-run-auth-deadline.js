@@ -27,10 +27,14 @@ function run(behaviour) {
         if (behaviour === 'ok') return setImmediate(() => cb(null, {}));
         if (behaviour === 'late') return setTimeout(() => cb(null, {}), 900);
       }};
+    // (a job names its owner by id, the key found from the identity index:
+    // B-meter-keys (2))
+    ${require('../helpers/identity-scope').identityLines(LIB, ['some-key'])}
+    const owner = require(${JSON.stringify(path.join(LIB, 'identity'))}).idForKey('some-key');
     const JobControl = require(${JSON.stringify(path.join(LIB, 'job-control'))});
     JobControl.authorizeRunMs = 300;
     const started = Date.now();
-    JobControl.authorizeRun({id: 'job-35', data: {apiKey: 'some-key', deviceID: 'd', serviceID: 's', actionName: 'a'}})
+    JobControl.authorizeRun({id: 'job-35', data: {ownerId: owner, deviceID: 'd', serviceID: 's', actionName: 'a'}})
       .then(() => ({outcome: 'resolved'}), (e) => ({outcome: 'rejected', kind: e.constructor.name, message: e.message}))
       .then((r) => { r.ms = Date.now() - started; return r; })
       // A second more, so a late answer or a second settlement would show.

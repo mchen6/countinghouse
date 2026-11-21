@@ -22,6 +22,8 @@ async function until(check, ms = 3000) {
 
 describe('mcp-contract 33: a call recorded is a call said, with its session (M8)', function() {
   this.timeout(20000);
+  // (its jobs' owner known to the identity index, as a server's: B-meter-keys (2))
+  require('../helpers/identity-scope').useIdentity(['k']);
 
   it('recordCall says each recorded call with its session, before metering answers; a call with no key is neither', () => {
     const ci = Object.create(CdifInterface.prototype);
@@ -51,7 +53,7 @@ describe('mcp-contract 33: a call recorded is a call said, with its session (M8)
       const ci = {recordCall: (k, t, c, cb, opts) => { recorded.push({k, t, opts}); if (cb) cb(null); },
         invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback) => setImmediate(callback, null, {ok: 1})};
       const runner = createRunner({jobTimeoutMs: 0});
-      runner.authorizeRun = () => Promise.resolve();
+      runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
       runner.initJobProcess(ci);
       const added = await new Promise((resolve) => runner.addJob({appKey: 'k', session: S}, {name: 'n'}, 'dev', 'svc', 'act', {}, (err, r) => resolve({err, r})));
       assert.ifError(added.err);

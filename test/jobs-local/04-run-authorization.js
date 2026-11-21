@@ -26,6 +26,9 @@ function run(scenario, attempts) {
         if (${JSON.stringify(scenario)} === 'refused') return setImmediate(() => cb(Object.assign(new Error('no access'), {code: 'USER_HAS_NO_DEVICE'})));
         // deadline: never answers
       }};
+    // (the owner's key known to the identity index, as a server's: a job
+    // names its owner by id -- B-meter-keys (2))
+    ${require('../helpers/identity-scope').identityLines(LIB, ['owner-key-1'])}
     const {createRunner} = require(${JSON.stringify(path.join(LIB, 'job-control-local'))});
     const runner = createRunner({jobTimeoutMs: 0});
     runner.authorizeRunMs = 200;

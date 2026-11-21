@@ -324,7 +324,6 @@ describe('composition 18: jobs, by their owner\'s identity', function() {
   const addJob = (name, opts, note) => request(URL).post(`/devices/${DEVICE}/add-job`).set('X-CH-Key', ALICE)
     .send({serviceID: SERVICE, actionName: 'whoami', opts: Object.assign({name: name}, opts), input: {note: note}});
   const balance = () => request(URL).get('/balance').set('X-CH-Key', ALICE).then((r) => r.body.balance);
-  const legacyData = (note) => ({deviceID: DEVICE, serviceID: SERVICE, actionName: 'whoami', input: {note: note}, apiKey: ALICE});
   async function finished(id) {
     const deadline = Date.now() + 20000;
     for (;;) {
@@ -364,33 +363,9 @@ describe('composition 18: jobs, by their owner\'s identity', function() {
     await job.remove();
   });
 
-  it('(e) a job stored before the upgrade, with an apiKey only, runs and bills its owner', async () => {
-    const before = await balance();
-    const job = await queue.add(`${NAME}-legacy`, legacyData('legacy'));
-    const done = await finished(job.id);
-    assert.strictEqual(done.failedReason, undefined, String(done.failedReason));
-    assert.strictEqual(done.returnvalue.output.own, 'ok', JSON.stringify(done.returnvalue));
-    await sleep(1000);
-    assert.strictEqual(before - await balance(), 1, 'the run is billed to the key it was stored with');
-  });
-
-  // On master already (Task 1 moved the id); kept here because Task 3
-  // changes what a scheduler's runs carry.
-  it('(f) a scheduler stored under the old sha256-prefixed id runs as its owner\'s, who can remove it', async () => {
-    const legacyId = `${crypto.createHash('sha256').update(ALICE).digest('hex').slice(0, 16)}:${NAME}-sched`;
-    await queue.upsertJobScheduler(legacyId, {every: 1000, limit: 1}, {name: `${NAME}-sched`, data: legacyData('sched')});
-    let history = [];
-    const deadline = Date.now() + 20000;
-    while (Date.now() < deadline && history.length === 0) {
-      await sleep(300);
-      const r = await request(URL).post(`/devices/${DEVICE}/get-job-history`).set('X-CH-Key', ALICE).send({name: `${NAME}-sched`});
-      history = Array.isArray(r.body) ? r.body : (Array.isArray(r.body.data) ? r.body.data : []);
-    }
-    assert.ok(history.length > 0, 'its run is not listed to its owner');
-    const removed = await request(URL).post(`/devices/${DEVICE}/remove-job`).set('X-CH-Key', ALICE).send({name: `${NAME}-sched`, isRepeat: true});
-    assert.strictEqual(removed.status, 200, JSON.stringify(removed.body));
-    assert.strictEqual((await queue.getJobSchedulers(0, -1)).filter((s) => String(s.key || s.id) === legacyId).length, 0);
-  });
+  // (a job stored with an apiKey only, and a scheduler under the old
+  // sha256-prefixed id, are no longer read: a job names its owner by id
+  // alone, and there are no stored jobs from before -- B-meter-keys (2))
 
   it('(h) a job whose owner was removed fails SYSTEM_ERROR_UNKNOWN_USER, once, and is not billed', async () => {
     const before = await balance();
@@ -1563,7 +1538,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       redisAPI.client = {lpush: (k, v) => list.unshift(v), ltrim: () => {}, lrange: (k, a, b, cb) => cb(null, list.slice())};
       const KEY = `hist-key-${hex()}`;
       try {
-        common.saveJobInfo({id: '1', name: 'report', data: {apiKey: KEY, input: {}}, opts: {}, progress: 0}, 'completed');
+        // (a job names its owner by id, never the key: B-meter-keys (2))
+        common.saveJobInfo({id: '1', name: 'report', data: {ownerId: identity.idForKey(KEY), input: {}}, opts: {}, progress: 0}, 'completed');
         const record = JSON.parse(list[0]);
         assert.strictEqual(record.job.data.owner, identity.idForKey(KEY), JSON.stringify(record.job.data));
         assert.ok(!JSON.stringify(record).includes(KEY), 'the key is in the record');

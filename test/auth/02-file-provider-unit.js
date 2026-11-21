@@ -99,6 +99,33 @@ describe('auth 02: FileAuthProvider ergonomics (demo key generation, COUNTINGHOU
     });
   });
 
+  // B-meter-keys (2): the env key is an index entry, so its jobs name it by
+  // id; listed last (the file's positions unchanged), and a file entry for
+  // the same key keeps its stable id
+  it('entries() lists COUNTINGHOUSE_API_KEY, last; a file entry for the same key is listed as _lookup answers it (admin), its stable id kept', (done) => {
+    process.env.COUNTINGHOUSE_API_KEY = 'env-entry-key';
+    fs.writeFileSync(configPath, JSON.stringify({'file-key': {userName: 'f', devices: []}}), {mode: 0o600});
+    new FileAuthProvider({configPath: configPath}).entries((err, list) => {
+      if (err) return done(err);
+      try {
+        if (JSON.stringify(list.map((e) => [e.apiKey, e.userName, e.isAdmin])) !== JSON.stringify([['file-key', 'f', false], ['env-entry-key', 'env-key-user', true]])) {
+          throw new Error(`the env key listed last, as an admin: ${JSON.stringify(list.map((e) => e.userName))}`);
+        }
+      } catch (e) { return done(e); }
+      fs.writeFileSync(configPath, JSON.stringify({'env-entry-key': {userName: 'ops', id: 'ops-stable', admin: false, devices: ['*']}}), {mode: 0o600});
+      return new FileAuthProvider({configPath: configPath}).entries((err2, list2) => {
+        if (err2) return done(err2);
+        try {
+          // (as _lookup answers the key -- the env key first: its name, admin -- its stable id kept)
+          if (list2.length !== 1 || list2[0].id !== 'ops-stable' || list2[0].userName !== 'env-key-user' || list2[0].isAdmin !== true) {
+            throw new Error(`once, as the door answers it, its id kept: ${JSON.stringify(list2.map((e) => [e.userName, e.id, e.isAdmin]))}`);
+          }
+          return done();
+        } catch (e) { return done(e); }
+      });
+    });
+  });
+
   it('auth.json\'s optional "admin" field controls isAdmin, independent of device access', (done) => {
     const fileKeyConfig = {};
     fileKeyConfig['plain-key'] = {userName: 'plain-user', devices: ['*']};
