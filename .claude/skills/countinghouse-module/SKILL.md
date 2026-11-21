@@ -118,8 +118,9 @@ with ch-local, `node "<home>/app/node_modules/countinghouse/bin/countinghouse-va
 Never a bare `npx countinghouse-validate`: without a local copy it fetches
 whatever npm package has that name.
 
-The authoring tools need the runtime started with `--authoringTools` and an
-admin key. If they are missing from `tools/list`, that is why. Keep the
+On a hosted runtime, the authoring tools need the runtime started with
+`--authoringTools` and an admin key. If they are missing from `tools/list`,
+that is why (under ch-local, see below). Keep the
 default worker mode: a module whose handler file crashes or calls
 `process.exit()` while being required by `countinghouse_load_module` is a
 reported failure in worker mode, but takes the whole runtime down under
@@ -127,19 +128,32 @@ reported failure in worker mode, but takes the whole runtime down under
 
 ## Under ch-local
 
-With ch-local, the user's own install, steps 4 and 5 of the loop are
-different:
+You are under ch-local, the user's own install, when `tools/list` has
+`countinghouse_validate_plan`, `countinghouse_validate_module` and
+`countinghouse_load_module` but no `countinghouse_call_tool`. There the loop
+ends differently:
 
-- `countinghouse_validate_plan` and `countinghouse_validate_module` work as
-  above; neither runs the module's code.
-- `countinghouse_load_module` loads nothing. It answers with the command the
-  user runs in their own terminal: `node "<home>/bin/ch-local.js" add-module
-  "<folder>"`. Give the user that command. Never run it yourself, and never
-  answer its question: the user confirms what is added.
+- Write the module in a folder the user chooses, outside the ch-local home
+  (`~/.countinghouse`, or `$COUNTINGHOUSE_HOME`). A folder inside it, one
+  holding it, or one reached through a link is refused
+  (`OWN_MODULE_PATH_REFUSED`).
+- Its `package.json` declares `"countinghouse": {"role": "scenario"}`:
+  only a scenario's tools are listed here.
+- `countinghouse_validate_plan` works as above. `countinghouse_validate_module`
+  checks the files without running any of the module's code. A problem with
+  the folder itself (a link, a special file, too large) is reported first,
+  alone: fix it and validate again before the other checks run.
+- `countinghouse_load_module` (with the folder's absolute path) loads
+  nothing. It answers `OWN_MODULE_NEEDS_TERMINAL`, which is expected, not a
+  failure: its message holds the command the user runs in their own
+  terminal. Give the user that command exactly as the answer has it; do not
+  rebuild it. Never run it yourself, and never answer its question: the user
+  confirms what is added. Step 4's `toolNames` and retry advice do not apply.
 - Once the user has added it, its tools are in `tools/list` like a pack's:
-  call them directly. There is no `countinghouse_call_tool` here.
-- Never suggest `--authoringTools` or an admin key: those are for a hosted
-  runtime, not ch-local.
+  call them directly. `countinghouse_call_tool` does not exist here, and
+  calling it is answered like any unknown tool.
+- Never suggest `--authoringTools` or an admin key: they are for a hosted
+  runtime.
 - After any change to the module's code, the user runs `add-module` again
   and confirms again.
 
