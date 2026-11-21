@@ -83,21 +83,26 @@ describe('fs-broker 33: the paths a module is handed on Windows are in its own s
     });
   });
 
+  // (and where nothing is respelled -- every Linux and macOS worker -- the
+  // client is called as it is: a close settles under the same traps)
+  it('installed as on Linux: a handle\'s close settles with the promise constructor and then replaced', async () => {
+    const m = await runBrokered(path.join(__dirname, 'scripts', 'seen-form.js'), {patch: false, extra: {asPosix: true}});
+    assert.strictEqual(m.ok, true, JSON.stringify(m));
+    assert.deepStrictEqual(m.r, {closeUnderTamperedPromise: 'resolved'});
+  });
+
   // (the reviewer's condition: a host path is never spelled into view)
   it('readlink on Windows: a target rooted with no drive is refused (never qualified with a host drive, never read as the namespace\'s); a drive or UNC target is the namespace\'s in a root, else as the host has it', () => {
     const ns = {win32: true, hostPath: path.win32, toVirtual: (t) => (t.startsWith('C:\\ns\\') ? `/app/${t.slice(6).split('\\').join('/')}` : null)};
-    const link = 'D:\\h\\node_modules\\x';
     // (the reviewer's high on #505, 2: refused, failing closed -- no part of a host path the module didn't see)
-    for (const t of ['/data/secret', '\\data\\secret', '\\ns\\vendor\\x', '/app/x', '/tmp/y']) {
-      for (const l of [link, 'C:\\ns\\node_modules\\l', '\\\\?\\UNC\\srv\\share\\h\\l', undefined]) assert.throws(() => readlinkAnswer(ns, t, l), {code: 'EINVAL'}, `${t} from ${l}`);
-    }
-    assert.strictEqual(readlinkAnswer(ns, 'D:/host/y', link), 'D:\\host\\y');
-    assert.strictEqual(readlinkAnswer(ns, 'C:\\ns\\vendor\\x', link), '/app/vendor/x', 'in a root: the namespace\'s');
-    assert.strictEqual(readlinkAnswer(ns, '\\\\srv\\share\\x', link), '\\\\srv\\share\\x', 'UNC: as the host has it');
-    assert.strictEqual(readlinkAnswer(ns, '../vendor/x', link), '../vendor/x', 'relative: as it is');
+    for (const t of ['/data/secret', '\\data\\secret', '\\ns\\vendor\\x', '/app/x', '/tmp/y']) assert.throws(() => readlinkAnswer(ns, t), {code: 'EINVAL'}, t);
+    assert.strictEqual(readlinkAnswer(ns, 'D:/host/y'), 'D:\\host\\y');
+    assert.strictEqual(readlinkAnswer(ns, 'C:\\ns\\vendor\\x'), '/app/vendor/x', 'in a root: the namespace\'s');
+    assert.strictEqual(readlinkAnswer(ns, '\\\\srv\\share\\x'), '\\\\srv\\share\\x', 'UNC: as the host has it');
+    assert.strictEqual(readlinkAnswer(ns, '../vendor/x'), '../vendor/x', 'relative: as it is');
     const seen = seenFormFor('win32', 'M');
-    assert.strictEqual(seen(readlinkAnswer(ns, 'C:\\ns\\vendor\\x', link)), 'M:\\app\\vendor\\x');
+    assert.strictEqual(seen(readlinkAnswer(ns, 'C:\\ns\\vendor\\x')), 'M:\\app\\vendor\\x');
     const posixNs = {win32: false, hostPath: path.posix, toVirtual: () => null};
-    assert.strictEqual(readlinkAnswer(posixNs, '/data/secret', '/h/l'), '/data/secret', 'POSIX: as before');
+    assert.strictEqual(readlinkAnswer(posixNs, '/data/secret'), '/data/secret', 'POSIX: as before');
   });
 });

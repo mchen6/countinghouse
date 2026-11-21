@@ -10,7 +10,34 @@ const path = require('path');
 const DIR = 0o40755;
 const FILE = 0o100644;
 
-module.exports = async () => {
+// (a promise's constructor and then replaced by module code -- a getter
+// that names another constructor, a then that never settles anything --
+// as a handle closes: the close still settles, as on master; the broker's
+// answer is never awaited through them. The traps are there only while
+// close() runs, never across an await of this script's own)
+async function closeUnderTamperedPromise(fsp) {
+  const h = await fsp.open('/app/handle');
+  const realThen = Promise.prototype.then;
+  const ctor = Object.getOwnPropertyDescriptor(Promise.prototype, 'constructor');
+  let settled = 'pending';
+  let p;
+  try {
+    Object.defineProperty(Promise.prototype, 'constructor', {configurable: true, get() { return function Elsewhere() {}; }});
+    Promise.prototype.then = function() { /* swallows */ };
+    p = h.close();
+  } finally {
+    Promise.prototype.then = realThen;
+    Object.defineProperty(Promise.prototype, 'constructor', ctor);
+  }
+  Reflect.apply(realThen, p, [() => { settled = 'resolved'; }, (e) => { settled = `rejected ${e && e.code}`; }]);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  return settled;
+}
+
+// (ctx.extra.asPosix: the patch installed as on Linux -- nothing respelled,
+// the client called as it is -- for the tampered-promise close alone)
+module.exports = async (fsGiven, root, ctx) => {
+  const asPosix = ctx != null && ctx.extra != null && ctx.extra.asPosix === true;
   const patch = require(path.join(__dirname, '..', '..', '..', 'lib', 'fs-broker', 'patch'));
   const asked = [];
   // (errors made as the broker client makes them, lib/fs-broker/client.js)
@@ -70,9 +97,10 @@ module.exports = async () => {
     }
   };
   const client = {sync: (op, args) => answer(op, args), async: async(op, args) => answer(op, args)};
-  patch.install(client, {consoleWrite: () => {}, platform: 'win32', virtualDrive: 'M'});
+  patch.install(client, asPosix ? {consoleWrite: () => {}, platform: 'linux', virtualDrive: null} : {consoleWrite: () => {}, platform: 'win32', virtualDrive: 'M'});
   const fs = require('fs');
   const fsp = require('fs/promises');
+  if (asPosix) return {closeUnderTamperedPromise: await closeUnderTamperedPromise(fsp)};
   const out = {};
   const caught = (fn) => { try { fn(); return 'no error'; } catch (e) { return {path: e.path, dest: e.dest, message: e.message}; } };
   const caughtAsync = async(fn) => { try { await fn(); return 'no error'; } catch (e) { return {path: e.path, dest: e.dest, message: e.message}; } };
@@ -152,29 +180,7 @@ module.exports = async () => {
     out.replacedIntrinsics = {ran, path: got && got.path, ownDest: got != null && Object.hasOwn(got, 'dest'), code: got && got.code, message: got && got.message,
       asyncPath: gotAsync && gotAsync.path, asyncCode: gotAsync && gotAsync.code};
   }
-  // (a promise's constructor and then replaced by module code -- a getter
-  // that names another constructor, a then that never settles anything --
-  // as a handle closes: the close still settles, as on master; the
-  // broker's answer is never awaited through them. The traps are there
-  // only while close() runs, never across an await of this script's own)
-  {
-    const h = await fsp.open('/app/handle');
-    const realThen = Promise.prototype.then;
-    const ctor = Object.getOwnPropertyDescriptor(Promise.prototype, 'constructor');
-    let settled = 'pending';
-    let p;
-    try {
-      Object.defineProperty(Promise.prototype, 'constructor', {configurable: true, get() { return function Elsewhere() {}; }});
-      Promise.prototype.then = function() { /* swallows */ };
-      p = h.close();
-    } finally {
-      Promise.prototype.then = realThen;
-      Object.defineProperty(Promise.prototype, 'constructor', ctor);
-    }
-    Reflect.apply(realThen, p, [() => { settled = 'resolved'; }, (e) => { settled = `rejected ${e && e.code}`; }]);
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    out.closeUnderTamperedPromise = settled;
-  }
+  out.closeUnderTamperedPromise = await closeUnderTamperedPromise(fsp);
   // (a Buffer given to opendir: its path a Buffer, in the module's spelling)
   {
     const b = fs.opendirSync(Buffer.from('/app/plugins')).path;
