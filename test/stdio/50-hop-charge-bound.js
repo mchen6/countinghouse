@@ -133,5 +133,36 @@ describe('stdio 50: a routed hop waits for its charge at most METER_PENDING_MS (
     assert.match(io.err, /the pending billing landed/);
   });
 
+  // (the reviewer's ruling on #496) a stall allows a caller only a few
+  // pending charges: past MAX_PENDING_PER_KEY, a hop waits for its own
+  // charge, as before -- billing is never lost to a stall, only delayed
+  it('more hops than the allowance with the lock held: the one past it waits for its charge, and every charge lands, once', async () => {
+    // (the allowance, 4: checked against the lib's own after the behaviour)
+    const MAX_PENDING_PER_KEY = 4;
+    const n = MAX_PENDING_PER_KEY + 1;
+    await new Promise((res) => setTimeout(res, 1500));
+    const before = total(store);
+    const {holder, exited} = await holdLock(store, 4000);
+    let outs = null;
+    try {
+      const rs = await Promise.all(Array.from({length: n}, () => call('tool_chb')));
+      outs = rs.map((r) => {
+        assert.ok(r.result != null && r.result.isError !== true, `${JSON.stringify(r)}\n${io.err.slice(-1500)}`);
+        return toolOutput(r.result);
+      });
+    } finally {
+      await exited;
+      if (holder.exitCode == null) holder.kill('SIGKILL');
+    }
+    const pending = outs.filter((o) => o.metering != null && o.metering.billingPending === true).length;
+    const waited = outs.filter((o) => o.metering != null && o.metering.charged === 1).length;
+    assert.deepStrictEqual([pending, waited], [MAX_PENDING_PER_KEY, 1], JSON.stringify(outs.map((o) => o.metering)));
+    // once the lock is free: each outer call's charge and each hop's, once
+    assert.ok(await eventually(() => total(store) === before - 2 * n), `balance ${total(store)}, from ${before}`);
+    await new Promise((res) => setTimeout(res, 1500));
+    assert.strictEqual(total(store), before - 2 * n, 'charged exactly once each: never again');
+    assert.strictEqual(require('../../lib/metering/charge-bound').MAX_PENDING_PER_KEY, MAX_PENDING_PER_KEY);
+  });
+
   tmp.hooks();
 });

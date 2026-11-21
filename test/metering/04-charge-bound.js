@@ -78,6 +78,75 @@ describe('metering 04: a hop\'s charge, waited for at most METER_PENDING_MS (B-h
     assert.deepStrictEqual(answers.map((a) => [a[0] && a[0].message, a[2]]), [['boom', false]]);
   });
 
+  // (the reviewer's ruling on #496) at most MAX_PENDING_PER_KEY charges of
+  // one key pending past the bound; any more wait for their charge, as
+  // before; a slot is given back on every outcome
+  describe('the per-key allowance of pending charges', () => {
+    const {MAX_PENDING_PER_KEY, pendingForTests} = require('../../lib/metering/charge-bound');
+    const held = () => {
+      const lands = [];
+      return {ci: {recordCall: (key, tool, cost, cb) => { lands.push(cb); }}, lands};
+    };
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    it(`past ${MAX_PENDING_PER_KEY} pending for one key, the next waits for its own charge; another key is not held back`, async () => {
+      const K = `${KEY}-cap`;
+      const {ci, lands} = held();
+      const answers = [];
+      for (let i = 0; i <= MAX_PENDING_PER_KEY; i++) boundedCharge(ci, K, `t${i}`, 1, (...a) => answers.push([i, ...a]), {boundMs: 20});
+      const other = held();
+      const otherAnswers = [];
+      boundedCharge(other.ci, `${KEY}-other`, 'o', 1, (...a) => otherAnswers.push(a), {boundMs: 20});
+      await wait(60);
+      assert.deepStrictEqual(answers.map(([i, , , p]) => [i, p]), Array.from({length: MAX_PENDING_PER_KEY}, (_, i) => [i, true]), 'the allowance, pending; the next not answered');
+      assert.strictEqual(pendingForTests(K), MAX_PENDING_PER_KEY);
+      assert.deepStrictEqual(otherAnswers.map((a) => a[2]), [true], 'another key has its own allowance');
+      // the one that waited answers with its own charge
+      lands[MAX_PENDING_PER_KEY](null, {charged: 1});
+      assert.deepStrictEqual(answers[MAX_PENDING_PER_KEY], [MAX_PENDING_PER_KEY, null, {charged: 1}, false]);
+      // every pending one lands: every slot given back
+      for (let i = 0; i < MAX_PENDING_PER_KEY; i++) lands[i](null, {charged: 1});
+      other.lands[0](null, {charged: 1});
+      assert.deepStrictEqual([pendingForTests(K), pendingForTests(`${KEY}-other`)], [0, 0]);
+      assert.strictEqual(lands.length, MAX_PENDING_PER_KEY + 1, 'each charged once');
+    });
+
+    it('a slot is given back when a pending charge rejects, and when a provider throws none is taken', async () => {
+      const K = `${KEY}-reject`;
+      const {ci, lands} = held();
+      for (let i = 0; i < MAX_PENDING_PER_KEY; i++) boundedCharge(ci, K, 'r', 1, () => undefined, {boundMs: 20});
+      await wait(50);
+      assert.strictEqual(pendingForTests(K), MAX_PENDING_PER_KEY);
+      for (const land of lands) land(new Error('the store lock stayed busy for 10000 ms'));
+      assert.strictEqual(pendingForTests(K), 0, 'no slot leaked by a rejected charge');
+      boundedCharge({recordCall: () => { throw new Error('provider threw'); }}, K, 'thrown', 1, () => undefined, {boundMs: 20});
+      await wait(50);
+      assert.strictEqual(pendingForTests(K), 0, 'a thrown provider takes none');
+      // and the allowance is whole again
+      const again = held();
+      const answers = [];
+      for (let i = 0; i < MAX_PENDING_PER_KEY; i++) boundedCharge(again.ci, K, 'again', 1, (...a) => answers.push(a[2]), {boundMs: 20});
+      await wait(50);
+      assert.deepStrictEqual(answers, new Array(MAX_PENDING_PER_KEY).fill(true));
+      for (const land of again.lands) land(null, {charged: 1});
+      assert.strictEqual(pendingForTests(K), 0);
+    });
+
+    it('a charge still unanswered at the ceiling gives its slot back, said at error; its outcome is still logged if it comes', async () => {
+      const K = `${KEY}-ceiling`;
+      const {ci, lands} = held();
+      boundedCharge(ci, K, 'stuck', 1, () => undefined, {boundMs: 20, ceilingMs: 60});
+      await wait(40);
+      assert.strictEqual(pendingForTests(K), 1);
+      await wait(80);
+      assert.strictEqual(pendingForTests(K), 0, 'given back at the ceiling');
+      assert.ok(logged.some(([l, line]) => l === 'E' && line.includes('stuck') && line.includes('its slot is given back') && !line.includes(K)), JSON.stringify(logged));
+      lands[0](null, {charged: 1});
+      assert.strictEqual(pendingForTests(K), 0, 'never given back twice');
+      assert.ok(logged.some(([l, line]) => l === 'I' && line === 'hop stuck: the pending billing landed (charged 1)'));
+    });
+  });
+
   it('lateOutcome names the key only by its meterId', () => {
     lateOutcome('peer hop', 'x', KEY, new Error(`detail`), null);
     const line = logged.find(([l]) => l === 'E')[1];
