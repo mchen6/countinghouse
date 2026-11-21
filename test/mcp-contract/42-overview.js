@@ -601,43 +601,66 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
     const settingsTool = require('../../lib/settings-tool');
     const file = (dir, v) => fs.writeFileSync(path.join(dir, 'upgrade-available.json'), JSON.stringify(v));
     const good = {v: 1, checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: '1.5.0', major: false, breaking: false, plugin: null};
+    // (ch-local's record naming the installed version: a check is tied to it)
+    const record = (dir, v) => fs.writeFileSync(path.join(dir, 'modules.json'), JSON.stringify({runtime: {versions: {'@countinghouse/ch-local': v}}, modules: {}, packs: {}}));
+    // (a clock the day after the check, never the wall clock)
+    const NOW = Date.parse('2026-11-22T00:00:00.000Z');
 
     it('reads the check as ch-local wrote it; none is no line; anything malformed or not plainly readable is UNREADABLE (said)', () => {
       const dir = tmp.mkdtemp('ch-mcp-42-');
       const U = settingsTool.UNREADABLE;
-      assert.strictEqual(settingsTool.upgradeAvailable(dir), null, 'none');
+      const read = () => settingsTool.upgradeAvailable(dir, NOW);
+      record(dir, '1.4.0');
+      assert.strictEqual(read(), null, 'none');
       file(dir, good);
-      assert.deepStrictEqual(settingsTool.upgradeAvailable(dir), {checkedAt: good.checkedAt, installed: '1.4.0', available: '1.5.0', major: false, pluginLatest: null});
+      assert.deepStrictEqual(read(), {checkedAt: good.checkedAt, installed: '1.4.0', available: '1.5.0', major: false, breaking: false, pluginLatest: null});
       file(dir, Object.assign({}, good, {plugin: {installed: '0.6.0', latest: '0.7.0'}}));
-      assert.strictEqual(settingsTool.upgradeAvailable(dir).pluginLatest, '0.7.0');
+      assert.strictEqual(read().pluginLatest, '0.7.0');
       file(dir, Object.assign({}, good, {plugin: {installed: '0.7.0', latest: '0.7.0'}}));
-      assert.strictEqual(settingsTool.upgradeAvailable(dir).pluginLatest, null, 'the plugin is up to date');
+      assert.strictEqual(read().pluginLatest, null, 'the plugin is up to date');
       file(dir, Object.assign({}, good, {plugin: {installed: '0.8.0', latest: '0.7.0'}}));
-      assert.strictEqual(settingsTool.upgradeAvailable(dir).pluginLatest, null, 'an older plugin is no update');
+      assert.strictEqual(read().pluginLatest, null, 'an older plugin is no update');
       // (A's medium on the update line, 3: the relations ch-local's check keeps)
       for (const bad of [{v: 2}, Object.assign({}, good, {available: '1.5.0; rm -rf ~'}), Object.assign({}, good, {checkedAt: 'yesterday'}),
         Object.assign({}, good, {installed: 7}), Object.assign({}, good, {major: 'yes'}), Object.assign({}, good, {breaking: 'no'}),
         Object.assign({}, good, {available: '1.4.0'}), Object.assign({}, good, {available: '1.3.9'}),
-        Object.assign({}, good, {available: '2.0.0', major: false}), Object.assign({}, good, {available: '1.5.0', major: true})]) {
+        Object.assign({}, good, {available: '2.0.0', major: false}), Object.assign({}, good, {available: '1.5.0', major: true}),
+        // (round 2: ch-local's strict x.y.z, its breaking(), an up-to-date
+        // check with nothing more, a real instant not past tomorrow)
+        Object.assign({}, good, {available: '1.5.0-rc.1'}), Object.assign({}, good, {available: '01.5.0'}), Object.assign({}, good, {breaking: true}),
+        Object.assign({}, good, {available: null, plugin: {installed: '0.6.0', latest: '0.7.0'}}), Object.assign({}, good, {available: null, breaking: true}),
+        Object.assign({}, good, {checkedAt: '2026-99-99T00:00:00.000Z'}), Object.assign({}, good, {checkedAt: '2026-11-23T09:30:00.000Z'}),
+        Object.assign({}, good, {available: '2.0.0', installed: null, major: true})]) {
         file(dir, bad);
-        assert.strictEqual(settingsTool.upgradeAvailable(dir), U, JSON.stringify(bad));
+        assert.strictEqual(read(), U, JSON.stringify(bad));
       }
+      // (a 0.x minor is ch-local's breaking step, said as such)
+      record(dir, '0.1.0');
+      file(dir, Object.assign({}, good, {installed: '0.1.0', available: '0.2.0', breaking: true}));
+      assert.strictEqual(read().breaking, true);
+      record(dir, '1.4.0');
+      // (an up-to-date check that names no version: no line, never a loop
+      // of "could not be read")
+      file(dir, Object.assign({}, good, {installed: null, available: null}));
+      assert.strictEqual(read(), null);
       fs.writeFileSync(path.join(dir, 'upgrade-available.json'), '{');
-      assert.strictEqual(settingsTool.upgradeAvailable(dir), U);
-      // (plainly read: a link, a second name or a file past 4 KiB is not read; A's medium, 1)
+      assert.strictEqual(read(), U);
+      // (plainly read: a second name, a link or a file past 4 KiB is not
+      // read; A's medium, 1. The second name on every OS; the link where
+      // O_NOFOLLOW exists -- Windows has none: readPlainFile's, #499)
+      const real = path.join(dir, 'real.json');
+      fs.writeFileSync(real, JSON.stringify(good));
+      fs.rmSync(path.join(dir, 'upgrade-available.json'));
+      fs.linkSync(real, path.join(dir, 'upgrade-available.json'));
+      assert.strictEqual(read(), U, 'a second name');
+      fs.rmSync(path.join(dir, 'upgrade-available.json'));
       if (process.platform !== 'win32') {
-        const real = path.join(dir, 'real.json');
-        fs.writeFileSync(real, JSON.stringify(good));
-        fs.rmSync(path.join(dir, 'upgrade-available.json'));
         fs.symlinkSync(real, path.join(dir, 'upgrade-available.json'));
-        assert.strictEqual(settingsTool.upgradeAvailable(dir), U, 'a link');
-        fs.rmSync(path.join(dir, 'upgrade-available.json'));
-        fs.linkSync(real, path.join(dir, 'upgrade-available.json'));
-        assert.strictEqual(settingsTool.upgradeAvailable(dir), U, 'a second name');
+        assert.strictEqual(read(), U, 'a link');
         fs.rmSync(path.join(dir, 'upgrade-available.json'));
       }
       fs.writeFileSync(path.join(dir, 'upgrade-available.json'), JSON.stringify(Object.assign({}, good, {pad: 'x'.repeat(5000)})));
-      assert.strictEqual(settingsTool.upgradeAvailable(dir), U, 'past 4 KiB');
+      assert.strictEqual(read(), U, 'past 4 KiB');
     });
 
     // (A's medium on the update line, 2) a check made before the ch-local now
@@ -645,10 +668,16 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
     it('a check made for another installed ch-local than the record names is no line', () => {
       const dir = tmp.mkdtemp('ch-mcp-42-');
       file(dir, good);
-      fs.writeFileSync(path.join(dir, 'modules.json'), JSON.stringify({runtime: {versions: {'@countinghouse/ch-local': '1.5.0'}}, modules: {}, packs: {}}));
-      assert.strictEqual(settingsTool.upgradeAvailable(dir), null, 'stale');
-      fs.writeFileSync(path.join(dir, 'modules.json'), JSON.stringify({runtime: {versions: {'@countinghouse/ch-local': '1.4.0'}}, modules: {}, packs: {}}));
-      assert.strictEqual(settingsTool.upgradeAvailable(dir).available, '1.5.0', 'the record\'s own version');
+      record(dir, '1.5.0');
+      assert.strictEqual(settingsTool.upgradeAvailable(dir, NOW), null, 'stale');
+      record(dir, '1.4.0');
+      assert.strictEqual(settingsTool.upgradeAvailable(dir, NOW).available, '1.5.0', 'the record\'s own version');
+      // (a record that can't be read, or none: the check can't be tied to
+      // what is installed -- no line, fail closed; round 2, 2)
+      fs.writeFileSync(path.join(dir, 'modules.json'), '{');
+      assert.strictEqual(settingsTool.upgradeAvailable(dir, NOW), null, 'record unreadable');
+      fs.rmSync(path.join(dir, 'modules.json'));
+      assert.strictEqual(settingsTool.upgradeAvailable(dir, NOW), null, 'no record');
     });
 
     it('the overview says it in one fixed sentence', () => {
@@ -663,10 +692,10 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.strictEqual(data.update, F.update(null, {checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: null, major: false, pluginLatest: null}));
       assert.strictEqual(overview.build({version: '1', settingsProfile: false, packs: [], update: {checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: null, major: false, pluginLatest: null}}).update,
         undefined, 'never on a hosted runtime');
-      // (A's medium, 4 and 6: the plugin said when ch-local is up to date too;
-      // an unreadable check said, never silent)
-      assert.strictEqual(F.update(null, {checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: null, major: false, pluginLatest: '0.7.0'}),
-        'ch-local 1.4.0 was up to date when you last checked (2026-11-21). The plugin can then be updated to 0.7.0.');
+      // (a 0.x step said as ch-local's upgrade says it: round 2, 1; an
+      // unreadable check said, never silent: A's medium, 6)
+      assert.strictEqual(F.update(null, {checkedAt: '2026-11-21T09:30:00.000Z', installed: '0.1.0', available: '0.2.0', major: false, breaking: true, pluginLatest: null}),
+        'ch-local 0.2.0 is available (you have 0.1.0; checked 2026-11-21): run `ch-local upgrade` in your own terminal. Under semver this 0.x step may break what works now: its release notes say what changes.');
       assert.strictEqual(overview.build({version: '1', settingsProfile: true, packs: [], update: {unreadable: true}}).update,
         'The last update check could not be read: run `ch-local upgrade --check` in your own terminal to check again.');
       assert.strictEqual(overview.OUTPUT_SCHEMA.properties.update.description,
@@ -683,9 +712,11 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       const gather = () => require('../../lib/mcp/gateway').overviewFor({deviceManager: dm}, null, [], [], {isAdmin: false});
       heldBack.resetForTests();
       try {
-        file(home, good);
+        // (the gateway reads with the real clock: a check made now)
+        file(home, Object.assign({}, good, {checkedAt: new Date().toISOString()}));
+        record(home, '1.4.0');
         Object.assign(options, {singleIdentity: true, settingsFile: path.join(home, 'settings.json')});
-        assert.match(gather().update, /^ch-local 1\.5\.0 is available \(you have 1\.4\.0; checked 2026-11-21\): run `/);
+        assert.match(gather().update, /^ch-local 1\.5\.0 is available \(you have 1\.4\.0; checked \d{4}-\d{2}-\d{2}\): run `/);
         fs.writeFileSync(path.join(home, 'upgrade-available.json'), '{');
         assert.match(gather().update, /^The last update check could not be read/);
         Object.assign(options, {singleIdentity: false, settingsFile: null});
