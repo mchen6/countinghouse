@@ -36,14 +36,18 @@ describe('local-kv 06: the interval never waits for the store lock (B-kvflush)',
     let ticks = 0;
     const realSweep = kv.sweep;
     kv.sweep = function() { ticks++; return realSweep.apply(this, arguments); };
-    await new Promise((resolve, reject) => kv.set('k', 'v', (err) => (err ? reject(err) : resolve())));
-    // (the first tick is PERSIST_MS, 5 s, after the start)
-    await until(() => ticks >= 1);
-    assert.deepStrictEqual(flushes, [], 'a tick called the synchronous flush');
-    // and the change is written all the same, by the store's own write
-    const file = path.join(dir, 'kv.json');
-    await until(() => fs.existsSync(file) && JSON.parse(fs.readFileSync(file, 'utf8')).k != null);
-    kv.file.flush = realFlush;
+    try {
+      await new Promise((resolve, reject) => kv.set('k', 'v', (err) => (err ? reject(err) : resolve())));
+      // (the first tick is PERSIST_MS, 5 s, after the start)
+      await until(() => ticks >= 1);
+      assert.deepStrictEqual(flushes, [], 'a tick called the synchronous flush');
+      // and the change is written all the same, by the store's own write
+      const file = path.join(dir, 'kv.json');
+      await until(() => fs.existsSync(file) && JSON.parse(fs.readFileSync(file, 'utf8')).k != null);
+    } finally {
+      kv.file.flush = realFlush;
+      kv.sweep = realSweep;
+    }
   });
 
   it('close() still writes at once, waiting for the lock', () => {

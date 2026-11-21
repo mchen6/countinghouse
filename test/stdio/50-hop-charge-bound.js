@@ -172,6 +172,8 @@ describe('stdio 50: a routed hop waits for its charge at most METER_PENDING_MS (
         outs.push(toolOutput(r.result));
       }));
       all = Promise.all(calls);
+      // (a failed call's rejection is the test's, never an unhandled one)
+      all.catch(() => undefined);
       // the lock held until the allowance has answered pending and the one
       // past it is seen waiting for its own charge -- observed, not timed
       assert.ok(await eventually(() => outs.length === MAX_PENDING_PER_KEY && /charges pending; waiting for it/.test(io.err), 30000),
