@@ -188,7 +188,7 @@ describe('sandbox 17: POST /uninstall-module', function() {
   it('needs an admin key', async () => {
     base = mkdtemp('uninstall-');
     const auth = path.join(base, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({'admin-key': {userName: 'admin', devices: [], admin: true}, 'user-key': {userName: 'user', devices: []}}), {mode: 0o600});
+    require('../helpers/private-auth').writePrivate(auth, JSON.stringify({'admin-key': {userName: 'admin', devices: [], admin: true}, 'user-key': {userName: 'user', devices: []}}));
     server = await startServer(PORT, ['--workerThread', '--moduleSandbox', 'audit', '--authConfigPath', auth,
       '--moduleDataPath', store(), '--loadModule', PROBE]);
     assert.strictEqual((await post(PORT, 'admin-key', '/unload-module', {name: 'fs-probe'})).status, 200);

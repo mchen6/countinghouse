@@ -161,11 +161,11 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
     before(async () => {
       base = fs.mkdtempSync(path.join(os.homedir(), '.ch-codes-after-end-auth-'));
       const authPath = path.join(base, 'auth.json');
-      fs.writeFileSync(authPath, JSON.stringify({
+      require('../helpers/private-auth').writePrivate(authPath, JSON.stringify({
         [ADMIN]: {userName: 'admin', devices: ['*'], admin: true},
         [OWNER]: {userName: 'owner', devices: [DEVICE]},
         [OTHER]: {userName: 'other', devices: [deviceIDForName('some-other-module')]}
-      }), {mode: 0o600});
+      }));
       server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath, '--loadModule', FIXTURE]);
       await waitFor(async () => (await invokeAs(OWNER, DEVICE)).status === 200, 20000, 'worker-end to answer its owner');
       assert.strictEqual((await post(PORT, ADMIN, '/unload-module', {name: 'worker-end'})).status, 200);

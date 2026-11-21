@@ -26,7 +26,7 @@ describe('stdio 04: the worker boot on every OS (issue #40)', function() {
     it(`--moduleSandbox ${mode}: the module is listed`, async () => {
       home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-boot-'));
       const auth = path.join(home, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({'boot-key': {userName: 'boot', devices: ['*']}}), {mode: 0o600});
+      require('../helpers/private-auth').writePrivate(auth, JSON.stringify({'boot-key': {userName: 'boot', devices: ['*']}}));
       io = startStdio(['--workerThread', '--moduleSandbox', mode, '--loadModule', path.join(ROOT, 'test', 'fixtures', 'handler-map-module'),
         '--authConfigPath', auth, '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9733'],
       {env: {COUNTINGHOUSE_API_KEY: 'boot-key'}});

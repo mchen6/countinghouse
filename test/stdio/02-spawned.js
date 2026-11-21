@@ -20,7 +20,7 @@ const KEY = 'stdio-test-key';
 
 function start(home, extra = [], module = MODULE) {
   const auth = path.join(home, 'auth.json');
-  fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}), {mode: 0o600});
+  require('../helpers/private-auth').writePrivate(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
   return startStdio(['--workerThread', '--loadModule', module, '--authConfigPath', auth,
     '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`, ...extra], {env: {COUNTINGHOUSE_API_KEY: KEY}});
 }
@@ -129,7 +129,7 @@ describe('--stdio, spawned', function() {
     const dir = tmp.mkdtemp('ch-stdio-02-sf-');
     try {
       const auth = path.join(dir, 'auth.json');
-      fs.writeFileSync(auth, '{}', {mode: 0o600});
+      require('../helpers/private-auth').writePrivate(auth, '{}');
       const common = ['--workerThread', '--store', 'local', '--storePath', path.join(dir, 'store'), '--modulePath', path.join(dir, 'modules'),
         '--moduleDataPath', path.join(dir, 'module_data'), '--settingsFile', path.join(dir, 'settings.json')];
       for (const [entry, extra, why] of [[ENTRY, ['--authConfigPath', auth], 'stdio with an auth file'],

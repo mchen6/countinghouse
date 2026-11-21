@@ -55,7 +55,7 @@ describe('stdio 26: an install run by a spelling that isn\'t its real path (#272
     assert.notStrictEqual(real, install, 'the install is run by a spelling that isn\'t its real path');
     if (WIN) console.log(`      install as spelled: ${install}; real: ${real}`);
     const auth = path.join(base, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'probe', devices: ['*']}}), {mode: 0o600});
+    require('../helpers/private-auth').writePrivate(auth, JSON.stringify({[KEY]: {userName: 'probe', devices: ['*']}}));
     io = startStdio(['--testLateLoads', '--workerThread', '--moduleSandbox', 'enforce', '--debug', '--loadModule', MODULE, '--authConfigPath', auth,
       '--moduleDataPath', path.join(base, 'module_data'), '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`],
     {env: {COUNTINGHOUSE_API_KEY: KEY}, entry: path.join(install, 'bin', 'countinghouse-stdio.js'), nodeArgs: ['--preserve-symlinks', '--preserve-symlinks-main']});
@@ -95,7 +95,7 @@ describe('stdio 26: an install run by a spelling that isn\'t its real path (#272
       fs.cpSync(path.join(ROOT, 'node_modules'), path.join(copy, 'node_modules'), {recursive: true});
       if (WIN) console.log(`      copy as spelled: ${copy}; real: ${fs.realpathSync.native(copy)}`);
       const auth = path.join(plain, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'probe', devices: ['*']}}), {mode: 0o600});
+      require('../helpers/private-auth').writePrivate(auth, JSON.stringify({[KEY]: {userName: 'probe', devices: ['*']}}));
       io = startStdio(['--testLateLoads', '--workerThread', '--moduleSandbox', 'enforce', '--debug', '--loadModule', MODULE, '--authConfigPath', auth,
         '--moduleDataPath', path.join(plain, 'module_data'), '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`],
       {env: {COUNTINGHOUSE_API_KEY: KEY}, entry: path.join(copy, 'bin', 'countinghouse-stdio.js')});

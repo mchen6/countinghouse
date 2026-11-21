@@ -30,7 +30,7 @@ describe('stdio 33: completion actions, spawned (M11)', function() {
   it('a prompt\'s and a template\'s completion actions answer; a failing or slow one falls back to the schema\'s candidates, and a slow run is cancelled; none is a tool', async () => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-33-'));
     const auth = path.join(home, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}), {mode: 0o600});
+    require('../helpers/private-auth').writePrivate(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
     io = startStdio(['--workerThread', '--loadModule', FIXTURE, '--authConfigPath', auth, '--moduleDataPath', path.join(home, 'module_data'),
       '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`], {env: {COUNTINGHOUSE_API_KEY: KEY}});
     const late = await waitForTool(io, /pickservice_lastlate$/);

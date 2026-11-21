@@ -181,7 +181,7 @@ describe('stdio 03: a spawned start lists the module (issue #40)', function() {
       it(`--moduleSandbox ${mode} (${label})`, async () => {
         home = fs.mkdtempSync(path.join(base(), 'ch-start-'));
         const auth = path.join(home, 'auth.json');
-        fs.writeFileSync(auth, JSON.stringify({'start-key': {userName: 'start', devices: ['*']}}), {mode: 0o600});
+        require('../helpers/private-auth').writePrivate(auth, JSON.stringify({'start-key': {userName: 'start', devices: ['*']}}));
         // --redisUrl points where nothing listens (B's port block); nothing here is metered.
         io = startStdio(['--workerThread', '--moduleSandbox', mode, '--loadModule', path.join(ROOT, 'test', 'fixtures', 'handler-map-module'),
           '--authConfigPath', auth, '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9733'],
