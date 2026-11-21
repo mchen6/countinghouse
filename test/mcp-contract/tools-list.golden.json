@@ -159,6 +159,10 @@
         },
         "scenarios": {
           "type": "string"
+        },
+        "update": {
+          "type": "string",
+          "description": "The last update check you asked for (ch-local upgrade --check), as it was left on this machine: countinghouse itself never checks for updates."
         }
       },
       "required": [
