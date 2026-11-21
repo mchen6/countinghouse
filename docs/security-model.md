@@ -1770,12 +1770,14 @@ and the short list of what the in-process sandbox cannot give.
   name, never a link, and owner-only (mode `0600`; on Windows an ACL that
   lets only that user read it). The sqlite database is checked the same way
   before it is opened, together with its side files (`-journal`, `-wal`,
-  `-shm`) and its directory, which no other user may write in: SQLite plays
-  back a journal it finds there. The runtime creates both stores so.
+  `-shm`) and, on Linux and macOS, its directory and every directory above
+  it, which no other user may write in: SQLite plays back a journal it finds
+  there. On Windows its folder is not checked. The runtime creates both stores so.
   Anything else refuses the start, naming the fix. Under `--hardened` on
   Windows the sqlite store is refused at every start, as its ACL can't be
-  checked there. A reload of an `auth.json` that can't be verified applies
-  only what tightens. CouchDB is a remote store, and its access control is
+  checked there. A reload of an `auth.json` that is this user's own but
+  others may read, or whose ACL can't be checked, applies only what
+  tightens. CouchDB is a remote store, and its access control is
   its operator's; the CouchDB provider keeps a cache of looked-up users in
   memory, keyed by the raw key until it is keyed by meterId. In memory, the
   main thread holds raw keys for as long as it needs them:

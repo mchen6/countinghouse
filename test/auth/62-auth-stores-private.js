@@ -79,12 +79,13 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     p.reload((err, r) => {
       try {
         assert.ifError(err);
-        assert.strictEqual(r.verified, false, JSON.stringify(r));
-        // (u's devices narrowed, its admin dropped, o removed)
-        assert.strictEqual(r.changed, 3, JSON.stringify(r));
-        assert.strictEqual(r.refused, 1, JSON.stringify(r));
-        assert.match(r.message, /chmod 600/);
-        assert.match(r.message, /entry #2: a new key/);
+        // (the reload tool's own shape: ok false while anything was refused,
+        // changed in entries -- u modified, o removed -- the rest in its note)
+        assert.strictEqual(r.ok, false, JSON.stringify(r));
+        assert.strictEqual(r.changed, 2, JSON.stringify(r));
+        assert.match(r.note, /refused 1 /);
+        assert.match(r.note, /chmod 600/);
+        assert.match(r.note, /entry #2: a new key/);
         for (const k of [KEY, OTHER, NEW]) assert.ok(!JSON.stringify(r).includes(k), 'no key in the answer');
         assert.deepStrictEqual(p._lookup(KEY), {userName: 'u', devices: ['d1'], admin: false});
         assert.strictEqual(p._lookup(OTHER), null, 'the removed key is gone');
@@ -140,6 +141,39 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     for (const want of [/entry #1: runsModules widened/, /entry #2: its userName changed/, /entry #2: devices widened/, /entry #3: devices widened/,
       /entry #3: its id changed/, /entry #3: admin granted/, /entry #4: a new key/]) assert.match(said, want);
     assert.ok(!said.includes(KEY), 'no key named');
+  });
+
+  // (the round's medium) an entry that is no object (off) is never made one;
+  // a module two entries claimed (no identity) is never handed to the one
+  // left: it stays unbound
+  it('tightenOnly never revives an entry that is off, nor hands a module to its remaining claimant', () => {
+    const t = FileAuthProvider.tightenOnly;
+    const k = (n) => `${KEY}-${n}`;
+    const off = t({[k(1)]: null}, {[k(1)]: {userName: 'x'}});
+    assert.strictEqual(off.config[k(1)], null, 'still off');
+    assert.match(off.refused.join(' | '), /entry #1: changed/);
+    const both = {[k(1)]: {userName: 'a', runsModules: ['m']}, [k(2)]: {userName: 'b', runsModules: ['m', 'q']}};
+    // a drops m: m would be b's alone
+    const r1 = t(both, {[k(1)]: {userName: 'a', runsModules: []}, [k(2)]: {userName: 'b', runsModules: ['m', 'q']}});
+    assert.deepStrictEqual(r1.config[k(1)].runsModules, []);
+    assert.deepStrictEqual(r1.config[k(2)].runsModules, ['q'], 'm left unbound');
+    // a removed: the same
+    const r2 = t(both, {[k(2)]: {userName: 'b', runsModules: ['m', 'q']}});
+    assert.deepStrictEqual(r2.config[k(2)].runsModules, ['q'], 'm left unbound');
+  });
+
+  (POSIX ? it : it.skip)('a reload of a file others can write in is refused whole, the config kept', (done) => {
+    const file = write('reload-w.json', {[KEY]: {userName: 'u', devices: ['*']}}, 0o600);
+    const p = new FileAuthProvider({configPath: file});
+    write('reload-w.json', {}, 0o666);
+    p.reload((err) => {
+      try {
+        assert.ok(err != null && err.code === 'AUTH_RELOAD_INVALID', String(err && err.message));
+        assert.match(err.message, /chmod 600/);
+        assert.strictEqual(p._lookup(KEY).userName, 'u', 'the config kept');
+        done();
+      } catch (e) { done(e); }
+    });
   });
 
   it('the demo key is written to a 0600 auth.json, and only its path is printed', () => {
@@ -333,9 +367,9 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     assert.ok(line != null, r.stdout + r.stderr);
     const o = JSON.parse(line.slice(4));
     assert.strictEqual(o.err, null, r.stdout + r.stderr);
-    assert.strictEqual(o.r.verified, false);
-    assert.strictEqual(o.r.refused, 1);
-    assert.match(o.r.message, /restart countinghouse/);
+    assert.strictEqual(o.r.ok, false);
+    assert.match(o.r.note, /refused 1 /);
+    assert.match(o.r.note, /restart countinghouse/);
     assert.strictEqual(o.admitted, false);
   });
 
@@ -563,6 +597,21 @@ describe('auth 62: the sqlite store and its users CLI (B-meter-keys 4r)', functi
     }
   });
 
+  // (the round's medium) every directory above it too: one another user can
+  // write in (not sticky) lets them rename the store's directory away
+  (POSIX ? it : it.skip)('a DB under a directory others can write in, at any depth, is refused', () => {
+    const up = path.join(dir, 'up-shared');
+    fs.mkdirSync(path.join(up, 'mine'), {recursive: true});
+    // (others may write in it, and it is not sticky; a directory only this
+    // user's own primary group may write in is fine above the store)
+    fs.chmodSync(up, 0o777);
+    fs.chmodSync(path.join(up, 'mine'), 0o700);
+    const r = cli(path.join(up, 'mine', 'users.sqlite3'), ['add-user', 'alice'], `${KEY}\n`);
+    assert.notStrictEqual(r.status, 0, r.stderr);
+    assert.match(r.stderr, /up-shared/, r.stderr);
+    fs.chmodSync(up, 0o700);
+  });
+
   (POSIX ? it : it.skip)('a side file (-journal, -wal, -shm) that is loose or a link is refused, so none is played back', () => {
     for (const side of ['-journal', '-wal', '-shm']) {
       const db = path.join(dir, `side${side}.sqlite3`);
@@ -591,6 +640,11 @@ describe('auth 62: the sqlite store and its users CLI (B-meter-keys 4r)', functi
   // as a name nor echoed
   it('an argument equal to the key on stdin is refused, never stored or echoed', () => {
     const db = path.join(dir, 'twice.sqlite3');
+    for (const arg of [KEY, ` ${KEY}`, `${KEY}-alice`]) {
+      const a = cli(db, ['add-user', arg], `${KEY}\n`);
+      assert.notStrictEqual(a.status, 0, JSON.stringify(arg));
+      assert.ok(!`${a.stdout}${a.stderr}`.includes(KEY));
+    }
     const r = cli(db, ['add-user', KEY], `${KEY}\n`);
     assert.notStrictEqual(r.status, 0);
     assert.ok(!`${r.stdout}${r.stderr}`.includes(KEY), r.stdout + r.stderr);

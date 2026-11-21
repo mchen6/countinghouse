@@ -138,9 +138,10 @@ function main() {
   if (Object.prototype.hasOwnProperty.call(KEYED, command)) {
     if (parsed.args.length !== 1 + KEYED[command]) usageAndExit(1);
     return readKey((key) => {
-      // (the key given as an argument too would be stored as a name or a
-      // grant, and shown: refused, never echoed)
-      if (parsed.args.slice(1).some((a) => String(a) === key)) {
+      // (the key given in an argument too -- as it is, padded or inside a
+      // name -- would be stored as a name or a grant, and shown: refused,
+      // never echoed)
+      if (parsed.args.slice(1).some((a) => String(a).includes(key))) {
         console.error('an argument is the API key: give the key on stdin only, and the user name, devices or id as arguments');
         process.exit(1);
       }
