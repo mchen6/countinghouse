@@ -62,7 +62,10 @@ const LIBRARIES = ['resolve-from', 'import-fresh', 'source-map-support', 'module
 const WIN = process.platform === 'win32';
 const {NEEDS_RESOLVE_SHIM} = require('../../lib/node-version');
 const ABSOLUTE = NEEDS_RESOLVE_SHIM ? (WIN ? null : 'works') : 'threw MODULE_NOT_FOUND';
-const WIN_WORKER = WIN ? 'threw MODULE_NOT_FOUND' : 'works';
+// (C-compat-win: a Windows worker too -- the broker answers realpath in the
+// module's own spelling, <V>:\\app\\..., so the parent resolve-from and
+// import-fresh build from realpathSync(__dirname) is the module's file)
+const WIN_WORKER = 'works';
 const TABLE = [
   ['resolve-from', 'works', WIN_WORKER, WIN_WORKER, WIN_WORKER],
   ['import-fresh', 'works', WIN_WORKER, WIN_WORKER, WIN_WORKER],
