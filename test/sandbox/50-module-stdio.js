@@ -19,8 +19,10 @@ const KEY = 'k';
 const PORT = testPort(9790);
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'stdout-flood');
 
-// The server's main thread's CPU time, in ms (Linux).
+// The server's main thread's CPU time, in ms: Linux only (/proc); null
+// elsewhere, where the bound on what is written is still checked
 const mainCpu = (pid) => {
+  if (process.platform !== 'linux') return null;
   const st = fs.readFileSync(`/proc/${pid}/task/${pid}/stat`, 'utf8');
   const f = st.slice(st.lastIndexOf(')') + 2).split(' ');
   return (Number(f[11]) + Number(f[12])) * 10;
@@ -62,12 +64,14 @@ for (const mode of ['enforce', 'audit']) {
       assert.ok(!/\x1b|\x07/.test(server.output), 'no escape reached the log');
     });
 
-    it('10 MB to stdout: the main thread\'s CPU stays bounded; at most 256 KiB is written, and one line says what was dropped', async () => {
+    // (the main thread's CPU is read from /proc: Linux only, said as pending elsewhere)
+    if (process.platform !== 'linux') it('10 MB to stdout: the main thread\'s CPU stays bounded (Linux only: read from /proc)');
+    it('10 MB to stdout: at most 256 KiB is written, and one line says what was dropped; on Linux the main thread\'s CPU stays bounded', async () => {
       const before = mainCpu(server.pid);
       await call('flood', {mb: 10});
       await settle(1000);
-      const spent = mainCpu(server.pid) - before;
-      assert.ok(spent < 1000, `main thread CPU ${spent} ms`);
+      const after = mainCpu(server.pid);
+      if (before != null && after != null) assert.ok(after - before < 1000, `main thread CPU ${after - before} ms`);
       const written = lines().filter((l) => l.startsWith('stdout-flood: xxxx')).reduce((n, l) => n + Buffer.byteLength(l), 0);
       assert.ok(written <= 256 * 1024 + 4096, `${written} bytes written`);
       // the worker reports what it dropped within a second; the main thread

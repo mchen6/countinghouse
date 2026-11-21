@@ -293,21 +293,24 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
             assert.match(log(), re, `${what} reported with ${change} replaced; the log said: ${log().split('\n').filter((l) => /violation|sandbox|Error/.test(l)).slice(-12).join(' | ')}`);
           };
           const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          // (a path as the JSON log line names it: on Windows its "\" escaped)
+          const logged = (p) => esc(JSON.stringify(p).slice(1, -1));
           if (i < BLOCKED.length) await seen(new RegExp(`${PROBE} violation builtin ${esc(BLOCKED[i].replace(/^node:/, ''))} `), `the built-in ${BLOCKED[i]}`);
-          await seen(new RegExp(`${PROBE} violation loadFile ${esc(input.outsidePath)}`), 'CHUtil.loadFile outside the root');
+          await seen(new RegExp(`${PROBE} violation loadFile ${logged(input.outsidePath)}`), 'CHUtil.loadFile outside the root');
           // (a getter-only href on Object.prototype makes Node's own URL
           // parser throw in that realm: the check then fails closed, and the
           // report names the target "invalid")
           await seen(new RegExp(`${PROBE} violation net (?:${esc(input.host)}:80\\b|invalid )`), 'an ungranted host');
           // the file broker: a host file outside the namespace, read (audit
           // allows) and reported
-          await seen(new RegExp(`module sandbox: ${PROBE} file outside ${esc(input.hostFile)}\\b`), 'a host file outside the namespace');
+          await seen(new RegExp(`module sandbox: ${PROBE} file outside ${logged(input.hostFile)}\\b`), 'a host file outside the namespace');
         }
         if (out != null) for (const name of ORIGINALS) assert.ok(!out.handed.includes(name), `the original ${name} was handed to the replaced ${change}: ${shown}`);
         // what is checked is what is used: never the host file
         if (out != null) {
           assert.ok(!(out.toPrimitiveLoad.outcome === 'reached' && out.toPrimitiveLoad.value !== 'own data'), `CHUtil.loadFile of a value read twice: ${shown}`);
-          assert.ok(!(out.ownHrefRead.outcome === 'reached' && out.ownHrefRead.value !== "'use strict';\nmodule.exports = 'own data';\n"), `fs.readFileSync of a URL with an own href: ${shown}`);
+          // (a checkout may give the file CRLF line ends: Windows' git)
+          assert.ok(!(out.ownHrefRead.outcome === 'reached' && String(out.ownHrefRead.value).replace(/\r\n/g, '\n') !== "'use strict';\nmodule.exports = 'own data';\n"), `fs.readFileSync of a URL with an own href: ${shown}`);
         }
         // no port reaches a setter a module put on a prototype
         if (out != null) assert.strictEqual(out.portsSeen, 0, `a port was handed to a setter with ${change} in place: ${shown}`);

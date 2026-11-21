@@ -113,7 +113,9 @@ function runtimeFiles(files) {
   return files.filter((f) => !f.startsWith('/app/'))
     .map((f) => (f.startsWith(modules + path.sep) ? path.join('node_modules', path.relative(modules, f))
       : path.relative(f.startsWith(root) ? root : ROOT, f)))
-    .filter((rel) => !rel.startsWith('..') && !path.isAbsolute(rel));
+    .filter((rel) => !rel.startsWith('..') && !path.isAbsolute(rel))
+    // (named as the allowed list names them, with "/", on every OS)
+    .map((rel) => rel.split(path.sep).join('/'));
 }
 
 // the local store's directory, this run's own, removed by its exact path
