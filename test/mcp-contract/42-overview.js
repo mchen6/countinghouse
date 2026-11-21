@@ -28,6 +28,11 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.strictEqual(F.stopped(null), 'Stopped by countinghouse: it loads again once its version changes. Run `ch-local status` in your own terminal to see why.');
       assert.strictEqual(F.stopped('/home/u/.ch/bin/ch-local.js'), 'Stopped by countinghouse: it loads again once its version changes. Run `node "/home/u/.ch/bin/ch-local.js" status` in your own terminal to see why.');
       assert.strictEqual(F.restart, 'Restart your client to load it.');
+      // (an own module held back: the own-modules design §5, line 11)
+      assert.strictEqual(F.changed(null, '/home/u/my-tool'), 'Not loaded: its files changed since you added it: run `ch-local add-module "/home/u/my-tool"` again.');
+      assert.strictEqual(F.changed('/home/u/.ch/bin/ch-local.js', null), 'Not loaded: its files changed since you added it: run `node "/home/u/.ch/bin/ch-local.js" add-module <its folder>` again.');
+      assert.strictEqual(F.sandbox(null), 'Not loaded: own modules run only with the sandbox enforced: run `ch-local settings set moduleSandbox enforce` in your own terminal.');
+      assert.strictEqual(F.collision('ch-pack-other'), 'Not loaded: ch-pack-other uses its name.');
       assert.strictEqual(F.scenarios, `To build a scenario that combines modules, see the module development guide (${GUIDE}).`);
       assert.strictEqual(F.authoring, 'The authoring tools are enabled for you: countinghouse_validate_plan, countinghouse_validate_module and countinghouse_load_module.');
       // the output schema's word on which fields are whose (#490's high round 2, 2)
@@ -243,6 +248,28 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
         pack({name: 'p-s', module: 's', loaded: false, held: l.modules.get('s')}), pack({name: 'p-r', module: 'r', loaded: false, held: l.modules.get('r')})]}).packs.map((p) => [p.name, p]));
       assert.deepStrictEqual([by['p-s'].state, by['p-s'].next], ['not loaded', overview.FIXED.stopped(L)]);
       assert.deepStrictEqual([by['p-r'].state, by['p-r'].next], ['not loaded', overview.FIXED.restart]);
+    });
+
+    // (B-own-runtime: an own module ch-local holds back -- the own-modules
+    // design §2.2) its files changed since the user's yes; the sandbox is not
+    // enforced; another module uses its name (via: which)
+    it('changed, sandbox and collision: an own module\'s own lines; collision names the other by via', () => {
+      const h = home();
+      const l = heldBack.parse(doc([{name: 'my-a', reason: 'changed'}, {name: 'my-b', reason: 'sandbox'}, {name: 'my-c', reason: 'collision', via: 'ch-pack-other'}]), h.settings);
+      assert.deepStrictEqual([...l.modules.values()].map((m) => [m.reason, m.via]), [['changed', null], ['sandbox', null], ['collision', 'ch-pack-other']]);
+      for (const bad of [[{name: 'x', reason: 'collision'}], [{name: 'x', reason: 'calls', root: 'changed', via: 'p'}], [{name: 'x', reason: 'changed', via: 'p'}]]) {
+        assert.throws(() => heldBack.parse(doc(bad), h.settings), Error, JSON.stringify(bad));
+      }
+      const L = '/home/u/.ch/bin/ch-local.js';
+      const by = Object.fromEntries(overview.build({version: '1', settingsProfile: true, launcher: L, packs: [
+        pack({name: 'my-a', module: 'my-a', loaded: false, held: l.modules.get('my-a'), from: '/home/u/my-a'}),
+        pack({name: 'my-b', module: 'my-b', loaded: false, held: l.modules.get('my-b')}),
+        pack({name: 'my-c', module: 'my-c', loaded: false, held: l.modules.get('my-c')})]}).packs.map((p) => [p.name, p]));
+      assert.strictEqual(by['my-a'].next, overview.FIXED.changed(L, '/home/u/my-a'));
+      assert.strictEqual(by['my-b'].next, overview.FIXED.sandbox(L));
+      assert.strictEqual(by['my-c'].next, overview.FIXED.collision('ch-pack-other'));
+      // a folder no shell would read plainly is never put in a command
+      assert.strictEqual(overview.FIXED.changed(null, '/home/u/x$(y)'), 'Not loaded: its files changed since you added it: run `ch-local add-module <its folder>` again.');
     });
 
     // the shared vectors ch-local's writer pins against

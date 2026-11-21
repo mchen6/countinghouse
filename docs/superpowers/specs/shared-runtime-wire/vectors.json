@@ -1211,7 +1211,7 @@
     ]
   },
   "heldBackFile": {
-    "rule": "exactly {v: 1, modules: [...], launcher?}; at most 256 modules, none named twice; each exactly {name, reason, root?, via?}; name an npm package name not starting with - or ~; reason one of credential, off, ceiling, missing, pin, withdrawn, stopped, restart, calls; root only on calls, one of credential, off, ceiling, missing, pin, withdrawn or not-installed; via exactly when root is: a package name (not starting with - or ~), or for not-installed the callee's declared name (1 to 64 characters, no / or . or control character). The file is a regular file, one name, no link, 0600 (or a private ACL on Windows), this user's own, at most 65536 bytes.",
+    "rule": "exactly {v: 1, modules: [...], launcher?}; at most 256 modules, none named twice; each exactly {name, reason, root?, via?}; name an npm package name not starting with - or ~; reason one of credential, off, ceiling, missing, pin, withdrawn, stopped, restart, changed, sandbox, collision, calls (changed, sandbox and collision are an own module's); root only on calls, one of credential, off, ceiling, missing, pin, withdrawn or not-installed; via exactly when root is, or on collision (the other module's package name): a package name (not starting with - or ~), or for not-installed the callee's declared name (1 to 64 characters, no / or . or control character). The file is a regular file, one name, no link, 0600 (or a private ACL on Windows), this user's own, at most 65536 bytes.",
     "accepted": [
       {
         "why": "none held back",
@@ -1256,6 +1256,27 @@
             {
               "name": "@countinghouse/ch-m7",
               "reason": "restart"
+            },
+            {
+              "name": "@countinghouse/ch-m8",
+              "reason": "changed"
+            },
+            {
+              "name": "@countinghouse/ch-m9",
+              "reason": "sandbox"
+            }
+          ]
+        }
+      },
+      {
+        "why": "an own module whose name another module uses: via names it",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "my-tool",
+              "reason": "collision",
+              "via": "ch-pack-other"
             }
           ]
         }
@@ -1487,6 +1508,45 @@
               "reason": "calls",
               "root": "not-installed",
               "via": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a collision without via",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "my-tool",
+              "reason": "collision"
+            }
+          ]
+        }
+      },
+      {
+        "why": "an own module's reason as a root",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "a",
+              "reason": "calls",
+              "root": "changed",
+              "via": "b"
+            }
+          ]
+        }
+      },
+      {
+        "why": "via on a reason that takes none",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "a",
+              "reason": "sandbox",
+              "via": "b"
             }
           ]
         }
