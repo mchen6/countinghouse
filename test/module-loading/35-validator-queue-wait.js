@@ -67,11 +67,16 @@ describe('module-loading 35: a request refused in the queue names its queue wait
     let t = realNow();
     try {
       const key = register(p, 'qwait-clock');
+      const logged = errors.length;
+      // (only while the request is made, synchronously: nothing else in
+      // the process sees this clock)
       Date.now = () => (t += 1);
-      const answer = await p.warm(key);
+      const pending = p.warm(key);
       Date.now = realNow;
+      const answer = await pending;
       assert.ok(answer != null && answer.timeout != null, JSON.stringify(answer));
       assert.match(answer.timeout.message, /within 150 ms/, answer.timeout.message);
+      assert.ok(errors.slice(logged).some((e) => /qwait-clock: .*within 150 ms \(its wait in the queue\)/.test(e)), errors.slice(logged).join('\n'));
     } finally {
       Date.now = realNow;
       p.close();
