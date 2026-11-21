@@ -55,6 +55,22 @@ const balances = (store) => {
   }
 };
 const total = (store) => Object.values(balances(store)).reduce((a, b) => a + (Number(b) || 0), 0);
+// the balance once it has settled -- the same over three reads a half
+// second apart, the store lock free -- never polled for the value expected
+// (async metering: test/README, CLAUDE.md)
+async function settled(store, ms = 20000) {
+  const end = Date.now() + ms;
+  let last = null;
+  let same = 0;
+  while (Date.now() < end) {
+    const now = total(store);
+    same = (now === last) ? same + 1 : 0;
+    last = now;
+    if (same >= 2) return now;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`the balance did not settle in ${ms} ms (last ${last})`);
+}
 async function eventually(check, ms = 15000) {
   const until = Date.now() + ms;
   while (Date.now() < until) { if (check()) return true; await new Promise((resolve) => setTimeout(resolve, 50)); }
@@ -106,8 +122,7 @@ describe('stdio 50: a routed hop waits for its charge at most METER_PENDING_MS (
   it('a charge held by a busy store lock: the hop answers at the bound, billing pending, and the charges land once each when it is free', async () => {
     // (the first case's two charges settled first)
     assert.ok(await eventually(() => Object.keys(balances(store)).length > 0), 'a metering record');
-    await new Promise((res) => setTimeout(res, 1000));
-    const before = total(store);
+    const before = await settled(store);
     const {holder, exited} = await holdLock(store, 4000);
     let took = null;
     let out = null;
@@ -127,9 +142,7 @@ describe('stdio 50: a routed hop waits for its charge at most METER_PENDING_MS (
     console.log(`    [observed] the hop answered after ${took} ms, the lock held 4000 ms`);
     assert.deepStrictEqual([out.part, out.metering], ['own', {billingPending: true}]);
     // once the lock is free: the outer call's charge and the hop's, each once
-    assert.ok(await eventually(() => total(store) === before - 2), `balance ${total(store)}, from ${before}`);
-    await new Promise((res) => setTimeout(res, 1500));
-    assert.strictEqual(total(store), before - 2, 'charged exactly twice: never again');
+    assert.strictEqual(await settled(store), before - 2, 'charged exactly twice, once the lock was free: never again');
     assert.match(io.err, /the pending billing landed/);
   });
 
@@ -140,8 +153,7 @@ describe('stdio 50: a routed hop waits for its charge at most METER_PENDING_MS (
     // (the allowance, 4: checked against the lib's own after the behaviour)
     const MAX_PENDING_PER_KEY = 4;
     const n = MAX_PENDING_PER_KEY + 1;
-    await new Promise((res) => setTimeout(res, 1500));
-    const before = total(store);
+    const before = await settled(store);
     const {holder, exited} = await holdLock(store, 4000);
     let outs = null;
     try {
@@ -158,9 +170,7 @@ describe('stdio 50: a routed hop waits for its charge at most METER_PENDING_MS (
     const waited = outs.filter((o) => o.metering != null && o.metering.charged === 1).length;
     assert.deepStrictEqual([pending, waited], [MAX_PENDING_PER_KEY, 1], JSON.stringify(outs.map((o) => o.metering)));
     // once the lock is free: each outer call's charge and each hop's, once
-    assert.ok(await eventually(() => total(store) === before - 2 * n), `balance ${total(store)}, from ${before}`);
-    await new Promise((res) => setTimeout(res, 1500));
-    assert.strictEqual(total(store), before - 2 * n, 'charged exactly once each: never again');
+    assert.strictEqual(await settled(store), before - 2 * n, 'charged exactly once each, once the lock was free: never again');
     assert.strictEqual(require('../../lib/metering/charge-bound').MAX_PENDING_PER_KEY, MAX_PENDING_PER_KEY);
   });
 
