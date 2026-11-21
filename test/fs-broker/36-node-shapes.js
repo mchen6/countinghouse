@@ -85,6 +85,8 @@ describe('fs-broker 36: Node\'s own answers, through the broker (the final pass,
           await assert.rejects(t.broker.handle('mkdtemp', [prefix]), code(mode === 'enforce' ? 'EROFS' : 'EACCES'), prefix);
         }
         assert.deepStrictEqual(fs.readdirSync(t.base).sort(), before, 'nothing made beside a root');
+        // (a root reached by another name than its real one -- macOS's /var,
+        // a symlinked home: a plain prefix is made, as Node makes it)
         // (a prefix inside a root, as before)
         assert.match(await t.broker.handle('mkdtemp', ['/data/pre-']), /^\/data\/pre-[A-Za-z0-9]{6}$/);
         // (the prefix's directory a link: judged by where it leads -- one out
@@ -102,12 +104,40 @@ describe('fs-broker 36: Node\'s own answers, through the broker (the final pass,
         if (linked) {
           await assert.rejects(t.broker.handle('mkdtemp', ['/data/to-out/']));
           assert.deepStrictEqual(fs.readdirSync(out), [], 'nothing made outside');
+          // (made where the link leads, answered in the module's own spelling)
           const made = await t.broker.handle('mkdtemp', ['/data/to-tmp/']);
-          assert.strictEqual(fs.readdirSync(t.dirs.tmp).filter((n) => n.length === 6).length >= 1, true, made);
+          assert.match(made, /^\/data\/to-tmp\/[A-Za-z0-9]{6}$/);
+          assert.ok(fs.statSync(path.join(t.dirs.tmp, path.posix.basename(made))).isDirectory(), made);
         }
       } finally { await t.done(); }
     });
   }
+
+  it('a root whose host path is not its real path: mkdtemp makes a plain prefix; off refuses a root\'s own name too (round 2)', async function() {
+    const base = tmp.mkdtemp('broker-shapes-');
+    const realTmp = path.join(base, 'real-tmp');
+    fs.mkdirSync(realTmp);
+    try {
+      fs.symlinkSync(realTmp, path.join(base, 'tmp'), 'dir');
+    } catch (e) {
+      if (e.code === 'EPERM') return this.skip();
+      throw e;
+    }
+    const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data')};
+    Object.values(dirs).forEach((d) => fs.mkdirSync(d));
+    for (const mode of ['off', 'audit', 'enforce']) {
+      const namespace = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: path.join(base, 'tmp'), declared: [], protectedPaths: []});
+      await namespace.prepare();
+      const broker = new FsBroker({name: 'm', mode, namespace, cwd: '/', report: () => {}});
+      try {
+        assert.match(await broker.handle('mkdtemp', ['/tmp/x-']), /^\/tmp\/x-[A-Za-z0-9]{6}$/, mode);
+        assert.match(await broker.handle('mkdtemp', ['/tmp/']), /^\/tmp\/[A-Za-z0-9]{6}$/, mode);
+        const before = fs.readdirSync(base).sort();
+        await assert.rejects(broker.handle('mkdtemp', ['/data']), (e) => e.code === 'EROFS' || e.code === 'EACCES', mode);
+        assert.deepStrictEqual(fs.readdirSync(base).sort(), before, `${mode}: nothing beside /data`);
+      } finally { await broker.closeAll(); }
+    }
+  });
 
   tmp.hooks();
 });
