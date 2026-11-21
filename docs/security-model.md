@@ -243,9 +243,11 @@ a Windows runner, each failure given its cause):
   its namespaced form (`\\?\`) for the calls checked on a Windows runner
   (open, read, write), where Win32's name rules don't apply: a module's
   `/data/COM1` or `/data/NUL.txt` is an ordinary file, not a device, and
-  `/data/note.` is a file of its own, not `note`. An NTFS stream does work:
-  `/data/note::$DATA` is `note`'s own bytes, `note:alt` a stream of it -- the
-  module's own data. The broker's checks of a protected file at each
+  `/data/note.` is a file of its own, not `note`. A name with a `:` in a
+  segment of the module's own `/app`, `/data` or `/tmp` names an NTFS stream
+  (`note:alt`, `note::$DATA`): under `enforce` it answers ENOENT, as if
+  nothing were there, since a stream's bytes escape the disk quota's count
+  at a spawn; `audit` reports it and lets it through. The broker's checks of a protected file at each
   operation compare a Windows name with its case folded and its `:stream`
   suffix and trailing dots and spaces stripped (lib/fs-broker/denied.js), or
   compare the file itself. The namespace's start-time check that a declared
@@ -867,10 +869,13 @@ file renamed into place under `<storePath>/.lock`, merged by key, so
 several processes may share the store. No file under it holds an API key:
 metering without `--meter` records calls in memory only, and with
 `--meter` `metering.json` keeps each key's balance and free calls under
-the key's fingerprint (a full, domain-separated sha256). The seeding
-command, `countinghouse-meter`, reads the key from
-`COUNTINGHOUSE_SEED_KEY`, never from its arguments, and prints only the
-fingerprint.
+the key's fingerprint (a full, domain-separated sha256). The Redis store's
+ledger does the same: one hash per key, named by that fingerprint, so its
+records hold no key. The seeding
+command, `countinghouse-meter` (`--storePath <dir>` for the local store,
+`--store redis` for Redis's), reads the key from `COUNTINGHOUSE_SEED_KEY`,
+never from its arguments, and prints only the fingerprint. No metering
+answer carries the key: `GET /balance` answers the balance alone.
 
 The store's files are written back every 5 seconds, and at a clean stop. So
 a runtime killed without one (SIGKILL, a power loss) can lose up to the
