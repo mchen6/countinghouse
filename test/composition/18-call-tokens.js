@@ -1941,7 +1941,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       LOG.E = (e) => lines.push(String(e && e.message ? e.message : e));
       try {
         const allowedDevices = new Map();
-        DeviceManager.prototype.onPeerChannelAllow.call({peerChannels: {7: {allowedDevices}}}, {callerWorkerId: 7, deviceID: 'd9'});
+        DeviceManager.prototype.onPeerChannelAllow.call({peerCalleeChannels: {7: {allowedDevices}}}, {callerWorkerId: 7, deviceID: 'd9'});
         assert.deepStrictEqual([...allowedDevices.get('d9')], []);
         assert.ok(lines.some((l) => /no declared actions/.test(l)), JSON.stringify(lines));
       } finally {

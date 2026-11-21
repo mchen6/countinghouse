@@ -206,7 +206,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     // carries the invoke's id alone, and anything else on it is not read
     const {serialize, toArrayBuffer} = require(path.join(LIB, 'serialized-result'));
     const checked = toArrayBuffer(serialize({input: {v: 1}}));
-    const self = {peerChannels: {}, workerMessage: {sendPeerMeteringRequestToParent: (data, cb) => cb(null, {charged: 0}, 'tok', null, checked,
+    const self = {peerChannels: {}, peerCalleeChannels: {}, workerMessage: {sendPeerMeteringRequestToParent: (data, cb) => cb(null, {charged: 0}, 'tok', null, checked,
       {deviceID: 'd2', serviceID: 'svc', actionName: 'act'})}};
     DeviceManager.prototype.onPeerChannelOpen.call(self, {callerWorkerId: 1, appKey: 'k', targetDeviceID: 'd2', actions: ['svc|act'], port: ch.port2});
     ch.port1.postMessage({id: 1, command: 'peer-invoke', deviceID: 'd2', serviceID: 'svc', actionName: 'act', input: {v: 2}, billingKey: 'k', usageCall: 5});
