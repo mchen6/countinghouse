@@ -27,30 +27,32 @@ describe('jobs-local 06: a run is billed to the owner it was authorized as (B-me
       ${identityLines(LIB, ['owner-key-6'])}
       const identity = require(${JSON.stringify(path.join(LIB, 'identity'))});
       const {createRunner} = require(${JSON.stringify(path.join(LIB, 'job-control-local'))});
+      const {INTERNAL} = require(${JSON.stringify(path.join(LIB, 'job-control-common'))});
       const runner = createRunner({jobTimeoutMs: 0});
       const billed = [];
       runner.initJobProcess({recordCall: (k, t, c, cb) => { billed.push(k); if (cb) cb(null); },
         invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback) => {
           // the owner leaves the index while the run is under way
-          const state = identity.stateForTests();
-          identity.restoreForTests(Object.assign(state, {index: new Map(), byKey: new Map(), remembered: new Map()}));
+          identity.stateForTests().forget();
           setImmediate(callback, null, {ok: 1});
         }});
       runner.addJob({appKey: 'owner-key-6'}, {name: 'n'}, 'dev', 'svc', 'act', {}, (err, r) => {
         if (err) { process.stdout.write('OUT ' + JSON.stringify({addErr: err.code || err.message}) + '\\n'); process.exit(0); }
+        // (the run's end, then what it billed: never polled for the one expected)
         const t0 = Date.now();
-        const poll = () => {
-          if (billed.length > 0 || Date.now() - t0 > 5000) {
-            process.stdout.write('OUT ' + JSON.stringify({billed}) + '\\n');
+        const poll = () => runner.getJob(INTERNAL, r.id, (e, rec) => {
+          const st = rec != null ? rec.state : null;
+          if (st === 'completed' || st === 'failed' || Date.now() - t0 > 5000) {
+            process.stdout.write('OUT ' + JSON.stringify({state: st, billed}) + '\\n');
             process.exit(0);
           }
           setTimeout(poll, 20);
-        };
+        });
         poll();
       });`;
     const r = spawnSync(process.execPath, ['-e', script], {cwd: path.join(__dirname, '..', '..'), encoding: 'utf8', timeout: 30000});
     const line = (r.stdout || '').split('\n').find((l) => l.startsWith('OUT '));
     assert.ok(line != null, `no output: ${r.stdout} ${r.stderr}`);
-    assert.deepStrictEqual(JSON.parse(line.slice(4)), {billed: ['owner-key-6']});
+    assert.deepStrictEqual(JSON.parse(line.slice(4)), {state: 'completed', billed: ['owner-key-6']});
   });
 });

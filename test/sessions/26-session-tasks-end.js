@@ -61,7 +61,7 @@ describe('sessions 26: an ended session\'s tasks are cancelled (shared runtime B
   });
   const newRunner = () => {
     const r = createRunner({jobTimeoutMs: 0});
-    r.authorizeRun = () => Promise.resolve();
+    r.authorizeRun = require('../helpers/identity-scope').authorizedRun;
     r.initJobProcess(stubCi());
     // the session a run's usage is recorded under: the start hook's (as lib/mcp/gateway.js jobHooks: usage.start)
     r.setStartHook((data, session) => ({session}));
@@ -137,7 +137,7 @@ describe('sessions 26: an ended session\'s tasks are cancelled (shared runtime B
 
     it('an active task its session ended under before it reached a worker never starts', async() => {
       let authorize;
-      runner.authorizeRun = () => new Promise((r) => { authorize = r; });
+      runner.authorizeRun = (job) => new Promise((r) => { authorize = r; }).then(() => require('../helpers/identity-scope').authorizedRun(job));
       const held = await add(IN(A), 'held');
       assert.ok(await until(async() => authorize != null));
       assert.strictEqual(await stateOf(held), 'active');
@@ -172,7 +172,7 @@ describe('sessions 26: an ended session\'s tasks are cancelled (shared runtime B
       options.store = 'local';
       // the store's runner (lib/store.js jobs, local): the module's own
       local = require('../../lib/job-control-local');
-      local.authorizeRun = () => Promise.resolve();
+      local.authorizeRun = require('../helpers/identity-scope').authorizedRun;
       local.initJobProcess(stubCi());
       local.setStartHook((data, session) => ({session}));
       local.setCompletionHook(() => null);

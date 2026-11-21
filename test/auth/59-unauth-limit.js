@@ -360,7 +360,7 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
   it('a local job queued in a request runs with no request\'s address', async () => {
     const {createRunner} = require('../../lib/job-control-local');
     const runner = createRunner({jobTimeoutMs: 0});
-    runner.authorizeRun = () => Promise.resolve();
+    runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
     let seen;
     const ran = new Promise((resolve) => runner.initJobProcess({recordCall: (k, t, c, cb) => cb && cb(null),
       invokeJobs: (d, sv, a, input, id, cb) => { seen = unauthLimit.requestStoreForTests(); resolve(); cb(null, {}); }}));

@@ -23,7 +23,7 @@ function runnerWith(answer) {
   const ci = {recordCall: (k, t, c, cb) => cb && cb(null),
     invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => { calls.push({jobID, extraArgs}); return answer(callback); }};
   const runner = createRunner({jobTimeoutMs: 0});
-  runner.authorizeRun = () => Promise.resolve();
+  runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
   runner.initJobProcess(ci);
   return {runner, calls};
 }

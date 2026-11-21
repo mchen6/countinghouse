@@ -22,19 +22,30 @@ function useIdentity(keys) {
     for (const k of keys) identity.addKey(k, 'test-user', false);
   });
   after(() => {
-    if (saved != null) identity.restoreForTests(saved);
+    if (saved != null) saved.restore();
     if (dir != null) remove(dir);
   });
 }
 
 // The same for a child process's script: the lines that set it up there.
-const identityLines = (lib, keys) => `
+// The child's identity directory is made here, in the parent, under
+// test/.tmp, and removed when the parent exits: a child killed by a
+// timeout leaves nothing behind.
+const childDirs = [];
+process.on('exit', () => { for (const d of childDirs.splice(0)) remove(d); });
+const identityLines = (lib, keys) => {
+  const dir = mkdtemp('ch-identity-child-');
+  childDirs.push(dir);
+  return `
   { const identity = require(${JSON.stringify(path.join(lib, 'identity'))});
-    require('fs').mkdirSync(${JSON.stringify(path.join(__dirname, '..', '.tmp'))}, {recursive: true});
-    const dir = require('fs').mkdtempSync(require('path').join(${JSON.stringify(path.join(__dirname, '..', '.tmp'))}, 'ch-identity-child-'));
-    process.on('exit', () => require('fs').rmSync(dir, {recursive: true, force: true}));
-    identity.initSync({moduleDataPath: dir});
+    identity.initSync({moduleDataPath: ${JSON.stringify(dir)}});
     for (const k of ${JSON.stringify(keys)}) identity.addKey(k, 'test-user', false); }
 `;
+};
 
-module.exports = {useIdentity, identityLines};
+// A test's stand-in for a runner's authorizeRun that lets every run through:
+// it resolves the owner's key from the index, as the real check does (a
+// runner refuses an owned job whose key doesn't come back: #518's high, L1).
+const authorizedRun = (job) => Promise.resolve(require('../../lib/job-control-common').ownerKeyOf(job != null ? job.data : null));
+
+module.exports = {useIdentity, identityLines, authorizedRun};

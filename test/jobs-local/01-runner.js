@@ -36,7 +36,7 @@ function stubInterface(answer) {
 function runnerWith(answer, opts) {
   const ci = stubInterface(answer);
   const runner = createRunner(Object.assign({jobTimeoutMs: 0}, opts || {}));
-  runner.authorizeRun = () => Promise.resolve();
+  runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
   runner.initJobProcess(ci);
   return {runner, ci};
 }
