@@ -160,6 +160,17 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
   // where the file provider's auth.json is, and whether there is one: one
   // function, for the --hardened parent's create and check and the child's
   // grant
+  // a --authConfigPath that is no path (a number, given twice) is refused at
+  // the start, as one given empty: the --hardened parent, the grant, the
+  // provider and the broker's protected lists all name one file
+  it('a --authConfigPath that is not one string is refused at the start', () => {
+    const r = spawnSync(process.execPath, ['-e', `const o = require(${JSON.stringify(path.join(ROOT, 'lib', 'cli-options'))});
+      const out = [];
+      for (const v of [1234, ['a.json', 'b.json'], '', true, 'ok.json']) { o.setOptions({authConfigPath: v}); out.push(o.authConfigPathInvalid === true); }
+      process.stdout.write(JSON.stringify(out));`], {encoding: 'utf8', timeout: 20000});
+    assert.deepStrictEqual(JSON.parse(r.stdout), [true, true, true, true, false], r.stderr);
+  });
+
   it('fileAuthPathOf: the file provider\'s auth.json, or null when none is read', () => {
     const {fileAuthPathOf} = require('../../lib/auth/auth-file-defaults');
     const cwd = path.join(dir, 'cwd');
@@ -186,8 +197,9 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     const demoKey = Object.keys(JSON.parse(fs.readFileSync(file, 'utf8')))[0];
     assert.ok(made.stdout.includes(file) && !made.stdout.includes(demoKey), made.stdout);
     const beside = path.join(dir, 'posix-hardened-envkey.json');
-    spawnSync(process.execPath, ['-e', `require(${JSON.stringify(path.join(ROOT, 'lib', 'auth', 'file-provider'))}).makeForHardened(${JSON.stringify(beside)});`],
-      {encoding: 'utf8', env: Object.assign({}, bare, {COUNTINGHOUSE_API_KEY: `env-${KEY}`}), timeout: 20000});
+    const besideRun = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(path.join(ROOT, 'lib', 'auth', 'file-provider'))}).makeForHardened(${JSON.stringify(beside)});
+      process.stdout.write('ran');`], {encoding: 'utf8', env: Object.assign({}, bare, {COUNTINGHOUSE_API_KEY: `env-${KEY}`}), timeout: 20000});
+    assert.strictEqual(besideRun.stdout, 'ran', besideRun.stderr);
     assert.ok(!fs.existsSync(beside), 'COUNTINGHOUSE_API_KEY: none is made');
     const missing = path.join(dir, 'posix-child-missing.json');
     const r = spawnSync(process.execPath, ['--permission', '--allow-fs-read=*', '-e', `

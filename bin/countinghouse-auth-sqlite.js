@@ -112,9 +112,10 @@ function readKey(callback) {
     process.stdin.destroy();
     done(text);
   };
-  // (bytes read so far; a stream with no line end past the bound and a CRLF
-  // is refused as it comes, never buffered on; a line found is measured by
-  // done())
+  // (the UTF-8 size of the text read so far -- an invalid input byte counts
+  // as its replacement character's 3; a stream with no line end past the
+  // bound and a CRLF is refused as it comes, never buffered on; a line
+  // found is measured by done())
   let bytes = 0;
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', (c) => {

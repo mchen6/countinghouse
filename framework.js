@@ -304,19 +304,6 @@ if (options.hardened === true && process.permission == null) {
   // Node 24.22+ (nodejs/node#66812), so this unrestricted process resolves
   // them and sends the results; the probe checks any granted directory it did
   // not resolve, and refuses clearly instead of failing after the relaunch.
-  // The file auth provider's auth.json, when it reads one (B-meter-keys 4r):
-  // a missing one is made here, the demo key, before the grants are taken,
-  // as the child is granted it read-only (lib/hardened-launch.js); on Windows
-  // it is made and checked below (prepareForHardened)
-  var fileAuthPath = require('./lib/auth/auth-file-defaults').fileAuthPathOf(options, process.cwd());
-  if (fileAuthPath != null && process.platform !== 'win32') {
-    try {
-      require('./lib/auth/file-provider').makeForHardened(fileAuthPath);
-    } catch (e) {
-      console.error(e.message);
-      process.exit(2);
-    }
-  }
   var realpathRecorder = require('./lib/hardened-realpaths').recorder(require('fs').realpathSync.native);
   var hardenedFlags = hardenedLaunch.permissionFlags(options, __dirname, process.cwd(), realpathRecorder.realpath);
   hardenedLaunch.precompute(options, __dirname, realpathRecorder);
@@ -331,6 +318,20 @@ if (options.hardened === true && process.permission == null) {
   if (!probe.ok) {
     console.error(hardenedLaunch.refusalMessage(probe, hardenedLaunch.grantOverlaps(hardenedFlags), process.version));
     process.exit(2);
+  }
+  // The file auth provider's auth.json, when it reads one (B-meter-keys 4r):
+  // a missing one is made here, the demo key, after the grant probe passed
+  // (a refused start leaves no key file), as the child is granted it
+  // read-only (lib/hardened-launch.js; a grant on a file needs no file
+  // there). On Windows it is made and checked below (prepareForHardened).
+  var fileAuthPath = require('./lib/auth/auth-file-defaults').fileAuthPathOf(options, process.cwd());
+  if (fileAuthPath != null && process.platform !== 'win32') {
+    try {
+      require('./lib/auth/file-provider').makeForHardened(fileAuthPath);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(2);
+    }
   }
   // enforce on Windows: the virtual drive is picked here, where looking at
   // drive letters is allowed, and handed to the child (#195;
