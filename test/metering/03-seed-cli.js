@@ -49,6 +49,38 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
     assert.ok(!asArg.stderr.includes(KEY), asArg.stderr);
   });
 
+  // B-meter-keys (1): the Redis store's ledger, seeded the same way --
+  // under the key's fingerprint, on db 0 where the runtime reads it
+  it('--store redis: sets the balance under the key\'s fingerprint on the runtime\'s ledger db; no Redis key holds the key', async function() {
+    const {redisUrlFor} = require('../helpers/test-env');
+    const redis = require('redis');
+    const client = redis.createClient(redisUrlFor(), {db: 0});
+    client.on('error', () => {});
+    const ok = await new Promise((resolve) => client.ping((err) => resolve(err == null)));
+    if (!ok) { client.quit(); return this.skip(); }
+    const id = meterId(KEY);
+    try {
+      await new Promise((resolve) => client.hmset(id, 'toolPriceRecord', JSON.stringify({t: {count: 3}}), resolve));
+      const run = meter(['set', '--store', 'redis', '--redisUrl', redisUrlFor(), '--balance', '70'], {COUNTINGHOUSE_SEED_KEY: KEY});
+      assert.strictEqual(run.status, 0, run.stderr);
+      assert.ok(run.stdout.includes(id), run.stdout);
+      assert.ok(!run.stdout.includes(KEY) && !run.stderr.includes(KEY), run.stdout + run.stderr);
+      const got = await new Promise((resolve) => client.hmget(id, 'balance', 'toolPriceRecord', (err, r) => resolve(r)));
+      assert.deepStrictEqual([Number(got[0]), JSON.parse(got[1])], [70, {t: {count: 3}}], 'the balance set, the free calls kept');
+      const keys = await new Promise((resolve) => client.keys('*', (err, k) => resolve(k || [])));
+      assert.ok(keys.every((k) => !k.includes(KEY)), JSON.stringify(keys));
+      // (the runtime's provider reads it there)
+      const RedisMeteringProvider = require('../../lib/metering/redis-provider');
+      const p = new RedisMeteringProvider({redisClient: client});
+      assert.strictEqual(await new Promise((resolve) => p.checkBalance(KEY, (err, r) => resolve(r && r.balance))), 70);
+      // (an unknown store, or --storePath with redis, is refused)
+      assert.strictEqual(meter(['set', '--store', 'mongo', '--balance', '1'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
+      assert.strictEqual(meter(['set', '--store', 'redis', '--storePath', '/x', '--balance', '1'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
+    } finally {
+      await new Promise((resolve) => client.del(id, () => client.quit(() => resolve())));
+    }
+  });
+
   it('refuses a balance that is not a finite number, and a missing --storePath', () => {
     const storePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-metering-03-'));
     assert.strictEqual(meter(['set', '--storePath', storePath, '--balance', 'lots'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
