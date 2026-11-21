@@ -851,9 +851,10 @@ own, as on 24.15 and later.
   module's own `__dirname`: on Linux and macOS they work in every mode,
   single-thread included -- your module's directory is `/app/...`, and it
   reaches Node's resolver in its host form, inside your module only. On
-  Windows they work in single-thread mode, where your module's `__dirname`
-  is its host path (no virtual directory there); in a worker they don't
-  yet.
+  Windows they work too: in a worker your module's `__dirname` is
+  `<V>:\app\...`, and every path the runtime hands back (`fs.realpathSync`,
+  `fs.mkdtempSync`, directory entries, glob, errors' `path`) is in that
+  spelling; in single-thread mode it is its host path.
 - Node's own `Module._resolveFilename` called with a relative request, and
   `module.findPackageJSON`, from one of your files: work in every mode, on
   Windows workers too. Under `enforce` the `module` your code gets has no
