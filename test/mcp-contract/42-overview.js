@@ -279,13 +279,18 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       const h = home();
       const l = heldBack.parse(doc([{name: 'my-tool', reason: 'refused', code: 'MODULE_INVALID'}]), h.settings);
       assert.deepStrictEqual(l.modules.get('my-tool'), {reason: 'refused', root: null, via: null, code: 'MODULE_INVALID'});
+      for (const good of ['A', 'A'.repeat(64), 'E_1']) assert.strictEqual(heldBack.parse(doc([{name: 'x', reason: 'refused', code: good}]), h.settings).modules.get('x').code, good);
       for (const bad of [[{name: 'x', reason: 'refused'}], [{name: 'x', reason: 'refused', code: 'not a code'}], [{name: 'x', reason: 'refused', code: 'A'.repeat(65)}],
+        [{name: 'x', reason: 'refused', code: '1ABC'}], [{name: 'x', reason: 'refused', code: 'aBC'}],
         [{name: 'x', reason: 'stopped', code: 'MODULE_INVALID'}], [{name: 'x', reason: 'calls', root: 'refused', via: 'p'}]]) {
         assert.throws(() => heldBack.parse(doc(bad), h.settings), Error, JSON.stringify(bad));
       }
       const L = '/home/u/.ch/bin/ch-local.js';
-      const [p] = overview.build({version: '1', settingsProfile: true, launcher: L, packs: [pack({name: 'my-tool', module: 'my-tool', loaded: false, held: l.modules.get('my-tool')})]}).packs;
+      const [p] = overview.build({version: '1', settingsProfile: true, launcher: L, packs: [pack({name: 'my-tool', module: 'my-tool', loaded: false, held: l.modules.get('my-tool'), own: true})]}).packs;
       assert.deepStrictEqual([p.state, p.next], ['not loaded', overview.FIXED.refused(L, 'my-tool', 'MODULE_INVALID')]);
+      // (a pack's module so marked: the status line, never remove-module)
+      const [q] = overview.build({version: '1', settingsProfile: true, launcher: L, packs: [pack({name: 'p', module: 'ch-pack-a', loaded: false, held: {reason: 'refused', root: null, via: null, code: 'MODULE_INVALID'}})]}).packs;
+      assert.strictEqual(q.next, overview.FIXED.notLoaded(L));
       assert.strictEqual(overview.FIXED.refused(null, 'my-tool', 'MODULE_INVALID'),
         'Not loaded: this release\'s runtime refuses your module (MODULE_INVALID): run `ch-local status` in your own terminal to see why, or `ch-local remove-module my-tool` to remove it.');
     });
