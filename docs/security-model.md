@@ -1766,11 +1766,18 @@ and the short list of what the in-process sandbox cannot give.
   thread's memory.** The auth stores keep keys as they are: `auth.json`, the
   sqlite database and the CouchDB documents. So protect them as secrets. The
   runtime enforces what it can check on the files it reads: it reads
-  `auth.json` and opens the sqlite database only when the file is its own
-  user's, a regular file under one name, never a link, and owner-only (mode
-  `0600`; on Windows an ACL that lets only that user read it), and it
-  creates them so. Anything else refuses the start, naming the fix. CouchDB
-  is a remote store, and its access control is its operator's. In memory, the
+  `auth.json` only when the file is its own user's, a regular file under one
+  name, never a link, and owner-only (mode `0600`; on Windows an ACL that
+  lets only that user read it). The sqlite database is checked the same way
+  before it is opened, together with its side files (`-journal`, `-wal`,
+  `-shm`) and its directory, which no other user may write in: SQLite plays
+  back a journal it finds there. The runtime creates both stores so.
+  Anything else refuses the start, naming the fix. Under `--hardened` on
+  Windows the sqlite store is refused at every start, as its ACL can't be
+  checked there. A reload of an `auth.json` that can't be verified applies
+  only what tightens. CouchDB is a remote store, and its access control is
+  its operator's; the CouchDB provider keeps a cache of looked-up users in
+  memory, keyed by the raw key until it is keyed by meterId. In memory, the
   main thread holds raw keys for as long as it needs them:
   - for the process's life: the loaded auth config, the identity index (to
     re-check and bill a queued job's owner), `COUNTINGHOUSE_API_KEY`, and the

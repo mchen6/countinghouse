@@ -31,8 +31,7 @@ every device.
 runtime reads `auth.json` only when it is this user's own, a regular file
 under one name (never through a link) and owner-only: mode `0600` on
 Linux and macOS, an ACL that lets only you read it on Windows. Anything
-else refuses the start (exit 2), and a `POST /reload-auth` keeps the
-current config, naming the fix, for example:
+else refuses the start (exit 2), naming the fix, for example:
 
 ```
 /path/to/auth.json is accessible by group or others (mode 644); it must be 0600, as it holds API keys: chmod 600 /path/to/auth.json
@@ -41,12 +40,22 @@ current config, naming the fix, for example:
 Create it with `install -m 600 /dev/null auth.json` (or `chmod 600
 auth.json` after writing it), and keep it so when you edit it.
 
+A `POST /reload-auth` of a file that fails only that check (an edit such as
+`jq ... > tmp && mv tmp auth.json` leaves it `0644`) still applies what
+tightens, so a revoked key never stays live: an entry removed, devices or
+`runsModules` narrowed, `admin` dropped. It refuses what adds or widens: a
+new key, a changed `id` or `userName`, or any wider grant. The answer has
+`"verified": false`, the counts `changed` and `refused`, and a message naming
+each refused change by entry number and the fix: `chmod 600`, then reload
+again. A link, or a file that is not a regular one under one name, is
+refused whole and the current config is kept.
+
 Under `--hardened`, the server creates a missing `auth.json`, the demo
 key, before it relaunches itself under Node's permission model. The
 relaunched server may read the file but never write it. On Windows the file's
-ACL is checked then too. The relaunched server can't read an ACL, so a
-`POST /reload-auth` there is refused with the config kept: restart it to
-apply a change.
+ACL is checked then too. The relaunched server can't read an ACL, so every
+`POST /reload-auth` there applies only what tightens, as above: restart it
+to apply what adds or widens.
 
 An entry with no `userName` has no name to callers: bills and
 `check_balance` show `null`, and the start warns. It is never named by its
@@ -145,7 +154,14 @@ db file path, default `./auth.sqlite3`), then manage users with the
 bundled CLI (it operates on the db file directly, not through the running
 server). The database holds keys in the clear: the CLI and the server
 create it owner-only (`0600`), and refuse one that is not this user's own
-and owner-only, naming the `chmod 600` that fixes it.
+and owner-only, naming the `chmod 600` that fixes it. SQLite's own files
+beside it (`-journal`, `-wal`, `-shm`) are held to the same rule. Its
+directory must be one only you can write in (your own or root's, and not
+group- or world-writable, sticky or not), because SQLite plays back a
+`-journal` it finds beside the database, whoever put it there. So keep the
+database out of a shared directory such as `/tmp`. Under `--hardened` on
+Windows the sqlite store is refused at every start (its ACL can't be checked
+there); use the file provider there.
 
 A command about a user reads that user's API key from **stdin**, never
 from an argument (an argument would sit in your shell history and in the

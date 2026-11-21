@@ -194,7 +194,9 @@ Notes:
   else refuses the start. A Compose `file:` secret (outside swarm) is a bind
   mount that keeps the host file's owner and mode, so give the host file to
   the image's user and make it owner-only:
-  `sudo chown 1000 ./secrets/auth.json && chmod 600 ./secrets/auth.json`
+  `chmod 600 ./secrets/auth.json && sudo chown 1000 ./secrets/auth.json`
+  (the mode first: once the file is another user's, you can no longer
+  change it without `sudo`)
   (1000 is the `node` user in `node:*` images).
 - `back` holds only countinghouse and Redis, and is `internal`, so it has no
   route out.
