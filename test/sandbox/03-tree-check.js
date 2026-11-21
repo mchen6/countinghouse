@@ -5,6 +5,8 @@ const assert = require('assert');
 const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
+// (a file named in a check's answer, in the OS's own separators)
+const native = (rel) => rel.split('/').join(path.sep);
 const {checkTree} = require('../../lib/module-tree-check');
 const validator   = require('../../lib/module-validator');
 
@@ -69,7 +71,7 @@ describe('sandbox 03: tree checks', () => {
       'lib/p/package.json': '{"name":"p","imports":{"#b":"./b.js"},"imports":null}',
       'lib/q/package.json': '{"name":"q","exports":"./a.js","type":"module","exports":"./b.js","type":"commonjs"}',
       'lib/r/package.json': '{"name":"r","nested":{"imports":1,"imports":2}}'});
-    assert.deepStrictEqual(checkTree(d).duplicateKeys.sort(), ['lib/p/package.json\'s "imports"', 'lib/q/package.json\'s "exports"', 'lib/q/package.json\'s "type"'].sort());
+    assert.deepStrictEqual(checkTree(d).duplicateKeys.sort(), [`${native('lib/p/package.json')}'s "imports"`, `${native('lib/q/package.json')}'s "exports"`, `${native('lib/q/package.json')}'s "type"`].sort());
   });
 
   // (and one written with an escape: JSON.parse decodes it, Node's reader
@@ -79,7 +81,7 @@ describe('sandbox 03: tree checks', () => {
       'lib/p/package.json': '{"name":"p","\\u0069mports":{"#a":"./a.js"}}',
       'lib/q/package.json': '{"name":"q","\\u0074ype":"module"}'});
     const t = checkTree(d);
-    assert.deepStrictEqual(t.escapedKeys.sort(), ['lib/p/package.json\'s "imports"', 'lib/q/package.json\'s "type"'].sort());
+    assert.deepStrictEqual(t.escapedKeys.sort(), [`${native('lib/p/package.json')}'s "imports"`, `${native('lib/q/package.json')}'s "type"`].sort());
     assert.deepStrictEqual(t.duplicateKeys, []);
   });
 
@@ -96,7 +98,7 @@ describe('sandbox 03: tree checks', () => {
       'lib/s/package.json': '\ufeff{"name":"s","main":"./\u00e9.js"}',
       'lib/t/package.json': '{"name":"t","type":"modul\\u0065"}'});
     const t = checkTree(d);
-    assert.deepStrictEqual(t.escapedKeys.sort(), ['lib/p/package.json\'s "main" value', 'lib/q/package.json\'s "name" value', 'lib/t/package.json\'s "type" value'].sort());
+    assert.deepStrictEqual(t.escapedKeys.sort(), [`${native('lib/p/package.json')}'s "main" value`, `${native('lib/q/package.json')}'s "name" value`, `${native('lib/t/package.json')}'s "type" value`].sort());
     assert.deepStrictEqual(t.notUtf8, ['lib/r/package.json']);
     assert.deepStrictEqual(t.duplicateKeys, []);
   });

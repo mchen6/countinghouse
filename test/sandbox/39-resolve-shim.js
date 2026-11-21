@@ -19,6 +19,13 @@ const VIOLATION = 'module sandbox: sandbox-probe violation';
 // own root: a relative climb into its lib/.
 const CLIMB = '../../../../../lib/sandbox';
 const OWN_FILE = '/app/handlers/probeService/attempt.js';
+// A virtual path as the module sees it: /app/... on POSIX; in a Windows
+// worker <V>:\app\..., V the drive the runtime picked (#195)
+const WIN = process.platform === 'win32';
+const seenAs = (v) => (WIN ? new RegExp(`^[A-Z]:${v.split('/').join('\\\\').replace(/\./g, '\\.')}$`) : null);
+const isOwnFile = (p) => (WIN ? seenAs(OWN_FILE).test(String(p)) : p === OWN_FILE);
+// a host file outside the module there on every OS
+const OUTSIDE = WIN ? path.join(process.env.SystemRoot || 'C:\\Windows', 'win.ini') : '/etc/passwd';
 
 function serverArgs(mode) {
   return ['--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode, '--loadModule', PROBE];
@@ -90,20 +97,20 @@ describe('sandbox 39: the routes to the module resolver', function() {
     it('require.resolve.paths returns only virtual paths', async () => {
       const a = await attempt(server, testPort(9724), 'resolvePaths', 'anything');
       assert.ok(Array.isArray(a.out.result) && a.out.result.length > 0, a.raw);
-      assert.ok(a.out.result.every((p) => p === '/node_modules' || p.startsWith('/app/')), a.raw);
+      assert.ok(a.out.result.every((p) => (WIN ? /^[A-Z]:\\(node_modules$|app\\)/.test(p) : (p === '/node_modules' || p.startsWith('/app/')))), a.raw);
     });
 
     it('a module\'s own file resolves to its virtual path, by require.resolve and createRequire on its directory', async () => {
       for (const what of ['ownFile', 'ownFileDir']) {
         const a = await attempt(server, testPort(9724), what);
         assert.strictEqual(a.out.outcome, 'allowed', a.raw);
-        assert.strictEqual(a.out.result, OWN_FILE, a.raw);
+        assert.ok(isOwnFile(a.out.result), a.raw);
       }
     });
 
     it('a module cannot replace Module._resolveFilename', async () => {
       const a = await attempt(server, testPort(9724), 'replaceResolveFilename');
-      assert.strictEqual(a.out.result, OWN_FILE, a.raw);
+      assert.ok(isOwnFile(a.out.result), a.raw);
     });
   });
 
@@ -114,7 +121,7 @@ describe('sandbox 39: the routes to the module resolver', function() {
 
     it('records require.resolve and the real createRequire().resolve outside the namespace', async () => {
       for (const what of ['resolveAbsolute', 'createRequireResolve']) {
-        const a = await attempt(server, testPort(9725), what, '/etc/passwd');
+        const a = await attempt(server, testPort(9725), what, OUTSIDE);
         assert.strictEqual(a.out.outcome, 'allowed', a.raw);
         assert.ok(a.added >= 1, `${what}: no violation recorded: ${server.output.slice(-1500)}`);
       }
@@ -149,7 +156,7 @@ describe('sandbox 39: the resolve shim marks a hook\'s answer', function() {
       nv.NEEDS_RESOLVE_SHIM = true;
       const shim = require(${JSON.stringify(path.join(ROOT, 'lib', 'resolve-shim.js'))});
       shim.registerHooks(Module.registerHooks, {resolve(specifier, context, nextResolve) {
-        if (specifier === 'virtual-answer') return {url: 'file:///app/handlers/x.js', shortCircuit: true};
+        if (specifier === 'virtual-answer') return {url: ${JSON.stringify(WIN ? 'file:///M:/app/handlers/x.js' : 'file:///app/handlers/x.js')}, shortCircuit: true};
         return nextResolve(specifier, context);
       }});
       const parent = new Module(${JSON.stringify(path.join(ROOT, 'lib', 'x.js'))}, null);
@@ -165,7 +172,8 @@ describe('sandbox 39: the resolve shim marks a hook\'s answer', function() {
       w.once('message', resolve);
       w.once('error', reject);
     });
-    assert.deepStrictEqual(r, {fromHook: '/app/handlers/x.js', hook: true, node: false, again: false});
+    // (a Windows hook names a file on a drive, as a Windows worker's does)
+    assert.deepStrictEqual(r, {fromHook: WIN ? 'M:\\app\\handlers\\x.js' : '/app/handlers/x.js', hook: true, node: false, again: false});
   });
 });
 

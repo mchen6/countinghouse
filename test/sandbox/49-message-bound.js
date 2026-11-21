@@ -53,7 +53,9 @@ describe('sandbox 49: messages to the main thread are bounded (#170)', function(
     assert.notStrictEqual(r.code, 'MESSAGE_TOO_LARGE', JSON.stringify(r));
     assert.ok(r.refused, JSON.stringify(r));
     await new Promise((resolve) => setTimeout(resolve, 300));
-    assert.match(server.output, /violation loadFile \/etc\/a+\.\.\. \(\d+ characters\)/);
+    // (on Windows the module resolves /etc/... on its own drive, <V>:\etc\...,
+    // named in the JSON log with its "\" escaped)
+    assert.match(server.output, /violation loadFile (?:\/etc\/|[A-Z]:\\\\etc\\\\)a+\.\.\. \(\d+ characters\)/);
   });
 
   // the review of #186, HIGH 1

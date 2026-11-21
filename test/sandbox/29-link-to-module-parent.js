@@ -16,6 +16,11 @@ const NAME = 'handler-map-convention';
 
 // <base>/m is a copy of the handler-map-convention fixture with the two links;
 // <base>/outside.js is the file above the module.
+// The refusal it names: FB3's on POSIX; on Windows the tree check refuses
+// every directory link first (x, then y), so FB3's never comes to it
+const refusal = (base) => (process.platform === 'win32'
+  ? `${NAME} holds a directory link at x; links aren't allowed under --moduleSandbox enforce; ${NAME} holds a directory link at y`
+  : `y is a symlink to ${base}, outside the module`);
 function layout() {
   const base = mkdtemp('fb3-load-');
   const m = path.join(base, 'm');
@@ -49,7 +54,7 @@ describe('sandbox 29: a link to the module\'s parent (FB3)', function() {
     const r = await mcpCall(PORT, KEY, 'countinghouse_load_module', {path: m, name: NAME, version: '1.0.0'});
     assert.strictEqual(r.isError, true, JSON.stringify(r));
     assert.strictEqual(toolErrorCode(r), 'MODULE_SANDBOX_REFUSED', JSON.stringify(r));
-    assert.ok(server.output.includes(`y is a symlink to ${base}, outside the module`), server.output.slice(-2000));
+    assert.ok(server.output.includes(refusal(base)), server.output.slice(-2000));
   });
 
   // Before FB3 the tree check passed y and the loader's JS realpath placed
@@ -61,7 +66,7 @@ describe('sandbox 29: a link to the module\'s parent (FB3)', function() {
     server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--authoringTools', '--workerThread', '--moduleSandbox', 'audit']);
     const r = await mcpCall(PORT, KEY, 'countinghouse_load_module', {path: m, name: NAME, version: '1.0.0'});
     assert.strictEqual(r.structuredContent.loaded, true, JSON.stringify(r));
-    assert.ok(server.output.includes(`module sandbox: ${NAME} would be refused under enforce: y is a symlink to ${base}, outside the module`),
+    assert.ok(server.output.includes(`module sandbox: ${NAME} would be refused under enforce: ${refusal(base)}`),
       server.output.slice(-2000));
     const call = await mcpCall(PORT, KEY, r.structuredContent.toolNames[0], {name: 'z'});
     assert.strictEqual(call.isError, false, JSON.stringify(call));

@@ -8,7 +8,7 @@
 // and a patched prototype never sees it).
 const MessagePort = globalThis.MessagePort;
 const runtimeEnvelope = () => {
-  const key = Object.keys(require.cache).find((k) => k.endsWith('/lib/message-envelope.js') && !k.startsWith('/app/'));
+  const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]message-envelope\.js$/.test(k) && !/^(\/app\/|[A-Z]:\\app\\)/.test(k));
   return key != null ? require.cache[key].exports : null;
 };
 module.exports = async (input, ctx) => {
