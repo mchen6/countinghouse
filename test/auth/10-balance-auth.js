@@ -70,13 +70,15 @@ describe('auth 10: /balance and countinghouse_check_balance require a real apiKe
   });
 
   it('GET /balance: a key with no record gets 0', (done) => {
-    request(url).get('/balance').set('X-CH-Key', ALICE).expect(200, (err, res) => {
+    // (its own: no record, whatever another test seeded)
+    const ledger = require('redis').createClient(require('../helpers/test-env').redisUrlFor(), {db: 0});
+    ledger.del(require('../../lib/key-fingerprint').meterId(ALICE), () => ledger.quit(() => request(url).get('/balance').set('X-CH-Key', ALICE).expect(200, (err, res) => {
       if (err) return done(err);
       if (res.body.balance !== 0 || 'apiKey' in res.body) {
         return done(new Error(`expected the caller's own balance, got: ${JSON.stringify(res.body)}`));
       }
       return done();
-    });
+    })));
   });
 
   it('GET /balance: an unknown key is refused (was: 200 with a balance)', (done) => {

@@ -4,9 +4,14 @@
 //   COUNTINGHOUSE_SEED_KEY=<key> countinghouse-meter set --storePath <dir> --balance <n>
 //       the local store's (--store local --meter; LM1,
 //       docs/superpowers/specs/2026-11-11-local-mode-design.md section 1)
-//   COUNTINGHOUSE_SEED_KEY=<key> countinghouse-meter set --store redis [--redisUrl <url>] --balance <n>
-//       the Redis store's (the default --store redis), on db 0, where
-//       lib/metering/redis-provider.js reads it
+//   COUNTINGHOUSE_SEED_KEY=<key> countinghouse-meter set [--store redis] [--redisUrl <url>] --balance <n>
+//       the Redis store's, the runtime's default store, on the ledger's db
+//       (lib/store.js metering), where lib/metering/redis-provider.js reads it
+//
+// Which store: --store, or else as the runtime's own default is chosen --
+// local with --storePath, Redis without; --redisUrl defaults to the
+// runtime's (lib/cli-options.js DEFAULT_REDIS_URL), and an empty one is
+// refused (an unset variable must never fund a local Redis instead).
 //
 // The key is read from COUNTINGHOUSE_SEED_KEY only, never from an argument
 // (it would sit in the shell history and the process list) or a prompt.
@@ -21,7 +26,7 @@
 const path = require('path');
 const minimist = require('minimist');
 
-const USAGE = 'usage: COUNTINGHOUSE_SEED_KEY=<key> countinghouse-meter set (--storePath <dir> | --store redis [--redisUrl <url>]) --balance <n>';
+const USAGE = 'usage: COUNTINGHOUSE_SEED_KEY=<key> countinghouse-meter set (--storePath <dir> | [--store redis] [--redisUrl <url>]) --balance <n>';
 
 function fail(message) {
   process.stderr.write(`countinghouse-meter: ${message}\n`);
@@ -37,8 +42,10 @@ const unknown = Object.keys(argv).filter((k) => !allowed.has(k));
 if (unknown.length > 0) fail(`unknown option ${unknown.map((k) => `--${k}`).join(', ')}; the key is read from COUNTINGHOUSE_SEED_KEY only`);
 const key = process.env.COUNTINGHOUSE_SEED_KEY;
 if (key == null || key === '') fail('set COUNTINGHOUSE_SEED_KEY to the key whose balance to set');
-const store = (argv.store == null || argv.store === '') ? 'local' : argv.store;
+if (argv.store === '') fail('--store is local or redis');
+const store = argv.store != null ? argv.store : (argv.storePath != null ? 'local' : 'redis');
 if (store !== 'local' && store !== 'redis') fail('--store is local or redis');
+if (argv.redisUrl === '' || (Array.isArray(argv.redisUrl))) fail('--redisUrl, when given, names one Redis');
 if (store === 'local' && (argv.storePath == null || argv.storePath === '')) fail('--storePath <dir> is required');
 if (store === 'local' && argv.redisUrl != null) fail('--redisUrl is for --store redis');
 if (store === 'redis' && argv.storePath != null) fail('--storePath is for the local store; --store redis takes --redisUrl');
@@ -57,9 +64,9 @@ if (store === 'local') {
   file.close();
   process.stdout.write(`set balance ${balance} for ${id}\n`);
 } else {
-  // (db 0, the ledger: lib/store.js's metering; one field of the hash set,
-  // its free-call counts kept)
-  const client = require('redis').createClient(argv.redisUrl || 'redis://127.0.0.1:6379', {db: 0});
+  // (db 0, the ledger's, as lib/store.js's metering opens it; one field of
+  // the hash set, its free-call counts kept)
+  const client = require('redis').createClient(argv.redisUrl != null ? argv.redisUrl : require('../lib/cli-options').DEFAULT_REDIS_URL, {db: 0});
   // (the error's code only: a connection string can hold a password)
   client.on('error', (err) => fail(`Redis could not be reached (${err.code || 'error'})`));
   client.hset(id, 'balance', String(balance), (err) => {

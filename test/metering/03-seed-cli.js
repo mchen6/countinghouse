@@ -61,7 +61,8 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
     const id = meterId(KEY);
     try {
       await new Promise((resolve) => client.hmset(id, 'toolPriceRecord', JSON.stringify({t: {count: 3}}), resolve));
-      const run = meter(['set', '--store', 'redis', '--redisUrl', redisUrlFor(), '--balance', '70'], {COUNTINGHOUSE_SEED_KEY: KEY});
+      // (no --store and no --storePath: the runtime's own default store, Redis)
+      const run = meter(['set', '--redisUrl', redisUrlFor(), '--balance', '70'], {COUNTINGHOUSE_SEED_KEY: KEY});
       assert.strictEqual(run.status, 0, run.stderr);
       assert.ok(run.stdout.includes(id), run.stdout);
       assert.ok(!run.stdout.includes(KEY) && !run.stderr.includes(KEY), run.stdout + run.stderr);
@@ -76,6 +77,11 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
       // (an unknown store, or --storePath with redis, is refused)
       assert.strictEqual(meter(['set', '--store', 'mongo', '--balance', '1'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
       assert.strictEqual(meter(['set', '--store', 'redis', '--storePath', '/x', '--balance', '1'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
+      // (an empty --redisUrl -- an unset variable -- never funds a local Redis instead)
+      const empty = meter(['set', '--redisUrl', '', '--balance', '1'], {COUNTINGHOUSE_SEED_KEY: KEY});
+      assert.strictEqual(empty.status, 2, empty.stdout);
+      assert.match(empty.stderr, /--redisUrl, when given, names one Redis/);
+      assert.strictEqual(meter(['set', '--store', '', '--balance', '1'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
     } finally {
       await new Promise((resolve) => client.del(id, () => client.quit(() => resolve())));
     }
@@ -84,6 +90,8 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
   it('refuses a balance that is not a finite number, and a missing --storePath', () => {
     const storePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-metering-03-'));
     assert.strictEqual(meter(['set', '--storePath', storePath, '--balance', 'lots'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
-    assert.strictEqual(meter(['set', '--balance', '5'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
+    // (--store local without --storePath; with neither, the store is Redis,
+    // the runtime's default, which this test never touches)
+    assert.strictEqual(meter(['set', '--store', 'local', '--balance', '5'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
   });
 });

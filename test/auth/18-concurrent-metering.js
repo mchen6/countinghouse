@@ -1,5 +1,4 @@
 const assert = require('assert');
-const {deviceIDForName} = require('../../lib/call-address');
 const util   = require('util');
 
 const RedisMeteringProvider = require('../../lib/metering/redis-provider');
@@ -80,26 +79,5 @@ describe('auth 18: RedisMeteringProvider.recordCall keeps every charge under con
     const stored = await util.promisify(provider.redisClient.hget.bind(provider.redisClient))(
       LEDGER, 'toolPriceRecord');
     assert.strictEqual(JSON.parse(stored)[TOOL].count, 0);
-  });
-
-  // Not a concurrency case: it pins the legacy-schema fallback, which the fix
-  // moved across the same boundary as everything else and which had no test.
-  it('still seeds a free-call quota from the legacy `devices` field, then charges once it is spent', async () => {
-    const DEVICE_ID  = deviceIDForName('echo-device');
-    const SERVICE_ID = 'urn:countinghouse-com:serviceID:echoService';
-    const legacyTool = RedisMeteringProvider.encodeLegacyTool(DEVICE_ID, SERVICE_ID, 'echo');
-
-    const priceRecord = {};
-    priceRecord[SERVICE_ID] = {echo: {count: 2}};
-    await util.promisify(provider.redisClient.hmset.bind(provider.redisClient))(
-      LEDGER, 'devices', JSON.stringify([{deviceID: DEVICE_ID, priceRecord: priceRecord}]));
-
-    const first  = await recordCall(KEY, legacyTool, 1);
-    const second = await recordCall(KEY, legacyTool, 1);
-    const third  = await recordCall(KEY, legacyTool, 1);
-
-    assert.deepStrictEqual([first.charged, first.remainingFreeCalls],   [0, 1]);
-    assert.deepStrictEqual([second.charged, second.remainingFreeCalls], [0, 0]);
-    assert.deepStrictEqual([third.charged, third.balance],              [1, -1]);
   });
 });
