@@ -149,10 +149,27 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     const named = {authConfigPath: path.join(dir, 'grant-auth.json')};
     assert.deepStrictEqual(grant({platform: posix, options: named}), {read: true, write: false}, 'POSIX, first run: the parent makes it');
     assert.deepStrictEqual(grant({platform: 'win32', options: named}), {read: true, write: false}, 'Windows: the parent makes it');
-    assert.deepStrictEqual(grant({platform: posix, options: named, envKey: `env-${KEY}`}), {read: true, write: false}, 'COUNTINGHOUSE_API_KEY: none is made');
     assert.deepStrictEqual(grant({platform: posix, options: Object.assign({singleIdentity: true}, named)}), {read: false, write: false}, 'single identity: no file provider');
     // the default, by its one function: in the working directory
     assert.deepStrictEqual(grant({platform: posix}), {read: true, write: false}, 'the default path');
+    // an unknown or unset provider is the file provider (lib/auth), so it is
+    // granted; sqlite's and CouchDB's are not
+    assert.deepStrictEqual(grant({platform: posix, options: Object.assign({authProvider: null}, named)}), {read: true, write: false}, 'unset: the file provider');
+  });
+
+  // where the file provider's auth.json is, and whether there is one: one
+  // function, for the --hardened parent's create and check and the child's
+  // grant
+  it('fileAuthPathOf: the file provider\'s auth.json, or null when none is read', () => {
+    const {fileAuthPathOf} = require('../../lib/auth/auth-file-defaults');
+    const cwd = path.join(dir, 'cwd');
+    assert.strictEqual(fileAuthPathOf({authProvider: 'file'}, cwd), path.join(cwd, 'auth.json'));
+    assert.strictEqual(fileAuthPathOf({}, cwd), path.join(cwd, 'auth.json'), 'unset: the file provider');
+    assert.strictEqual(fileAuthPathOf({authProvider: 'file', authConfigPath: ''}, cwd), path.join(cwd, 'auth.json'), 'empty: the default, never the directory');
+    assert.strictEqual(fileAuthPathOf({authProvider: 'file', authConfigPath: 'conf/a.json'}, cwd), path.join(cwd, 'conf', 'a.json'));
+    for (const o of [{debug: true}, {singleIdentity: true}, {authProvider: 'sqlite'}, {authProvider: 'couchdb'}]) {
+      assert.strictEqual(fileAuthPathOf(Object.assign({authProvider: 'file'}, o), cwd), null, JSON.stringify(o));
+    }
   });
 
   // (the third medium's run of remote 08) on POSIX too the parent makes it:
@@ -168,6 +185,10 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600);
     const demoKey = Object.keys(JSON.parse(fs.readFileSync(file, 'utf8')))[0];
     assert.ok(made.stdout.includes(file) && !made.stdout.includes(demoKey), made.stdout);
+    const beside = path.join(dir, 'posix-hardened-envkey.json');
+    spawnSync(process.execPath, ['-e', `require(${JSON.stringify(path.join(ROOT, 'lib', 'auth', 'file-provider'))}).makeForHardened(${JSON.stringify(beside)});`],
+      {encoding: 'utf8', env: Object.assign({}, bare, {COUNTINGHOUSE_API_KEY: `env-${KEY}`}), timeout: 20000});
+    assert.ok(!fs.existsSync(beside), 'COUNTINGHOUSE_API_KEY: none is made');
     const missing = path.join(dir, 'posix-child-missing.json');
     const r = spawnSync(process.execPath, ['--permission', '--allow-fs-read=*', '-e', `
       require(${JSON.stringify(path.join(ROOT, 'lib', 'logger'))}).createLogger();

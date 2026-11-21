@@ -112,12 +112,16 @@ function readKey(callback) {
     process.stdin.destroy();
     done(text);
   };
+  // (bytes read so far; a stream with no line end past the bound and a CRLF
+  // is refused as it comes, never buffered on; a line found is measured by
+  // done())
+  let bytes = 0;
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', (c) => {
     text += c;
+    bytes += Buffer.byteLength(c);
     if (c.includes('\n')) take();
-    // (no line end within the bound plus one: over it, whatever follows)
-    else if (Buffer.byteLength(text) > MAX_KEY + 2) tooLong();
+    else if (bytes > MAX_KEY + 2) tooLong();
   });
   process.stdin.on('end', take);
 }

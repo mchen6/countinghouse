@@ -304,6 +304,19 @@ if (options.hardened === true && process.permission == null) {
   // Node 24.22+ (nodejs/node#66812), so this unrestricted process resolves
   // them and sends the results; the probe checks any granted directory it did
   // not resolve, and refuses clearly instead of failing after the relaunch.
+  // The file auth provider's auth.json, when it reads one (B-meter-keys 4r):
+  // a missing one is made here, the demo key, before the grants are taken,
+  // as the child is granted it read-only (lib/hardened-launch.js); on Windows
+  // it is made and checked below (prepareForHardened)
+  var fileAuthPath = require('./lib/auth/auth-file-defaults').fileAuthPathOf(options, process.cwd());
+  if (fileAuthPath != null && process.platform !== 'win32') {
+    try {
+      require('./lib/auth/file-provider').makeForHardened(fileAuthPath);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(2);
+    }
+  }
   var realpathRecorder = require('./lib/hardened-realpaths').recorder(require('fs').realpathSync.native);
   var hardenedFlags = hardenedLaunch.permissionFlags(options, __dirname, process.cwd(), realpathRecorder.realpath);
   hardenedLaunch.precompute(options, __dirname, realpathRecorder);
@@ -325,20 +338,6 @@ if (options.hardened === true && process.permission == null) {
   if (options.moduleSandbox === 'enforce' && process.platform === 'win32') {
     var drive = require('./lib/fs-broker/virtual-drive').pick();
     if (drive != null) process.env.COUNTINGHOUSE_VIRTUAL_DRIVE = drive;
-  }
-  // The file auth provider's auth.json, when it is used (B-meter-keys 4r):
-  // a missing one is made here, the demo key, as the child is granted no
-  // write on it (lib/hardened-launch.js); on Windows it is also checked here
-  // (below)
-  var fileAuthPath = (options.debug !== true && options.singleIdentity !== true && (options.authProvider == null || options.authProvider === 'file'))
-    ? (options.authConfigPath || require('./lib/auth/file-provider').defaultConfigPath()) : null;
-  if (fileAuthPath != null && process.platform !== 'win32') {
-    try {
-      require('./lib/auth/file-provider').makeForHardened(fileAuthPath);
-    } catch (e) {
-      console.error(e.message);
-      process.exit(2);
-    }
   }
   // On Windows the child cannot run the PowerShell the identity secret's
   // and the server id's ACL checks need: they are created and checked here
