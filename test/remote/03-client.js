@@ -254,6 +254,20 @@ describe('remote 03: the client', function() {
     }
   });
 
+  // (F8: the scrub matched the credential exactly, before the cleaner made
+  // whitespace and hidden characters into one space)
+  it('the credential is scrubbed however its spaces were echoed: doubled, a tab, a newline, a hidden character', () => {
+    const short = ['ab', 'c1', '23'].join('');
+    const sc = createRemoteClient(remote(PORT), {header: 'Authorization', value: `Bearer ${short}`, source: 'CH_TEST_REMOTE_TOKEN'}, {debug: true}).scrub;
+    const {moduleLine} = require('../../lib/module-text');
+    for (const v of [`Bearer  ${short}`, `Bearer\t${short}`, `Bearer\n${short}`, `Bearer\u200b${short}`, `Bearer \u2028 ${short}`, `Bear\u200ber ${short}`, `Bearer ab\u200bc123`, `Bearer ${short}`]) {
+      const out = moduleLine(sc(`bad header: ${v} (end)`), 500);
+      assert.ok(!out.includes(short) && !out.replace(/ /g, '').includes(`Bearer${short}`), JSON.stringify(out));
+      assert.ok(out.includes('<credential>'), JSON.stringify(out));
+    }
+    assert.strictEqual(sc('nothing secret here'), 'nothing secret here');
+  });
+
   it('a closed client does not connect again', async () => {
     c = client();
     await c.call('echo_text', {});

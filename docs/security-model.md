@@ -2070,6 +2070,10 @@ the main thread's, not the module's (spec:
   message or a result. `COUNTINGHOUSE_*` variables are still never handed
   to a worker; a remote's credential may be one of them, because only the
   main thread reads it.
+  Text the remote sends back (an error body, a tool's name) has the
+  credential replaced before it is logged, and replaced again after it is
+  cleaned to one line: a value echoed back with its spaces doubled, made
+  a tab or a newline, or split by a hidden character is replaced too.
 - **A remote's tools/list is bounded.** Taken at load, with no operator
   allowance needed when the remote has no credential, it is held to at most
   2,048 tools and 4 MiB of their JSON (as well as 100 pages of at most
