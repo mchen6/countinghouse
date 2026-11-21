@@ -45,6 +45,7 @@ module.exports = async () => {
       case 'readFile':
         if (at.endsWith('/missing.json')) throw enoent(at);
         if (at.endsWith('/hosterr')) throw enoent('C:\\host\\secret.json');
+        if (at.endsWith('/unquoted')) throw Object.assign(new Error('boom at /app/x.json, not /app/x.jsonl'), {code: 'EBOOM', path: '/app/x.json'});
         if (at.endsWith('/two')) {
           throw Object.assign(new Error(`EXDEV: cross-device link not permitted, rename '/app/a' -> '/data/b'`), {code: 'EXDEV', path: '/app/a', dest: '/data/b'});
         }
@@ -71,8 +72,22 @@ module.exports = async () => {
   out.realpathApps = fs.realpathSync('/app/apps');
   out.realpathApplication = fs.realpathSync('/app/application');
   out.realpathUnc = fs.realpathSync('/app/unc');
-  // the stack's first line says what the message says
+  // the stack's first line says what the message says; a stack formatter the
+  // module set is never run by the failing call itself, only when the
+  // module reads the stack
   try { fs.readFileSync('/app/missing.json'); } catch (e) { out.errorStackHead = e.stack.split('\n')[0]; }
+  {
+    const prior = Error.prepareStackTrace;
+    let ran = 0;
+    Error.prepareStackTrace = (e) => { ran += 1; return `formatted: ${e.message}`; };
+    try {
+      let caughtError = null;
+      try { fs.readFileSync('/app/missing.json'); } catch (e) { caughtError = e; }
+      const before = ran;
+      out.moduleFormatter = {ranInCall: before, stack: caughtError.stack, ranOnRead: ran - before};
+    } finally { Error.prepareStackTrace = prior; }
+  }
+  out.errorUnquoted = caught(() => fs.readFileSync('/app/unquoted'));
   // mkdtemp, mkdir's first directory made, the disposable mkdtemps
   out.mkdtemp = fs.mkdtempSync('/tmp/ch-');
   out.mkdtempPromise = await fsp.mkdtemp('/tmp/ch-');
@@ -96,7 +111,7 @@ module.exports = async () => {
   out.readlinkAbs = fs.readlinkSync('/app/node_modules/abs');
   out.readlinkRel = fs.readlinkSync('/app/node_modules/rel');
   out.readlinkHost = fs.readlinkSync('/app/node_modules/host');
-  // Dirents' parentPath; a Dir's entries; a Dir's path as given, as Node's; a host-looking parentPath as it is
+  // Dirents' parentPath; a Dir's entries; a Dir's path in the module's spelling; a host-looking parentPath as it is
   const ents = fs.readdirSync('/app/plugins', {withFileTypes: true});
   out.direntParent = ents.map((d) => d.parentPath);
   out.direntPromise = (await fsp.readdir('/app/plugins', {withFileTypes: true})).map((d) => d.parentPath);
@@ -108,6 +123,8 @@ module.exports = async () => {
   out.dirEntry = dir.readSync().parentPath;
   dir.closeSync();
   out.dirPromisePath = (await fsp.opendir('/app/plugins')).path;
+  out.dirUrl = process.platform === 'win32' ? 'win32' : fs.opendirSync(new URL('file:///app/plugins')).path;
+  out.dirBuffer = Buffer.isBuffer(fs.opendirSync(Buffer.from('/app/plugins')).path);
   out.dirCallback = await new Promise((resolve) => fs.opendir('/app/plugins', {recursive: true}, (e, dd) => resolve(e ? e.code : [dd.path, dd.readSync().parentPath])));
   // glob: absolute matches, and Dirents
   out.globSync = fs.globSync('/app/plugins/*.js');
@@ -149,6 +166,8 @@ module.exports = async () => {
       globExcludeOwn: fs.globSync('M:/app/plugins/*', {exclude: ['M:/app/plugins/b.txt']}),
       error: caught(() => fs.readFileSync('M:\\app\\missing.json')),
       dir: fs.opendirSync('M:\\app\\plugins').path,
+      dirUrl: fs.opendirSync(new URL('file:///M:/app/plugins')).path,
+      globBackslash: fs.globSync('\\app\\plugins\\*.js'),
       mkdtemp: fs.mkdtempSync('M:\\tmp\\ch-')
     };
   }

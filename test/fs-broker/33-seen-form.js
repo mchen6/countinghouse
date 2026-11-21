@@ -40,8 +40,9 @@ describe('fs-broker 33: the paths a module is handed on Windows are in its own s
       readlinkAbs: M('app\\vendor\\x'), readlinkRel: '../vendor/x', readlinkHost: 'C:\\host\\target',
       direntParent: [plugins, plugins], direntPromise: [plugins, plugins],
       direntHost: ['C:\\host\\dir'], names: ['a.js'], direntRecursive: [plugins, plugins],
-      // (a Dir's path: its argument as given, as Node's own)
-      dirPath: '/app/plugins', dirEntry: plugins, dirPromisePath: '/app/plugins', dirCallback: ['/app/plugins', plugins],
+      // (a Dir's path: in the module's spelling, whichever way it was given)
+      dirPath: plugins, dirEntry: plugins, dirPromisePath: plugins, dirCallback: [plugins, plugins],
+      dirUrl: process.platform === 'win32' ? 'win32' : plugins, dirBuffer: true,
       globSync: [M('app\\plugins\\a.js')], globDirents: [plugins], globPromise: [M('app\\plugins\\a.js')], globCallback: [M('app\\plugins\\a.js')],
       globExclude: [M('app\\plugins\\a.js')], globExcludeSaw: [M('app\\plugins\\a.js'), M('app\\plugins\\b.txt')],
       cpFilter: [[M('app\\src'), M('data\\dst')], [M('app\\src\\keep'), M('data\\dst\\keep')], [M('app\\src\\skip'), M('data\\dst\\skip')]],
@@ -52,6 +53,8 @@ describe('fs-broker 33: the paths a module is handed on Windows are in its own s
       cpExists: {path: undefined, dest: undefined, message: `Target already exists: cp returned EEXIST (${M('data\\there')} already exists)`},
       cpCallback: 'done', cpFilterCallback: [[M('app\\file'), M('data\\new')]],
       errorStackHead: `Error: ENOENT: no such file or directory, open '${missing}'`,
+      moduleFormatter: {ranInCall: 0, stack: `formatted: ENOENT: no such file or directory, open '${missing}'`, ranOnRead: 1},
+      errorUnquoted: {path: M('app\\x.json'), dest: undefined, message: `boom at ${M('app\\x.json')}, not /app/x.jsonl`},
       errorSync: {path: missing, dest: undefined, message: `ENOENT: no such file or directory, open '${missing}'`},
       errorCallback: {path: missing, message: `ENOENT: no such file or directory, open '${missing}'`},
       errorPromise: {path: missing, dest: undefined, message: `ENOENT: no such file or directory, open '${missing}'`},
@@ -61,22 +64,30 @@ describe('fs-broker 33: the paths a module is handed on Windows are in its own s
       ...(process.platform === 'win32' ? {own: {
         realpath: probe, glob: [M('app\\plugins\\a.js')], globExcludeOwn: [M('app\\plugins\\a.js')],
         error: {path: missing, dest: undefined, message: `ENOENT: no such file or directory, open '${missing}'`},
-        dir: M('app\\plugins'), mkdtemp: M('tmp\\ch-abc')
+        dir: M('app\\plugins'), dirUrl: M('app\\plugins'), globBackslash: [M('app\\plugins\\a.js')], mkdtemp: M('tmp\\ch-abc')
       }} : {})
     });
   });
 
   // (the reviewer's condition: a host path is never spelled into view)
-  it('readlink: a host target outside every root is answered in Windows\' own separators, so it never reads as the namespace\'s', () => {
+  it('readlink on Windows: a target rooted with no drive is on the link\'s drive -- the namespace\'s when in a root, else a whole host path, never a name that reads as the namespace\'s', () => {
     const ns = {win32: true, hostPath: path.win32, toVirtual: (t) => (t.startsWith('C:\\ns\\') ? `/app/${t.slice(6).split('\\').join('/')}` : null)};
-    assert.strictEqual(readlinkAnswer(ns, '/data/secret'), '\\data\\secret', 'drive-rooted, written with "/": a host path');
-    assert.strictEqual(readlinkAnswer(ns, 'D:/host/y'), 'D:\\host\\y');
-    assert.strictEqual(readlinkAnswer(ns, 'C:\\ns\\vendor\\x'), '/app/vendor/x', 'in a root: the namespace\'s');
-    assert.strictEqual(readlinkAnswer(ns, '../vendor/x'), '../vendor/x', 'relative: as it is');
+    const link = 'D:\\h\\node_modules\\x';
+    assert.strictEqual(readlinkAnswer(ns, '/data/secret', link), 'D:\\data\\secret', 'written with "/": the link\'s drive, a host path');
+    assert.strictEqual(readlinkAnswer(ns, '\\data\\secret', link), 'D:\\data\\secret');
+    assert.strictEqual(readlinkAnswer(ns, '\\ns\\vendor\\x', 'C:\\ns\\node_modules\\l'), '/app/vendor/x', 'on the link\'s drive and in a root: the namespace\'s');
+    assert.strictEqual(readlinkAnswer(ns, 'D:/host/y', link), 'D:\\host\\y');
+    assert.strictEqual(readlinkAnswer(ns, 'C:\\ns\\vendor\\x', link), '/app/vendor/x', 'in a root: the namespace\'s');
+    assert.strictEqual(readlinkAnswer(ns, '\\\\srv\\share\\x', link), '\\\\srv\\share\\x', 'UNC: as the host has it');
+    assert.strictEqual(readlinkAnswer(ns, '../vendor/x', link), '../vendor/x', 'relative: as it is');
     const seen = seenFormFor('win32', 'M');
-    assert.strictEqual(seen(readlinkAnswer(ns, '/data/secret')), '\\data\\secret', 'and the patch leaves it as it is');
-    assert.strictEqual(seen(readlinkAnswer(ns, 'C:\\ns\\vendor\\x')), 'M:\\app\\vendor\\x');
+    // (and the module resolving it from its link never lands in its own namespace)
+    for (const t of ['/data/secret', '\\data\\secret', '/app/x', '/tmp/y']) {
+      const a = seen(readlinkAnswer(ns, t, link));
+      assert.ok(/^[A-LN-Z]:\\/.test(path.win32.resolve('M:\\app\\node_modules', a)), `${t}: ${a}`);
+    }
+    assert.strictEqual(seen(readlinkAnswer(ns, 'C:\\ns\\vendor\\x', link)), 'M:\\app\\vendor\\x');
     const posixNs = {win32: false, hostPath: path.posix, toVirtual: () => null};
-    assert.strictEqual(readlinkAnswer(posixNs, '/data/secret'), '/data/secret', 'POSIX: as before');
+    assert.strictEqual(readlinkAnswer(posixNs, '/data/secret', '/h/l'), '/data/secret', 'POSIX: as before');
   });
 });
