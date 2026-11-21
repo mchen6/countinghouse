@@ -554,6 +554,9 @@ describe('auth 62: the sqlite store and its users CLI (B-meter-keys 4r)', functi
       const r = cli(db, ['add-user', 'alice'], `${KEY}\n`);
       assert.notStrictEqual(r.status, 0, `${mode.toString(8)}: ${r.stderr}`);
       assert.match(r.stderr, /group or others can write in it/, r.stderr);
+      // (a shared, sticky directory is never to be chmod-ed: the store moves)
+      if ((mode & 0o1000) !== 0) assert.match(r.stderr, /move it to a directory only this user can write in/, r.stderr);
+      else assert.match(r.stderr, /chmod go-w/, r.stderr);
       assert.ok(!fs.existsSync(db), 'no store made there');
       const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
       assert.throws(() => new SqliteAuthProvider({dbPath: db}), (e) => e.code === 'AUTH_CONFIG_INVALID' && /group or others can write in it/.test(e.message));
