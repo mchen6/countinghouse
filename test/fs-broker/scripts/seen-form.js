@@ -44,6 +44,9 @@ module.exports = async () => {
       case 'lstat':
         return {bigint: false, fields: {mode: at === '/app/src' ? DIR : FILE, size: 0}};
       case 'exists': return at === '/data/there';
+      // (a file handle's open and close: any descriptor)
+      case 'open': return 7;
+      case 'close': return null;
       case 'copyFile': case 'rm': case 'unlink': case 'utimes': return null;
       case 'readFile':
         if (at.endsWith('/missing.json')) throw enoent(at);
@@ -148,6 +151,29 @@ module.exports = async () => {
     }
     out.replacedIntrinsics = {ran, path: got && got.path, ownDest: got != null && Object.hasOwn(got, 'dest'), code: got && got.code, message: got && got.message,
       asyncPath: gotAsync && gotAsync.path, asyncCode: gotAsync && gotAsync.code};
+  }
+  // (a promise's constructor and then replaced by module code -- a getter
+  // that names another constructor, a then that never settles anything --
+  // as a handle closes: the close still settles, as on master; the
+  // broker's answer is never awaited through them. The traps are there
+  // only while close() runs, never across an await of this script's own)
+  {
+    const h = await fsp.open('/app/handle');
+    const realThen = Promise.prototype.then;
+    const ctor = Object.getOwnPropertyDescriptor(Promise.prototype, 'constructor');
+    let settled = 'pending';
+    let p;
+    try {
+      Object.defineProperty(Promise.prototype, 'constructor', {configurable: true, get() { return function Elsewhere() {}; }});
+      Promise.prototype.then = function() { /* swallows */ };
+      p = h.close();
+    } finally {
+      Promise.prototype.then = realThen;
+      Object.defineProperty(Promise.prototype, 'constructor', ctor);
+    }
+    Reflect.apply(realThen, p, [() => { settled = 'resolved'; }, (e) => { settled = `rejected ${e && e.code}`; }]);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    out.closeUnderTamperedPromise = settled;
   }
   // (a Buffer given to opendir: its path a Buffer, in the module's spelling)
   {

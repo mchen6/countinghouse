@@ -67,6 +67,7 @@ describe('fs-broker 33: the paths a module is handed on Windows are in its own s
       errorOverlap: `z/app/a ${M('app\\a \\app\\a')}`,
       errorDotDash: `failed ${M('app\\x')}.-tmp`,
       dirBufferPath: [true, plugins],
+      closeUnderTamperedPromise: 'resolved',
       errorUnquoted: {path: M('app\\x.json'), dest: undefined, message: `boom at ${M('app\\x.json')}, not /app/x.jsonl`},
       errorSync: {path: missing, dest: undefined, message: `ENOENT: no such file or directory, open '${missing}'`},
       errorCallback: {path: missing, message: `ENOENT: no such file or directory, open '${missing}'`},
@@ -83,28 +84,18 @@ describe('fs-broker 33: the paths a module is handed on Windows are in its own s
   });
 
   // (the reviewer's condition: a host path is never spelled into view)
-  it('readlink on Windows: a target rooted with no drive is on the link\'s drive -- the namespace\'s when in a root, else a whole host path, never a name that reads as the namespace\'s', () => {
+  it('readlink on Windows: a target rooted with no drive is refused (never qualified with a host drive, never read as the namespace\'s); a drive or UNC target is the namespace\'s in a root, else as the host has it', () => {
     const ns = {win32: true, hostPath: path.win32, toVirtual: (t) => (t.startsWith('C:\\ns\\') ? `/app/${t.slice(6).split('\\').join('/')}` : null)};
     const link = 'D:\\h\\node_modules\\x';
-    assert.strictEqual(readlinkAnswer(ns, '/data/secret', link), 'D:\\data\\secret', 'written with "/": the link\'s drive, a host path');
-    assert.strictEqual(readlinkAnswer(ns, '\\data\\secret', link), 'D:\\data\\secret');
-    assert.strictEqual(readlinkAnswer(ns, '\\ns\\vendor\\x', 'C:\\ns\\node_modules\\l'), '/app/vendor/x', 'on the link\'s drive and in a root: the namespace\'s');
+    // (the reviewer's high on #505, 2: refused, failing closed -- no part of a host path the module didn't see)
+    for (const t of ['/data/secret', '\\data\\secret', '\\ns\\vendor\\x', '/app/x', '/tmp/y']) {
+      for (const l of [link, 'C:\\ns\\node_modules\\l', '\\\\?\\UNC\\srv\\share\\h\\l', undefined]) assert.throws(() => readlinkAnswer(ns, t, l), {code: 'EINVAL'}, `${t} from ${l}`);
+    }
     assert.strictEqual(readlinkAnswer(ns, 'D:/host/y', link), 'D:\\host\\y');
     assert.strictEqual(readlinkAnswer(ns, 'C:\\ns\\vendor\\x', link), '/app/vendor/x', 'in a root: the namespace\'s');
     assert.strictEqual(readlinkAnswer(ns, '\\\\srv\\share\\x', link), '\\\\srv\\share\\x', 'UNC: as the host has it');
-    // (the link's drive or share from its host path, a long form read as its plain one)
-    assert.strictEqual(readlinkAnswer(ns, '\\data\\x', '\\\\?\\UNC\\srv\\share\\h\\l'), '\\\\srv\\share\\data\\x');
-    assert.strictEqual(readlinkAnswer(ns, '\\data\\x', '\\\\?\\D:\\h\\l'), 'D:\\data\\x');
-    assert.strictEqual(readlinkAnswer(ns, '\\data\\x', '\\\\srv\\share\\h\\l'), '\\\\srv\\share\\data\\x');
-    // (no drive or share to put it on: refused, never answered drive-less)
-    for (const l of [undefined, '', 'h\\l', '\\h\\l']) assert.throws(() => readlinkAnswer(ns, '/data/secret', l), {code: 'EINVAL'}, String(l));
     assert.strictEqual(readlinkAnswer(ns, '../vendor/x', link), '../vendor/x', 'relative: as it is');
     const seen = seenFormFor('win32', 'M');
-    // (and the module resolving it from its link never lands in its own namespace)
-    for (const t of ['/data/secret', '\\data\\secret', '/app/x', '/tmp/y']) {
-      const a = seen(readlinkAnswer(ns, t, link));
-      assert.ok(/^[A-LN-Z]:\\/.test(path.win32.resolve('M:\\app\\node_modules', a)), `${t}: ${a}`);
-    }
     assert.strictEqual(seen(readlinkAnswer(ns, 'C:\\ns\\vendor\\x', link)), 'M:\\app\\vendor\\x');
     const posixNs = {win32: false, hostPath: path.posix, toVirtual: () => null};
     assert.strictEqual(readlinkAnswer(posixNs, '/data/secret', '/h/l'), '/data/secret', 'POSIX: as before');
