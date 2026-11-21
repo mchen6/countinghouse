@@ -57,6 +57,32 @@ describe('module-loading 35: a request refused in the queue names its queue wait
     }
   });
 
+  // A-flake-qwait: #493's Node 22.16 leg said "within 149 ms" for a 150 ms
+  // bound: the wait was taken from two clock reads (the deadline's and the
+  // queued time's), a millisecond apart. A clock that moves 1 ms on every
+  // read makes that difference every time; the bound itself is said.
+  it('the queue wait said is the bound itself, however the clock moves between its reads', async () => {
+    const p = stuckPool({loadQueueMs: 150});
+    const realNow = Date.now;
+    let t = realNow();
+    try {
+      const key = register(p, 'qwait-clock');
+      const logged = errors.length;
+      // (only while the request is made, synchronously: nothing else in
+      // the process sees this clock)
+      Date.now = () => (t += 1);
+      const pending = p.warm(key);
+      Date.now = realNow;
+      const answer = await pending;
+      assert.ok(answer != null && answer.timeout != null, JSON.stringify(answer));
+      assert.match(answer.timeout.message, /within 150 ms/, answer.timeout.message);
+      assert.ok(errors.slice(logged).some((e) => /qwait-clock: .*within 150 ms \(its wait in the queue\)/.test(e)), errors.slice(logged).join('\n'));
+    } finally {
+      Date.now = realNow;
+      p.close();
+    }
+  });
+
   it('a load\'s other request (prompts) refused in the queue: the same', async () => {
     const p = stuckPool({loadQueueMs: 150});
     try {
