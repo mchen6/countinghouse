@@ -67,11 +67,15 @@ function usageAndExit(code) {
 // key (which is read from stdin)
 const KEYED = {'add-user': 1, 'remove-user': 0, 'grant': 1, 'revoke': 1, 'set-admin': 1, 'set-id': 1, 'bind-module': 1};
 
+const MAX_KEY = 64 * 1024;
+
 // The key, from stdin: at a terminal, typed at a prompt that does not show
 // it; else the first line piped in. -> callback(key); exits on none.
 function readKey(callback) {
   const done = (text) => {
     const key = String(text).split(/\r?\n/)[0].trim();
+    // (refused past the bound, never cut short and stored)
+    if (key.length >= MAX_KEY) { console.error(`the API key on stdin is longer than ${MAX_KEY / 1024} KiB: refused`); process.exit(1); }
     if (key === '') { console.error('no API key on stdin: pipe it in (printf \'%s\\n\' "$KEY" | ...), or type it at the prompt'); process.exit(1); }
     callback(key);
   };
@@ -108,8 +112,8 @@ function readKey(callback) {
   };
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', (c) => {
-    if (text.length < 64 * 1024) text += c;
-    if (/\r?\n/.test(text) || text.length >= 64 * 1024) take();
+    text += c;
+    if (c.includes('\n') || text.length >= MAX_KEY) take();
   });
   process.stdin.on('end', take);
 }

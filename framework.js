@@ -338,7 +338,8 @@ if (options.hardened === true && process.permission == null) {
       // (the auth file, when it is one: it holds API keys, read only as this
       // user's own, B-meter-keys 4r)
       if (options.debug !== true && options.singleIdentity !== true && (options.authProvider == null || options.authProvider === 'file')) {
-        require('./lib/auth/file-provider').prepareForHardened(options.authConfigPath || require('./lib/auth/file-provider').defaultConfigPath());
+        const FileAuthProvider = require('./lib/auth/file-provider');
+        FileAuthProvider.prepareForHardened(options.authConfigPath || FileAuthProvider.defaultConfigPath());
       }
     } catch (e) {
       console.error(e.message);

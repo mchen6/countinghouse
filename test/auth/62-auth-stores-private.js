@@ -112,12 +112,55 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
   it('the default auth.json path is one function\'s, the one the --hardened parent checks', () => {
     const r = spawnSync(process.execPath, ['-e', `const F = require(${JSON.stringify(path.join(ROOT, 'lib', 'auth', 'file-provider'))});
       const p = new F({});
-      process.stdout.write(JSON.stringify({used: p.configPath, fn: typeof(F.defaultConfigPath) === 'function' ? F.defaultConfigPath() : null}));`],
+      process.stdout.write(JSON.stringify({cwd: process.cwd(), used: p.configPath, fn: typeof(F.defaultConfigPath) === 'function' ? F.defaultConfigPath() : null}));`],
     {cwd: dir, encoding: 'utf8', env: Object.assign({}, process.env, {COUNTINGHOUSE_API_KEY: `env-${KEY}`}), timeout: 20000});
     const o = JSON.parse(r.stdout);
-    assert.strictEqual(o.fn, path.join(fs.realpathSync(dir), 'auth.json'), r.stdout + r.stderr);
+    assert.strictEqual(o.fn, path.join(o.cwd, 'auth.json'), r.stdout + r.stderr);
     assert.strictEqual(o.used, o.fn);
-    assert.match(fs.readFileSync(path.join(ROOT, 'framework.js'), 'utf8'), /file-provider'\)\.prepareForHardened\(options\.authConfigPath \|\| require\('\.\/lib\/auth\/file-provider'\)\.defaultConfigPath\(\)\)/);
+    // (the --hardened parent's check and its grant name the default by that
+    // function, never by a spelling of their own)
+    for (const f of ['framework.js', path.join('lib', 'hardened-launch.js')]) {
+      assert.ok(!/'auth\.json'/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')), `${f} spells the default auth.json path itself`);
+    }
+  });
+
+  // (the second medium's 1) on Windows the parent makes the demo file, so
+  // the child is granted no write on the file holding the keys; on POSIX the
+  // child makes it, and is granted its write
+  it('a missing auth.json is granted to the --hardened child for writing on POSIX only', () => {
+    const grant = (platform) => {
+      const r = spawnSync(process.execPath, ['-e', `
+        if (${JSON.stringify(platform)} === 'win32') Object.defineProperty(process, 'platform', {value: 'win32'});
+        const hl = require(${JSON.stringify(path.join(ROOT, 'lib', 'hardened-launch'))});
+        const options = {modulePath: ${JSON.stringify(path.join(dir, 'grant-m'))}, moduleDataPath: ${JSON.stringify(path.join(dir, 'grant-d'))},
+          authProvider: 'file', debug: false, authConfigPath: ${JSON.stringify(path.join(dir, 'grant-auth.json'))}};
+        const flags = hl.permissionFlags(options, ${JSON.stringify(ROOT)}, process.cwd(), (p) => p);
+        process.stdout.write(JSON.stringify(flags.some((f) => f.startsWith('--allow-fs-write=') && f.includes('grant-auth.json'))));`],
+      {encoding: 'utf8', timeout: 20000});
+      assert.ok(r.stdout === 'true' || r.stdout === 'false', r.stdout + r.stderr);
+      return r.stdout === 'true';
+    };
+    assert.strictEqual(grant(process.platform === 'win32' ? 'linux' : process.platform), process.platform !== 'win32');
+    assert.strictEqual(grant('win32'), false, 'the Windows child is granted no write on auth.json');
+  });
+
+  // (the second medium's 2) a Windows --hardened child finding no auth.json
+  // is told where it is made, never sent into a write it can't make
+  (POSIX ? it : it.skip)('a --hardened Windows child with no auth.json is refused, naming the parent\'s create', () => {
+    const missing = path.join(dir, 'child-missing.json');
+    const bare = Object.assign({}, process.env);
+    delete bare.COUNTINGHOUSE_API_KEY;
+    const r = spawnSync(process.execPath, ['--permission', '--allow-fs-read=*', '--allow-fs-write=*', '-e', `
+      Object.defineProperty(process, 'platform', {value: 'win32'});
+      require(${JSON.stringify(path.join(ROOT, 'lib', 'logger'))}).createLogger();
+      const F = require(${JSON.stringify(path.join(ROOT, 'lib', 'auth', 'file-provider'))});
+      try { new F({configPath: ${JSON.stringify(missing)}}); process.stdout.write('started'); }
+      catch (e) { process.stdout.write(JSON.stringify({code: e.code, message: e.message})); }`],
+    {encoding: 'utf8', env: bare, timeout: 20000});
+    const o = JSON.parse(r.stdout);
+    assert.strictEqual(o.code, 'AUTH_CONFIG_INVALID', r.stdout + r.stderr);
+    assert.match(o.message, /created before the relaunch: start countinghouse with --hardened itself/);
+    assert.ok(!fs.existsSync(missing));
   });
 
   // (the review's 3) under --hardened on Windows the child can't make a
@@ -241,6 +284,18 @@ describe('auth 62: the sqlite store and its users CLI (B-meter-keys 4r)', functi
     });
     child.stdin.destroy();
     assert.strictEqual(code, 0);
+    // (the user is there, under that key: the path ran)
+    assert.match(cli(path.join(dir, 'open.sqlite3'), ['list']).stdout, /^olive \(id -\)/m);
+    assert.strictEqual(cli(path.join(dir, 'open.sqlite3'), ['remove-user'], `${KEY}\n`).status, 0);
+  });
+
+  // (the second medium's 5) a key past the bound is refused, never cut short
+  it('a key of 64 KiB or more with no line end is refused, and no user added', () => {
+    const db = path.join(dir, 'long.sqlite3');
+    const r = cli(db, ['add-user', 'lena'], 'k'.repeat(70 * 1024));
+    assert.notStrictEqual(r.status, 0);
+    assert.match(r.stderr, /longer than/);
+    assert.ok(!/lena/.test(cli(db, ['list']).stdout), 'no user added');
   });
 
   // (the review's 7) a second name (a hard link) is refused, as auth.json's
