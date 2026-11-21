@@ -34,7 +34,7 @@ describe('mcp-contract 43: one rate-limit shape on /mcp (A-rpc429)', () => {
     app.use(express.json());
     app.use('/mcp', require('../../lib/routes/mcp')(null, overBudget));
   });
-  after(() => optionsScope.restore(kept));
+  after(() => { if (kept != null) optionsScope.restore(kept); });
 
   const post = (body) => request(app).post('/mcp').set('Content-Type', 'application/json').set('Accept', 'application/json, text/event-stream').set('X-CH-Key', KEY).send(body);
   const limited = (answer) => {
@@ -58,6 +58,27 @@ describe('mcp-contract 43: one rate-limit shape on /mcp (A-rpc429)', () => {
     limited(res.body);
   });
 
+  // (A-rpc429's medium, 9) a 2026-07-28 request, one per POST: the same 429
+  it('a modern (2026-07-28) tools/list over the key\'s budget: the same 429', async () => {
+    const V = '2026-07-28';
+    const meta = {'io.modelcontextprotocol/protocolVersion': V, 'io.modelcontextprotocol/clientCapabilities': {}, 'io.modelcontextprotocol/clientInfo': {name: 'limit-test', version: '0'}};
+    const res = await request(app).post('/mcp').set('Content-Type', 'application/json').set('Accept', 'application/json, text/event-stream')
+      .set('X-CH-Key', KEY).set('MCP-Protocol-Version', V).set('Mcp-Method', 'tools/list')
+      .send({jsonrpc: '2.0', id: 13, method: 'tools/list', params: {_meta: meta}});
+    assert.strictEqual(res.status, 429, res.text);
+    assert.strictEqual(res.headers['retry-after'], '2');
+    limited(res.body);
+  });
+
+  // a resource read over the key's budget, before any lookup: the same shape
+  it('resources/read over the key\'s budget: the same 429', async () => {
+    const res = await post(legacy('resources/read', {uri: 'countinghouse://nowhere/x'}, 14));
+    assert.strictEqual(res.status, 429, res.text);
+    assert.strictEqual(res.headers['retry-after'], '2');
+    assert.strictEqual(res.body.error.code, -32000, res.text);
+    assert.deepStrictEqual(res.body.error.data, {'countinghouse/code': 'RATE_LIMIT_EXCEEDED', 'countinghouse/kind': 'caller', 'countinghouse/retryAfter': 2});
+  });
+
   it('a batch: 200, each limited message answered in the limit\'s shape, Retry-After the longest hint', async () => {
     const res = await post([legacy('tools/list', {}, 21), legacy('tasks/get', {taskId: 'x'}, 22)]);
     assert.strictEqual(res.status, 200, res.text);
@@ -77,6 +98,34 @@ describe('mcp-contract 43: one rate-limit shape on /mcp (A-rpc429)', () => {
     assert.deepStrictEqual(sent(busy), [true, 503, '1']);
     assert.deepStrictEqual(sent(limitAnswer(2, setRetryAfter(new CountinghouseError('RATE_LIMIT_EXCEEDED'), 1500, 60000))), [true, 429, '2']);
     assert.deepStrictEqual(sent(limitAnswer(3, setRetryAfter(new CountinghouseError('UNAUTH_RATE_LIMITED'), 3000, 60000))), [true, 429, '3']);
+  });
+
+  // (A-rpc429's medium, 1 and 2) a module resource's read refused by the call
+  // path's limiters: the key's is 429, the runtime's at its limit 503; a
+  // module's own error with a limit's code stays the read's error
+  it('a module resource\'s read refused by a limiter answers as every limiter (RUNTIME_BUSY 503); a module\'s own code does not', () => {
+    const gateway = require('../../lib/mcp/gateway');
+    const {answerLimit} = require('../../lib/mcp/error-data');
+    const asResult = (data, text) => ({isError: true, content: [{type: 'text', text}], _meta: data});
+    const sent = (answer) => {
+      const r = {headers: {}, set(k, v) { this.headers[k] = v; return this; }, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; }};
+      return [answerLimit(r, answer), r.code, r.headers['Retry-After']];
+    };
+    const busy = gateway.resourceAnswerFor({id: 5}, asResult({'countinghouse/code': 'RUNTIME_BUSY', 'countinghouse/kind': 'runtime', 'countinghouse/retryAfter': 1}, 'The runtime is at its request limit: retry shortly'));
+    assert.deepStrictEqual([busy.id, busy.error.code, busy.error.data['countinghouse/code']], [5, -32000, 'RUNTIME_BUSY']);
+    assert.deepStrictEqual(sent(busy), [true, 503, '1']);
+    const key = gateway.resourceAnswerFor({id: 6}, asResult({'countinghouse/code': 'RATE_LIMIT_EXCEEDED', 'countinghouse/kind': 'caller', 'countinghouse/retryAfter': 2}, 'x'));
+    assert.deepStrictEqual(sent(key), [true, 429, '2']);
+    const own = gateway.resourceAnswerFor({id: 7}, asResult({'countinghouse/code': 'RATE_LIMIT_EXCEEDED', 'countinghouse/kind': 'module'}, 'the module said so'));
+    assert.strictEqual(own.error.code, -32603, 'a module\'s own error: the read\'s');
+  });
+
+  it('error data is a limiter\'s only with a limit\'s code and not a module\'s kind: a module never answers as the limit', () => {
+    const {isLimitData} = require('../../lib/mcp/error-data');
+    assert.strictEqual(isLimitData({'countinghouse/code': 'RATE_LIMIT_EXCEEDED', 'countinghouse/kind': 'caller'}), true);
+    assert.strictEqual(isLimitData({'countinghouse/code': 'RUNTIME_BUSY', 'countinghouse/kind': 'runtime'}), true);
+    assert.strictEqual(isLimitData({'countinghouse/code': 'RATE_LIMIT_EXCEEDED', 'countinghouse/kind': 'module'}), false, 'a module\'s own code');
+    assert.strictEqual(isLimitData({'countinghouse/code': 'SOMETHING_ELSE', 'countinghouse/kind': 'caller'}), false);
   });
 
   it('an answer that only carries a limit\'s code (not -32000), or another -32000, is never sent as the limit', () => {

@@ -697,7 +697,8 @@ describe('mcp-contract 26: module resources (M7)', function() {
     try {
       invoked.length = 0;
       const probe = await read(KEY_A, 'countinghouse://m/nobody/x/1');
-      assert.strictEqual(probe.error && probe.error.code, -32603, JSON.stringify(probe));
+      // (every limiter's answer, -32000, a module read's included: A-rpc429)
+      assert.strictEqual(probe.error && probe.error.code, -32000, JSON.stringify(probe));
       assert.strictEqual(probe.error.data && probe.error.data['countinghouse/code'], 'RATE_LIMIT_EXCEEDED');
       // a limited read of a real resource, refused by the call path's own limit: the same answer
       const real = await read(KEY_A, 'countinghouse://m/notes/notes/one');
