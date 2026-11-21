@@ -46,6 +46,14 @@ if (argv.store === '') fail('--store is local or redis');
 const store = argv.store != null ? argv.store : (argv.storePath != null ? 'local' : 'redis');
 if (store !== 'local' && store !== 'redis') fail('--store is local or redis');
 if (argv.redisUrl === '' || (Array.isArray(argv.redisUrl))) fail('--redisUrl, when given, names one Redis');
+// A test's own Redis (CH_TEST_REDIS_URL: run-local's private one) and no
+// --redisUrl: refused, never the default, which is another Redis -- a test
+// that left the option out once seeded this machine's own Redis (the
+// reviewer, on B-meter-keys (1)). The variable only adds this refusal.
+const testRedis = process.env.CH_TEST_REDIS_URL;
+if (store === 'redis' && argv.redisUrl == null && testRedis != null && testRedis !== '' && testRedis !== require('../lib/cli-options').DEFAULT_REDIS_URL) {
+  fail('--redisUrl is required while CH_TEST_REDIS_URL names a test Redis: the default is another Redis');
+}
 if (store === 'local' && (argv.storePath == null || argv.storePath === '')) fail('--storePath <dir> is required');
 if (store === 'local' && argv.redisUrl != null) fail('--redisUrl is for --store redis');
 if (store === 'redis' && argv.storePath != null) fail('--storePath is for the local store; --store redis takes --redisUrl');

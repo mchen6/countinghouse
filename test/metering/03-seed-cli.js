@@ -87,6 +87,15 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
     }
   });
 
+  // the reviewer, on B-meter-keys (1): a test's own Redis named and no
+  // --redisUrl -- the default would be this machine's own Redis
+  it('refuses the default Redis while CH_TEST_REDIS_URL names a test\'s own, before connecting', () => {
+    const run = meter(['set', '--balance', '5'], {COUNTINGHOUSE_SEED_KEY: KEY, CH_TEST_REDIS_URL: 'redis://127.0.0.1:1'});
+    assert.strictEqual(run.status, 2, run.stdout);
+    assert.match(run.stderr, /--redisUrl is required while CH_TEST_REDIS_URL names a test Redis/);
+    assert.ok(!/could not be reached/.test(run.stderr), 'refused before any connection');
+  });
+
   it('refuses a balance that is not a finite number, and a missing --storePath', () => {
     const storePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-metering-03-'));
     assert.strictEqual(meter(['set', '--storePath', storePath, '--balance', 'lots'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
