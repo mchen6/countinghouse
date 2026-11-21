@@ -4,7 +4,9 @@
 // operator chose otherwise; it must be set before the pool is first used.
 if (process.env.UV_THREADPOOL_SIZE == null) process.env.UV_THREADPOOL_SIZE = '16';
 
-var argv          = require('minimist')(process.argv.slice(1));
+// (--authConfigPath a string as given: an all-digit file name keeps its
+// spelling, 007 never 7)
+var argv          = require('minimist')(process.argv.slice(1), {string: ['authConfigPath']});
 var options       = require('./lib/cli-options');
 var fs            = require('fs');
 var packageJson   = require('./package.json');
@@ -323,14 +325,13 @@ if (options.hardened === true && process.permission == null) {
   // a missing one is made here, the demo key, after the grant probe passed
   // (a start the probe refuses leaves no key file), as the child is granted
   // it read-only (lib/hardened-launch.js; a grant on a file needs no file
-  // there), and its real path is recorded for the child as the protected
-  // paths' are (precompute ran before it existed). On Windows it is made and
+  // there), and a file made here has its real path recorded for the child
+  // as the protected paths' are (precompute ran before it existed). On Windows it is made and
   // checked below (prepareForHardened).
   var fileAuthPath = require('./lib/auth/auth-file-defaults').fileAuthPathOf(options, process.cwd());
   if (fileAuthPath != null && process.platform !== 'win32') {
     try {
-      require('./lib/auth/file-provider').makeForHardened(fileAuthPath);
-      realpathRecorder.realpath(fileAuthPath);
+      if (require('./lib/auth/file-provider').makeForHardened(fileAuthPath)) realpathRecorder.realpath(fileAuthPath);
     } catch (e) {
       console.error(e.message);
       process.exit(2);
@@ -355,8 +356,7 @@ if (options.hardened === true && process.permission == null) {
       // (the auth file, when it is one: it holds API keys, read only as this
       // user's own, B-meter-keys 4r; made here when missing)
       if (fileAuthPath != null) {
-        require('./lib/auth/file-provider').prepareForHardened(fileAuthPath);
-        realpathRecorder.realpath(fileAuthPath);
+        if (require('./lib/auth/file-provider').prepareForHardened(fileAuthPath)) realpathRecorder.realpath(fileAuthPath);
       }
     } catch (e) {
       console.error(e.message);

@@ -192,6 +192,7 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     const cwd = path.join(dir, 'cwd');
     assert.strictEqual(authConfigPathOf({authProvider: 'sqlite'}, cwd), path.join(cwd, 'auth.sqlite3'));
     assert.strictEqual(authConfigPathOf({authProvider: 'sqlite', authConfigPath: 'k.db'}, cwd), path.join(cwd, 'k.db'));
+    assert.strictEqual(authConfigPathOf({authProvider: 'couchdb'}, cwd), null, 'CouchDB: no file here');
     const r = spawnSync(process.execPath, ['-e', `const broker = require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))});
       const denied = require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker', 'denied'))});
       const options = {authProvider: 'sqlite', modulePath: 'm', moduleDataPath: 'd'};
@@ -201,6 +202,26 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     const db = path.join(fs.realpathSync(dir), 'auth.sqlite3');
     assert.ok(o.prot.map((p) => path.resolve(dir, String(p))).some((p) => fs.realpathSync(path.dirname(p)) === path.dirname(db) && path.basename(p) === 'auth.sqlite3'), JSON.stringify(o.prot));
     assert.ok(o.denied.some((p) => /auth\.sqlite3-wal$/.test(p)), JSON.stringify(o.denied));
+    // (its journals are protected from a declaration too, as they hold its pages)
+    for (const side of ['-wal', '-shm', '-journal']) assert.ok(o.prot.some((p) => p.endsWith(`auth.sqlite3${side}`)), `${side}: ${JSON.stringify(o.prot)}`);
+  });
+
+  // (the seventh medium) COUNTINGHOUSE_API_KEY with no auth.json is a whole
+  // configuration under --hardened too: the parent makes none, and the start
+  // goes on
+  (POSIX ? it : it.skip)('a --hardened start with COUNTINGHOUSE_API_KEY and no auth.json starts, and makes none', async function() {
+    this.timeout(120000);
+    const {startServer, stopServer} = require('../helpers/sandbox-server');
+    const cwd = tmp.mkdtemp('ch-auth-62-hard-env-');
+    const server = await startServer(require('../helpers/test-env').testPort(9833), ['--workerThread', '--hardened', '--store', 'local',
+      '--storePath', path.join(cwd, 'store'), '--moduleDataPath', path.join(cwd, 'data'), '--modulePath', path.join(cwd, 'modules')],
+    {cwd, env: {COUNTINGHOUSE_API_KEY: `env-${KEY}`}});
+    try {
+      assert.ok(!fs.existsSync(path.join(cwd, 'auth.json')), 'none made beside the env key');
+      assert.ok(!server.output.includes(KEY), 'no key in the output');
+    } finally {
+      stopServer(server);
+    }
   });
 
   // (the third medium's run of remote 08) on POSIX too the parent makes it:

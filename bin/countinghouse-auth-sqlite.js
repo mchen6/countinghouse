@@ -44,7 +44,7 @@ try {
 }
 
 function parseArgs(argv) {
-  let dbPath = `${process.cwd()}/auth.sqlite3`;
+  let dbPath = require('../lib/auth/auth-file-defaults').authConfigPathOf({authProvider: 'sqlite'});
   const rest = [];
 
   for (let i = 0; i < argv.length; i++) {
