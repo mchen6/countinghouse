@@ -337,8 +337,8 @@ any module code). Stops:
   | `source-map-support`, `install()` | works | works | works | works |
   | `source-map-support`, `install({hookRequire: true})` | works | works | no hook (reported) | throws |
   | `require-in-the-middle`, a `Hook` | works | works | throws | throws |
-  | `resolve-from`, from `__dirname` | works | works (not on Windows) | works (not on Windows) | works (not on Windows) |
-  | `import-fresh`, a relative name | works | works (not on Windows) | works (not on Windows) | works (not on Windows) |
+  | `resolve-from`, from `__dirname` | works | works | works | works |
+  | `import-fresh`, a relative name | works | works | works | works |
   | `import-fresh` or `resolve-from`, an absolute path from `__dirname` | works | works below Node 24.15 (Linux, macOS) | works below Node 24.15 (Linux, macOS) | works below Node 24.15 (Linux, macOS) |
   | `module.findPackageJSON` from `__filename` | works | works | works | not in the reduced `module` |
   | `module-alias`, `addAlias` | works | no alias | no alias | throws |
@@ -356,8 +356,11 @@ any module code). Stops:
     path. A parent a library makes from it (as
     `resolve-from` and `import-fresh` do) reaches Node's resolver in its
     host form, confined to the module's root: in a worker by the file
-    broker's mapping, which answers a module file by its virtual name (on
-    Linux and macOS; a Windows worker answers as before, not found); in
+    broker's mapping, which answers a module file by its virtual name, and
+    answers every path it hands back -- `realpath`'s, `mkdtemp`'s and
+    `mkdir`'s, `readlink`'s, a directory entry's, glob's, `cp`'s filter
+    arguments, an error's path -- in the module's own spelling (on Windows
+    `<V>:\app\...`; only the namespace's own paths, never a host one); in
     single-thread mode by the facade, through the root of the module that
     called, answering the host path (development mode, no isolation; on
     Windows, where a single-thread module's directory is its host path,

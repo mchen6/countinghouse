@@ -5,7 +5,7 @@
 const assert = require('assert');
 const virtualDrive = require('../../lib/fs-broker/virtual-drive');
 const {fromWinFor, fromNamespacedFor} = require('../../lib/fs-broker/identity');
-const {virtualFormFor} = require('../../lib/fs-broker/roots');
+const {virtualFormFor, seenFormFor} = require('../../lib/fs-broker/roots');
 
 describe('fs-broker 26: a module\'s virtual drive on Windows (#195)', () => {
   afterEach(() => virtualDrive.reset());
@@ -79,5 +79,23 @@ describe('fs-broker 26: a module\'s virtual drive on Windows (#195)', () => {
     assert.strictEqual(form('Z:\\database\\x'), 'Z:\\database\\x');
     assert.strictEqual(virtualFormFor('win32', null)('Z:\\app\\x'), 'Z:\\app\\x', 'no drive: a host path, as before');
     assert.strictEqual(virtualFormFor('linux', 'Z')('Z:\\app\\x'), 'Z:\\app\\x', 'POSIX: unchanged');
+  });
+
+  // (C-compat-win: the way back -- a path the broker answers, realpath's or
+  // mkdtemp's, in the module's own spelling, as its __dirname is: resolve-
+  // from and import-fresh build a parent from realpathSync(__dirname))
+  it('the broker\'s answers in the module\'s own spelling: /app is <V>:\\app again; nothing else changes', () => {
+    const seen = seenFormFor('win32', 'M');
+    assert.strictEqual(seen('/app/handlers/probeService'), 'M:\\app\\handlers\\probeService');
+    assert.strictEqual(seen('/app'), 'M:\\app');
+    assert.strictEqual(seen('/data/x/y.json'), 'M:\\data\\x\\y.json');
+    assert.strictEqual(seen('/tmp/ch-abc'), 'M:\\tmp\\ch-abc');
+    assert.strictEqual(seen('/apps/x'), '/apps/x', 'a name only like the root: as it is');
+    assert.strictEqual(seen('C:\\Users\\x'), 'C:\\Users\\x', 'a host path: as it is');
+    // (and back again: the broker reads it as the namespace path it was)
+    const form = virtualFormFor('win32', 'M');
+    for (const v of ['/app/handlers/probeService', '/data/x', '/tmp/y']) assert.strictEqual(form(seen(v)), v);
+    assert.strictEqual(seenFormFor('win32', null)('/app/x'), '/app/x', 'no drive: as before');
+    assert.strictEqual(seenFormFor('linux', 'M')('/app/x'), '/app/x', 'POSIX: unchanged');
   });
 });
