@@ -326,6 +326,20 @@ if (options.hardened === true && process.permission == null) {
     var drive = require('./lib/fs-broker/virtual-drive').pick();
     if (drive != null) process.env.COUNTINGHOUSE_VIRTUAL_DRIVE = drive;
   }
+  // The file auth provider's auth.json, when it is used (B-meter-keys 4r):
+  // a missing one is made here, the demo key, as the child is granted no
+  // write on it (lib/hardened-launch.js); on Windows it is also checked here
+  // (below)
+  var fileAuthPath = (options.debug !== true && options.singleIdentity !== true && (options.authProvider == null || options.authProvider === 'file'))
+    ? (options.authConfigPath || require('./lib/auth/file-provider').defaultConfigPath()) : null;
+  if (fileAuthPath != null && process.platform !== 'win32') {
+    try {
+      require('./lib/auth/file-provider').makeForHardened(fileAuthPath);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(2);
+    }
+  }
   // On Windows the child cannot run the PowerShell the identity secret's
   // and the server id's ACL checks need: they are created and checked here
   // (lib/identity.js, lib/server-id.js prepareForHardened)
@@ -336,11 +350,8 @@ if (options.hardened === true && process.permission == null) {
       require('./lib/identity').prepareForHardened(options);
       require('./lib/server-id').prepareForHardened(options);
       // (the auth file, when it is one: it holds API keys, read only as this
-      // user's own, B-meter-keys 4r)
-      if (options.debug !== true && options.singleIdentity !== true && (options.authProvider == null || options.authProvider === 'file')) {
-        const FileAuthProvider = require('./lib/auth/file-provider');
-        FileAuthProvider.prepareForHardened(options.authConfigPath || FileAuthProvider.defaultConfigPath());
-      }
+      // user's own, B-meter-keys 4r; made here when missing)
+      if (fileAuthPath != null) require('./lib/auth/file-provider').prepareForHardened(fileAuthPath);
     } catch (e) {
       console.error(e.message);
       process.exit(2);

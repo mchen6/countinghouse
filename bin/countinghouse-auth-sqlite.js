@@ -67,15 +67,16 @@ function usageAndExit(code) {
 // key (which is read from stdin)
 const KEYED = {'add-user': 1, 'remove-user': 0, 'grant': 1, 'revoke': 1, 'set-admin': 1, 'set-id': 1, 'bind-module': 1};
 
+// (in UTF-8 bytes; a key over it is refused, never cut short and stored)
 const MAX_KEY = 64 * 1024;
+const tooLong = () => { console.error(`the API key on stdin is longer than ${MAX_KEY / 1024} KiB: refused`); process.exit(1); };
 
 // The key, from stdin: at a terminal, typed at a prompt that does not show
 // it; else the first line piped in. -> callback(key); exits on none.
 function readKey(callback) {
   const done = (text) => {
     const key = String(text).split(/\r?\n/)[0].trim();
-    // (refused past the bound, never cut short and stored)
-    if (key.length >= MAX_KEY) { console.error(`the API key on stdin is longer than ${MAX_KEY / 1024} KiB: refused`); process.exit(1); }
+    if (Buffer.byteLength(key) > MAX_KEY) tooLong();
     if (key === '') { console.error('no API key on stdin: pipe it in (printf \'%s\\n\' "$KEY" | ...), or type it at the prompt'); process.exit(1); }
     callback(key);
   };
@@ -96,6 +97,7 @@ function readKey(callback) {
         }
         if (c === '\u007f' || c === '\b') typed = typed.slice(0, -1);
         else typed += c;
+        if (Buffer.byteLength(typed) > MAX_KEY) { process.stdin.setRawMode(false); process.stderr.write('\n'); tooLong(); }
       }
     });
     return;
@@ -113,7 +115,9 @@ function readKey(callback) {
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', (c) => {
     text += c;
-    if (c.includes('\n') || text.length >= MAX_KEY) take();
+    if (c.includes('\n')) take();
+    // (no line end within the bound plus one: over it, whatever follows)
+    else if (Buffer.byteLength(text) > MAX_KEY + 2) tooLong();
   });
   process.stdin.on('end', take);
 }

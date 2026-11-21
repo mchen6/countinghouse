@@ -41,9 +41,10 @@ current config, naming the fix, for example:
 Create it with `install -m 600 /dev/null auth.json` (or `chmod 600
 auth.json` after writing it), and keep it so when you edit it.
 
-On Windows under `--hardened`, the server checks the file's ACL before it
-relaunches itself under Node's permission model, and creates the demo file
-then if there is none. The relaunched server can't read an ACL, so a
+Under `--hardened`, the server creates a missing `auth.json`, the demo
+key, before it relaunches itself under Node's permission model. The
+relaunched server may read the file but never write it. On Windows the file's
+ACL is checked then too. The relaunched server can't read an ACL, so a
 `POST /reload-auth` there is refused with the config kept: restart it to
 apply a change.
 

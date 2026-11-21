@@ -124,24 +124,58 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     }
   });
 
-  // (the second medium's 1) on Windows the parent makes the demo file, so
-  // the child is granted no write on the file holding the keys; on POSIX the
-  // child makes it, and is granted its write
-  it('a missing auth.json is granted to the --hardened child for writing on POSIX only', () => {
-    const grant = (platform) => {
+  // (the second and third mediums) the --hardened child is granted auth.json
+  // to read only when the file provider reads it, and never to write: the
+  // parent makes the demo file before the relaunch, on every platform
+  it('the --hardened grant on auth.json: read when the file provider reads it, never write', () => {
+    const grant = ({platform = process.platform, options = {}, envKey = null, cwd = dir}) => {
+      const file = options.authConfigPath != null ? options.authConfigPath : path.join(cwd, 'auth.json');
+      const env = Object.assign({}, process.env);
+      delete env.COUNTINGHOUSE_API_KEY;
+      if (envKey != null) env.COUNTINGHOUSE_API_KEY = envKey;
       const r = spawnSync(process.execPath, ['-e', `
         if (${JSON.stringify(platform)} === 'win32') Object.defineProperty(process, 'platform', {value: 'win32'});
         const hl = require(${JSON.stringify(path.join(ROOT, 'lib', 'hardened-launch'))});
-        const options = {modulePath: ${JSON.stringify(path.join(dir, 'grant-m'))}, moduleDataPath: ${JSON.stringify(path.join(dir, 'grant-d'))},
-          authProvider: 'file', debug: false, authConfigPath: ${JSON.stringify(path.join(dir, 'grant-auth.json'))}};
+        const options = Object.assign({modulePath: ${JSON.stringify(path.join(dir, 'grant-m'))}, moduleDataPath: ${JSON.stringify(path.join(dir, 'grant-d'))},
+          authProvider: 'file', debug: false}, ${JSON.stringify(options)});
         const flags = hl.permissionFlags(options, ${JSON.stringify(ROOT)}, process.cwd(), (p) => p);
-        process.stdout.write(JSON.stringify(flags.some((f) => f.startsWith('--allow-fs-write=') && f.includes('grant-auth.json'))));`],
-      {encoding: 'utf8', timeout: 20000});
-      assert.ok(r.stdout === 'true' || r.stdout === 'false', r.stdout + r.stderr);
-      return r.stdout === 'true';
+        const has = (kind) => flags.some((f) => f.startsWith('--allow-fs-' + kind + '=') && f.split(',').concat(f.slice(f.indexOf('=') + 1)).includes(${JSON.stringify(file)}));
+        process.stdout.write(JSON.stringify({read: has('read'), write: has('write')}));`],
+      {cwd, encoding: 'utf8', env, timeout: 20000});
+      assert.ok(r.stdout.startsWith('{'), r.stdout + r.stderr);
+      return JSON.parse(r.stdout);
     };
-    assert.strictEqual(grant(process.platform === 'win32' ? 'linux' : process.platform), process.platform !== 'win32');
-    assert.strictEqual(grant('win32'), false, 'the Windows child is granted no write on auth.json');
+    const posix = process.platform === 'win32' ? 'linux' : process.platform;
+    const named = {authConfigPath: path.join(dir, 'grant-auth.json')};
+    assert.deepStrictEqual(grant({platform: posix, options: named}), {read: true, write: false}, 'POSIX, first run: the parent makes it');
+    assert.deepStrictEqual(grant({platform: 'win32', options: named}), {read: true, write: false}, 'Windows: the parent makes it');
+    assert.deepStrictEqual(grant({platform: posix, options: named, envKey: `env-${KEY}`}), {read: true, write: false}, 'COUNTINGHOUSE_API_KEY: none is made');
+    assert.deepStrictEqual(grant({platform: posix, options: Object.assign({singleIdentity: true}, named)}), {read: false, write: false}, 'single identity: no file provider');
+    // the default, by its one function: in the working directory
+    assert.deepStrictEqual(grant({platform: posix}), {read: true, write: false}, 'the default path');
+  });
+
+  // (the third medium's run of remote 08) on POSIX too the parent makes it:
+  // the child's write of a temp file beside it is refused by its grants
+  (POSIX ? it : it.skip)('on POSIX the --hardened parent makes a missing auth.json too, and a child finding none is refused', () => {
+    const bare = Object.assign({}, process.env);
+    delete bare.COUNTINGHOUSE_API_KEY;
+    const file = path.join(dir, 'posix-hardened.json');
+    const made = spawnSync(process.execPath, ['-e', `const F = require(${JSON.stringify(path.join(ROOT, 'lib', 'auth', 'file-provider'))});
+      if (typeof(F.makeForHardened) !== 'function') { process.stdout.write('none'); process.exit(0); }
+      F.makeForHardened(${JSON.stringify(file)});`], {encoding: 'utf8', env: bare, timeout: 20000});
+    assert.ok(fs.existsSync(file), `made by the parent: ${made.stdout} ${made.stderr}`);
+    assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600);
+    const demoKey = Object.keys(JSON.parse(fs.readFileSync(file, 'utf8')))[0];
+    assert.ok(made.stdout.includes(file) && !made.stdout.includes(demoKey), made.stdout);
+    const missing = path.join(dir, 'posix-child-missing.json');
+    const r = spawnSync(process.execPath, ['--permission', '--allow-fs-read=*', '-e', `
+      require(${JSON.stringify(path.join(ROOT, 'lib', 'logger'))}).createLogger();
+      const F = require(${JSON.stringify(path.join(ROOT, 'lib', 'auth', 'file-provider'))});
+      try { new F({configPath: ${JSON.stringify(missing)}}); process.stdout.write('started'); }
+      catch (e) { process.stdout.write(JSON.stringify({code: e.code, message: e.message})); }`],
+    {encoding: 'utf8', env: bare, timeout: 20000});
+    assert.match(r.stdout, /AUTH_CONFIG_INVALID.*created before the relaunch: start countinghouse with --hardened itself/, r.stdout + r.stderr);
   });
 
   // (the second medium's 2) a Windows --hardened child finding no auth.json
@@ -161,6 +195,26 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     assert.strictEqual(o.code, 'AUTH_CONFIG_INVALID', r.stdout + r.stderr);
     assert.match(o.message, /created before the relaunch: start countinghouse with --hardened itself/);
     assert.ok(!fs.existsSync(missing));
+    // (gone between the look and the read: the same answer)
+    const raced = spawnSync(process.execPath, ['--permission', '--allow-fs-read=*', '--allow-fs-write=*', '-e', `
+      Object.defineProperty(process, 'platform', {value: 'win32'});
+      const fs = require('fs');
+      const exists = fs.existsSync;
+      fs.existsSync = (p) => (p === ${JSON.stringify(missing)} ? true : exists(p));
+      require(${JSON.stringify(path.join(ROOT, 'lib', 'logger'))}).createLogger();
+      const F = require(${JSON.stringify(path.join(ROOT, 'lib', 'auth', 'file-provider'))});
+      try { new F({configPath: ${JSON.stringify(missing)}}); process.stdout.write('started'); }
+      catch (e) { process.stdout.write(JSON.stringify({code: e.code, message: e.message})); }`],
+    {encoding: 'utf8', env: bare, timeout: 20000});
+    assert.match(raced.stdout, /created before the relaunch: start countinghouse with --hardened itself/, raced.stdout + raced.stderr);
+  });
+
+  // the fix a refusal names, by its kind (both stores)
+  (POSIX ? it : it.skip)('the fix named: chmod for a mode, chown then chmod for an owner, none otherwise', () => {
+    const {fixFor} = require('../../lib/auth/private-store');
+    assert.strictEqual(fixFor('mode', '/f'), ', as it holds API keys: chmod 600 /f');
+    assert.strictEqual(fixFor('owner', '/f'), '; it holds API keys: chown it to this user, then chmod 600 /f');
+    assert.strictEqual(fixFor(undefined, '/f'), '');
   });
 
   // (the review's 3) under --hardened on Windows the child can't make a
@@ -290,12 +344,16 @@ describe('auth 62: the sqlite store and its users CLI (B-meter-keys 4r)', functi
   });
 
   // (the second medium's 5) a key past the bound is refused, never cut short
-  it('a key of 64 KiB or more with no line end is refused, and no user added', () => {
+  it('a key over 64 KiB is refused, never cut short, and no user added; one of exactly 64 KiB is taken', () => {
     const db = path.join(dir, 'long.sqlite3');
-    const r = cli(db, ['add-user', 'lena'], 'k'.repeat(70 * 1024));
-    assert.notStrictEqual(r.status, 0);
-    assert.match(r.stderr, /longer than/);
+    // (no line end; and a line whose cut at the bound would fall on spaces)
+    for (const input of ['k'.repeat(70 * 1024), `${'k'.repeat(65530)}${' '.repeat(10)}tail\n`]) {
+      const r = cli(db, ['add-user', 'lena'], input);
+      assert.notStrictEqual(r.status, 0, `${input.length}: ${r.stderr}`);
+      assert.match(r.stderr, /longer than 64 KiB/);
+    }
     assert.ok(!/lena/.test(cli(db, ['list']).stdout), 'no user added');
+    assert.strictEqual(cli(db, ['add-user', 'lena'], `${'k'.repeat(64 * 1024)}\n`).status, 0, 'exactly 64 KiB');
   });
 
   // (the review's 7) a second name (a hard link) is refused, as auth.json's
