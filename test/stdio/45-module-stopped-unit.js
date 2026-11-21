@@ -100,6 +100,33 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
     }
   });
 
+  // C-startup-order's Low (the high on #419): the start plan judges the real
+  // path it resolved, once -- what it keeps is what loads -- never the
+  // directory resolved again, which a link swapped in between could answer
+  // inside the root for a real path outside it
+  it('the start plan judges the one real path it keeps, never the directory resolved again', () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-45s-'));
+    const away = writeModule(path.join(outside, 'away'), {name: '@t/away', role: 'scenario'});
+    const here = writeModule(path.join(root, 'store', 'ch-pack-here', '1.0.0'), {name: 'ch-pack-here', role: 'scenario'});
+    const native = fs.realpathSync.native;
+    let first = true;
+    // (the module's directory: outside at the first look, inside after)
+    fs.realpathSync.native = (p, o) => {
+      if (p === here) { const r = first ? native(away, o) : native(here, o); first = false; return r; }
+      return native(p, o);
+    };
+    try {
+      const r = mip.checkStartPlan([here], []);
+      assert.deepStrictEqual(r.tops, [], `kept: ${JSON.stringify(r.tops)}`);
+      // (named by the package at the real path judged)
+      assert.deepStrictEqual(r.refused, [{name: '@t/away', code: 'MODULE_PATH_OUTSIDE_ROOT'}]);
+    } finally {
+      fs.realpathSync.native = native;
+      fs.rmSync(outside, {recursive: true, force: true});
+      fs.rmSync(path.join(root, 'store', 'ch-pack-here'), {recursive: true, force: true});
+    }
+  });
+
   it('1: an expansion that throws under --modulesRoot loads only the directories the start plan kept', () => {
     const store = path.join(root, 'store');
     const inside = writeModule(path.join(store, '@t', 'in', '1.0.0'), {name: '@t/in', role: 'scenario'});
