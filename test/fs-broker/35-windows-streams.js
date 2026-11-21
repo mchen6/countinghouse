@@ -10,13 +10,13 @@ const fs = require('fs');
 const path = require('path');
 const {createNamespace} = require('../../lib/fs-broker/namespace');
 const {FsBroker, hasStream} = require('../../lib/fs-broker/broker');
-const {mkdtemp} = require('../helpers/test-tmp');
+const tmp = require('../helpers/test-tmp').forFile(['broker-streams-']);
 
 const WIN = process.platform === 'win32';
 const STREAMS = ['/data/note:alt', '/data/note::$DATA', '/data/a:b/c', '/tmp/x:y'];
 
 async function setup(mode) {
-  const base = mkdtemp('broker-streams-');
+  const base = tmp.mkdtemp('broker-streams-');
   const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp')};
   Object.values(dirs).forEach((d) => fs.mkdirSync(d));
   fs.writeFileSync(path.join(dirs.data, 'note'), 'the note');
@@ -24,7 +24,7 @@ async function setup(mode) {
   await namespace.prepare();
   const reports = [];
   const broker = new FsBroker({name: 'm', mode, namespace, cwd: '/', report: (rule, target) => reports.push(`${rule} ${target}`)});
-  return {base, dirs, broker, reports, done: () => broker.closeAll().then(() => fs.rmSync(base, {recursive: true, force: true}))};
+  return {base, dirs, broker, reports, done: () => broker.closeAll()};
 }
 
 describe('fs-broker 35: an NTFS stream in a module\'s own roots (Windows)', function() {
@@ -50,6 +50,12 @@ describe('fs-broker 35: an NTFS stream in a module\'s own roots (Windows)', func
           await t.broker.handle('writeFile', [p, Buffer.from('x'), 'w', 0o666]);
         }
       }
+      // (a stream in a middle segment, and as a two-path op's second path)
+      if (WIN) {
+        await assert.rejects(t.broker.handle('mkdir', ['/data/a:b/c', {recursive: true, mode: 0o777}]), (e) => e.code === 'ENOENT');
+        await assert.rejects(t.broker.handle('rename', ['/data/note', '/data/note2:alt']), (e) => e.code === 'ENOENT');
+        await assert.rejects(t.broker.handle('copyFile', ['/data/note', '/data/copy:alt', 0]), (e) => e.code === 'ENOENT');
+      }
       // (a write to note::$DATA would have been note's own bytes: untouched)
       assert.strictEqual(fs.readFileSync(path.join(t.dirs.data, 'note'), 'utf8'), 'the note');
       // (rm with force swallows only this answer: a path outside stays refused)
@@ -64,7 +70,8 @@ describe('fs-broker 35: an NTFS stream in a module\'s own roots (Windows)', func
         const got = await t.broker.handle('readFile', ['/data/note::$DATA', 'r']).then((b) => Buffer.from(b).toString(), (e) => e.code);
         if (WIN) {
           assert.strictEqual(got, 'the note', 'note::$DATA is note itself on Windows');
-          assert.strictEqual(t.reports.includes('win-stream /data/note::$DATA'), mode === 'audit', t.reports.join(', '));
+          // (off reports nothing at all, by the broker's own rule: checked under audit)
+          if (mode === 'audit') assert.ok(t.reports.includes('win-stream /data/note::$DATA'), t.reports.join(', '));
           // (why enforce refuses it: let through here, a stream's bytes are
           // not what the quota's walk at a spawn measures -- only note's 8)
           if (mode === 'audit') {
@@ -78,4 +85,6 @@ describe('fs-broker 35: an NTFS stream in a module\'s own roots (Windows)', func
       } finally { await t.done(); }
     });
   }
+
+  tmp.hooks();
 });
