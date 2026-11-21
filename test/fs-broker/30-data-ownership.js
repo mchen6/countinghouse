@@ -28,9 +28,12 @@ describe('fs-broker 30: the runtime deletes only directories it made', () => {
   // directory under base is awaited first -- master run 44864349085,
   // ENOTEMPTY on Node 22 -- never slept for)
   afterEach(async () => {
-    await ownership.probesSettled();
-    if (base) fs.rmSync(base, {recursive: true, force: true});
-    base = null;
+    try {
+      await ownership.probesSettled();
+    } finally {
+      if (base) fs.rmSync(base, {recursive: true, force: true});
+      base = null;
+    }
   });
 
   it('ensureDirs records the data and tmp it makes; a /tmp the runtime made is emptied', async () => {
@@ -136,9 +139,25 @@ describe('fs-broker 30: the runtime deletes only directories it made', () => {
   it('probesSettled waits for every birth probe in flight; none is left in its directory', async () => {
     const d = await moduleData.ensureDirs(path.join(base, 'store'), 'm');
     ownership.resetForTests();
+    const probes = () => fs.readdirSync(d.root).filter((n) => n.startsWith(`${ownership.MARKER}-probe-`));
     ownership.birthIsReal(d.root, 'unawaited-dev');
+    // (the probe seen running first, by a bounded wait on its directory: a
+    // probesSettled that waited for nothing would then leave it there)
+    for (let i = 0; i < 2000 && probes().length === 0; i++) await new Promise((resolve) => setImmediate(resolve));
+    assert.strictEqual(probes().length, 1, 'the probe is running');
     await ownership.probesSettled();
-    assert.deepStrictEqual(fs.readdirSync(d.root).filter((n) => n.startsWith(`${ownership.MARKER}-probe-`)), []);
+    assert.deepStrictEqual(probes(), []);
+  });
+
+  // a probe that settles after a reset never drops the newer entry for its
+  // device (a stub, or a later probe)
+  it('a stale probe settling after a reset leaves the newer entry for its device', async () => {
+    ownership.resetForTests();
+    const stale = ownership.birthIsReal(path.join(base, 'no-such-holder'), 'stale-dev');
+    ownership.resetForTests();
+    ownership.setBirthRealForTests('stale-dev', false);
+    assert.strictEqual(await stale, null);
+    assert.strictEqual(await ownership.birthIsReal(path.join(base, 'no-such-holder'), 'stale-dev'), false, 'the stub stands');
   });
 
   // a recorded birth is compared, never dropped (the medium on the high
