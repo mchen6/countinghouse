@@ -291,7 +291,7 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
     ci.invokeDeviceAction = (deviceID, serviceID, actionName, args, session) => { held.push(session); };
     try {
       const pending = complete(KEY_A, 'tints_tint', 'shade', 't');
-      await new Promise((r) => setTimeout(r, 100));
+      for (let i = 0; i < 1000 && held.length === 0; i++) await new Promise((r) => setTimeout(r, 5));
       assert.strictEqual(held.length, 1, 'one runs');
       const kept = gateway.completionKeysForTests();
       assert.deepStrictEqual(rawKeyPaths(kept, KEY_A), [], JSON.stringify(kept));

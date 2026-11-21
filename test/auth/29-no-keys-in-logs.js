@@ -39,11 +39,19 @@ describe('auth 29: no API key in a log line', function() {
     const lines = loggedBy(`
       const PeerChannelBroker = lib('peer-channel-broker');
       const broker = new PeerChannelBroker({});
-      const entry = {callerWM: {workerId: 1, sendPeerInvalidateToChild: () => {}}, calleeWM: {workerId: 2, sendPeerInvalidateToChild: () => {}}};
-      broker.channelRegistry['1:2'] = entry;
-      broker.closeRevoked('1:2', entry, {id: 'u_${'B'.repeat(22)}', deviceID: 'dev-1'}, {code: 'DEVICE_ACCESS_DENIED'});`);
+      // (granted from the key, as a request is: the record and the line it
+      // closes with are built from what the grant kept)
+      const callerWM = {workerId: 1, ended: null, unloading: false, sendPeerChannelGrantToChild: () => {}, sendPeerInvalidateToChild: () => {}};
+      const calleeWM = {workerId: 2, ended: null, unloading: false, sendPeerChannelOpenToChild: () => {}, sendPeerInvalidateToChild: () => {}};
+      broker.grant('dev-1', KEY, callerWM, calleeWM, []);
+      const entry = broker.channelRegistry['1:2'];
+      const record = Object.values(entry.grants)[0];
+      broker.closeRevoked('1:2', entry, {id: record.id, deviceID: record.deviceID}, {code: 'SYSTEM_ERROR_UNKNOWN_USER', closeReason: 'its id is no longer listed'});`);
     assert.strictEqual(lines.length, 1, JSON.stringify(lines));
-    assert.ok(lines[0].includes(`caller u_${'B'.repeat(22)}`), lines[0]);
+    assert.ok(!lines[0].includes(KEY), lines[0]);
+    // (no identity service in this process: the id is the key's meterId)
+    assert.ok(lines[0].includes(`caller ${require('../../lib/key-fingerprint').meterId(KEY)} `), lines[0]);
+    assert.ok(lines[0].includes('(SYSTEM_ERROR_UNKNOWN_USER: its id is no longer listed)'), lines[0]);
   });
 
   // R2-1 Task 5: a module's recordUsage has the caller's opaque id in hand,

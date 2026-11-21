@@ -1216,6 +1216,53 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       }
     });
 
+    // C-meter-keys-3 (B-meter-keys (2)'s rule applied to channels): a grant
+    // record names the caller by id, so the caller's key is made known to the
+    // identity index first -- a key the provider lists but the index doesn't
+    // hold yet (a user added after start) is refilled with its stable id;
+    // one the provider doesn't list is refused, retryably, nothing recorded.
+    it('(C-meter-keys-3) a channel is granted once the caller\'s key is in the identity index; one that can\'t be made known is refused, nothing recorded', async () => {
+      const identity = require('../../lib/identity');
+      const tmp = require('../helpers/test-tmp');
+      const saved = identity.stateForTests();
+      const dir = tmp.mkdtemp('ch-c18-know-');
+      const provider = require('../../lib/auth').getAuthProvider();
+      const savedProvider = {authenticate: provider.authenticate, entries: provider.entries};
+      const listed = [];
+      provider.authenticate = (appKey, deviceID, serviceID, actionName, cb) => cb(null, {ok: true, userName: 'u', isAdmin: false});
+      provider.entries = (cb) => cb(null, listed.map((k, i) => ({apiKey: k, userName: `u${i}`, isAdmin: false, id: `stable-${i}`})));
+      callee.sendPeerChannelOpenToChild = () => {};
+      const answers = [];
+      const requester = {workerId: 19, ended: null, unloading: false, bindings: caller.bindings,
+        sendPeerChannelDenyToChild: (m) => answers.push(m), sendPeerChannelGrantToChild: (m) => answers.push(m)};
+      const until = async (f) => { for (let i = 0; i < 400 && !f(); i++) await sleep(5); return f(); };
+      try {
+        identity.initSync({moduleDataPath: dir});
+        const known = ENTRY(19);
+        listed.push(known.identityKey);
+        assert.strictEqual(identity.lookup(identity.idFor({id: 'stable-0'}, known.identityKey)), null, 'not in the index yet');
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(known)}, requester);
+        assert.ok(await until(() => answers.length === 1), 'answered');
+        assert.strictEqual(answers[0].errCode, undefined, JSON.stringify(answers[0]));
+        const records = Object.values(broker.channelRegistry['19:12'].grants);
+        assert.strictEqual(records.length, 1);
+        assert.strictEqual(records[0].id, identity.idFor({id: 'stable-0'}, known.identityKey), 'named by the stable id the refill found');
+        assert.strictEqual(identity.lookup(records[0].id).apiKey, known.identityKey, 'the re-check finds the key by the id');
+        // a key the provider doesn't list (a lagging view): refused, retryably
+        const unknown = ENTRY(19);
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(unknown)}, requester);
+        assert.ok(await until(() => answers.length === 2), 'answered');
+        assert.strictEqual(answers[1].errCode, 'SYSTEM_ERROR_USERDB_NA', JSON.stringify(answers[1]));
+        assert.strictEqual(Object.values(broker.channelRegistry['19:12'].grants).length, 1, 'nothing recorded for it');
+      } finally {
+        Object.assign(provider, savedProvider);
+        delete callee.sendPeerChannelOpenToChild;
+        delete broker.channelRegistry['19:12'];
+        identity.restoreForTests(saved);
+        tmp.remove(dir);
+      }
+    });
+
     // Round 3 (3, 4): an invoke's id is an integer in range, on the
     // announcement and on the match; the id delivered is the announced one.
     it('(#202-r3-3/4) an id that is not an integer in range is not held, and a match by one is refused; the announced id is delivered', async () => {
@@ -1883,40 +1930,59 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       }
     });
 
-    // (C-meter-keys-3: the record holds the id and each key's meterId; the
-    // re-check asks for the key the index lists for the id)
-    it('(T4-review) two keys of one identity on a pair: revoking the first closes the channel', async () => {
+    // (C-meter-keys-3: the record names the caller by id and holds each key
+    // it was granted under by its meterId; the re-check asks the provider for
+    // the key the identity index lists for the id)
+    it('(T4-review) a re-check asks for the key the index lists for the id: kept while granted, closed once revoked, closed for a key no longer the id\'s', async () => {
       const authPath = require.resolve('../../lib/user-auth');
       const idPath = require.resolve('../../lib/identity');
       const brokerPath = require.resolve('../../lib/peer-channel-broker');
       const savedAuth = require.cache[authPath];
       const savedId = require.cache[idPath];
       const revoked = new Set();
+      const asked = [];
       require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,
-        exports: (a, b, deviceID, appKey, c, d, localCB, cb) => setImmediate(() => cb(revoked.has(appKey) ? Object.assign(new Error('revoked'), {code: 'USER_HAS_NO_DEVICE'}) : null))};
-      // (the index lists k1 for the id now: k2, granted under it before, is
-      // no longer the id's key either way)
-      let listedNow = 'k1';
+        exports: (a, b, deviceID, appKey, c, d, localCB, cb) => { asked.push(appKey); setImmediate(() => cb(revoked.has(appKey) ? Object.assign(new Error('revoked'), {code: 'USER_HAS_NO_DEVICE'}) : null)); }};
+      const listed = (id) => (id === 'u_same' ? {apiKey: 'k1', userName: null, isAdmin: false} : null);
       require.cache[idPath] = {id: idPath, filename: idPath, loaded: true, exports: Object.assign({}, require('../../lib/identity'), {idForKey: () => 'u_same',
-        lookup: (id) => (id === 'u_same' && listedNow != null ? {apiKey: listedNow, userName: null, isAdmin: false} : null)})};
+        lookup: listed, resolve: (id, provider, cb) => cb(null, listed(id))})};
       delete require.cache[brokerPath];
+      const until = async (f) => { for (let i = 0; i < 400 && !f(); i++) await sleep(5); return f(); };
       try {
-        cli.setOptions({workerThread: true, peerChannelAuthRecheckSeconds: 0, peerChannelAuthLookupTimeoutMs: 500});
+        cli.setOptions({workerThread: true, peerChannelAuthRecheckSeconds: 0, peerChannelAuthLookupTimeoutMs: 2000});
         const PeerChannelBroker = require('../../lib/peer-channel-broker');
-        const sent = [];
-        const callee = {workerId: 52, ended: null, unloading: false, sendPeerChannelOpenToChild: () => {}, sendPeerChannelAllowToChild: (m, cb) => cb(null), sendPeerInvalidateToChild: () => {}};
-        const caller = {workerId: 51, ended: null, unloading: false, sendPeerChannelGrantToChild: (m) => sent.push(m), sendPeerInvalidateToChild: () => {}};
-        const b = new PeerChannelBroker({deviceMap: {d: callee}});
-        b.grant('d', 'k1', caller, callee, ['svc|act']);
-        b.grant('d', 'k2', caller, callee, ['svc|act']);
+        const open = (b) => {
+          const callee = {workerId: 52, ended: null, unloading: false, sendPeerChannelOpenToChild: () => {}, sendPeerChannelAllowToChild: (m, cb) => cb(null), sendPeerInvalidateToChild: () => {}};
+          const caller = {workerId: 51, ended: null, unloading: false, sendPeerChannelGrantToChild: () => {}, sendPeerInvalidateToChild: () => {}};
+          b.grant('d', 'k1', caller, callee, ['svc|act']);
+          return {caller, callee};
+        };
+        const b = new PeerChannelBroker({deviceMap: {}});
+        const closes = [];
+        const realClose = b.closeRevoked.bind(b);
+        b.closeRevoked = (pairKey, entry, grant, err) => { closes.push(err); return realClose(pairKey, entry, grant, err); };
+        open(b);
         const grants = b.channelRegistry['51:52'].grants;
         assert.strictEqual(Object.keys(grants).length, 1, 'one record per identity and device');
         assert.ok(!JSON.stringify([...Object.values(grants)[0].meters]).includes('k1'), 'the record holds no key');
-        listedNow = 'k1';
+        b.recheckGrants();
+        assert.ok(await until(() => b.recheckInFlight === 0));
+        assert.deepStrictEqual(asked, ['k1'], 'asked for the listed key');
+        assert.ok(b.channelRegistry['51:52'] != null, 'granted: kept');
         revoked.add('k1');
         b.recheckGrants();
-        await sleep(100);
-        assert.strictEqual(b.channelRegistry['51:52'], undefined, 'the channel stayed open after the first key was revoked');
+        assert.ok(await until(() => b.channelRegistry['51:52'] === undefined), 'the channel stayed open after its key was revoked');
+        assert.strictEqual(closes[0].code, 'USER_HAS_NO_DEVICE', 'closed by the provider\'s answer');
+        // a key granted under the id that is no longer the id's (rotated):
+        // closed before the provider is asked
+        revoked.clear();
+        asked.length = 0;
+        const again = open(b);
+        b.grant('d', 'k0-rotated-away', again.caller, again.callee, ['svc|act']);
+        b.recheckGrants();
+        assert.ok(await until(() => b.channelRegistry['51:52'] === undefined));
+        assert.strictEqual(closes[1].closeReason, 'a key it was granted under is no longer its key');
+        assert.deepStrictEqual(asked, []);
       } finally {
         if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
         if (savedId != null) require.cache[idPath] = savedId; else delete require.cache[idPath];
@@ -1935,7 +2001,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const idPath = require.resolve('../../lib/identity');
       const savedId = require.cache[idPath];
       require.cache[idPath] = {id: idPath, filename: idPath, loaded: true, exports: Object.assign({}, require('../../lib/identity'), {
-        lookup: (id) => (id === 'u_k' ? {apiKey: 'k', userName: null, isAdmin: false} : null)})};
+        lookup: (id) => (id === 'u_k' ? {apiKey: 'k', userName: null, isAdmin: false} : null),
+        resolve: (id, provider, cb) => cb(null, id === 'u_k' ? {apiKey: 'k', userName: null, isAdmin: false} : null)})};
       const record = () => ({g: {id: 'u_k', deviceID: 'd', meters: new Set([require('../../lib/key-fingerprint').meterId('k')])}});
       delete require.cache[brokerPath];
       try {
