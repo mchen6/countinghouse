@@ -318,7 +318,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       // (C-bare, Fable's pass on #452, F1 and F2)
       it('a bare name\'s subpath, or a \'#\' mapping to one, never walks above the root: a sibling there and a missing one, one answer; nothing of module code\'s runs in Node\'s step; its own dependency loads', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'bareSubpath'});
-        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
       });
       // (C-bare R0, with the reviewer's pins)
       it('a bare require is CommonJS\'s own judged lookup: an "exports" target climbing out by \'%2e\' reads as a missing name, a self-reference from deep finds the root\'s package.json and nothing above', async () => {

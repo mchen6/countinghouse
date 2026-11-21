@@ -428,14 +428,18 @@ const STEPS = {
     // answers -- from a file or a directory base; one above it is nothing).
     // The probe checks the module's own spelling, so separators are the
     // platform's: <V>:\app\node_modules\... in a Windows worker (#195) --
-    // exactly the file under the module's own root, never only its tail
-    const depManifest = path.join(ROOT, 'node_modules', 'dep', 'package.json');
+    // exactly the file under the module's own root, never only its tail;
+    // and that root is virtual, /app or <V>:\app, so no host path matches
+    const underRoot = (...p) => path.join(ROOT, 'node_modules', ...p);
+    const virtualRoot = ROOT === '/app' || /^[A-Z]:\\app$/.test(ROOT);
+    const depManifest = underRoot('dep', 'package.json');
     const fpj = M.findPackageJSON;
     const asDir = require('url').pathToFileURL(`${path.dirname(__filename)}/`).href;
-    out.push(typeof(fpj) !== 'function' ||
-      (fpj('dep', __filename) === depManifest && fpj('dep', asDir) === depManifest &&
-       fpj('dep/esm/x.mjs', __filename) === depManifest && fpj('sibpkg', __filename) === undefined) ? 'same'
-      : `findPackageJSON(${fpj('dep', __filename)} ${fpj('dep', asDir)} ${fpj('dep/esm/x.mjs', __filename)} ${fpj('sibpkg', __filename)})`);
+    out.push(virtualRoot ? 'same' : `root(${ROOT})`);
+    const fpjs = typeof(fpj) === 'function' ? [fpj('dep', __filename), fpj('dep', asDir), fpj('dep/esm/x.mjs', __filename), fpj('sibpkg', __filename)] : null;
+    out.push(fpjs == null ||
+      (fpjs[0] === depManifest && fpjs[1] === depManifest && fpjs[2] === depManifest && fpjs[3] === undefined) ? 'same'
+      : `findPackageJSON(${fpjs.join(' ')} != ${depManifest})`);
     // (a '#' target is an exact file, as in Node: none with no extension)
     out.push(direct('#noext') !== 'found' ? 'same' : 'noext');
     // (findPackageJSON of a '#' name, one mapped to a built-in too, is
@@ -461,10 +465,12 @@ const STEPS = {
     // (require.resolve with options.paths looks a bare name up from those,
     // as a plugin loader does; a direct Module._resolveFilename from module
     // code fails closed for any name, the virtual-paths compat gap; the
-    // answer in the module's own spelling, its separators the platform's)
+    // answer in the module's own spelling, its separators the platform's.
+    // '/app/node_modules/dep' is the namespace's: on Windows the module's
+    // cwd, <V>:\app, gives it its drive)
     let viaPaths;
     try { viaPaths = require.resolve('dep5', {paths: ['/app/node_modules/dep']}); } catch (e) { viaPaths = `threw ${e.code}`; }
-    out.push(viaPaths === path.join(ROOT, 'node_modules', 'dep5', 'index.js') ? 'same' : `paths(${viaPaths})`);
+    out.push(viaPaths === underRoot('dep5', 'index.js') ? 'same' : `paths(${viaPaths} != ${underRoot('dep5', 'index.js')})`);
     // (and the module's own dependency still loads, by name and by subpath)
     out.push((await tryImport('dep')) === 'found' && (await tryImport('dep/index.js')) === 'found' && tryRequire('dep') === 'found' &&
       tryRequire('filedep') === 'found' ? 'same' : 'ownDep');
