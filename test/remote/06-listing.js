@@ -137,15 +137,28 @@ describe('remote 06: the load line\'s tool names', () => {
     const names = ['actions_list', 'get\nfake line: module remote: x', 'b\u0007\u202Eell', 'x'.repeat(500), ...Array.from({length: 80}, (_, i) => `t${String(i).padStart(2, '0')}`)];
     const text = toolNamesText(names);
     assert.ok(!/[\n\r]/.test(text), 'one line');
-    const m = /^names (\[.*\])(?: \(\+(\d+) more\))?$/.exec(text);
+    const m = /^names (\[.*\])(?: \(\+(\d+) more\))?(?: \((\d+) cleaned\))?$/.exec(text);
     assert.ok(m != null, text.slice(0, 200));
     const shown = JSON.parse(m[1]);
     assert.strictEqual(shown.length, NAMES_SHOWN);
     assert.strictEqual(Number(m[2]), names.length - NAMES_SHOWN);
     assert.ok(shown.every((n) => typeof n === 'string' && n.length <= NAME_MAX && !/[\u0000-\u001f\u007f\u202e]/.test(n)), JSON.stringify(shown.slice(0, 4)));
     assert.strictEqual(shown[0], 'actions_list');
+    assert.strictEqual(Number(m[3]), 3, 'three names were changed by cleaning or the cut');
     assert.strictEqual(toolNamesText([]), 'names []');
     assert.strictEqual(toolNamesText(['a', 'b']), 'names ["a","b"]');
+    // (the medium: every hidden class, a quote-heavy list held to one
+    // budget, a credential scrubbed out, a cleaned name counted)
+    const hidden = toolNamesText(['a\u2028b', 'c\u0085d', 'e\u2066f', 'g\u200bh', 'i\u{E0041}j', 'ok']);
+    assert.ok(!/[\u2028\u2029\u0085\u2066-\u2069\u200b\u{E0041}]/u.test(hidden), hidden);
+    assert.match(hidden, / \(5 cleaned\)$/);
+    const heavy = toolNamesText(Array.from({length: 100}, (_, i) => '"\\'.repeat(64) + i));
+    assert.ok(heavy.length <= 4096 + 40, String(heavy.length));
+    assert.match(heavy, /\(\+\d+ more\)/);
+    const secret = ['s3cr3t', 'Value', String(Date.now())].join('');
+    const scrubbed = toolNamesText([`get_${secret}`], (t) => t.split(secret).join('<credential>'));
+    assert.ok(!scrubbed.includes(secret), scrubbed);
+    assert.match(scrubbed, /get_<credential>/);
   });
 });
 
