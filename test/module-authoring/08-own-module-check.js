@@ -24,6 +24,17 @@ describe('module-authoring 08: an own module\'s folder, as the profile reads it 
     assert.strictEqual(check.inside('/h', '/h/.ch'), false);
   });
 
+  // (pinned on every OS with both path flavours: a Windows path's drive is
+  // its root, never a part of the way -- C:\\C: was looked up, and every real
+  // folder was "not there" on Windows: #499's stdio 51 on windows-latest)
+  it('pathsOnTheWay: each folder from below the root to the path, the root itself never a part', () => {
+    assert.deepStrictEqual(check.pathsOnTheWay('C:\\Users\\me\\mod', path.win32), ['C:\\Users', 'C:\\Users\\me', 'C:\\Users\\me\\mod']);
+    assert.deepStrictEqual(check.pathsOnTheWay('\\\\server\\share\\mod', path.win32), ['\\\\server\\share\\mod']);
+    assert.deepStrictEqual(check.pathsOnTheWay('/home/me/mod', path.posix), ['/home', '/home/me', '/home/me/mod']);
+    assert.deepStrictEqual(check.pathsOnTheWay('C:\\', path.win32), []);
+    assert.deepStrictEqual(check.pathsOnTheWay('/', path.posix), []);
+  });
+
   it('pathRefusal: a folder inside a root, or holding one, is refused; one elsewhere answers its real path', () => {
     const base = real(tmp.mkdtemp('ch-mauth-08-'));
     const home = path.join(base, 'home', '.countinghouse');
