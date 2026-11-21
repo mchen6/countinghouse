@@ -220,43 +220,50 @@ runtime names them `/app/...`, and the file broker maps `<V>:\app`,
 above applies on Windows as it does elsewhere. With no free drive letter,
 `--moduleSandbox enforce` refuses to start on Windows, saying so.
 
-**On Windows, a module's declared host paths are not available yet**
-([#204](https://github.com/mchen6/countinghouse/issues/204)): a declared
-root is a host path, which there carries a drive, and the broker takes every
-drive-qualified path as outside the namespace. Under `enforce` such a path is
-refused (ENOENT): it fails closed. The module gets its own `/data` and
-`/tmp`. A declaration itself must be POSIX-absolute (`countinghouse.permissions.fs`,
-lib/module-permissions.js), so a Windows host path can't be declared at all.
+**On Windows, a module's declared host paths are limited**
+([#204](https://github.com/mchen6/countinghouse/issues/204)). A declaration
+is POSIX-absolute (`countinghouse.permissions.fs`, lib/module-permissions.js),
+so on Windows `/srv/x` names that path on the runtime's current drive
+(`C:\srv\x`), and that is the root granted. A path on another drive can't
+be declared. A drive-qualified path a module gives is outside the namespace,
+refused (ENOENT) under `enforce`: it fails closed. The module always has its
+own `/data` and `/tmp`.
 
-**Other Windows limits** (C-win-baseline: every sandbox and file-broker test
-run on Windows, each failure given its cause):
+**Other Windows limits** (from running every sandbox and file-broker test on
+a Windows runner, each failure given its cause):
 
 - **`--hardened` loads no module in a Windows worker yet.** Every module
-  load there fails with Node's "Access to this API has been restricted"
-  (a read the permission model's grants don't cover). It fails closed. ch-local
-  doesn't pass `--hardened`.
+  load there fails with Node's "Access to this API has been restricted",
+  a read the permission model refuses (which read is not pinned yet). It
+  fails closed. ch-local doesn't pass `--hardened`.
 - **The Redis store is untested on Windows.** CI's Windows runners have no
   Redis, so the tests that use it run on Linux only. On Windows, ch-local
   runs the local store (`--store local`), which is tested there.
-- **Names Windows reads specially.** Node's fs gives Windows an absolute path
-  in its namespaced form (`\\?\`), where Win32's name rules don't apply. A
-  module's `/data/COM1` or `/data/NUL.txt` is an ordinary file, not a device.
-  `/data/note.` is a file of its own, not `note` (checked on a Windows runner).
-  An NTFS stream does work: `/data/note::$DATA` is `note`'s own bytes,
-  `note:alt` a stream of it. That is the module's own data. Every check of a
-  protected file compares a Windows name with its case folded and its
-  `:stream` suffix and trailing dots and spaces stripped
-  (lib/fs-broker/denied.js), or compares the file itself, so a stream's
-  spelling reaches nothing a plain name couldn't.
-- **A link a module makes** is refused, on Windows, when a segment of its
-  target is one Windows reads as other than its text: trailing dots or
-  spaces, or a device name. A Windows runner showed a link's target is not
-  trimmed when followed, so this is defence in depth.
+- **Names Win32 reads specially.** Node's fs gives Windows an absolute path in
+  its namespaced form (`\\?\`) for the calls checked on a Windows runner
+  (open, read, write), where Win32's name rules don't apply: a module's
+  `/data/COM1` or `/data/NUL.txt` is an ordinary file, not a device, and
+  `/data/note.` is a file of its own, not `note`. An NTFS stream does work:
+  `/data/note::$DATA` is `note`'s own bytes, `note:alt` a stream of it -- the
+  module's own data. The broker's checks of a protected file at each
+  operation compare a Windows name with its case folded and its `:stream`
+  suffix and trailing dots and spaces stripped (lib/fs-broker/denied.js), or
+  compare the file itself. The namespace's start-time check that a declared
+  root doesn't overlap a protected path compares case-sensitively past the
+  drive letter; a root it misses is still refused at each operation.
+- **A link a module makes inside its roots** is refused on Windows when a
+  segment of its target is one Win32's path rules would read as other than
+  its text: trailing dots or spaces, or a device name. Followed through
+  Node's namespaced paths, a target is taken as written (checked on a
+  Windows runner), so this refusal is a belt.
 - **An exclusive create** (`open` with `wx`, `copyFile` with
-  `COPYFILE_EXCL`) never follows a link on Windows. A link at the name
-  answers EEXIST before any open, as POSIX's kernel answers it.
+  `COPYFILE_EXCL`) through a link that was dangling when the broker checked
+  it answers EEXIST on Windows before any open, as POSIX's kernel answers it,
+  under `audit` and `enforce` (`off` decides nothing about files). A link a
+  host process puts there after the check is the host race described below.
 - **CI's Windows legs** run the stdio and local-store suites. The sandbox and
-  file-broker suites run on Windows by the manual Windows subset workflow.
+  file-broker suites run on Windows only when the Windows subset workflow is
+  dispatched by hand with them: no pull request or merge runs them there.
 
 **Under `audit` a module changes nothing outside its own area**
 (maintainer's decision, 2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
