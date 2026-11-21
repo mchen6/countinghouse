@@ -226,12 +226,15 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
       assert.strictEqual((await t0.get(ctx(B))).history.pop().scope, 'all-sessions', 'and get shows it');
     });
 
-    it('each is one of the asking session\'s 32 recorded changes', async () => {
+    // (A5: past the session's 32 recorded changes a tightening for all
+    // sessions still applies, recorded as one line and a count)
+    it('each is one of the asking session\'s 32 recorded changes; past them a tightening still applies', async () => {
       const t0 = tool();
       for (let i = 0; i < 32; i++) await t0.set('requestTimeout', String(30000 - 1 - i), 'settings tool', ctx(A));
-      await refused(t0.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
-      assert.strictEqual(options.maxOutputBytes, 16 * MiB);
-      assert.ok((await t0.set('maxOutputBytes', '4MiB', 'settings tool', ctx(B))).new === 4 * MiB, 'another session has its own');
+      assert.strictEqual((await t0.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A))).new, 4 * MiB);
+      assert.strictEqual(options.maxOutputBytes, 4 * MiB);
+      assert.ok(JSON.parse(fs.readFileSync(file, 'utf8')).values.maxOutputBytes === 4 * MiB, 'stored');
+      assert.strictEqual((await t0.set('maxOutputBytes', '3MiB', 'settings tool', ctx(B))).new, 3 * MiB, 'another session too');
     });
   });
 
