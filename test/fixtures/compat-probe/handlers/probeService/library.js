@@ -23,6 +23,23 @@ const swap = (target, key, fn) => {
   }
 };
 const STEPS = {
+  // (diagnostic, the throwaway Windows branch only: what resolve-from hands
+  // Node from a Windows worker, and what Node answers)
+  'win-diag': () => {
+    const M = module.constructor;
+    const out = {dirname: __dirname, filename: __filename, cwd: process.cwd()};
+    const fromFile = path.join(__dirname, 'noop.js');
+    out.fromFile = fromFile;
+    const at = (k, fn) => { try { out[k] = fn(); } catch (e) { out[k] = `threw ${e.code || e.name}: ${String(e.message).slice(0, 300)}`; } };
+    at('nodeModulePaths', () => M._nodeModulePaths(__dirname).slice(0, 4));
+    at('targetExists', () => require('fs').existsSync(path.join(__dirname, '..', '..', 'lib', 'target.js')));
+    at('resolveFilename', () => M._resolveFilename('../../lib/target', {id: fromFile, filename: fromFile, paths: M._nodeModulePaths(__dirname)}));
+    at('resolveFrom', () => require('resolve-from')(__dirname, '../../lib/target'));
+    at('createRequire', () => M.createRequire(fromFile).resolve('../../lib/target'));
+    at('requireResolve', () => require.resolve('../../lib/target'));
+    at('pathResolve', () => path.resolve(__dirname, '../../lib/target'));
+    return JSON.stringify(out);
+  },
   'emitWarning assigned': () => swap(process_, 'emitWarning', () => {
     let heard = null;
     process_.emitWarning = (w) => { heard = String(w); };

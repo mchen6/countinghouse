@@ -203,6 +203,10 @@ describe('sandbox 69: the compatibility table (loader-related libraries, per --m
       server = await startServer(testPort(9777), ['--debug', '--debugKey', KEY, ...flags, '--loadModule', probe]);
     });
     after(() => { stopServer(server); server = null; });
+    it('DIAG', async () => {
+      const r = await mcpCall(testPort(9777), KEY, TOOL, {name: 'win-diag'});
+      console.log(`DIAG ${mode}: ${r != null && r.structuredContent != null ? r.structuredContent.outcome : JSON.stringify(r).slice(0, 2000)}`);
+    });
     // (a null cell: not asserted in that column)
     for (const row of TABLE.filter((r) => r[column + 1] !== null)) {
       it(`${row[0]}: ${row[column + 1]}`, async () => {
