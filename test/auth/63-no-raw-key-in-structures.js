@@ -90,14 +90,29 @@ describe('auth 63: no raw API key in the main thread\'s structures (C-meter-keys
         lookup: (id) => (listed.has(id) ? {apiKey: listed.get(id), userName: null, isAdmin: false} : null),
         resolve: (id, provider, cb) => { resolving.push(id); if (!hung.has(id)) cb(null, listed.has(id) ? {apiKey: listed.get(id), userName: null, isAdmin: false} : null); }
       })};
+      // (a provider that lists its users; the identity index's answers are
+      // the stub's above)
+      savedSource = authLib.identitySource;
+      authLib.identitySource = () => source();
       delete require.cache[brokerPath];
       PeerChannelBroker = require('../../lib/peer-channel-broker');
     });
     after(() => {
+      authLib.identitySource = savedSource;
       for (const [p, m] of [[authPath, saved.auth], [idPath, saved.id]]) { if (m != null) require.cache[p] = m; else delete require.cache[p]; }
       delete require.cache[brokerPath];
       restoreOptions(kept);
     });
+    const authLib = require('../../lib/auth');
+    let savedSource = null;
+    let source = () => ({entries: (cb) => cb(null, [])});
+    // the closes a broker makes, with their errors
+    const closesOf = (b) => {
+      const closes = [];
+      const real = b.closeRevoked.bind(b);
+      b.closeRevoked = (pairKey, entry, grant, err) => { closes.push({pairKey, code: err.code, reason: err.closeReason}); return real(pairKey, entry, grant, err); };
+      return closes;
+    };
     const workers = (a, b) => ({
       callee: {workerId: b, ended: null, unloading: false, sendPeerChannelOpenToChild: () => {}, sendPeerChannelAllowToChild: (m, cb) => cb(null), sendPeerInvalidateToChild: () => {}},
       caller: {workerId: a, ended: null, unloading: false, sendPeerChannelGrantToChild: () => {}, sendPeerInvalidateToChild: () => {}}
@@ -170,9 +185,54 @@ describe('auth 63: no raw API key in the main thread\'s structures (C-meter-keys
       const {caller, callee} = workers(63, 64);
       const other = `${KEY}-gone`;
       const b = new PeerChannelBroker({deviceMap: {d: callee}});
+      const closes = closesOf(b);
       b.grant('d', other, caller, callee, ['svc|act']);
       b.recheckGrants();
       await until(() => b.channelRegistry['63:64'] === undefined, 'closed');
+      assert.deepStrictEqual(closes, [{pairKey: '63:64', code: 'SYSTEM_ERROR_UNKNOWN_USER', reason: 'its id is no longer listed'}]);
+    });
+
+    it('the identity source throwing closes as not confirmed, never as removed', async () => {
+      const {caller, callee} = workers(73, 74);
+      const b = new PeerChannelBroker({deviceMap: {d: callee}});
+      const closes = closesOf(b);
+      b.grant('d', `${KEY}-source`, caller, callee, ['svc|act']);
+      const kept = source;
+      source = () => { throw new Error('a test throw from the identity source'); };
+      try {
+        b.recheckGrants();
+        await until(() => b.channelRegistry['73:74'] === undefined, 'closed');
+      } finally { source = kept; }
+      assert.deepStrictEqual(closes, [{pairKey: '73:74', code: 'SYSTEM_ERROR_USERDB_NA', reason: 'the caller could not be confirmed now; its next request asks again'}]);
+    });
+
+    // a record still being checked is skipped, never the pass: one slow
+    // record never delays another's revocation
+    it('one record\'s re-check hanging, another identity\'s revoked grant closes on the next tick', async () => {
+      const slow = workers(75, 76);
+      const other = workers(77, 78);
+      const slowKey = `${KEY}-slow`;
+      const otherKey = `${KEY}-other`;
+      const slowId = `u_${meterId(slowKey).slice(7, 29)}`;
+      listed.set(slowId, slowKey);
+      listed.set(`u_${meterId(otherKey).slice(7, 29)}`, otherKey);
+      hung.add(slowId);
+      const b = new PeerChannelBroker({deviceMap: {}});
+      // (the hung record's bound never comes: the broker's clock is the test's)
+      b.setClockForTests({setTimeout: () => ({}), clearTimeout: () => {}});
+      const closes = closesOf(b);
+      b.grant('d', slowKey, slow.caller, slow.callee, ['svc|act']);
+      b.grant('d', otherKey, other.caller, other.callee, ['svc|act']);
+      b.recheckGrants();
+      await until(() => b.recheckInFlight === 1, 'only the slow one in flight');
+      assert.ok(b.channelRegistry['77:78'] != null, 'granted: kept');
+      revoked.add(otherKey);
+      try {
+        b.recheckGrants();
+        await until(() => b.channelRegistry['77:78'] === undefined, 'the revoked channel closed on the next tick');
+      } finally { revoked.delete(otherKey); hung.delete(slowId); }
+      assert.deepStrictEqual(closes.map((c) => c.pairKey), ['77:78']);
+      assert.ok(b.channelRegistry['75:76'] != null, 'the slow one still waiting, not asked again');
     });
   });
 
@@ -387,9 +447,14 @@ describe('auth 63: no raw API key in the main thread\'s structures (C-meter-keys
       const p = provider(asked);
       const cap = CouchDBAuthProvider.CACHE_MAX;
       assert.ok(Number.isInteger(cap) && cap > 0, 'a cap');
-      for (let i = 0; i <= cap; i++) await new Promise((r) => p._lookup(`k-${i}`, r));
+      for (let i = 0; i < cap; i++) await new Promise((r) => p._lookup(`k-${i}`, r));
+      // (k-0 used again: the most recently used now, k-1 the least)
+      await new Promise((r) => p._lookup('k-0', r));
+      assert.strictEqual(asked.length, cap, 'answered from the cache');
+      await new Promise((r) => p._lookup(`k-${cap}`, r));
       assert.strictEqual(p._cache.size, cap);
-      assert.strictEqual(p._cache.has(meterId('k-0')), false, 'the oldest went');
+      assert.strictEqual(p._cache.has(meterId('k-0')), true, 'the one used again stayed');
+      assert.strictEqual(p._cache.has(meterId('k-1')), false, 'the least recently used went');
     });
   });
 });

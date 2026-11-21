@@ -1290,7 +1290,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         assert.strictEqual(answers[3].errCode, 'CTX_CALL_UNDECLARED', JSON.stringify(answers[3]));
         assert.strictEqual(Object.values(broker.channelRegistry['19:12'].grants).length, 2, 'nothing recorded for it');
         // a throw past the wait is logged, never an unhandled rejection; the
-        // caller is refused, and the channel it began undone
+        // caller is refused with a catalogued, retryable code, and the
+        // channel it began undone
         requester.bindings = Object.assign({}, caller.bindings);
         provider.entries = (cb) => cb(null, listed.map((k, i) => ({apiKey: k, userName: `u${i}`, isAdmin: false, id: `stable-${i}`})));
         const logged = [];
@@ -1300,10 +1301,54 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         callee.sendPeerChannelOpenToChild = () => { throw new Error('a test throw past the wait'); };
         broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(known)}, requester);
         assert.ok(await until(() => answers.length === 5), 'answered');
-        assert.strictEqual(answers[4].errCode, 'PEER_CHANNEL_DENIED', JSON.stringify(answers[4]));
+        assert.strictEqual(answers[4].errCode, 'SYSTEM_ERROR_USERDB_NA', JSON.stringify(answers[4]));
         assert.strictEqual(logged.length, 1);
         assert.strictEqual(logged[0].message, 'a test throw past the wait');
         assert.strictEqual(broker.channelRegistry['19:12'], undefined, 'the half-made channel undone');
+        // the same after the callee got its end: undone, and the port closed,
+        // so the callee's end sees the close
+        let calleeEnd = null;
+        let endClosed = false;
+        callee.sendPeerChannelOpenToChild = (m, port2) => { calleeEnd = port2; port2.on('close', () => { endClosed = true; }); };
+        const grantSend = requester.sendPeerChannelGrantToChild;
+        requester.sendPeerChannelGrantToChild = () => { throw new Error('a test throw at the caller\'s grant'); };
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(known)}, requester);
+        assert.ok(await until(() => answers.length === 6), 'answered');
+        requester.sendPeerChannelGrantToChild = grantSend;
+        assert.strictEqual(answers[5].errCode, 'SYSTEM_ERROR_USERDB_NA', JSON.stringify(answers[5]));
+        assert.strictEqual(broker.channelRegistry['19:12'], undefined, 'undone');
+        assert.ok(calleeEnd != null, 'the callee got its end');
+        assert.ok(await until(() => endClosed), 'the callee\'s end closed');
+        callee.sendPeerChannelOpenToChild = () => {};
+        // know() waited (a key the index didn't hold): the access check is
+        // asked again after it, and a grant revoked meanwhile gets no channel;
+        // a key already in the index is asked once
+        const {CountinghouseError} = require('../../lib/countinghouse-error');
+        let asks = 0;
+        provider.authenticate = (appKey, deviceID, serviceID, actionName, cb) => {
+          asks += 1;
+          cb(null, asks === 1 ? {ok: true, userName: 'u', isAdmin: false} : {ok: false, userName: 'u', isAdmin: false, err: new CountinghouseError('USER_HAS_NO_DEVICE')});
+        };
+        const revokedMeanwhile = ENTRY(19);
+        listed.push(revokedMeanwhile.identityKey);
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(revokedMeanwhile)}, requester);
+        assert.ok(await until(() => answers.length === 7), 'answered');
+        assert.strictEqual(answers[6].errCode, 'USER_HAS_NO_DEVICE', JSON.stringify(answers[6]));
+        assert.strictEqual(asks, 2, 'asked again after the wait');
+        assert.strictEqual(broker.channelRegistry['19:12'], undefined, 'no channel');
+        asks = 0;
+        provider.authenticate = (appKey, deviceID, serviceID, actionName, cb) => { asks += 1; cb(null, {ok: true, userName: 'u', isAdmin: false}); };
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(known)}, requester);
+        assert.ok(await until(() => answers.length === 8), 'answered');
+        assert.strictEqual(answers[7].errCode, undefined, JSON.stringify(answers[7]));
+        assert.strictEqual(asks, 1, 'an indexed key is asked once');
+        // the identity source throwing is a refusal, never "no provider"
+        auth.identitySource = () => { throw new Error('a test throw from the identity source'); };
+        const unknownSource = ENTRY(19);
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(unknownSource)}, requester);
+        assert.ok(await until(() => answers.length === 9), 'answered');
+        assert.strictEqual(answers[8].errCode, 'SYSTEM_ERROR_USERDB_NA', JSON.stringify(answers[8]));
+        assert.strictEqual(identity.lookup(identity.idForKey(unknownSource.identityKey)), null, 'not remembered');
       } finally {
         LOG.E = savedE;
         auth.identitySource = savedSource;
