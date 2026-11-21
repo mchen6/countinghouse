@@ -933,19 +933,19 @@ const STEPS = {
   stackHold: () => {
     const out = [];
     const E = Error;
-    const rawFrom = (text) => (Array.isArray(text) || /\(\/home|\(\/(usr|opt|srv|tmp)\//.test(String(text)) ? 'raw' : 'held');
+    // (a module may swap and delete globalThis.Error -- a library that does
+    // must load; ruled on #493: what a swapped Error's own formatter sees is
+    // a listed limit)
     let swapped = 'held';
     try {
-      try { globalThis.Error = {prepareStackTrace: (e, cs) => cs}; } catch (e) { /* held */ }
-      swapped = rawFrom(new E('x').stack);
-    } finally { try { globalThis.Error = E; } catch (e) { /* held */ } }
-    out.push(`swap-${swapped}`);
+      try { globalThis.Error = class Wrapped extends E {}; swapped = globalThis.Error !== E ? 'swappable' : 'held'; } catch (e) { swapped = 'threw'; }
+    } finally { globalThis.Error = E; }
+    out.push(swapped);
     let deleted = 'held';
     try {
-      try { delete globalThis.Error; } catch (e) { /* held */ }
-      deleted = globalThis.Error === E ? rawFrom(new E('y').stack) : `gone-${rawFrom(new E('y').stack)}`;
-    } finally { if (globalThis.Error !== E) { try { globalThis.Error = E; } catch (e) { /* held */ } } }
-    out.push(`delete-${deleted}`);
+      try { deleted = (delete globalThis.Error) && globalThis.Error === undefined ? 'deletable' : 'held'; } catch (e) { deleted = 'threw'; }
+    } finally { globalThis.Error = E; }
+    out.push(deleted);
     const saved0 = E.prepareStackTrace;
     try {
       E.prepareStackTrace = () => 'mine';

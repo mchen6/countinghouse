@@ -267,9 +267,9 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'stackEdges'});
         assert.strictEqual(detail(r), 'vm-no-receivers chained builtin-no-this callsites-virtual initPaths alias counts eval-none boundary rewrapped', JSON.stringify(r).slice(0, 1500));
       });
-      it('the stack hold: globalThis.Error swapped or deleted gives no raw frame; save/swap/restore keeps the module\'s function; wrappers are objects', async () => {
+      it('the stack hold: a module may swap and delete globalThis.Error; save/swap/restore keeps the module\'s function; wrappers are objects', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'stackHold'});
-        assert.strictEqual(detail(r), 'swap-held delete-held restore filtered wrapper-object', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'swappable deletable restore filtered wrapper-object', JSON.stringify(r).slice(0, 1500));
       });
       it('process.argv is a frozen copy: node, then the runtime\'s worker by its virtual name', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'argv'});

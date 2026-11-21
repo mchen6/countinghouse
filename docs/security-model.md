@@ -207,9 +207,11 @@ runtime's own errors read in its worker, as on master: it is handed the
 error and its frames (wrapped, renamed), the error's message as it is.
 Reading `Error.prepareStackTrace` after setting it gives a view of the
 module's function, not the function itself (`=== myFn` is false); set
-back, the view restores it. `globalThis.Error` can't be replaced or
-deleted under `enforce` (Node reads the stack formatter from it), so a
-library that swaps the global `Error` (zone.js's) fails to load there. A
+back, the view restores it. Module code may replace `globalThis.Error`,
+which Node reads the stack formatter from at format time: one replaced by
+an object of the module's own with a `prepareStackTrace` of its own sees
+V8's raw frames there -- the runtime's file paths, never a receiver or a
+function of the runtime's. A
 frame with no file -- a module's own `eval` or `new Function`, a
 builtin's -- answers `getThis()` and `getFunction()` with `undefined`.
 On Windows a stack or a message spells the runtime's files
