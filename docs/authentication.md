@@ -162,7 +162,12 @@ and macOS its directory must be one only you can write in (your own or
 root's, and not group- or world-writable, sticky or not), because SQLite
 plays back a `-journal` it finds beside the database, whoever put it there.
 Every directory above it must be yours or root's, and writable by no one
-else, except a sticky one such as `/tmp`, or your own primary group's. So
+else, except a sticky one such as `/tmp`, or your own primary group's. That
+group is accepted because most Linux systems give each user a private group
+of their own, and a umask of `0002` then leaves the directories in a home
+group-writable (`0775`) with no one else in the group. The store's own
+directory stays strict either way. If your primary group is shared with
+other users, keep the store under directories that group can't write in. So
 keep the database out of a shared directory such as `/tmp` itself. On Windows
 the directory is not checked: keep the database in a folder only you can
 create files in. Under `--hardened` on Windows the sqlite store is refused at
