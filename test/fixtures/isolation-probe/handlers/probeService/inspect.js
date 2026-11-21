@@ -439,13 +439,14 @@ const STEPS = {
     const fpjs = typeof(fpj) === 'function' ? [fpj('dep', __filename), fpj('dep', asDir), fpj('dep/esm/x.mjs', __filename), fpj('sibpkg', __filename)] : null;
     out.push(fpjs == null ||
       (fpjs[0] === depManifest && fpjs[1] === depManifest && fpjs[2] === depManifest && fpjs[3] === undefined) ? 'same'
-      : `findPackageJSON(${fpjs.join(' ')} != ${depManifest})`);
+      : `findPackageJSON(${JSON.stringify(fpjs)} != ${depManifest})`);
     // (a '#' target is an exact file, as in Node: none with no extension)
     out.push(direct('#noext') !== 'found' ? 'same' : 'noext');
     // (findPackageJSON of a '#' name, one mapped to a built-in too, is
     // nothing; a bare name holding '?' or '#', which Node's URL lookup would
     // cut short and climb with, is the one refusal, as a missing one)
-    out.push(typeof(fpj) !== 'function' || (fpj('#builtin', __filename) === undefined && fpj('#sibclimb', __filename) === undefined) ? 'same' : 'fpjMapped');
+    const mapped = typeof(fpj) === 'function' ? [fpj('#builtin', __filename), fpj('#sibclimb', __filename)] : [undefined, undefined];
+    out.push(mapped[0] === undefined && mapped[1] === undefined ? 'same' : `fpjMapped(${JSON.stringify(mapped)})`);
     same('queryName', await tryImport('q?x/index.js'), await tryImport('nosuchq/index.js'));
     same('tabName', await tryImport('t\tx/index.js'), await tryImport('nosucht/index.js'));
     // (a subpath whose URL names another path -- a tab the URL parser drops
