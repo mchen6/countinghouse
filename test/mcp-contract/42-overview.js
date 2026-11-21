@@ -273,6 +273,23 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.strictEqual(overview.FIXED.changed(null, '/home/u/x$(y)'), 'Not loaded: its files changed since you added it: run `ch-local add-module "<its folder>"` again.');
     });
 
+    // (the feature audit, F9: an own module the release's runtime refuses
+    // to load -- held back with its own line, the runtime's code with it)
+    it('refused: an own module the runtime refuses, its code named, the status and remove-module commands', () => {
+      const h = home();
+      const l = heldBack.parse(doc([{name: 'my-tool', reason: 'refused', code: 'MODULE_INVALID'}]), h.settings);
+      assert.deepStrictEqual(l.modules.get('my-tool'), {reason: 'refused', root: null, via: null, code: 'MODULE_INVALID'});
+      for (const bad of [[{name: 'x', reason: 'refused'}], [{name: 'x', reason: 'refused', code: 'not a code'}], [{name: 'x', reason: 'refused', code: 'A'.repeat(65)}],
+        [{name: 'x', reason: 'stopped', code: 'MODULE_INVALID'}], [{name: 'x', reason: 'calls', root: 'refused', via: 'p'}]]) {
+        assert.throws(() => heldBack.parse(doc(bad), h.settings), Error, JSON.stringify(bad));
+      }
+      const L = '/home/u/.ch/bin/ch-local.js';
+      const [p] = overview.build({version: '1', settingsProfile: true, launcher: L, packs: [pack({name: 'my-tool', module: 'my-tool', loaded: false, held: l.modules.get('my-tool')})]}).packs;
+      assert.deepStrictEqual([p.state, p.next], ['not loaded', overview.FIXED.refused(L, 'my-tool', 'MODULE_INVALID')]);
+      assert.strictEqual(overview.FIXED.refused(null, 'my-tool', 'MODULE_INVALID'),
+        'Not loaded: this release\'s runtime refuses your module (MODULE_INVALID): run `ch-local status` in your own terminal to see why, or `ch-local remove-module my-tool` to remove it.');
+    });
+
     // the shared vectors ch-local's writer pins against
     it('the held-back file\'s vectors: every accepted file read, every refused one refused whole', () => {
       const V = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'superpowers', 'specs', 'shared-runtime-wire', 'vectors.json'), 'utf8')).heldBackFile;
