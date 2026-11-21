@@ -769,6 +769,8 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     let saved;
     let JobControl;
     let serverIdDir = null;
+    let madeBy = null;
+    const runnersMade = [];
     before(function() {
       if (process.env.CH_TEST_REDIS_URL == null || process.env.CH_TEST_REDIS_URL === '') this.skip();
       saved = {workerThread: options.workerThread, redisUrl: options.redisUrl};
@@ -781,9 +783,32 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
         require('../../lib/server-id').initSync({moduleDataPath: serverIdDir});
       }
       JobControl = require('../../lib/job-control');
+      // every runner this suite starts (each case's initJobProcess makes a
+      // queue, its events and a worker, replacing the last case's), kept so
+      // after() closes them all (B-q08)
+      madeBy = JobControl.initJobProcess;
+      JobControl.initJobProcess = function(...args) {
+        const r = madeBy.apply(this, args);
+        runnersMade.push({queue: this.jobQueue, events: this.queueEvents, worker: this.worker});
+        return r;
+      };
     });
     after(async () => {
       if (saved != null) Object.assign(options, saved);
+      // every runner's BullMQ connections (its queue, its events and its
+      // worker), closed and waited for. JobControl.close() is the exit
+      // sequence's and closes only the current worker, unwaited; each case's
+      // initJobProcess left the last case's open, so a run of this file
+      // alone (mocha without --exit) never ended (B-q08)
+      if (JobControl != null) {
+        if (madeBy != null) JobControl.initJobProcess = madeBy;
+        JobControl.close();
+        await Promise.all(runnersMade.flatMap(({queue, events, worker}) => [worker != null ? worker.close(true) : null, queue != null ? queue.close() : null, events != null ? events.close() : null])
+          .map((p) => (p != null ? p.catch(() => undefined) : null)));
+        runnersMade.length = 0;
+        JobControl.jobQueue = null;
+        JobControl.queueEvents = null;
+      }
       // the server id's claim its runner made (B-j1), released
       if (JobControl != null && JobControl.claim != null) { await JobControl.claim.stop(); JobControl.claim = null; }
       if (serverIdDir != null) {
