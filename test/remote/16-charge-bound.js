@@ -9,7 +9,6 @@ const path   = require('path');
 const {ROOT} = require('../helpers/sandbox-server');
 const {testPort} = require('../helpers/test-env');
 const {startRemoteServer} = require('../helpers/remote-mcp-server');
-require('../../lib/logger').createLogger();
 
 const REMOTE = testPort(9828);
 const KEY = `remote-charge-${require('crypto').randomBytes(6).toString('hex')}`;
@@ -33,13 +32,19 @@ describe('remote 16: a remote call\'s charge is waited for at most METER_PENDING
   const credentials = require('../../lib/remote/credentials');
   const CHUtil = require('../../lib/countinghouse-util');
   const LOG = require('../../lib/logger');
-  const PROBE = probeAt(REMOTE);
   let remote = null;
+  let savedCredentials = null;
+  let savedOptions = null;
   let savedCi = null;
   let savedE = null;
   let savedI = null;
   const logged = [];
+  // (process-wide state set here and put back in after(): options, the
+  // credentials allowance, the metering stand-in, the logger's lines)
   before(async () => {
+    require('../../lib/logger').createLogger();
+    savedOptions = require('../helpers/options-scope').snapshot();
+    savedCredentials = credentials.snapshot();
     cli.setOptions({workerThread: false, debug: true, mcpToolCallCost: 1});
     const file = path.join(tmpDirs.mkdtemp('ch-remote-16a-'), 'remote-credentials.json');
     fs.writeFileSync(file, JSON.stringify({[`http://127.0.0.1:${REMOTE}`]: ['CH_TEST_REMOTE_TOKEN']}));
@@ -51,7 +56,7 @@ describe('remote 16: a remote call\'s charge is waited for at most METER_PENDING
     LOG.E = (e) => logged.push(['E', String(e && e.message ? e.message : e)]);
     LOG.I = (line) => logged.push(['I', String(line)]);
     remote = await startRemoteServer(REMOTE);
-    registry.register('charge-probe', PROBE);
+    registry.register('charge-probe', probeAt(REMOTE));
   });
   after(async () => {
     CHUtil.ci = savedCi;
@@ -59,7 +64,8 @@ describe('remote 16: a remote call\'s charge is waited for at most METER_PENDING
     LOG.I = savedI;
     await registry.unregister('charge-probe');
     if (remote != null) await remote.close();
-    cli.setOptions({workerThread: false});
+    credentials.restore(savedCredentials);
+    require('../helpers/options-scope').restore(savedOptions);
     delete process.env.CH_TEST_REMOTE_TOKEN;
   });
   beforeEach(() => { logged.length = 0; });
@@ -74,11 +80,11 @@ describe('remote 16: a remote call\'s charge is waited for at most METER_PENDING
 
   it('a charge slower than the bound: the call answers at the bound, the charge issued once and logged when it lands', async () => {
     const store = heldStore();
-    const t0 = Date.now();
+    // (answered while the charge is still held: the store above never
+    // answers until told, so an answer here is the bound's)
     const r = await registry.callRemote('charge-probe', 'probe', 'echo_text', {n: 1}, {billingKey: KEY});
-    const took = Date.now() - t0;
     assert.ok(r != null && r.isError !== true, JSON.stringify(r));
-    assert.ok(took < 3000, `answered after ${took} ms (it waited for the charge)`);
+    assert.ok(logged.some(([lvl, line]) => lvl === 'I' && /remote call remote:probe\/echo_text: billing pending/.test(line)), JSON.stringify(logged));
     assert.strictEqual(store.calls.length, 1, 'charged once');
     store.answer(null, {charged: 1, balance: 9});
     assert.ok(logged.some(([lvl, line]) => lvl === 'I' && /remote call remote:probe\/echo_text: the pending billing landed \(charged 1\)/.test(line)), JSON.stringify(logged));

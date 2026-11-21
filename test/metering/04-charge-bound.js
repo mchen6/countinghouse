@@ -81,6 +81,28 @@ describe('metering 04: a hop\'s charge, waited for at most METER_PENDING_MS (B-h
   it('lateOutcome names the key only by its meterId', () => {
     lateOutcome('peer hop', 'x', KEY, new Error(`detail`), null);
     const line = logged.find(([l]) => l === 'E')[1];
-    assert.ok(line.startsWith('peer hop x: the pending billing failed for meter ') && !line.includes(KEY), line);
+    assert.ok(line.startsWith('peer hop x: the billing failed for meter ') && line.includes('it was pending') && !line.includes(KEY), line);
+  });
+
+  // (the medium on B-hopcharge, 3 and 4) the code kept; a message that
+  // repeats the key (a store command's arguments) carries its meterId instead
+  it('a charge\'s error keeps its code, and a message naming the key names its meterId instead', () => {
+    const err = Object.assign(new Error(`ERR in EVAL with args ${KEY} 1`), {code: 'ERR_STORE'});
+    const {chargeError} = require('../../lib/metering/charge-bound');
+    const out = chargeError('hop', 't', KEY, err);
+    assert.strictEqual(out.code, 'ERR_STORE');
+    assert.ok(!out.message.includes(KEY) && out.message.includes(`[meter ${meterId(KEY)}]`), out.message);
+  });
+
+  // (the medium on B-hopcharge, 1 and 6)
+  it('a throw from the answer under a provider that answers at once goes on; a second late answer is heard once', async () => {
+    const ci = {recordCall: (key, tool, cost, cb) => cb(null, {charged: 1})};
+    assert.throws(() => boundedCharge(ci, KEY, 't', 1, () => { throw new Error('the caller\'s own'); }, {boundMs: 30}), /the caller's own/);
+    let land = null;
+    boundedCharge({recordCall: (key, tool, cost, cb) => { land = cb; }}, KEY, 'twice', 1, () => undefined, {boundMs: 20});
+    await new Promise((r) => setTimeout(r, 50));
+    land(new Error('first'));
+    land(null, {charged: 1});
+    assert.strictEqual(logged.filter(([, line]) => line.includes('twice')).length, 2, JSON.stringify(logged));
   });
 });
