@@ -104,7 +104,7 @@ describe('composition 08b: a module loaded at runtime into a bare server can ctx
         userName: 'compose-caller-internal', devices: ['*'],
         runsModules: ['compose-caller']
       }
-    }));
+    }), {mode: 0o600});
 
     server = spawn(process.execPath,
       [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1',

@@ -26,7 +26,7 @@ describe('auth 45: the retired device fields rateLimit and price (S1)', function
   before(async () => {
     dir = mkdtemp('s1-');
     const authPath = path.join(dir, 'auth.json');
-    fs.writeFileSync(authPath, JSON.stringify({[CALLER]: {userName: 's1', devices: ['*']}}));
+    fs.writeFileSync(authPath, JSON.stringify({[CALLER]: {userName: 's1', devices: ['*']}}), {mode: 0o600});
     // Not --debug: the per-device limiter never ran under --debug.
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath, '--loadModule', FIXTURE]);
   });

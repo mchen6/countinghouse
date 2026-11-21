@@ -26,7 +26,7 @@ describe('--stdio, spawned: the module that declares everything loads and serves
 
   it('its tools are listed and called: a plain one, and one whose output declares binary fields', async () => {
     const auth = path.join(home, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}), {mode: 0o600});
     io = startStdio(['--workerThread', '--loadModule', FIXTURE, '--authConfigPath', auth,
       '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`], {env: {COUNTINGHOUSE_API_KEY: KEY}});
     const init = await io.request({...INITIALIZE, id: 1});

@@ -30,7 +30,7 @@ describe('auth 06: module-lifecycle routes are admin-gated, not --debug/--verify
     const config = {};
     config[ADMIN_KEY]     = {userName: 'admin-user',     devices: ['*'], admin: true};
     config[NON_ADMIN_KEY] = {userName: 'non-admin-user', devices: ['*']}; // no admin field
-    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
+    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config), {mode: 0o600});
 
     console.log('starting countinghouse WITHOUT --debug, --authProvider file, for admin-gating test...');
     waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT} --authProvider file --authConfigPath ${AUTH_CONFIG_PATH

@@ -29,7 +29,7 @@ describe('module-loading 27: ctx.log from a lean worker reaches its device log, 
   before(async () => {
     base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-ml-27-'));
     const auth = path.join(base, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'module-loading-27', devices: ['*'], admin: true}}));
+    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'module-loading-27', devices: ['*'], admin: true}}), {mode: 0o600});
     client = redis.createClient(redisUrlFor(), {db: 10});
     await new Promise((resolve) => client.del(`devicelog:${DEVICE}`, `devicelog:${OTHER}`, () => resolve()));
     server = await startServer(PORT, ['--workerThread', '--authConfigPath', auth, '--moduleDataPath', path.join(base, 'store'),

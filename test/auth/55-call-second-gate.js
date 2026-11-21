@@ -29,8 +29,9 @@ const NO_DEVICE = new CountinghouseError('USER_HAS_NO_DEVICE').message;
 describe('auth 55: behind a stale grant set, userAuth still refuses a revoked device (sqlite)', function() {
   this.timeout(120000);
   let db;
-  const cli = (args) => execFileSync(process.execPath, [path.join(ROOT, 'bin', 'countinghouse-auth-sqlite.js'), '--dbPath', db].concat(args),
-    {cwd: ROOT, stdio: 'pipe'});
+  // (a key goes on stdin: test/helpers/auth-cli.js)
+  const cli = (args) => { const k = require('../helpers/auth-cli').keyed(args); return execFileSync(process.execPath, [path.join(ROOT, 'bin', 'countinghouse-auth-sqlite.js'), '--dbPath', db].concat(k.args),
+    {cwd: ROOT, input: k.input, stdio: ['pipe', 'pipe', 'pipe']}); };
   const call = (extra = {}) => new Promise((resolve, reject) => request(url).post('/mcp').set('Content-Type', 'application/json')
     .set('X-CH-Key', KEY)
     .send({jsonrpc: '2.0', id: 1, method: 'tools/call', params: Object.assign({name: TOOL, arguments: ARGS}, extra)})

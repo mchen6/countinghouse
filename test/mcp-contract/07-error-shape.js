@@ -30,7 +30,7 @@ const {toolErrorCode} = require('../helpers/tool-result');
 const ROOT    = path.join(__dirname, '..', '..');
 const GOLDEN  = require('./error-shape.golden.json');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'error-shape-module');
-const AUTH    = path.join(__dirname, 'error-shape-auth.json');
+const AUTH    = require('../helpers/private-auth').privateAuth(path.join(__dirname, 'error-shape-auth.json'));
 const PORTS   = {worker: testPort(9656), 'single-thread': testPort(9657)};
 
 

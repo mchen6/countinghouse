@@ -105,7 +105,7 @@ describe('mcp-contract 35: what a 2026-07-28 client is sent conforms to the offi
   before(async () => {
     home = tmp.mkdtemp('ch-mcp-35-');
     const auth = path.join(home, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}), {mode: 0o600});
     const pre = path.join(ROOT, 'pre-installed-packages');
     const modules = fs.readdirSync(pre).filter((d) => fs.statSync(path.join(pre, d)).isDirectory()).flatMap((d) => ['--loadModule', path.join(pre, d)]);
     io = startStdio(['--workerThread', ...modules, ...FIXTURES.flatMap((f) => ['--loadModule', path.join(FX, f)]), '--authConfigPath', auth, '--listPageSize', '10',

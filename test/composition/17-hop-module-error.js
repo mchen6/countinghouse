@@ -41,7 +41,7 @@ function startServer(mode, done) {
   const server = spawn(process.execPath, [
     path.join(ROOT, 'framework.js'),
     '--bindAddr', '127.0.0.1', '--port', String(mode.port),
-    '--authConfigPath', path.join(__dirname, '17-auth.json'),
+    '--authConfigPath', require('../helpers/private-auth').privateAuth(path.join(__dirname, '17-auth.json')),
     '--loadModule', path.join(FIXTURES, 'hop-error-callee'),
     '--loadModule', path.join(FIXTURES, 'hop-error-caller')
   ].concat(mode.args), {stdio: ['ignore', 'pipe', 'pipe']});

@@ -34,7 +34,7 @@ describe('auth 16: the dead IoT-era entry paths are gone', function() {
 
     const config = {};
     config[ALICE] = {userName: 'alice', devices: ['*']};
-    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
+    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config), {mode: 0o600});
 
     console.log('starting countinghouse WITHOUT --debug, for removed IoT-route test...');
     waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
@@ -108,7 +108,7 @@ describe('auth 16b: the vestigial flag-gated surface is gone', function() {
 
     const config = {};
     config[BOB] = {userName: 'bob', devices: ['*']};
-    fs.writeFileSync(FLAGS_AUTH, JSON.stringify(config));
+    fs.writeFileSync(FLAGS_AUTH, JSON.stringify(config), {mode: 0o600});
 
     console.log('starting countinghouse WITH --simOpenStackAPI --loadProfile (both now no-ops)...');
     waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT_FLAGS

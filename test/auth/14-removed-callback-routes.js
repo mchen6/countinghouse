@@ -41,7 +41,7 @@ describe('auth 14: the dead /callbacks and /callback_url entry paths are gone', 
 
     const config = {};
     config[ALICE] = {userName: 'alice', devices: ['*']};
-    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
+    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config), {mode: 0o600});
 
     console.log('starting countinghouse WITHOUT --debug, --authProvider file, for removed-route test...');
     waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT

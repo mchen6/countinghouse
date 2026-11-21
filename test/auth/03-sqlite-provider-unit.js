@@ -194,6 +194,8 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
       rawDb.run('CREATE TABLE user_devices (apiKey TEXT NOT NULL, deviceID TEXT NOT NULL, PRIMARY KEY (apiKey, deviceID))');
       rawDb.run('INSERT INTO users (apiKey, userName) VALUES (?, ?)', ['legacy-key', 'legacy-user'], () => {
         rawDb.close(() => {
+          // (owner-only, as the provider uses a store: it holds keys)
+          fs.chmodSync(dbPath, 0o600);
           const provider = makeProvider();
           // No setTimeout/delay -- immediate call is the point of this test.
           provider.authenticate('legacy-key', null, null, null, (err, result) => {
@@ -232,7 +234,8 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
     this.timeout(30000);
     const path = require('path');
     const CLI = path.join(__dirname, '..', '..', 'bin', 'countinghouse-auth-sqlite.js');
-    const cli = (args) => spawnSync(process.execPath, [CLI, '--dbPath', dbPath].concat(args), {encoding: 'utf8', timeout: 20000});
+    // (a key goes on stdin: test/helpers/auth-cli.js)
+    const cli = (args) => { const k = require('../helpers/auth-cli').keyed(args); return spawnSync(process.execPath, [CLI, '--dbPath', dbPath].concat(k.args), {encoding: 'utf8', timeout: 20000, input: k.input}); };
     const lookup = (name) => new Promise((resolve, reject) => {
       const provider = makeProvider();
       provider.identityForModule(name, (err, r) => (err ? reject(err) : resolve(r.apiKey)));
@@ -299,7 +302,8 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
       const os = require('os');
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sqlite-mem-'));
       try {
-        const r = spawnSync(process.execPath, [CLI, '--dbPath', ':memory:', 'add-user', KEY, 'mem-user'], {encoding: 'utf8', timeout: 20000, cwd: dir});
+        // (the key on stdin, never an argument)
+        const r = spawnSync(process.execPath, [CLI, '--dbPath', ':memory:', 'add-user', 'mem-user'], {encoding: 'utf8', timeout: 20000, cwd: dir, input: `${KEY}\n`});
         assert.strictEqual(r.status, 0, r.stderr);
         assert.deepStrictEqual(fs.readdirSync(dir), []);
       } finally {

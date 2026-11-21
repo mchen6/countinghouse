@@ -81,7 +81,7 @@ describe('auth 46: with Redis down a call whose result has a binary value answer
   before(async () => {
     dir = mkdtemp('blob-down-');
     const authPath = path.join(dir, 'auth.json');
-    fs.writeFileSync(authPath, JSON.stringify({[CALLER]: {userName: 'blob-down', devices: ['*']}}));
+    fs.writeFileSync(authPath, JSON.stringify({[CALLER]: {userName: 'blob-down', devices: ['*']}}), {mode: 0o600});
     await proxy.up();
     proxyUp = true;
     // every binary value stored, never inline

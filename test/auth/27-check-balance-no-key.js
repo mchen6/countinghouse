@@ -56,7 +56,7 @@ describe('auth 27: check_balance returns userName and balance, never the key', f
     before(async () => {
       tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-auth-27-'));
       const auth = path.join(tmp, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({[ALICE]: {userName: 'alice', devices: []}, [ANON]: {devices: []}}));
+      fs.writeFileSync(auth, JSON.stringify({[ALICE]: {userName: 'alice', devices: []}, [ANON]: {devices: []}}), {mode: 0o600});
       s = await start(['--authProvider', 'file', '--authConfigPath', auth]);
     });
     after(() => { stop(s); fs.rmSync(tmp, {recursive: true, force: true}); });

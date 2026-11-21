@@ -18,7 +18,7 @@ const EARLY = 'validator pool: started with the process';
 
 function start(home, modules) {
   const auth = path.join(home, 'auth.json');
-  fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio-35', devices: ['*']}}));
+  fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio-35', devices: ['*']}}), {mode: 0o600});
   return startStdio(['--workerThread', '--authConfigPath', auth, '--store', 'local', '--storePath', path.join(home, 'store'),
     '--moduleDataPath', path.join(home, 'module_data'), '--modulePath', path.join(home, 'modules'), ...modules.flatMap((m) => ['--loadModule', m])],
   {env: {COUNTINGHOUSE_API_KEY: KEY}});

@@ -156,7 +156,7 @@ describe('module-loading 21: one module format, decided statically', function() 
         const run = path.join(home, `run-${flags[0].replace(/\W/g, '')}`);
         fs.mkdirSync(run, {recursive: true});
         const auth = path.join(run, 'auth.json');
-        fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'module-loading-21', devices: ['*'], admin: true}}));
+        fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'module-loading-21', devices: ['*'], admin: true}}), {mode: 0o600});
         const atStart = writeModule(path.join(run, 'start-main'), 'start-main', {main: 'device.js'});
         io = startStdio([...flags, '--authoringTools', '--authConfigPath', auth, '--store', 'local', '--storePath', path.join(run, 'store'),
           '--moduleDataPath', path.join(run, 'module_data'), '--modulePath', path.join(run, 'modules'), '--loadModule', atStart],
@@ -240,7 +240,7 @@ describe('module-loading 21: one module format, decided statically', function() 
           const run = path.join(home, `run-compile-${id}`);
           fs.mkdirSync(run, {recursive: true});
           const auth = path.join(run, 'auth.json');
-          fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'module-loading-21', devices: ['*'], admin: true}}));
+          fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'module-loading-21', devices: ['*'], admin: true}}), {mode: 0o600});
           const own = startStdio(['--workerThread', '--validationCompileMs', '200', '--authoringTools', '--authConfigPath', auth, '--store', 'local',
             '--storePath', path.join(run, 'store'), '--moduleDataPath', path.join(run, 'module_data'), '--modulePath', path.join(run, 'modules')],
           {env: {COUNTINGHOUSE_API_KEY: KEY}});
@@ -292,7 +292,7 @@ describe('module-loading 21: one module format, decided statically', function() 
       const run = path.join(home, 'run-enforce');
       fs.mkdirSync(run, {recursive: true});
       const auth = path.join(run, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'module-loading-21', devices: ['*'], admin: true}}));
+      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'module-loading-21', devices: ['*'], admin: true}}), {mode: 0o600});
       io = startStdio(['--workerThread', '--moduleSandbox', 'enforce', '--authoringTools', '--authConfigPath', auth, '--store', 'local', '--storePath', path.join(run, 'store'),
         '--moduleDataPath', path.join(run, 'module_data'), '--modulePath', path.join(run, 'modules')],
       {env: {COUNTINGHOUSE_API_KEY: KEY}});

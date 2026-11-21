@@ -60,7 +60,7 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
   before(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-27-'));
     const auth = path.join(dir, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: ['*']}}), {mode: 0o600});
     server = await startServer(PORT, ['--workerThread', '--store', 'local', '--storePath', path.join(dir, 'store'), '--jobTimeout', '5',
       '--moduleDataPath', path.join(dir, 'module_data'), '--authConfigPath', auth, '--loadModule', path.join(ROOT, 'test', 'fixtures', 'm15-tasks')]);
   });
@@ -333,7 +333,7 @@ describe('mcp-contract 27: a task cancelled while it runs, under --store redis',
   before(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-27r-'));
     const auth = path.join(dir, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}}), {mode: 0o600});
     server = await startServer(RPORT, ['--workerThread', '--moduleDataPath', path.join(dir, 'module_data'), '--authConfigPath', auth,
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'm15-tasks')]);
   });

@@ -112,7 +112,7 @@ describe('module-loading 15: reload scenarios that already hold', function() {
       [ADMIN]: {userName: 'admin', devices: ['*'], admin: true},
       [OWNER]: {userName: 'owner', devices: ['*']},
       [OTHER]: {userName: 'other', devices: ['*']}
-    }));
+    }), {mode: 0o600});
     server = await startServer(PORT, ['--workerThread', '--authoringTools', '--authProvider', 'file', '--authConfigPath', authPath,
       '--moduleDataPath', path.join(base, 'store')]);
     await load(tmp);

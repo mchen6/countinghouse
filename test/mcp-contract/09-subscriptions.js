@@ -327,7 +327,7 @@ describe('subscriptions/listen (#231)', () => {
         options.debug = false;
         cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-listen-auth-'));
         const cfg = path.join(cfgDir, 'auth.json');
-        fs.writeFileSync(cfg, JSON.stringify({[REAL]: {userName: 'listener', devices: ['*']}}));
+        fs.writeFileSync(cfg, JSON.stringify({[REAL]: {userName: 'listener', devices: ['*']}}), {mode: 0o600});
         const file = new FileAuthProvider({configPath: cfg});
         provider = require('../../lib/auth').getAuthProvider();
         real = provider.authenticate;

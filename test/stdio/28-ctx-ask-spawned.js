@@ -24,7 +24,7 @@ describe('--stdio, spawned: a handler\'s ctx.ask (MCP completeness M13)', functi
   });
   const start = (extra = []) => {
     const auth = path.join(home, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}), {mode: 0o600});
     io = startStdio(['--workerThread', '--loadModule', FIXTURE, '--authConfigPath', auth,
       '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`, ...extra], {env: {COUNTINGHOUSE_API_KEY: KEY}});
     return io;

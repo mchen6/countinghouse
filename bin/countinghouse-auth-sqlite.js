@@ -8,22 +8,30 @@
 //   node bin/countinghouse-auth-sqlite.js [--dbPath <path>] <command> [args...]
 //
 // Commands:
-//   add-user <apiKey> <userName>              create or rename a user
-//   remove-user <apiKey>                       delete a user, all its device grants and its module bindings
-//   grant <apiKey> <deviceID>                  authorize apiKey for deviceID (or "*" for every device)
-//   revoke <apiKey> <deviceID>                 remove one device grant
-//   set-admin <apiKey> <true|false>            grant/revoke admin rights (module-lifecycle routes; independent of device grants)
-//   set-id <apiKey> <id>                       the stable id behind the user's opaque id
-//   bind-module <apiKey> <moduleName>          the identity a module's inner hops authorize as (its package name; the
-//                                              sqlite form of runsModules); one identity per module
-//   unbind-module <moduleName>                 remove a module's binding
-//   list                                       print every user, their admin status, granted devices and bound modules
+//   add-user <userName>              create or rename the user of the key on stdin
+//   remove-user                      delete that user, all its device grants and its module bindings
+//   grant <deviceID>                 authorize that key for deviceID (or "*" for every device)
+//   revoke <deviceID>                remove one device grant
+//   set-admin <true|false>           grant/revoke admin rights (module-lifecycle routes; independent of device grants)
+//   set-id <id>                      the stable id behind the user's opaque id
+//   bind-module <moduleName>         the identity a module's inner hops authorize as (its package name; the
+//                                    sqlite form of runsModules); one identity per module
+//   unbind-module <moduleName>       remove a module's binding (no key)
+//   list                             print every user by name and id, their admin status, granted devices and
+//                                    bound modules (no key)
+//
+// The key a command is about is read from stdin, never from an argument (it
+// would sit in the shell history and the process list): the first line
+// piped in (printf '%s\n' "$KEY" | node bin/countinghouse-auth-sqlite.js
+// add-user alice), or, at a terminal, typed at a prompt that does not show
+// it. Nothing this CLI prints holds a key. The database holds keys in the
+// clear: it is created owner-only (0600) and refused when it is not this
+// user's own and owner-only (lib/auth/private-store.js; B-meter-keys 4r).
 //
 // --dbPath defaults to ./auth.sqlite3 (same default SqliteAuthProvider itself uses).
 // sqlite3 is an optionalDependency, required lazily -- see
 // lib/optional-sqlite3.js. This CLI is unusable without it by definition,
 // so report the reason and the ways out instead of a native-loader stack.
-const fs = require('fs');
 let sqlite3;
 try {
   sqlite3 = require('../lib/optional-sqlite3').requireSqlite3(
@@ -50,8 +58,48 @@ function parseArgs(argv) {
 }
 
 function usageAndExit(code) {
-  console.error('Usage: node bin/countinghouse-auth-sqlite.js [--dbPath <path>] <add-user|remove-user|grant|revoke|set-admin|set-id|bind-module|unbind-module|list> [args...]');
+  console.error('Usage: node bin/countinghouse-auth-sqlite.js [--dbPath <path>] <add-user|remove-user|grant|revoke|set-admin|set-id|bind-module|unbind-module|list> [args...]\n' +
+    '       (a command about a user reads its API key from stdin, never from an argument)');
   process.exit(code);
+}
+
+// the commands about a user, and how many arguments each takes beside the
+// key (which is read from stdin)
+const KEYED = {'add-user': 1, 'remove-user': 0, 'grant': 1, 'revoke': 1, 'set-admin': 1, 'set-id': 1, 'bind-module': 1};
+
+// The key, from stdin: at a terminal, typed at a prompt that does not show
+// it; else the first line piped in. -> callback(key); exits on none.
+function readKey(callback) {
+  const done = (text) => {
+    const key = String(text).split(/\r?\n/)[0].trim();
+    if (key === '') { console.error('no API key on stdin: pipe it in (printf \'%s\\n\' "$KEY" | ...), or type it at the prompt'); process.exit(1); }
+    callback(key);
+  };
+  if (process.stdin.isTTY) {
+    process.stderr.write('API key (input hidden): ');
+    process.stdin.setRawMode(true);
+    let typed = '';
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', function onData(chunk) {
+      for (const c of chunk) {
+        if (c === '\u0003') { process.stdin.setRawMode(false); process.stderr.write('\n'); process.exit(130); }
+        if (c === '\r' || c === '\n') {
+          process.stdin.setRawMode(false);
+          process.stdin.removeListener('data', onData);
+          process.stdin.pause();
+          process.stderr.write('\n');
+          return done(typed);
+        }
+        if (c === '\u007f' || c === '\b') typed = typed.slice(0, -1);
+        else typed += c;
+      }
+    });
+    return;
+  }
+  let text = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (c) => { if (text.length < 64 * 1024) text += c; });
+  process.stdin.on('end', () => done(text));
 }
 
 function main() {
@@ -59,17 +107,20 @@ function main() {
   const command = parsed.args[0];
 
   if (command == null) usageAndExit(1);
-
-  // A new database file is created owner-only (0600): it holds every key.
-  // Not for SQLite's in-memory and temporary names, which are no file.
-  const isFile = parsed.dbPath !== '' && parsed.dbPath !== ':memory:' && !String(parsed.dbPath).startsWith('file:');
-  if (isFile) {
-    try {
-      fs.closeSync(fs.openSync(parsed.dbPath, 'wx', 0o600));
-    } catch (e) {
-      if (e.code !== 'EEXIST') { console.error(`cannot create ${parsed.dbPath}: ${e.code || e.message}`); process.exit(1); }
-    }
+  // (a command about a user: its arguments, the key aside, then the key)
+  if (Object.prototype.hasOwnProperty.call(KEYED, command)) {
+    if (parsed.args.length !== 1 + KEYED[command]) usageAndExit(1);
+    return readKey((key) => run(parsed, command, key));
   }
+  return run(parsed, command, null);
+}
+
+function run(parsed, command, key) {
+  // The database is created owner-only (0600), and refused when it is not
+  // this user's own and owner-only: it holds every key. Not for SQLite's
+  // in-memory and URI names, which are no file.
+  const problem = require('../lib/auth/private-store').preparedStore(parsed.dbPath, 'the sqlite auth database');
+  if (problem != null) { console.error(problem); process.exit(1); }
   const db = new sqlite3.Database(parsed.dbPath);
   // Who a key is, for an ok line: its user name, never the key itself.
   const named = (apiKey, cb) => db.get('SELECT userName FROM users WHERE apiKey = ?', [apiKey], (err, row) => {
@@ -95,8 +146,7 @@ function main() {
 
     switch (command) {
       case 'add-user': {
-        const apiKey = parsed.args[1], userName = parsed.args[2];
-        if (apiKey == null || userName == null) usageAndExit(1);
+        const apiKey = key, userName = parsed.args[1];
         db.run('INSERT INTO users (apiKey, userName) VALUES (?, ?) ON CONFLICT(apiKey) DO UPDATE SET userName = excluded.userName', [apiKey, userName], (err) => {
           if (err) { console.error(err.message); process.exit(1); }
           console.log(`ok: user ${userName} added`);
@@ -105,8 +155,7 @@ function main() {
         break;
       }
       case 'remove-user': {
-        const apiKey = parsed.args[1];
-        if (apiKey == null) usageAndExit(1);
+        const apiKey = key;
         named(apiKey, (who) => {
           // grants, then module bindings (a removed key runs no module), then
           // the user; the ok line once all three are gone
@@ -125,8 +174,7 @@ function main() {
         break;
       }
       case 'grant': {
-        const apiKey = parsed.args[1], deviceID = parsed.args[2];
-        if (apiKey == null || deviceID == null) usageAndExit(1);
+        const apiKey = key, deviceID = parsed.args[1];
         db.run('INSERT OR IGNORE INTO user_devices (apiKey, deviceID) VALUES (?, ?)', [apiKey, deviceID], (err) => {
           if (err) { console.error(err.message); process.exit(1); }
           named(apiKey, (who) => { console.log(`ok: granted ${who} -> ${deviceID}`); db.close(); });
@@ -134,8 +182,7 @@ function main() {
         break;
       }
       case 'revoke': {
-        const apiKey = parsed.args[1], deviceID = parsed.args[2];
-        if (apiKey == null || deviceID == null) usageAndExit(1);
+        const apiKey = key, deviceID = parsed.args[1];
         db.run('DELETE FROM user_devices WHERE apiKey = ? AND deviceID = ?', [apiKey, deviceID], (err) => {
           if (err) { console.error(err.message); process.exit(1); }
           named(apiKey, (who) => { console.log(`ok: revoked ${who} -> ${deviceID}`); db.close(); });
@@ -143,8 +190,8 @@ function main() {
         break;
       }
       case 'set-admin': {
-        const apiKey = parsed.args[1], flag = parsed.args[2];
-        if (apiKey == null || (flag !== 'true' && flag !== 'false')) usageAndExit(1);
+        const apiKey = key, flag = parsed.args[1];
+        if (flag !== 'true' && flag !== 'false') usageAndExit(1);
         const adminValue = (flag === 'true') ? 1 : 0;
         db.run('UPDATE users SET admin = ? WHERE apiKey = ?', [adminValue, apiKey], function(err) {
           if (err) { console.error(err.message); process.exit(1); }
@@ -156,8 +203,7 @@ function main() {
       // The stable id behind the user's opaque id (lib/identity.js): keeps the
       // user's id across a key rotation. 1-128 printable characters, unique.
       case 'set-id': {
-        const apiKey = parsed.args[1], id = parsed.args[2];
-        if (apiKey == null || id == null) usageAndExit(1);
+        const apiKey = key, id = parsed.args[1];
         if (!/^[\x20-\x7e]{1,128}$/.test(id)) { console.error('id must be 1 to 128 printable characters'); process.exit(1); }
         // The column and its unique index, for a database from before them
         // (the same migration the provider runs on open).
@@ -182,8 +228,7 @@ function main() {
       // module: binding again moves it. The user must exist; the error does
       // not echo the key.
       case 'bind-module': {
-        const apiKey = parsed.args[1], moduleName = parsed.args[2];
-        if (apiKey == null || moduleName == null) usageAndExit(1);
+        const apiKey = key, moduleName = parsed.args[1];
         if (moduleName.trim() === '') { console.error('the module name must not be empty'); process.exit(1); }
         db.get('SELECT 1 AS found FROM users WHERE apiKey = ?', [apiKey], (err, row) => {
           if (err) { console.error(err.message); process.exit(1); }
@@ -220,8 +265,9 @@ function main() {
         });
         break;
       }
+      // every user by name and id, never its key
       case 'list': {
-        db.all('SELECT apiKey, userName, admin FROM users', [], (err, users) => {
+        db.all('SELECT * FROM users', [], (err, users) => {
           if (err) { console.error(err.message); process.exit(1); }
           if (users.length === 0) { console.log('(no users)'); db.close(); return; }
 
@@ -233,7 +279,7 @@ function main() {
                 if (err2) { console.error(err2.message); process.exit(1); }
                 const adminLabel = (u.admin === 1) ? ', admin' : '';
                 const runs = (mods.length > 0) ? `; runs modules: ${mods.map((m) => m.moduleName).join(', ')}` : '';
-                console.log(`${u.apiKey} (${u.userName}${adminLabel}): ${rows.map((r) => r.deviceID).join(', ')}${runs}`);
+                console.log(`${u.userName != null ? u.userName : '(no name)'} (id ${u.id != null ? u.id : '-'}${adminLabel}): ${rows.map((r) => r.deviceID).join(', ')}${runs}`);
                 remaining--;
                 if (remaining === 0) db.close();
               });

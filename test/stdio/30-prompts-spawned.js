@@ -31,7 +31,7 @@ describe('stdio 30: prompts, spawned (M10)', function() {
       const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-30-'));
       homes.push(home);
       const auth = path.join(home, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
+      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}), {mode: 0o600});
       const data = path.join(home, 'module_data');
       io = startStdio([workerThread ? '--workerThread' : '--no-workerThread', '--loadModule', FIXTURE, '--authConfigPath', auth,
         '--moduleDataPath', data, '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`], {env: {COUNTINGHOUSE_API_KEY: KEY}});

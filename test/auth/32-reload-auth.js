@@ -47,7 +47,7 @@ describe('auth 32: reloading the auth config without a restart', function() {
   const write = (aliceDevices) => fs.writeFileSync(authPath, JSON.stringify({
     [ADMIN]: {userName: 'admin', devices: ['*'], admin: true},
     [ALICE]: {userName: 'alice', devices: aliceDevices}
-  }));
+  }), {mode: 0o600});
 
   before(async () => {
     base = fs.mkdtempSync(path.join(os.homedir(), '.ch-reload-auth-'));
@@ -79,7 +79,7 @@ describe('auth 32: reloading the auth config without a restart', function() {
   });
 
   it('a file that is not valid JSON leaves the working config in place', async () => {
-    fs.writeFileSync(authPath, '{ not json');
+    fs.writeFileSync(authPath, '{ not json', {mode: 0o600});
     const r = await reload(ADMIN);
     assert.notStrictEqual(r.status, 200);
     assert.match(JSON.stringify(r.body), /not valid JSON/);
@@ -89,7 +89,7 @@ describe('auth 32: reloading the auth config without a restart', function() {
 
   it('a syntax error right after a key is located by line and column, with no part of the key anywhere', async () => {
     const mark = server.output.length;
-    fs.writeFileSync(authPath, `{\n  "${ADMIN}": {"userName": "admin", "devices": ["*"], "admin": true},\n  "${ALICE}": xyz\n}\n`);
+    fs.writeFileSync(authPath, `{\n  "${ADMIN}": {"userName": "admin", "devices": ["*"], "admin": true},\n  "${ALICE}": xyz\n}\n`, {mode: 0o600});
     const r = await reload(ADMIN);
     assert.notStrictEqual(r.status, 200);
     assert.match(JSON.stringify(r.body), /not valid JSON at line 3, column \d+/);
@@ -100,7 +100,7 @@ describe('auth 32: reloading the auth config without a restart', function() {
   });
 
   it('an entry that is not an object is named by position, not key, and nothing changes', async () => {
-    fs.writeFileSync(authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}, [ALICE]: 5}));
+    fs.writeFileSync(authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}, [ALICE]: 5}), {mode: 0o600});
     const r = await reload(ADMIN);
     assert.notStrictEqual(r.status, 200);
     assert.match(JSON.stringify(r.body), /entry #2/);

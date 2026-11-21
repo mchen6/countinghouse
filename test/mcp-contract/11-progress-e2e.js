@@ -34,7 +34,7 @@ function home() {
   require(path.join(EX, 'generate-logs.js')).generate({dir: path.join(h, 'module_data', 'log-read', 'data', 'files'), files: 4, lines: 100, seed: 1});
   const auth = {[KEY]: {userName: 'm9-progress', devices: ['*']},
     'log-triage-internal-perf-key': {userName: 'log-triage-internal', devices: ['*'], runsModules: ['log-triage']}};
-  fs.writeFileSync(path.join(h, 'auth.json'), JSON.stringify(auth));
+  fs.writeFileSync(path.join(h, 'auth.json'), JSON.stringify(auth), {mode: 0o600});
   return h;
 }
 const serverArgs = (h) => ['--workerThread', '--store', 'local', '--storePath', path.join(h, 'store'), '--authProvider', 'file',

@@ -69,7 +69,7 @@ describe('stdio 16: a module\'s own files under enforce, as it sees them (#195)'
 
   it('every check: its files and directory, the cwd, requires and imports, reads, writes where it may, refusals where it may not', async () => {
     const auth = path.join(home, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'probe', devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'probe', devices: ['*']}}), {mode: 0o600});
     io = startStdio(['--testLateLoads', '--workerThread', '--moduleSandbox', 'enforce', '--debug', '--loadModule', MODULE, '--authConfigPath', auth,
       '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749'],
     {env: {COUNTINGHOUSE_API_KEY: KEY}});

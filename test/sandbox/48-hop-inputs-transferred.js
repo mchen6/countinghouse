@@ -101,7 +101,7 @@ describe('sandbox 48: a validator\'s answer to input bytes it cannot read, serve
 
 const PORT   = testPort(9749);
 const KEY    = 'hop-input-key';
-const AUTH   = path.join(__dirname, '48-auth.json');
+const AUTH   = require('../helpers/private-auth').privateAuth(path.join(__dirname, '48-auth.json'));
 const CALLEE = path.join(ROOT, 'test', 'fixtures', 'hop-input-callee');
 const CALLER = path.join(ROOT, 'test', 'fixtures', 'hop-input-caller');
 const CAP    = 4 * 1024 * 1024;

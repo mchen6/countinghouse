@@ -471,7 +471,7 @@ describe('authoring tools: admin gate holds under real (non-debug) auth', functi
       const config = {};
       config[ADMIN_KEY]     = {userName: 'authoring-admin',     devices: ['*'], admin: true};
       config[NON_ADMIN_KEY] = {userName: 'authoring-non-admin', devices: ['*']}; // no admin field: not admin
-      fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
+      fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config), {mode: 0o600});
 
       waitForReady(startShell(`"${path.join(ROOT, 'bin', 'countinghouse')}"${redisFlag()} --no-workerThread --bindAddr 127.0.0.1 --port ${PORT} ` +
            `--authProvider file --authConfigPath ${AUTH_CONFIG_PATH} --authoringTools`), done);

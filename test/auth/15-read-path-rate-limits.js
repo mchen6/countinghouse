@@ -110,7 +110,7 @@ describe('auth 15: the authenticated read paths are rate limited', function() {
 
   before(function(done) {
     this.timeout(0);
-    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(authConfig()));
+    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(authConfig()), {mode: 0o600});
 
     console.log('starting countinghouse WITHOUT --debug, --apiKeyRateLimit, for read-path rate-limit test...');
     waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
@@ -429,7 +429,7 @@ describe('auth 15b: without --apiKeyRateLimit nothing is limited', function() {
 
   before(function(done) {
     this.timeout(0);
-    fs.writeFileSync(OPEN_CONFIG_PATH, JSON.stringify(authConfig()));
+    fs.writeFileSync(OPEN_CONFIG_PATH, JSON.stringify(authConfig()), {mode: 0o600});
 
     console.log('starting countinghouse WITHOUT --apiKeyRateLimit, to check the paths stay open...');
     waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${OPEN_PORT

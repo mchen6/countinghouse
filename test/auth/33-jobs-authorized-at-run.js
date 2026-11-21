@@ -40,7 +40,7 @@ describe('auth 33: a job is authorized when it runs', function() {
   let server = null;
   let queue = null;
   const write = (alice) => fs.writeFileSync(authPath, JSON.stringify(Object.assign(
-    {[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}, alice === undefined ? {} : {[ALICE]: alice})));
+    {[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}, alice === undefined ? {} : {[ALICE]: alice})), {mode: 0o600});
   const mine = async (state) => (await queue.getJobs([state], 0, -1)).filter((j) => j != null && j.name === NAME);
   const schedulers = async () => (await queue.getJobSchedulers(0, -1)).filter((s) => String(s.key || s.id || '').includes(NAME));
 

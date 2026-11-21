@@ -97,7 +97,7 @@ describe('sandbox 54: lib/call-limits.js and its holders, server-free', () => {
 
 const PORT = testPort(9792);
 const KEY = 'hop-input-key';
-const AUTH = path.join(__dirname, '48-auth.json');
+const AUTH = require('../helpers/private-auth').privateAuth(path.join(__dirname, '48-auth.json'));
 const CALLEE = path.join(ROOT, 'test', 'fixtures', 'hop-input-callee');
 const CALLER = path.join(ROOT, 'test', 'fixtures', 'hop-input-caller');
 const PRELOAD = path.join(ROOT, 'test', 'fixtures', 'call-limits-preload.js');

@@ -27,7 +27,7 @@ describe('auth 28: the file provider warns when a key doubles as a user name', (
 
   function load(config) {
     const file = path.join(tmp, 'auth.json');
-    fs.writeFileSync(file, JSON.stringify(config));
+    fs.writeFileSync(file, JSON.stringify(config), {mode: 0o600});
     return new FileAuthProvider({configPath: file});
   }
 

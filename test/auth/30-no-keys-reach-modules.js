@@ -75,7 +75,7 @@ describe(`auth 30: no API key, user name or Redis URL reaches a module (${label}
       [ALICE]: {userName: NAMES.alice, devices: ['*']},
       [BOB]: {userName: NAMES.bob, devices: ['*']},
       [INTERNAL]: {userName: NAMES.internal, devices: ['*'], runsModules: ['key-dump-caller']}
-    }));
+    }), {mode: 0o600});
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath,
       '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'key-dump'),

@@ -48,7 +48,7 @@ describe('mcp-contract 12: output schemas of any JSON value, by era (M20)', func
   const tools = {};
   before(async () => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-m20-'));
-    fs.writeFileSync(path.join(home, 'auth.json'), JSON.stringify({[KEY]: {userName: 'm20', devices: ['*']}}));
+    fs.writeFileSync(path.join(home, 'auth.json'), JSON.stringify({[KEY]: {userName: 'm20', devices: ['*']}}), {mode: 0o600});
     server = spawn(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', String(PORT),
       '--store', 'local', '--storePath', path.join(home, 'store'), '--authProvider', 'file', '--authConfigPath', path.join(home, 'auth.json'),
       '--moduleDataPath', path.join(home, 'module_data'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'mcp-conformance-module')],

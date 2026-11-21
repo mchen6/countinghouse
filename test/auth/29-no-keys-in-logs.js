@@ -76,7 +76,7 @@ describe('auth 29: no API key in a log line', function() {
       for (const level of ['I', 'W', 'E', 'D']) LOG[level] = (m) => { seen.push(String(m && m.stack ? m.stack : m)); return m; };
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-near-miss-'));
       const configPath = path.join(dir, 'auth.json');
-      fs.writeFileSync(configPath, JSON.stringify({${JSON.stringify(KEY)}: {userName: 'tenant', devices: ['*']}}));
+      fs.writeFileSync(configPath, JSON.stringify({${JSON.stringify(KEY)}: {userName: 'tenant', devices: ['*']}}), {mode: 0o600});
       const FileAuthProvider = lib('auth/file-provider');
       const file = new FileAuthProvider({configPath});
       const answers = [];

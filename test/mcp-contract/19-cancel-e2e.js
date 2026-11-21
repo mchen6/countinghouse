@@ -33,7 +33,7 @@ function home() {
   fs.writeFileSync(path.join(h, 'auth.json'), JSON.stringify({
     [KEY]: {userName: 'm19-cancel', devices: ['*']},
     'm19-outer-internal-key': {userName: 'm19-outer-internal', devices: ['*'], runsModules: ['m19-outer']}
-  }));
+  }), {mode: 0o600});
   return h;
 }
 const serverArgs = (h, extra = []) => ['--workerThread', '--store', 'local', '--storePath', path.join(h, 'store'), '--meter', '--mcpToolCallCost', '1',

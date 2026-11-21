@@ -61,7 +61,7 @@ describe('auth 02: FileAuthProvider ergonomics (demo key generation, COUNTINGHOU
   });
 
   it('does not overwrite an existing (even empty) auth.json with a demo key', (done) => {
-    fs.writeFileSync(configPath, JSON.stringify({}));
+    fs.writeFileSync(configPath, JSON.stringify({}), {mode: 0o600});
 
     const provider = new FileAuthProvider({configPath: configPath});
     const written = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -103,7 +103,7 @@ describe('auth 02: FileAuthProvider ergonomics (demo key generation, COUNTINGHOU
     const fileKeyConfig = {};
     fileKeyConfig['plain-key'] = {userName: 'plain-user', devices: ['*']};
     fileKeyConfig['admin-key'] = {userName: 'admin-user', devices: ['some-device-id'], admin: true};
-    fs.writeFileSync(configPath, JSON.stringify(fileKeyConfig));
+    fs.writeFileSync(configPath, JSON.stringify(fileKeyConfig), {mode: 0o600});
 
     const provider = new FileAuthProvider({configPath: configPath});
 
@@ -126,7 +126,7 @@ describe('auth 02: FileAuthProvider ergonomics (demo key generation, COUNTINGHOU
   it('COUNTINGHOUSE_API_KEY and auth.json entries both work at the same time', (done) => {
     const fileKeyConfig = {};
     fileKeyConfig['file-key'] = {userName: 'file-user', devices: ['some-device-id']};
-    fs.writeFileSync(configPath, JSON.stringify(fileKeyConfig));
+    fs.writeFileSync(configPath, JSON.stringify(fileKeyConfig), {mode: 0o600});
     process.env.COUNTINGHOUSE_API_KEY = 'env-mode-key';
 
     const provider = new FileAuthProvider({configPath: configPath});

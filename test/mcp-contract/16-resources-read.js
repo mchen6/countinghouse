@@ -35,7 +35,7 @@ function home() {
     [KEY]: {userName: 'm6-reader', devices: ['*']},
     [OTHER]: {userName: 'm6-other', devices: ['*']},
     [INTERNAL]: {userName: 'm6-outer-internal', devices: ['*'], runsModules: ['m6-outer']}
-  }));
+  }), {mode: 0o600});
   return h;
 }
 

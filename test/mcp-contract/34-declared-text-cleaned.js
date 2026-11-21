@@ -669,7 +669,7 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'pick.js'), 'module.exports = async () => ({output: {id: "p"}});\n');
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'stuckComplete.js'), 'module.exports = async () => ({output: {values: ["p-from-the-action"]}});\n');
       const auth = path.join(dir, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'k', devices: ['*']}}));
+      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'k', devices: ['*']}}), {mode: 0o600});
       server = await startServer(PORT, ['--workerThread', '--store', 'local', '--storePath', path.join(dir, 'store'), '--moduleDataPath', path.join(dir, 'module_data'),
         '--authConfigPath', auth, '--inlineContentBytes', '1024', '--loadModule', mod]);
       for (let i = 0; i < 300; i++) {

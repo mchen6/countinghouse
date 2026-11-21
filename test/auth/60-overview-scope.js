@@ -44,7 +44,7 @@ describe('auth 60: countinghouse_overview\'s scope on a hosted runtime (B-firstr
     const dir = tmp.mkdtemp('ch-auth-60-');
     const auth = path.join(dir, 'auth.json');
     fs.writeFileSync(auth, JSON.stringify({[ALL]: {userName: 'all', devices: ['*']}, [ECHO_ONLY]: {userName: 'echo', devices: [deviceIDForName('echo-device')]},
-      [NONE]: {userName: 'none', devices: []}}));
+      [NONE]: {userName: 'none', devices: []}}), {mode: 0o600});
     return startServer(at, [...mode, '--authProvider', 'file', '--authConfigPath', auth, '--moduleDataPath', path.join(dir, 'data'),
       '--loadModule', path.join(ROOT, 'pre-installed-packages', 'echo-device-module'), '--loadModule', path.join(ROOT, 'pre-installed-packages', 'composite-demo')]);
   };

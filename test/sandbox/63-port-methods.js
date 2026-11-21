@@ -70,7 +70,7 @@ describe('sandbox 63: port methods taken at boot', function() {
 // Under off, where nothing is fixed, the replaced NodeEventTarget.on is
 // handed the port: the probe sees one when one can be seen.
 const KEY = 'port-probe-key';
-const AUTH = path.join(__dirname, '63-auth.json');
+const AUTH = require('../helpers/private-auth').privateAuth(path.join(__dirname, '63-auth.json'));
 const CALLEE = path.join(ROOT, 'test', 'fixtures', 'hop-input-callee');
 const CALLER = path.join(ROOT, 'test', 'fixtures', 'port-probe-caller');
 const FIXED = ['NodeEventTarget.prototype.on', 'NodeEventTarget.prototype.addListener', 'EventTarget.prototype.addEventListener',

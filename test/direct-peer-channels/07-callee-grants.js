@@ -40,7 +40,7 @@ const {toolOutput} = require('../helpers/tool-result');
       forger: {userName: 'forger', devices: [deviceIDForName('peer-forge'), dev1]},
       // peer-forge declares its calls (R2-1 Task 4), resolved under 'both'
       both:   {userName: 'both', devices: [deviceIDForName('peer-forge'), dev1, dev2], runsModules: ['peer-forge']}
-    }));
+    }), {mode: 0o600});
     server = await startServer(testPort(9668), ['--workerThread', '--authConfigPath', authPath, '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'peer-callee-1'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'peer-callee-2'),

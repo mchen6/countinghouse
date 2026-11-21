@@ -42,7 +42,7 @@ describe('composition 13: the server says when it is ready', function() {
       '--workerThread', '--bindAddr', '127.0.0.1', '--port', String(PORT),
       '--mcpToolCallCost', '1',
       '--debug', '--debugKey', CALLER_KEY,
-      '--authConfigPath', path.join(__dirname, 'fixtures-auth.json'),
+      '--authConfigPath', require('../helpers/private-auth').privateAuth(path.join(__dirname, 'fixtures-auth.json')),
       '--loadModule', path.join(FIXTURES, 'compose-callee'),
       '--loadModule', path.join(FIXTURES, 'compose-caller')
     ], {stdio: ['ignore', 'pipe', 'pipe']});
@@ -98,7 +98,7 @@ describe('composition 13b: --withPM2 is removed', function() {
     server = fork(path.join(ROOT, 'framework.js'), [
       '--workerThread', '--bindAddr', '127.0.0.1', '--port', String(PORT_PM2),
       '--debug', '--debugKey', CALLER_KEY,
-      '--authConfigPath', path.join(__dirname, 'fixtures-auth.json'),
+      '--authConfigPath', require('../helpers/private-auth').privateAuth(path.join(__dirname, 'fixtures-auth.json')),
       '--loadModule', path.join(FIXTURES, 'compose-callee'),
       '--loadModule', path.join(FIXTURES, 'compose-caller'),
       '--withPM2'

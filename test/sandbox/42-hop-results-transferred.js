@@ -19,7 +19,7 @@ const {deviceIDForName} = require('../../lib/call-address');
 
 const PORT   = testPort(9749);
 const KEY    = 'main-checked-key';
-const AUTH   = path.join(__dirname, '41-auth.json');
+const AUTH   = require('../helpers/private-auth').privateAuth(path.join(__dirname, '41-auth.json'));
 const CALLEE = path.join(ROOT, 'test', 'fixtures', 'main-checked');
 const CALLER = path.join(ROOT, 'test', 'fixtures', 'main-checked-caller');
 const CAP    = 64 * 1024 * 1024;

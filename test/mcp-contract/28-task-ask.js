@@ -64,7 +64,7 @@ function suite(title, {port, extra = [], store = 'local'}) {
     before(async () => {
       dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-28-'));
       const auth = path.join(dir, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: ['*']}, [KEY_C]: {userName: 'c', devices: ['*']}}));
+      fs.writeFileSync(auth, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: ['*']}, [KEY_C]: {userName: 'c', devices: ['*']}}), {mode: 0o600});
       const stored = store === 'local' ? ['--store', 'local', '--storePath', path.join(dir, 'store')] : [];
       server = await startServer(port, ['--workerThread', ...stored, '--meter', '--mcpToolCallCost', '1',
         '--moduleDataPath', path.join(dir, 'module_data'), '--authConfigPath', auth, '--loadModule', FIXTURE, ...extra]);

@@ -63,7 +63,7 @@ describe('stdio 32: resource and prompt notices on a listen, spawned (M8)', func
     const auth = path.join(home, 'auth.json');
     // (notes-editor composes: its hop runs as the identity bound to it)
     fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']},
-      'notes-editor-internal': {userName: 'notes-editor-internal', devices: ['*'], runsModules: ['notes-editor']}}));
+      'notes-editor-internal': {userName: 'notes-editor-internal', devices: ['*'], runsModules: ['notes-editor']}}), {mode: 0o600});
     io = startStdio(['--workerThread', '--loadModule', NOTES, '--loadModule', EDITOR, '--authConfigPath', auth,
       '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`], {env: {COUNTINGHOUSE_API_KEY: KEY}});
     let id = 1;

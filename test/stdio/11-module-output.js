@@ -29,7 +29,7 @@ describe(`--stdio: a module's output goes to stderr, bounded (--moduleSandbox ${
 
   it('a line on each stream and a 10 MB flood: stdout holds JSON-RPC only; stderr has the lines named, and at most 256 KiB of the flood', async () => {
     const auth = path.join(home, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}), {mode: 0o600});
     io = startStdio(['--workerThread', '--moduleSandbox', MODE, '--debug', '--loadModule', MODULE, '--authConfigPath', auth,
       '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749'], {env: {COUNTINGHOUSE_API_KEY: KEY}});
     await io.request({...INITIALIZE, id: 1});

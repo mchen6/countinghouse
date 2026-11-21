@@ -54,7 +54,7 @@ describe('auth 53: no API key, user name or Redis URL reaches a resource read\'s
   before(async () => {
     base = fs.mkdtempSync(path.join(os.homedir(), '.ch-key-dump-read-'));
     const auth = path.join(base, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[ALICE]: {userName: NAME, devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[ALICE]: {userName: NAME, devices: ['*']}}), {mode: 0o600});
     // what the read's handler searches for, reversed, in its own data
     const data = path.join(base, 'store', 'key-dump-read', 'data');
     fs.mkdirSync(data, {recursive: true});

@@ -35,7 +35,7 @@ describe('module-loading 02: with sqlite3 unloadable, the file backend still wor
     const config = {};
     config[KEY]   = {userName: 'nosqlite', devices: ['*']};
     config[OTHER] = {userName: 'other',    devices: []};
-    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
+    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config), {mode: 0o600});
 
     console.log('starting countinghouse with sqlite3 made unloadable, --authProvider file...');
     waitForReady(startShell(`node -r ${PRELOAD} ./framework.js${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT

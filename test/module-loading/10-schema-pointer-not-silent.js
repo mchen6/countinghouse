@@ -38,7 +38,7 @@ const TOOL = 'dangling_schema_pointer_device_pointerservice_danglinginput';
 function startServer(done) {
   const config = {};
   config[KEY] = {userName: 'schema-pointer-test', devices: ['*']};
-  fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
+  fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config), {mode: 0o600});
 
   startShell(`NODE_PATH=./lib node ./framework.js${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
        } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH

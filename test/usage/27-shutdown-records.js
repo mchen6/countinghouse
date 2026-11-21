@@ -40,7 +40,7 @@ const posix = process.platform === 'win32' ? describe.skip : describe;
 
     const start = async (dir) => {
       const auth = path.join(dir, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'u', devices: ['*']}}));
+      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'u', devices: ['*']}}), {mode: 0o600});
       server = await startServer(port, ['--workerThread', '--authProvider', 'file', '--authConfigPath', auth, '--usageDir', path.join(dir, 'usage'),
         '--moduleDataPath', path.join(dir, 'data'), '--loadModule', path.join(ROOT, 'pre-installed-packages', 'echo-device-module'),
         ...(local ? ['--store', 'local', '--storePath', path.join(dir, 'store')] : [])]);

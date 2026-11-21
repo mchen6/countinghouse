@@ -29,7 +29,7 @@ function home() {
   const h = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-m21-'));
   const auth = {[KEY]: {userName: 'm21-progress', devices: ['*']},
     'progress-outer-internal-key': {userName: 'progress-outer-internal', devices: ['*'], runsModules: ['progress-outer']}};
-  fs.writeFileSync(path.join(h, 'auth.json'), JSON.stringify(auth));
+  fs.writeFileSync(path.join(h, 'auth.json'), JSON.stringify(auth), {mode: 0o600});
   return h;
 }
 const serverArgs = (h) => ['--workerThread', '--store', 'local', '--storePath', path.join(h, 'store'), '--authProvider', 'file',

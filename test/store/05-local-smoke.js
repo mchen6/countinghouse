@@ -41,7 +41,7 @@ describe('store 05: --store local with no Redis (LM1 B5)', function() {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-store-05-'));
     storePath = path.join(dir, 'store');
     const auth = path.join(dir, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'smoke', devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'smoke', devices: ['*']}}), {mode: 0o600});
     server = await startServer(PORT, ['--workerThread', '--store', 'local', '--storePath', storePath,
       '--moduleDataPath', path.join(dir, 'module_data'), '--authConfigPath', auth,
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'local-store-probe')],

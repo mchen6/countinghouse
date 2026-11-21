@@ -47,7 +47,7 @@ function writeAuth(path, withGrants) {
     const RUNS = {'composite-demo-internal': 'composite-demo', 'aabbcc': 'echo-device-client-module', 'perf-caller-demo-internal': 'perf-caller-demo'};
     INTERNAL_IDENTITIES.forEach((k, i) => { config[k] = {userName: `bundled-demo-identity-${i + 1}`, devices: ['*'], runsModules: [RUNS[k]]}; });
   }
-  fs.writeFileSync(path, JSON.stringify(config));
+  fs.writeFileSync(path, JSON.stringify(config), {mode: 0o600});
 }
 
 function startServer(authPath, done) {

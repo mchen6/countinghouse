@@ -23,7 +23,7 @@ const KEY_B = `test-b-${'b'.repeat(24)}`;
 // B's grant names the notes device by its ID, derived from its name
 const NOTES_ID = require('../../lib/call-address').deviceIDForName('notes');
 const Z_ID = require('../../lib/call-address').deviceIDForName('ch-pack-z');
-fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: [NOTES_ID, Z_ID]}}));
+fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: [NOTES_ID, Z_ID]}}), {mode: 0o600});
 
 const options = require('../../lib/cli-options');
 const OPTIONS = {redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10};

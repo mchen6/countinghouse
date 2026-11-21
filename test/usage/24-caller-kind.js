@@ -74,7 +74,7 @@ for (const variant of VARIANTS) {
       dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-usage-24-'));
       usageDir = path.join(dir, 'usage');
       const auth = path.join(dir, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'k', devices: ['*']}}));
+      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'k', devices: ['*']}}), {mode: 0o600});
       const store = variant.local ? ['--storePath', path.join(dir, 'store')] : [];
       server = await startServer(variant.port, variant.flags.concat(store, ['--moduleDataPath', path.join(dir, 'module_data'), '--authConfigPath', auth,
         '--usageDir', usageDir, '--loadModule', writeModule(dir)]));

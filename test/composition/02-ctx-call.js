@@ -108,7 +108,7 @@ function startServer(done) {
   server = spawn(process.execPath, [
     path.join(__dirname, '..', '..', 'framework.js'),
     '--workerThread', '--bindAddr', '127.0.0.1', '--port', String(PORT),
-    '--authConfigPath', path.join(__dirname, 'fixtures-auth.json'),
+    '--authConfigPath', require('../helpers/private-auth').privateAuth(path.join(__dirname, 'fixtures-auth.json')),
     '--loadModule', path.join(FIXTURES, 'compose-callee'),
     '--loadModule', path.join(FIXTURES, 'compose-caller')
   ], {stdio: ['ignore', 'pipe', 'pipe']});
@@ -281,7 +281,7 @@ function startSingleThreadServer(done) {
     path.join(__dirname, '..', '..', 'framework.js'),
     // Deliberately single-thread mode.
     '--no-workerThread', '--bindAddr', '127.0.0.1', '--port', String(PORT_SINGLE_THREAD),
-    '--authConfigPath', path.join(__dirname, 'fixtures-auth.json'),
+    '--authConfigPath', require('../helpers/private-auth').privateAuth(path.join(__dirname, 'fixtures-auth.json')),
     '--loadModule', path.join(FIXTURES, 'compose-callee'),
     '--loadModule', path.join(FIXTURES, 'compose-caller')
   ], {stdio: ['ignore', 'pipe', 'pipe']});

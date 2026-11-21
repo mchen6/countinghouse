@@ -32,7 +32,7 @@ describe('auth 17: the CEAMS-era package routes with no consumer are gone', func
 
     const config = {};
     config[ADMIN] = {userName: 'admin17', devices: ['*'], admin: true};
-    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
+    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config), {mode: 0o600});
 
     console.log('starting countinghouse for removed-package-route test...');
     waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT

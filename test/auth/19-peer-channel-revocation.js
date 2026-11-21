@@ -34,10 +34,12 @@ const MODULE_IDENTITY = 'aabbcc';
 
 const RECHECK_SECONDS = 1;
 
+// (a key goes on stdin: test/helpers/auth-cli.js)
 function authCli(args) {
+  const k = require('../helpers/auth-cli').keyed(args);
   execFileSync(process.execPath,
-    [path.join(ROOT, 'bin', 'countinghouse-auth-sqlite.js'), '--dbPath', DB_PATH].concat(args),
-    {cwd: ROOT, stdio: 'pipe'});
+    [path.join(ROOT, 'bin', 'countinghouse-auth-sqlite.js'), '--dbPath', DB_PATH].concat(k.args),
+    {cwd: ROOT, input: k.input, stdio: ['pipe', 'pipe', 'pipe']});
 }
 
 function callThroughTheHop(cb) {

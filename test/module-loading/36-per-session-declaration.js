@@ -185,7 +185,7 @@ describe('module-loading 36: a module\'s state declaration (R1)', function() {
     it('--stdio: a per-session module loads and runs as a shared one, on today\'s paths', async () => {
       const KEY = 'ml-36-key';
       const auth = path.join(home, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'ml-36', devices: ['*']}}));
+      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'ml-36', devices: ['*']}}), {mode: 0o600});
       const io = startStdio(['--workerThread', '--authConfigPath', auth, '--store', 'local', '--storePath', path.join(home, 'store'),
         '--moduleDataPath', path.join(home, 'module_data'), '--loadModule', FIXTURE], {env: {COUNTINGHOUSE_API_KEY: KEY}});
       try {

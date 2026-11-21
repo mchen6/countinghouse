@@ -35,7 +35,7 @@ describe('auth 10: /balance and countinghouse_check_balance require a real apiKe
 
     const config = {};
     config[ALICE] = {userName: 'alice', devices: ['*']};
-    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
+    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config), {mode: 0o600});
 
     console.log('starting countinghouse WITHOUT --debug, --authProvider file, for balance-auth test...');
     waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT

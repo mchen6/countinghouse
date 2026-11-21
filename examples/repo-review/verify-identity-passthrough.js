@@ -38,7 +38,8 @@ function writeAuth() {
   // now refuses to come online without this, same as the real auth.json.
   config[AS_IDENTITY_KEY] = {userName: AS_IDENTITY, devices: [SCAN_DEVICE, DETECT_DEVICE, AUDIT_DEVICE],
                               runsModules: ['repo-review']};
-  fs.writeFileSync(AUTH_PATH, JSON.stringify(config, null, 2));
+  // (owner-only: the runtime reads an auth file only so, it holds keys)
+  fs.writeFileSync(AUTH_PATH, JSON.stringify(config, null, 2), {mode: 0o600});
 }
 
 function startServer(cb) {

@@ -55,7 +55,7 @@ function writeAuth() {
   config[CALLER]      = {userName: 'caller', devices: ['*']};
   // bound to the module (R2-1 Task 4: its declared call resolves under it)
   config[AS_IDENTITY] = {userName: AS_IDENTITY, devices: [ECHO_DEVICE], runsModules: ['ctx-compose-module']};
-  fs.writeFileSync(AUTH_PATH, JSON.stringify(config));
+  fs.writeFileSync(AUTH_PATH, JSON.stringify(config), {mode: 0o600});
 }
 
 function startServer(done) {
