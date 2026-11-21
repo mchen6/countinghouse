@@ -125,6 +125,24 @@ default worker mode: a module whose handler file crashes or calls
 reported failure in worker mode, but takes the whole runtime down under
 `--no-workerThread`.
 
+## Under ch-local
+
+With ch-local, the user's own install, steps 4 and 5 of the loop are
+different:
+
+- `countinghouse_validate_plan` and `countinghouse_validate_module` work as
+  above; neither runs the module's code.
+- `countinghouse_load_module` loads nothing. It answers with the command the
+  user runs in their own terminal: `node "<home>/bin/ch-local.js" add-module
+  "<folder>"`. Give the user that command. Never run it yourself, and never
+  answer its question: the user confirms what is added.
+- Once the user has added it, its tools are in `tools/list` like a pack's:
+  call them directly. There is no `countinghouse_call_tool` here.
+- Never suggest `--authoringTools` or an admin key: those are for a hosted
+  runtime, not ch-local.
+- After any change to the module's code, the user runs `add-module` again
+  and confirms again.
+
 ## When it does not appear in tools/list
 
 `docs/module-development.md` has the full checklist. The five that account for
