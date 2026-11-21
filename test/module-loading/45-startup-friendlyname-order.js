@@ -34,15 +34,25 @@ describe('module-loading 45: two startup modules with one friendlyName -- the fi
 
   it('loaded several at once, the first in the list keeps its device; the later one is refused', async () => {
     const base = tmp.mkdtemp('startup-twins-');
-    const first = twin(base, 'twin-first');
+    // (twin-first takes about 3 s to load -- slow-load-module's handler, the
+    // twins' friendlyName -- so twin-second has spawned and pinned the ID
+    // well before twin-first registers, every run)
+    const first = path.join(base, 'twin-first');
+    fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'slow-load-module'), first, {recursive: true});
+    fs.writeFileSync(path.join(first, 'package.json'), JSON.stringify({name: 'twin-first', version: '1.0.0'}));
+    const api = JSON.parse(fs.readFileSync(path.join(first, 'api.json'), 'utf8'));
+    api.device.friendlyName = 'handler-map-module';
+    fs.writeFileSync(path.join(first, 'api.json'), JSON.stringify(api));
     const second = twin(base, 'twin-second');
     server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread', '--store', 'local', '--storePath', path.join(base, 'store'),
       '--loadModule', first, '--loadModule', second], {env: {COUNTINGHOUSE_TEST_STARTUP_LIMIT: '2'}});
     // (once discovery is over: both have had their turn)
     await waitFor(() => server.output.includes('all module discovered'), 60000, 'discovery over');
-    const r = await mcpCall(PORT, KEY, TOOL, {name: 'x'}, {allowUnknownTool: true});
+    // (the device is twin-first's: its slowService answers, twin-second's
+    // greetService is no tool)
+    const r = await mcpCall(PORT, KEY, 'handler_map_module_slowservice_ping', {}, {allowUnknownTool: true});
     assert.strictEqual(r.isError, false, `${JSON.stringify(r)}\n${server.output.slice(-3000)}`);
-    assert.strictEqual(r.structuredContent.text, 'twin-first', JSON.stringify(r));
+    assert.strictEqual((await mcpCall(PORT, KEY, TOOL, {name: 'x'}, {allowUnknownTool: true})).code, -32602, 'twin-second\'s tool is none');
     assert.match(server.output, /module twin-second's device [^ ]+ is module twin-first's -- refused/);
     assert.doesNotMatch(server.output, /module twin-first's device [^ ]+ is module twin-second's/);
   });
@@ -61,6 +71,7 @@ describe('module-loading 45: registration in a startup turn (C-startup-order, th
   let DeviceManager = null;
   let WorkerMessage = null;
   let moduleSpec = null;
+  let ModuleManager = null;
   before(() => {
     keptOptions = optionsNow();
     require('../../lib/cli-options').setOptions({workerThread: false});
@@ -68,6 +79,7 @@ describe('module-loading 45: registration in a startup turn (C-startup-order, th
     DeviceManager = require('../../lib/device-manager');
     WorkerMessage = require('../../lib/worker-message');
     moduleSpec = require('../../lib/module-spec');
+    ModuleManager = require('../../lib/module-manager');
   });
   after(() => { restoreOptions(keptOptions); });
 
@@ -84,36 +96,50 @@ describe('module-loading 45: registration in a startup turn (C-startup-order, th
       wms[name] = wm;
       pinned[name] = new Set([wm.moduleSpec.deviceID]);
     }
-    const mm = {on: () => {}, modules: wms, pinnedDeviceIDs: pinned};
-    return {dm: new DeviceManager(mm), wms};
+    const mm = {on: () => {}, modules: wms, pinnedDeviceIDs: pinned, startupRanks: null, startupEarlier: ModuleManager.prototype.startupEarlier};
+    return {dm: new DeviceManager(mm), wms, mm};
   }
-  const turn = (names, name) => ({names, index: names.indexOf(name)});
+  // the start's discovery under way with this startup list
+  const during = (mm, list) => { mm.startupRanks = new Map(list.map((n, i) => [n, i])); };
 
   it('a load in place meanwhile is refused; the startup module, in its turn, keeps its device', async () => {
-    const {dm, wms} = await world(['slow-first', 'twin-in-place']);
+    const {dm, wms, mm} = await world(['slow-first', 'twin-in-place']);
+    during(mm, ['slow-first', 'filler']);
     assert.strictEqual(dm.registerFromSpec(wms['twin-in-place']), false, 'the load in place: slow-first pinned it');
-    wms['slow-first'].startupTurn = turn(['slow-first', 'filler'], 'slow-first');
     assert.strictEqual(dm.registerFromSpec(wms['slow-first']), true, 'slow-first in its turn');
   });
 
   it('two on the list: the earlier in its turn keeps it, the later is refused', async () => {
     const list = ['twin-first', 'twin-second'];
-    const {dm, wms} = await world(list);
-    wms['twin-first'].startupTurn = turn(list, 'twin-first');
+    const {dm, wms, mm} = await world(list);
+    during(mm, list);
+    // (in either order: twin-second first is refused, twin-first -- in its
+    // turn, or restarted before the start's discovery ends -- keeps it)
+    assert.strictEqual(dm.registerFromSpec(wms['twin-second']), false);
     assert.strictEqual(dm.registerFromSpec(wms['twin-first']), true);
-    wms['twin-second'].startupTurn = turn(list, 'twin-second');
     assert.strictEqual(dm.registerFromSpec(wms['twin-second']), false);
   });
 
   it('a module before it on the list still counts (a load that failed keeps its pin)', async () => {
     const list = ['failed-first', 'later'];
-    const {dm, wms} = await world(list);
-    wms.later.startupTurn = turn(list, 'later');
+    const {dm, wms, mm} = await world(list);
+    during(mm, list);
     assert.strictEqual(dm.registerFromSpec(wms.later), false);
   });
 
-  it('outside a startup turn, as before: any other module\'s pin refuses it', async () => {
+  it('outside the start\'s discovery, as before: any other module\'s pin refuses it', async () => {
     const {dm, wms} = await world(['a', 'b']);
     assert.strictEqual(dm.registerFromSpec(wms.a), false);
+  });
+
+  it('the pinned index names the earliest holder while the start\'s discovery lasts, the last spawner after', () => {
+    const mm = Object.create(ModuleManager.prototype);
+    mm.startupRanks = new Map([['a', 0], ['b', 1]]);
+    assert.strictEqual(mm.startupEarlier('a', 'b'), true);
+    assert.strictEqual(mm.startupEarlier('b', 'a'), false);
+    assert.strictEqual(mm.startupEarlier('a', 'elsewhere'), true, 'a load in place');
+    assert.strictEqual(mm.startupEarlier('elsewhere', 'a'), false);
+    mm.startupRanks = null;
+    assert.strictEqual(mm.startupEarlier('a', 'b'), false, 'after discovery: no order');
   });
 });
