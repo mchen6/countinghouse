@@ -128,6 +128,27 @@ describe('remote 06: tools/list at load, in the registry', function() {
   tmpDirs.hooks();
 });
 
+// (the reviewer, A-redact: the load line names the remote's tools, so a
+// user can see what a token is used with -- cleaned like any text a module
+// supplies, as a JSON list that a name can't break or forge, bounded)
+describe('remote 06: the load line\'s tool names', () => {
+  const {toolNamesText, NAMES_SHOWN, NAME_MAX} = require('../../lib/remote');
+  it('lists the names as one JSON list, each cleaned and cut, the first NAMES_SHOWN of them, then how many more', () => {
+    const names = ['actions_list', 'get\nfake line: module remote: x', 'b\u0007\u202Eell', 'x'.repeat(500), ...Array.from({length: 80}, (_, i) => `t${String(i).padStart(2, '0')}`)];
+    const text = toolNamesText(names);
+    assert.ok(!/[\n\r]/.test(text), 'one line');
+    const m = /^names (\[.*\])(?: \(\+(\d+) more\))?$/.exec(text);
+    assert.ok(m != null, text.slice(0, 200));
+    const shown = JSON.parse(m[1]);
+    assert.strictEqual(shown.length, NAMES_SHOWN);
+    assert.strictEqual(Number(m[2]), names.length - NAMES_SHOWN);
+    assert.ok(shown.every((n) => typeof n === 'string' && n.length <= NAME_MAX && !/[\u0000-\u001f\u007f\u202e]/.test(n)), JSON.stringify(shown.slice(0, 4)));
+    assert.strictEqual(shown[0], 'actions_list');
+    assert.strictEqual(toolNamesText([]), 'names []');
+    assert.strictEqual(toolNamesText(['a', 'b']), 'names ["a","b"]');
+  });
+});
+
 describe('remote 06: the load log', function() {
   this.timeout(120000);
   let remote = null;
@@ -143,8 +164,8 @@ describe('remote 06: the load log', function() {
     await mcpCall(SERVER, KEY, 'remote_probe_probeservice_calltool', {tool: 'echo_text', args: {}}).then(toolOutput);
     assert.ok(server.output.includes(`remote probe: sends CH_TEST_REMOTE_TOKEN to http://127.0.0.1:${REMOTE}`), server.output.slice(-2000));
     // The listing runs beside the call, not before it.
-    await waitFor(() => /module remote: remote-probe: remote probe: tools\/list 7 tools sha256 [0-9a-f]{16}/.test(server.output),
-      20000, 'the tools/list line');
+    await waitFor(() => /module remote: remote-probe: remote probe: tools\/list 7 tools sha256 [0-9a-f]{16}: names \[[^\n]*\\?"echo_text\\?"/.test(server.output),
+      20000, 'the tools/list line, with the names');
     assert.ok(!server.output.includes(TOKEN));
   });
   tmpDirs.hooks();
