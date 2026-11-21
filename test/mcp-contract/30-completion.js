@@ -234,6 +234,28 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
     }
   });
 
+  // (the final pass's gateway part, A7) the completion request spends the
+  // key's one unit at its door (resolveGatedIdentity); its action's dispatch
+  // through the call path (invokeDeviceAction) used to spend a second
+  it('a completion that runs an action spends one unit of the key\'s rate limit, not two', async () => {
+    const CdifInterface = require('../../lib/countinghouse-interface');
+    let units = 0;
+    const counting = (key, cb) => { units++; cb(null, {limited: false}); };
+    const dispatch = {rateLimiter: null, rateLimit: counting,
+      deviceManager: {emit: (what, deviceID, serviceID, actionName, args, session) => session.callbackWithoutTimer(null, {output: {values: ['teal-blue']}})}};
+    const was = ci.rateLimit;
+    ci.rateLimit = counting;
+    ci.invokeDeviceAction = (...args) => CdifInterface.prototype.invokeDeviceAction.apply(dispatch, args);
+    try {
+      const answered = await complete(KEY_A, 'tints_tint', 'shade', 't');
+      assert.deepStrictEqual(answered.result && answered.result.completion, {values: ['teal-blue'], total: 1, hasMore: false}, JSON.stringify(answered));
+      assert.strictEqual(units, 1, `${units} units spent`);
+    } finally {
+      delete ci.invokeDeviceAction;
+      ci.rateLimit = was;
+    }
+  });
+
   // F3-6: a floor whatever --apiKeyRateLimit says (none here: limited false), and a bounded value
   it('a value longer than 256 characters is refused, before anything is asked', async () => {
     limited = false;
