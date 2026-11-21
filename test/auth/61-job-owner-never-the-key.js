@@ -11,6 +11,7 @@ const assert  = require('assert');
 const crypto  = require('crypto');
 const fs      = require('fs');
 const path    = require('path');
+const {keyed} = require('../helpers/auth-cli');
 const request = require('supertest');
 const redis   = require('redis');
 const {execFileSync} = require('child_process');
@@ -91,7 +92,7 @@ describe('auth 61: a job names its owner by id, never by the key (B-meter-keys (
       base = tmp.mkdtemp('ch-owner-id-');
       store = path.join(base, 'store');
       const authPath = path.join(base, 'auth.json');
-      fs.writeFileSync(authPath, JSON.stringify({[ALICE]: {userName: 'alice', devices: [DEVICE]}}));
+      fs.writeFileSync(authPath, JSON.stringify({[ALICE]: {userName: 'alice', devices: [DEVICE]}}), {mode: 0o600});
       server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath, '--mcpToolCallCost', '1',
         '--moduleDataPath', store, '--loadModule', FIXTURE], {env: {COUNTINGHOUSE_API_KEY: ENVKEY}});
       queue = new Queue('job-queue', {prefix: prefixFor(store), connection: redisConnectionFor(JOB_DB)});
@@ -157,7 +158,11 @@ describe('auth 61: a job names its owner by id, never by the key (B-meter-keys (
     let db = null;
     let server = null;
     let queue = null;
-    const cli = (...args) => execFileSync(process.execPath, [path.join(ROOT, 'bin', 'countinghouse-auth-sqlite.js'), '--dbPath', db].concat(args), {encoding: 'utf8'});
+    // (a key reaches the users CLI on stdin, never as an argument: B-meter-keys 4r)
+    const cli = (...args) => {
+      const k = keyed(args);
+      return execFileSync(process.execPath, [path.join(ROOT, 'bin', 'countinghouse-auth-sqlite.js'), '--dbPath', db].concat(k.args), {encoding: 'utf8', input: k.input});
+    };
     before(async () => {
       base = tmp.mkdtemp('ch-owner-sqlite-');
       store = path.join(base, 'store');
