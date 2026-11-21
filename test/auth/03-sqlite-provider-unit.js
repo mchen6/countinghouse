@@ -51,6 +51,7 @@ function probeSqlite3() {
 const sqliteLoadError = probeSqlite3();
 
 const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
+const tmp = require('../helpers/test-tmp').forFile(['countinghouse-test-auth-03-']);
 
 // Pure unit tests, no server -- SqliteAuthProvider instantiated directly,
 // same style as 02-file-provider-unit.js. Covers the users/user_devices
@@ -80,13 +81,17 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
   const track = (db) => { open.push(db); return db; };
   const makeProvider = () => { const p = new SqliteAuthProvider({dbPath: dbPath}); track(p.db); return p; };
 
+  // (the databases' own directory: one only this user can write in, as the
+  // store requires -- never the shared temp directory itself)
+  let base = null;
   before(function() {
     this.timeout(60000);
     require('sqlite3');
+    base = tmp.mkdtemp('countinghouse-test-auth-03-');
   });
 
   beforeEach(() => {
-    dbPath = require('path').join(os.tmpdir(), `countinghouse-test-auth-03-${process.pid}-${++made}.sqlite3`);
+    dbPath = require('path').join(base, `auth-03-${++made}.sqlite3`);
     try { fs.unlinkSync(dbPath); } catch (e) {}
   });
 
@@ -323,4 +328,6 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
       assert.notStrictEqual(cli(['unbind-module', 'never-bound']).status, 0);
     });
   });
+
+  tmp.hooks();
 });

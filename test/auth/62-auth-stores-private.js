@@ -454,6 +454,68 @@ describe('auth 62: the sqlite store and its users CLI (B-meter-keys 4r)', functi
     assert.ok(!fs.existsSync(db), 'no DB file left');
   });
 
+  // (the high on #520, M1) SQLite plays back a hot -journal beside the
+  // database at open, whoever made it: a store is used only in a directory
+  // no one else can write in, and with side files that are this user's own
+  // and owner-only
+  (POSIX ? it : it.skip)('a DB in a directory others can write in is refused, sticky or not, naming the directory', () => {
+    for (const mode of [0o770, 0o775, 0o1777]) {
+      const shared = path.join(dir, `shared-${mode.toString(8)}`);
+      fs.mkdirSync(shared);
+      fs.chmodSync(shared, mode);
+      const db = path.join(shared, 'users.sqlite3');
+      const r = cli(db, ['add-user', 'alice'], `${KEY}\n`);
+      assert.notStrictEqual(r.status, 0, `${mode.toString(8)}: ${r.stderr}`);
+      assert.match(r.stderr, /group or others can write in it/, r.stderr);
+      assert.ok(!fs.existsSync(db), 'no store made there');
+      const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
+      assert.throws(() => new SqliteAuthProvider({dbPath: db}), (e) => e.code === 'AUTH_CONFIG_INVALID' && /group or others can write in it/.test(e.message));
+    }
+  });
+
+  (POSIX ? it : it.skip)('a side file (-journal, -wal, -shm) that is loose or a link is refused, so none is played back', () => {
+    for (const side of ['-journal', '-wal', '-shm']) {
+      const db = path.join(dir, `side${side}.sqlite3`);
+      assert.strictEqual(cli(db, ['add-user', 'alice'], `${KEY}\n`).status, 0);
+      fs.writeFileSync(db + side, 'planted', {mode: 0o644});
+      fs.chmodSync(db + side, 0o644);
+      const r = cli(db, ['list']);
+      assert.notStrictEqual(r.status, 0, side);
+      assert.match(r.stderr, new RegExp(`${side}.*accessible by group or others`), r.stderr);
+      fs.unlinkSync(db + side);
+      fs.symlinkSync(path.join(dir, 'elsewhere'), db + side);
+      assert.match(cli(db, ['list']).stderr, /symbolic link/, side);
+      fs.unlinkSync(db + side);
+    }
+  });
+
+  // (the high's L4) a `file:` name is a file to node-sqlite3, so it is checked
+  // and made owner-only as any other
+  (POSIX ? it : it.skip)('a --dbPath starting file: is a file, made owner-only', () => {
+    const r = spawnSync(process.execPath, [CLI, '--dbPath', 'file:keys.db', 'add-user', 'alice'], {cwd: dir, encoding: 'utf8', input: `${KEY}\n`, timeout: 20000});
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.strictEqual(fs.statSync(path.join(dir, 'file:keys.db')).mode & 0o777, 0o600);
+  });
+
+  // (the high's L5) the key given as an argument too is refused, never stored
+  // as a name nor echoed
+  it('an argument equal to the key on stdin is refused, never stored or echoed', () => {
+    const db = path.join(dir, 'twice.sqlite3');
+    const r = cli(db, ['add-user', KEY], `${KEY}\n`);
+    assert.notStrictEqual(r.status, 0);
+    assert.ok(!`${r.stdout}${r.stderr}`.includes(KEY), r.stdout + r.stderr);
+    assert.match(r.stderr, /is the API key/);
+    assert.ok(!cli(db, ['list']).stdout.includes(KEY));
+  });
+
+  // (the high's F9a) --dbPath with no value is a usage error
+  it('--dbPath with no value is a usage error, not a crash', () => {
+    const r = spawnSync(process.execPath, [CLI, 'list', '--dbPath'], {encoding: 'utf8', timeout: 20000});
+    assert.strictEqual(r.status, 1, r.stderr);
+    assert.match(r.stderr, /^Usage:/m);
+    assert.ok(!/TypeError|\n\s+at /.test(r.stderr), r.stderr);
+  });
+
   (POSIX ? it : it.skip)('a DB file the provider creates is owner-only', async () => {
     const db = path.join(dir, 'made.sqlite3');
     const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');

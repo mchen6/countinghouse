@@ -66,15 +66,30 @@ const loads = spawnSync(process.execPath, ['-e', 'require("sqlite3")'], {encodin
     assert.ok(got.parsed.ms < 5000, `within the bound: ${got.parsed.ms} ms`);
   };
 
-  it('a database that can\'t be opened: the process lives, and every call answers SYSTEM_ERROR_USERDB_NA', () => {
-    allRefused(probe(path.join(dir, 'no-such-dir', 'auth.sqlite3')));
+  // (a store that passes B-meter-keys 4r's checks -- this user's own, 0600,
+  // in a directory only this user can write in -- and still can't be used:
+  // the runtime path #364 is about)
+  it('a file that is no database: the process lives, and every call answers SYSTEM_ERROR_USERDB_NA', () => {
+    const file = path.join(dir, 'auth.sqlite3');
+    fs.writeFileSync(file, require('crypto').randomBytes(4096), {mode: 0o600});
+    allRefused(probe(file));
+  });
+
+  // (4r) a store whose directory is not there is refused when the provider
+  // is made (AUTH_CONFIG_INVALID: the start exits 2), never opened
+  it('a database whose directory is not there is refused when the provider is made', () => {
+    require('../../lib/logger').createLogger();
+    const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
+    assert.throws(() => new SqliteAuthProvider({dbPath: path.join(dir, 'no-such-dir', 'auth.sqlite3')}),
+      (e) => e.code === 'AUTH_CONFIG_INVALID' && /no-such-dir/.test(e.message));
   });
 
   it('a schema that can\'t be made (a read-only, empty database): every call answers SYSTEM_ERROR_USERDB_NA', function() {
     if (typeof(process.getuid) === 'function' && process.getuid() === 0) this.skip();   // root writes a read-only file
     const file = path.join(dir, 'auth.sqlite3');
     fs.writeFileSync(file, '');
-    fs.chmodSync(file, 0o444);
+    // (read-only, and owner-only as a store must be: 4r)
+    fs.chmodSync(file, 0o400);
     allRefused(probe(file));
   });
 
@@ -93,7 +108,7 @@ const loads = spawnSync(process.execPath, ['-e', 'require("sqlite3")'], {encodin
     await new Promise((r) => p.db.close(r));
   });
 
-  it('an already-migrated database mounted read-only (0444) still serves: the schema\'s no-ops need no write', async function() {
+  it('an already-migrated database mounted read-only (0400) still serves: the schema\'s no-ops need no write', async function() {
     if (typeof(process.getuid) === 'function' && process.getuid() === 0) this.skip();   // root writes a read-only file
     require('../../lib/logger').createLogger();
     const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
@@ -106,7 +121,8 @@ const loads = spawnSync(process.execPath, ['-e', 'require("sqlite3")'], {encodin
     await call((cb) => first.db.run('INSERT INTO user_devices (apiKey, deviceID) VALUES (?, ?)', ['k', 'dev'], cb));
     await call((cb) => first.db.run('INSERT INTO module_identities (moduleName, apiKey) VALUES (?, ?)', ['m', 'k'], cb));
     await new Promise((r) => first.db.close(r));
-    fs.chmodSync(file, 0o444);
+    // (read-only, and owner-only as a store must be: 4r)
+    fs.chmodSync(file, 0o400);
     const p = new SqliteAuthProvider({dbPath: file});
     await p.ready;
     assert.strictEqual(p.failed, null);

@@ -49,6 +49,8 @@ function parseArgs(argv) {
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--dbPath') {
+      // (a usage error with no value, never a crash)
+      if (i + 1 >= argv.length || argv[i + 1] === '') usageAndExit(1);
       dbPath = argv[++i];
     } else {
       rest.push(argv[i]);
@@ -135,7 +137,15 @@ function main() {
   // (a command about a user: its arguments, the key aside, then the key)
   if (Object.prototype.hasOwnProperty.call(KEYED, command)) {
     if (parsed.args.length !== 1 + KEYED[command]) usageAndExit(1);
-    return readKey((key) => run(parsed, command, key));
+    return readKey((key) => {
+      // (the key given as an argument too would be stored as a name or a
+      // grant, and shown: refused, never echoed)
+      if (parsed.args.slice(1).some((a) => String(a) === key)) {
+        console.error('an argument is the API key: give the key on stdin only, and the user name, devices or id as arguments');
+        process.exit(1);
+      }
+      return run(parsed, command, key);
+    });
   }
   return run(parsed, command, null);
 }
