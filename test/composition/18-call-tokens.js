@@ -1232,9 +1232,14 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       provider.authenticate = (appKey, deviceID, serviceID, actionName, cb) => cb(null, {ok: true, userName: 'u', isAdmin: false});
       provider.entries = (cb) => cb(null, listed.map((k, i) => ({apiKey: k, userName: `u${i}`, isAdmin: false, id: `stable-${i}`})));
       callee.sendPeerChannelOpenToChild = () => {};
+      callee.sendPeerChannelAllowToChild = (m, cb) => cb(null);
       const answers = [];
-      const requester = {workerId: 19, ended: null, unloading: false, bindings: caller.bindings,
+      const requester = {workerId: 19, ended: null, unloading: false, bindings: Object.assign({}, caller.bindings),
         sendPeerChannelDenyToChild: (m) => answers.push(m), sendPeerChannelGrantToChild: (m) => answers.push(m)};
+      const auth = require('../../lib/auth');
+      const savedSource = auth.identitySource;
+      const LOG = require('../../lib/logger');
+      const savedE = LOG.E;
       const until = async (f) => { for (let i = 0; i < 400 && !f(); i++) await sleep(5); return f(); };
       try {
         identity.initSync({moduleDataPath: dir});
@@ -1256,9 +1261,48 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         assert.ok(await until(() => answers.length === 2), 'answered');
         assert.strictEqual(answers[1].errCode, 'SYSTEM_ERROR_USERDB_NA', JSON.stringify(answers[1]));
         assert.strictEqual(Object.values(broker.channelRegistry['19:12'].grants).length, 1, 'nothing recorded for it');
+        // --debug, which accepts every key, with a provider that lists its
+        // users (the single-identity profile): one it doesn't list is
+        // remembered, and granted (rememberUnlisted)
+        cli.setOptions({workerThread: true, mcpToolCallCost: 1, debug: true});
+        auth.identitySource = () => provider;
+        const unlistedDebug = ENTRY(19);
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(unlistedDebug)}, requester);
+        assert.ok(await until(() => answers.length === 3), 'answered');
+        assert.strictEqual(answers[2].errCode, undefined, JSON.stringify(answers[2]));
+        assert.strictEqual(Object.values(broker.channelRegistry['19:12'].grants).length, 2, 'recorded');
+        assert.strictEqual(identity.lookup(identity.idForKey(unlistedDebug.identityKey)).apiKey, unlistedDebug.identityKey, 'remembered');
+        cli.setOptions({workerThread: true, mcpToolCallCost: 1});
+        // the declarations asked again after the wait: a binding cleared
+        // while the provider was read is refused, nothing recorded
+        let release = null;
+        provider.entries = (cb) => { release = () => cb(null, listed.map((k, i) => ({apiKey: k, userName: `u${i}`, isAdmin: false, id: `stable-${i}`}))); };
+        const late = ENTRY(19);
+        listed.push(late.identityKey);
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(late)}, requester);
+        assert.ok(await until(() => release != null), 'the provider asked');
+        delete requester.bindings['d-callee'];
+        release();
+        assert.ok(await until(() => answers.length === 4), 'answered');
+        assert.strictEqual(answers[3].errCode, 'CTX_CALL_UNDECLARED', JSON.stringify(answers[3]));
+        assert.strictEqual(Object.values(broker.channelRegistry['19:12'].grants).length, 2, 'nothing recorded for it');
+        // a throw past the wait is logged, never an unhandled rejection
+        requester.bindings = Object.assign({}, caller.bindings);
+        provider.entries = (cb) => cb(null, listed.map((k, i) => ({apiKey: k, userName: `u${i}`, isAdmin: false, id: `stable-${i}`})));
+        const logged = [];
+        LOG.E = (e) => { logged.push(e); return e; };
+        delete broker.channelRegistry['19:12'];
+        callee.sendPeerChannelOpenToChild = () => { throw new Error('a test throw past the wait'); };
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(known)}, requester);
+        assert.ok(await until(() => logged.length === 1), 'logged');
+        assert.strictEqual(logged[0].message, 'a test throw past the wait');
       } finally {
+        LOG.E = savedE;
+        auth.identitySource = savedSource;
+        cli.setOptions({workerThread: true, mcpToolCallCost: 1});
         Object.assign(provider, savedProvider);
         delete callee.sendPeerChannelOpenToChild;
+        delete callee.sendPeerChannelAllowToChild;
         delete broker.channelRegistry['19:12'];
         saved.restore();
         tmp.remove(dir);
@@ -1950,6 +1994,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         lookup: listed, resolve: (id, provider, cb) => cb(null, listed(id))})};
       delete require.cache[brokerPath];
       const until = async (f) => { for (let i = 0; i < 400 && !f(); i++) await sleep(5); return f(); };
+      const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
+      const keptOptions = optionsNow();
       try {
         cli.setOptions({workerThread: true, peerChannelAuthRecheckSeconds: 0, peerChannelAuthLookupTimeoutMs: 2000});
         const PeerChannelBroker = require('../../lib/peer-channel-broker');
@@ -1980,16 +2026,20 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         revoked.clear();
         asked.length = 0;
         const again = open(b);
+        // (and a second device's record on the same pair, listed and granted:
+        // once the pair is closed it asks nothing)
+        b.grant('d2', 'k1', again.caller, again.callee, ['svc|act']);
         b.grant('d', 'k0-rotated-away', again.caller, again.callee, ['svc|act']);
         b.recheckGrants();
         assert.ok(await until(() => b.channelRegistry['51:52'] === undefined));
         assert.strictEqual(closes[1].closeReason, 'a key it was granted under is no longer its key');
         assert.deepStrictEqual(asked, []);
+        assert.strictEqual(b.recheckInFlight, 0);
       } finally {
         if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
         if (savedId != null) require.cache[idPath] = savedId; else delete require.cache[idPath];
         delete require.cache[brokerPath];
-        cli.setOptions({workerThread: false});
+        restoreOptions(keptOptions);
       }
     });
 
