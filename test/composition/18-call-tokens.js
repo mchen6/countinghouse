@@ -1216,6 +1216,152 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       }
     });
 
+    // C-meter-keys-3 (B-meter-keys (2)'s rule applied to channels): a grant
+    // record names the caller by id, so the caller's key is made known to the
+    // identity index first -- a key the provider lists but the index doesn't
+    // hold yet (a user added after start) is refilled with its stable id;
+    // one the provider doesn't list is refused, retryably, nothing recorded.
+    it('(C-meter-keys-3) a channel is granted once the caller\'s key is in the identity index; one that can\'t be made known is refused, nothing recorded', async () => {
+      const identity = require('../../lib/identity');
+      const tmp = require('../helpers/test-tmp');
+      const saved = identity.stateForTests();
+      const dir = tmp.mkdtemp('ch-c18-know-');
+      const provider = require('../../lib/auth').getAuthProvider();
+      const savedProvider = {authenticate: provider.authenticate, entries: provider.entries};
+      const listed = [];
+      provider.authenticate = (appKey, deviceID, serviceID, actionName, cb) => cb(null, {ok: true, userName: 'u', isAdmin: false});
+      provider.entries = (cb) => cb(null, listed.map((k, i) => ({apiKey: k, userName: `u${i}`, isAdmin: false, id: `stable-${i}`})));
+      callee.sendPeerChannelOpenToChild = () => {};
+      callee.sendPeerChannelAllowToChild = (m, cb) => cb(null);
+      const answers = [];
+      const requester = {workerId: 19, ended: null, unloading: false, bindings: Object.assign({}, caller.bindings),
+        sendPeerChannelDenyToChild: (m) => answers.push(m), sendPeerChannelGrantToChild: (m) => answers.push(m)};
+      const auth = require('../../lib/auth');
+      const savedSource = auth.identitySource;
+      const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
+      const keptOptions = optionsNow();
+      const LOG = require('../../lib/logger');
+      const savedE = LOG.E;
+      const until = async (f) => { for (let i = 0; i < 400 && !f(); i++) await sleep(5); return f(); };
+      try {
+        identity.initSync({moduleDataPath: dir});
+        // (the refill throttle's waits taken at once; its 10 s deadline kept)
+        saved.setClock({now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms >= 10000 ? ms : 0)});
+        const known = ENTRY(19);
+        listed.push(known.identityKey);
+        assert.strictEqual(identity.lookup(identity.idFor({id: 'stable-0'}, known.identityKey)), null, 'not in the index yet');
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(known)}, requester);
+        assert.ok(await until(() => answers.length === 1), 'answered');
+        assert.strictEqual(answers[0].errCode, undefined, JSON.stringify(answers[0]));
+        const records = Object.values(broker.channelRegistry['19:12'].grants);
+        assert.strictEqual(records.length, 1);
+        assert.strictEqual(records[0].id, identity.idFor({id: 'stable-0'}, known.identityKey), 'named by the stable id the refill found');
+        assert.strictEqual(identity.lookup(records[0].id).apiKey, known.identityKey, 'the re-check finds the key by the id');
+        // a key the provider doesn't list (a lagging view): refused, retryably
+        const unknown = ENTRY(19);
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(unknown)}, requester);
+        assert.ok(await until(() => answers.length === 2), 'answered');
+        assert.strictEqual(answers[1].errCode, 'SYSTEM_ERROR_USERDB_NA', JSON.stringify(answers[1]));
+        assert.strictEqual(Object.values(broker.channelRegistry['19:12'].grants).length, 1, 'nothing recorded for it');
+        // --debug, which accepts every key, with a provider that lists its
+        // users (the single-identity profile): one it doesn't list is
+        // remembered, and granted (rememberUnlisted)
+        cli.setOptions(Object.assign({}, optionsNow(), {debug: true}));
+        auth.identitySource = () => provider;
+        const unlistedDebug = ENTRY(19);
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(unlistedDebug)}, requester);
+        assert.ok(await until(() => answers.length === 3), 'answered');
+        assert.strictEqual(answers[2].errCode, undefined, JSON.stringify(answers[2]));
+        assert.strictEqual(Object.values(broker.channelRegistry['19:12'].grants).length, 2, 'recorded');
+        assert.strictEqual(identity.lookup(identity.idForKey(unlistedDebug.identityKey)).apiKey, unlistedDebug.identityKey, 'remembered');
+        restoreOptions(keptOptions);
+        // the declarations asked again after the wait: a binding whose
+        // declarations changed while the provider was read is refused,
+        // nothing recorded
+        let release = null;
+        provider.entries = (cb) => { release = () => cb(null, listed.map((k, i) => ({apiKey: k, userName: `u${i}`, isAdmin: false, id: `stable-${i}`}))); };
+        const late = ENTRY(19);
+        listed.push(late.identityKey);
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(late)}, requester);
+        assert.ok(await until(() => release != null), 'the provider asked');
+        requester.bindings['d-callee'] = {identity: null, module: 'token-forge', targets: new Set(['d-other|svc|bump'])};
+        release();
+        assert.ok(await until(() => answers.length === 4), 'answered');
+        assert.strictEqual(answers[3].errCode, 'CTX_CALL_UNDECLARED', JSON.stringify(answers[3]));
+        assert.strictEqual(Object.values(broker.channelRegistry['19:12'].grants).length, 2, 'nothing recorded for it');
+        // a throw past the wait is logged, never an unhandled rejection; the
+        // caller is refused with a catalogued, retryable code, and the
+        // channel it began undone
+        requester.bindings = Object.assign({}, caller.bindings);
+        provider.entries = (cb) => cb(null, listed.map((k, i) => ({apiKey: k, userName: `u${i}`, isAdmin: false, id: `stable-${i}`})));
+        const logged = [];
+        LOG.E = (e) => { logged.push(e); return e; };
+        delete broker.channelRegistry['19:12'];
+        broker.forgetPair('19:12');
+        callee.sendPeerChannelOpenToChild = () => { throw new Error('a test throw past the wait'); };
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(known)}, requester);
+        assert.ok(await until(() => answers.length === 5), 'answered');
+        assert.strictEqual(answers[4].errCode, 'SYSTEM_ERROR_USERDB_NA', JSON.stringify(answers[4]));
+        assert.strictEqual(logged.length, 1);
+        assert.strictEqual(logged[0].message, 'a test throw past the wait');
+        assert.strictEqual(broker.channelRegistry['19:12'], undefined, 'the half-made channel undone');
+        // the same after the callee got its end: undone, and the port closed,
+        // so the callee's end sees the close
+        let calleeEnd = null;
+        let endClosed = false;
+        callee.sendPeerChannelOpenToChild = (m, port2) => { calleeEnd = port2; port2.on('close', () => { endClosed = true; }); };
+        const grantSend = requester.sendPeerChannelGrantToChild;
+        requester.sendPeerChannelGrantToChild = () => { throw new Error('a test throw at the caller\'s grant'); };
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(known)}, requester);
+        assert.ok(await until(() => answers.length === 6), 'answered');
+        requester.sendPeerChannelGrantToChild = grantSend;
+        assert.strictEqual(answers[5].errCode, 'SYSTEM_ERROR_USERDB_NA', JSON.stringify(answers[5]));
+        assert.strictEqual(broker.channelRegistry['19:12'], undefined, 'undone');
+        assert.ok(calleeEnd != null, 'the callee got its end');
+        assert.ok(await until(() => endClosed), 'the callee\'s end closed');
+        callee.sendPeerChannelOpenToChild = () => {};
+        // know() waited (a key the index didn't hold): the access check is
+        // asked again after it, and a grant revoked meanwhile gets no channel;
+        // a key already in the index is asked once
+        const {CountinghouseError} = require('../../lib/countinghouse-error');
+        let asks = 0;
+        provider.authenticate = (appKey, deviceID, serviceID, actionName, cb) => {
+          asks += 1;
+          cb(null, asks === 1 ? {ok: true, userName: 'u', isAdmin: false} : {ok: false, userName: 'u', isAdmin: false, err: new CountinghouseError('USER_HAS_NO_DEVICE')});
+        };
+        const revokedMeanwhile = ENTRY(19);
+        listed.push(revokedMeanwhile.identityKey);
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(revokedMeanwhile)}, requester);
+        assert.ok(await until(() => answers.length === 7), 'answered');
+        assert.strictEqual(answers[6].errCode, 'USER_HAS_NO_DEVICE', JSON.stringify(answers[6]));
+        assert.strictEqual(asks, 2, 'asked again after the wait');
+        assert.strictEqual(broker.channelRegistry['19:12'], undefined, 'no channel');
+        asks = 0;
+        provider.authenticate = (appKey, deviceID, serviceID, actionName, cb) => { asks += 1; cb(null, {ok: true, userName: 'u', isAdmin: false}); };
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(known)}, requester);
+        assert.ok(await until(() => answers.length === 8), 'answered');
+        assert.strictEqual(answers[7].errCode, undefined, JSON.stringify(answers[7]));
+        assert.strictEqual(asks, 1, 'an indexed key is asked once');
+        // the identity source throwing is a refusal, never "no provider"
+        auth.identitySource = () => { throw new Error('a test throw from the identity source'); };
+        const unknownSource = ENTRY(19);
+        broker.handleRequest({targetDeviceID: 'd-callee', token: tokens().issue(unknownSource)}, requester);
+        assert.ok(await until(() => answers.length === 9), 'answered');
+        assert.strictEqual(answers[8].errCode, 'SYSTEM_ERROR_USERDB_NA', JSON.stringify(answers[8]));
+        assert.strictEqual(identity.lookup(identity.idForKey(unknownSource.identityKey)), null, 'not remembered');
+      } finally {
+        LOG.E = savedE;
+        auth.identitySource = savedSource;
+        restoreOptions(keptOptions);
+        Object.assign(provider, savedProvider);
+        delete callee.sendPeerChannelOpenToChild;
+        delete callee.sendPeerChannelAllowToChild;
+        delete broker.channelRegistry['19:12'];
+        saved.restore();
+        tmp.remove(dir);
+      }
+    });
+
     // Round 3 (3, 4): an invoke's id is an integer in range, on the
     // announcement and on the match; the id delivered is the announced one.
     it('(#202-r3-3/4) an id that is not an integer in range is not held, and a match by one is refused; the announced id is delivered', async () => {
@@ -1883,37 +2029,83 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       }
     });
 
-    it('(T4-review) two keys of one identity on a pair: revoking the first closes the channel', async () => {
+    // (C-meter-keys-3: the record names the caller by id and holds each key
+    // it was granted under by its meterId; the re-check asks the provider for
+    // the key the identity index lists for the id)
+    it('(T4-review) a re-check asks for the key the index lists for the id: kept while granted, closed once revoked, closed for a key no longer the id\'s', async () => {
       const authPath = require.resolve('../../lib/user-auth');
       const idPath = require.resolve('../../lib/identity');
       const brokerPath = require.resolve('../../lib/peer-channel-broker');
       const savedAuth = require.cache[authPath];
       const savedId = require.cache[idPath];
       const revoked = new Set();
+      const asked = [];
       require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,
-        exports: (a, b, deviceID, appKey, c, d, localCB, cb) => setImmediate(() => cb(revoked.has(appKey) ? Object.assign(new Error('revoked'), {code: 'USER_HAS_NO_DEVICE'}) : null))};
-      require.cache[idPath] = {id: idPath, filename: idPath, loaded: true, exports: Object.assign({}, require('../../lib/identity'), {idForKey: () => 'u_same'})};
+        exports: (a, b, deviceID, appKey, c, d, localCB, cb) => { asked.push(appKey); setImmediate(() => cb(revoked.has(appKey) ? Object.assign(new Error('revoked'), {code: 'USER_HAS_NO_DEVICE'}) : null)); }};
+      const listed = (id) => (id === 'u_same' ? {apiKey: 'k1', userName: null, isAdmin: false} : null);
+      // (the index's answer at once, or -- as on a miss -- later)
+      let later = false;
+      require.cache[idPath] = {id: idPath, filename: idPath, loaded: true, exports: Object.assign({}, require('../../lib/identity'), {idForKey: () => 'u_same',
+        lookup: listed, resolve: (id, provider, cb) => (later ? setImmediate(() => cb(null, listed(id))) : cb(null, listed(id)))})};
       delete require.cache[brokerPath];
+      const until = async (f) => { for (let i = 0; i < 400 && !f(); i++) await sleep(5); return f(); };
+      const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
+      const keptOptions = optionsNow();
       try {
-        cli.setOptions({workerThread: true, peerChannelAuthRecheckSeconds: 0, peerChannelAuthLookupTimeoutMs: 500});
+        cli.setOptions({workerThread: true, peerChannelAuthRecheckSeconds: 0, peerChannelAuthLookupTimeoutMs: 2000});
         const PeerChannelBroker = require('../../lib/peer-channel-broker');
-        const sent = [];
-        const callee = {workerId: 52, ended: null, unloading: false, sendPeerChannelOpenToChild: () => {}, sendPeerChannelAllowToChild: (m, cb) => cb(null), sendPeerInvalidateToChild: () => {}};
-        const caller = {workerId: 51, ended: null, unloading: false, sendPeerChannelGrantToChild: (m) => sent.push(m), sendPeerInvalidateToChild: () => {}};
-        const b = new PeerChannelBroker({deviceMap: {d: callee}});
-        b.grant('d', 'k1', caller, callee, ['svc|act']);
-        b.grant('d', 'k2', caller, callee, ['svc|act']);
+        const open = (b) => {
+          const callee = {workerId: 52, ended: null, unloading: false, sendPeerChannelOpenToChild: () => {}, sendPeerChannelAllowToChild: (m, cb) => cb(null), sendPeerInvalidateToChild: () => {}};
+          const caller = {workerId: 51, ended: null, unloading: false, sendPeerChannelGrantToChild: () => {}, sendPeerInvalidateToChild: () => {}};
+          b.grant('d', 'k1', caller, callee, ['svc|act']);
+          return {caller, callee};
+        };
+        const b = new PeerChannelBroker({deviceMap: {}});
+        const closes = [];
+        const realClose = b.closeRevoked.bind(b);
+        b.closeRevoked = (pairKey, entry, grant, err) => { closes.push(err); return realClose(pairKey, entry, grant, err); };
+        open(b);
         const grants = b.channelRegistry['51:52'].grants;
         assert.strictEqual(Object.keys(grants).length, 1, 'one record per identity and device');
+        assert.ok(!JSON.stringify([...Object.values(grants)[0].meters]).includes('k1'), 'the record holds no key');
+        b.recheckGrants();
+        assert.ok(await until(() => b.recheckInFlight === 0));
+        assert.deepStrictEqual(asked, ['k1'], 'asked for the listed key');
+        assert.ok(b.channelRegistry['51:52'] != null, 'granted: kept');
         revoked.add('k1');
         b.recheckGrants();
-        await sleep(100);
-        assert.strictEqual(b.channelRegistry['51:52'], undefined, 'the channel stayed open after the first key was revoked');
+        assert.ok(await until(() => b.channelRegistry['51:52'] === undefined), 'the channel stayed open after its key was revoked');
+        assert.strictEqual(closes[0].code, 'USER_HAS_NO_DEVICE', 'closed by the provider\'s answer');
+        // a key granted under the id that is no longer the id's (rotated):
+        // closed before the provider is asked
+        revoked.clear();
+        asked.length = 0;
+        const again = open(b);
+        // (and a second device's record on the same pair, listed and granted:
+        // once the pair is closed it asks nothing)
+        b.grant('d2', 'k1', again.caller, again.callee, ['svc|act']);
+        b.grant('d', 'k0-rotated-away', again.caller, again.callee, ['svc|act']);
+        b.recheckGrants();
+        assert.ok(await until(() => b.channelRegistry['51:52'] === undefined));
+        assert.strictEqual(closes[1].closeReason, 'a key it was granted under is no longer its key');
+        assert.deepStrictEqual(asked, []);
+        assert.strictEqual(b.recheckInFlight, 0);
+        // the same with the index answering later: the other record's answer
+        // comes once the pair is closed, and asks nothing
+        later = true;
+        const third = open(b);
+        b.grant('d2', 'k1', third.caller, third.callee, ['svc|act']);
+        b.grant('d', 'k0-rotated-away', third.caller, third.callee, ['svc|act']);
+        b.recheckGrants();
+        assert.ok(await until(() => b.recheckInFlight === 0));
+        assert.strictEqual(b.channelRegistry['51:52'], undefined);
+        assert.deepStrictEqual(asked, []);
+        assert.strictEqual(closes.length, 3, 'closed once');
       } finally {
         if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
         if (savedId != null) require.cache[idPath] = savedId; else delete require.cache[idPath];
         delete require.cache[brokerPath];
-        cli.setOptions({workerThread: false});
+        restoreOptions(keptOptions);
       }
     });
 
@@ -1923,6 +2115,13 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const savedAuth = require.cache[authPath];
       let lookups = 0;
       require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: () => { lookups++; }};   // never answers
+      // (the record names the caller by id; the index lists its key)
+      const idPath = require.resolve('../../lib/identity');
+      const savedId = require.cache[idPath];
+      require.cache[idPath] = {id: idPath, filename: idPath, loaded: true, exports: Object.assign({}, require('../../lib/identity'), {
+        lookup: (id) => (id === 'u_k' ? {apiKey: 'k', userName: null, isAdmin: false} : null),
+        resolve: (id, provider, cb) => cb(null, id === 'u_k' ? {apiKey: 'k', userName: null, isAdmin: false} : null)})};
+      const record = () => ({g: {id: 'u_k', deviceID: 'd', meters: new Set([require('../../lib/key-fingerprint').meterId('k')])}});
       delete require.cache[brokerPath];
       try {
         cli.setOptions({workerThread: true, peerChannelAuthRecheckSeconds: 0, peerChannelAuthLookupTimeoutMs: 200});
@@ -1930,17 +2129,18 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         const broker = new PeerChannelBroker({deviceMap: {}});
         const closed = [];
         broker.closeRevoked = (pairKey) => { closed.push(pairKey); delete broker.channelRegistry[pairKey]; };
-        broker.channelRegistry['21:22'] = {callerWM: {workerId: 21}, calleeWM: {workerId: 22}, grants: {g: {appKey: 'k', deviceID: 'd'}}};
+        broker.channelRegistry['21:22'] = {callerWM: {workerId: 21}, calleeWM: {workerId: 22}, grants: record()};
         broker.recheckGrants();
         await sleep(400);
         assert.deepStrictEqual(closed, ['21:22'], 'the channel behind a hung lookup stayed open');
         assert.strictEqual(broker.recheckInFlight, 0, 'a hung lookup left a re-check in flight');
-        broker.channelRegistry['23:24'] = {callerWM: {workerId: 23}, calleeWM: {workerId: 24}, grants: {g: {appKey: 'k', deviceID: 'd'}}};
+        broker.channelRegistry['23:24'] = {callerWM: {workerId: 23}, calleeWM: {workerId: 24}, grants: record()};
         const before = lookups;
         broker.recheckGrants();
         assert.ok(lookups > before, 'the next re-check did not run');
       } finally {
         if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
+        if (savedId != null) require.cache[idPath] = savedId; else delete require.cache[idPath];
         delete require.cache[brokerPath];
         cli.setOptions({workerThread: false});
       }
