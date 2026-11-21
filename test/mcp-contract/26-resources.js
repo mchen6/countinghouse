@@ -718,6 +718,27 @@ describe('mcp-contract 26: module resources (M7)', function() {
     }
   });
 
+  // (the limiter PR's medium, 2: these two called the gate's removed
+  // error() -- a TypeError, answered -32603 -- once their caller was limited)
+  it('a rate-limited caller\'s countinghouse_overview and the profile\'s authoring tools are refused RATE_LIMIT_EXCEEDED, as every tool', async () => {
+    const SETTINGS = path.join(home, 'settings.json');
+    const savedProfile = {singleIdentity: options.singleIdentity, settingsFile: options.settingsFile};
+    limited = true;
+    try {
+      require('../../lib/mcp/tool-registry').forgetGrants();
+      for (const [name, single] of [['countinghouse_overview', false], ['countinghouse_validate_plan', true]]) {
+        if (single) Object.assign(options, {singleIdentity: true, settingsFile: SETTINGS});
+        const r = await ask('tools/call', KEY_A, {name, arguments: {}});
+        assert.strictEqual(r.error, undefined, `${name}: ${JSON.stringify(r)}`);
+        assert.strictEqual(r.result && r.result.isError, true, `${name}: ${JSON.stringify(r)}`);
+        assert.strictEqual(r.result._meta && r.result._meta['countinghouse/code'], 'RATE_LIMIT_EXCEEDED', `${name}: ${JSON.stringify(r)}`);
+      }
+    } finally {
+      limited = false;
+      Object.assign(options, savedProfile);
+    }
+  });
+
   it('M6\'s stored results are their own path: a countinghouse://r/ URI never reaches a module', async () => {
     invoked.length = 0;
     const r = await read(KEY_A, 'countinghouse://r/0123456789abcdef0123456789abcdef');

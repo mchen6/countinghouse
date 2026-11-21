@@ -161,6 +161,9 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
     let authAnswer = null;
     let invoked = [];
     let app = null;
+    // the per-key limiter, as the gate asks it (lib/rate-limit-gate.js)
+    const spent = [];
+    let limited = false;
     const userAuthId = require.resolve('../../lib/user-auth');
     const userRouteId = require.resolve('../../lib/routes/user');
     const dm = {
@@ -178,6 +181,11 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       // (one in this thread names it; a worker's crosses as its code alone);
       // a device gone between the route's check and the dispatch
       invokeDeviceAction(deviceID, serviceID, actionName, args, session) {
+        // (its per-key limit first, as the real one's: lib/countinghouse-interface.js)
+        if (limited) {
+          spent.push(session.appKey);
+          return session.callbackWithoutTimer(require('../../lib/countinghouse-error').setRetryAfter(new CountinghouseError('RATE_LIMIT_EXCEEDED'), 1500, 60000));
+        }
         invoked.push([deviceID, serviceID, actionName]);
         // a listed device still loading (shared mode's startup): its own answer
         if (actionName === 'still-loading') return session.callbackWithoutTimer(new CountinghouseError('DEVICE_NOT_FOUND', deviceID));
@@ -193,7 +201,8 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       },
       getDeviceSpec: (deviceID, session) => session.callbackWithoutTimer(null, {device: {serviceList: {}}}),
       getDeviceSchema: (deviceID, p, session) => session.callbackWithoutTimer(null, {}),
-      getDevicePackageInfo: (deviceID, cb) => cb(null, {name: 'x', version: '1.0.0'})
+      getDevicePackageInfo: (deviceID, cb) => cb(null, {name: 'x', version: '1.0.0'}),
+      rateLimit: (key, cb) => { spent.push(key); cb(null, limited ? {limited: true, timeLeft: 1500, windowMs: 60000} : {limited: false}); }
     };
 
     before(() => {
@@ -206,15 +215,12 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
         return cb(null, new Session(req, res, 'u', appKey, 0, deviceID, null, null));
       }};
       delete require.cache[userRouteId];
-      const rateLimitGate = require('../../lib/rate-limit-gate');
-      const savedGuard = rateLimitGate.guard;
-      rateLimitGate.guard = (c, session, res, next) => next();
-      rateLimitGate.restore = () => { rateLimitGate.guard = savedGuard; };
       const user = require('../../lib/routes/user');
       app = express();
       app.use(express.json());
       const devices = express.Router({mergeParams: true});
-      app.use('/devices/:deviceID', user, devices);
+      // (after every device route, as lib/route-manager.js mounts it)
+      app.use('/devices/:deviceID', user(cdif), devices, require('../../lib/routes/device-fallback')(cdif));
       devices.use('/invoke-action', require('../../lib/routes/invoke-action')(null, cdif));
       devices.use('/get-spec', require('../../lib/routes/get-spec')(null, cdif));
       devices.use('/schema', require('../../lib/routes/schema')(null, cdif));
@@ -225,7 +231,6 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       visibility.configure(savedDeps);
       if (savedUserAuth != null) require.cache[userAuthId] = savedUserAuth; else delete require.cache[userAuthId];
       delete require.cache[userRouteId];
-      require('../../lib/rate-limit-gate').restore();
       verdict.forget(LISTED);
     });
     afterEach(() => { authAnswer = null; visibility.show(Object.values(MODULE_OF)); dm.deviceMap[GONE_LATE] = device('gone-mod', null); });
@@ -258,6 +263,23 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
         assert.deepStrictEqual({missing, unlisted, hidden, ungranted}, {missing: expected, unlisted: expected, hidden: expected, ungranted: expected});
         assert.deepStrictEqual(invoked, [], 'nothing dispatched');
       });
+
+      // #512's high, 3: one unit per request, whatever it asked (invoke-
+      // action's dispatched call spends its unit in invokeDeviceAction, not
+      // here: its refusals are counted by validation 33's test above)
+      if (route.name !== 'invoke-action') {
+        it(`${route.name}: exactly one per-key unit per request under the limit, refused or answered`, async () => {
+          const units = async(deviceID) => { spent.length = 0; await call(route, deviceID); return spent.length; };
+          const seen = {missing: await units(NOWHERE), unlisted: await units(PART), listed: await units(LISTED)};
+          visibility.hide(['listed-mod']);
+          seen.hidden = await units(LISTED);
+          visibility.show(['listed-mod']);
+          authAnswer = new CountinghouseError('USER_HAS_NO_DEVICE');
+          seen.ungranted = await units(LISTED);
+          authAnswer = null;
+          assert.deepStrictEqual(seen, {missing: 1, unlisted: 1, listed: 1, hidden: 1, ungranted: 1});
+        });
+      }
     }
 
     // #482's high, round 2, 6: decided at the route, before any limiter
@@ -271,6 +293,100 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       assert.deepStrictEqual([loading.status, loading.body.code], [404, 'DEVICE_NOT_FOUND'], 'the medium on round 1, 6: not folded into "not listed to you"');
     });
 
+
+    // the limiter PR's medium, 3: a resolved key refused before the
+    // dispatch (not granted, not listed, a request-shape error) spends its
+    // per-key unit as a dispatched call does in invokeDeviceAction -- once;
+    // over its limit, each answers RATE_LIMIT_EXCEEDED alike (#482: one
+    // answer per level)
+    it('invoke-action: a resolved key refused before the dispatch spends one per-key unit; over its limit every such refusal is RATE_LIMIT_EXCEEDED, byte for byte', async () => {
+      invoked = [];
+      spent.length = 0;
+      const each = async() => {
+        const missing = await call(ROUTES[0], NOWHERE);
+        const unlisted = await call(ROUTES[0], PART);
+        authAnswer = new CountinghouseError('USER_HAS_NO_DEVICE');
+        const ungranted = await call(ROUTES[0], LISTED);
+        authAnswer = null;
+        verdict.set(LISTED, [[SERVICE, 'hidden-act']]);
+        const unusable = await call(ROUTES[0], LISTED, {serviceID: SERVICE, actionName: 'hidden-act', input: {}});
+        verdict.forget(LISTED);
+        const shape = await call(ROUTES[0], LISTED, {actionName: 'act', input: {}});
+        return {missing, unlisted, ungranted, unusable, shape};
+      };
+      const under = await each();
+      assert.deepStrictEqual(spent, ['k', 'k', 'k', 'k', 'k'], 'one unit each, by the resolved key');
+      assert.strictEqual(JSON.parse(under.missing).body.code, 'MODULE_NOT_LISTED', 'under the limit: the one answer');
+      limited = true;
+      let over;
+      try {
+        over = await each();
+      } finally {
+        limited = false;
+      }
+      const codes = Object.values(over).map((r) => [JSON.parse(r).status, JSON.parse(r).body.code]);
+      assert.deepStrictEqual(codes, codes.map(() => [429, 'RATE_LIMIT_EXCEEDED']), JSON.stringify(over));
+      assert.strictEqual(new Set(Object.values(over)).size, 1, 'byte for byte');
+      assert.deepStrictEqual(invoked, [], 'nothing dispatched');
+    });
+
+    // (the medium on it: get-spec, schema and add-job are limited first, as
+    // package-info is, so no device route answers by reason over the limit)
+    for (const route of ROUTES) {
+      it(`${route.name}: over the key's limit, missing, not listed, hidden, not granted and listed are one answer, byte for byte: RATE_LIMIT_EXCEEDED 429`, async () => {
+        invoked = [];
+        limited = true;
+        let got;
+        try {
+          const missing = await call(route, NOWHERE);
+          const unlisted = await call(route, PART);
+          visibility.hide(['listed-mod']);
+          const hidden = await call(route, LISTED);
+          visibility.show(['listed-mod']);
+          authAnswer = new CountinghouseError('USER_HAS_NO_DEVICE');
+          const ungranted = await call(route, LISTED);
+          authAnswer = null;
+          const listed = await call(route, LISTED);
+          got = {missing, unlisted, hidden, ungranted, listed};
+        } finally {
+          limited = false;
+        }
+        const first = JSON.parse(got.missing);
+        assert.deepStrictEqual([first.status, first.body.code], [429, 'RATE_LIMIT_EXCEEDED'], JSON.stringify(got));
+        assert.strictEqual(new Set(Object.values(got)).size, 1, JSON.stringify(got));
+        assert.deepStrictEqual(invoked, [], 'nothing dispatched');
+      });
+    }
+
+    // #512's high, 1: a path no device route answers, or a method a route
+    // doesn't take, under a device the key is granted: one unit, and the one
+    // JSON answer an ungranted device gets -- never Express's HTML 404
+    // (unlimited, and telling a key its own grants)
+    it('a sub-path no route serves, or a method a route doesn\'t take: one unit, the one answer, granted or not', async () => {
+      const want = JSON.stringify({status: 404, body: {code: 'MODULE_NOT_LISTED', message: CODES.MODULE_NOT_LISTED.en, kind: 'caller'}});
+      const send = async(method, p) => {
+        spent.length = 0;
+        const res = await request(app)[method](p).set('X-CH-Key', 'k');
+        return {answer: JSON.stringify({status: res.status, body: res.body}), units: spent.length};
+      };
+      const shapes = {
+        unrouted: await send('get', `/devices/${LISTED}/whatever`),
+        bare: await send('get', `/devices/${LISTED}`),
+        wrongMethod: await send('get', `/devices/${LISTED}/invoke-action`),
+        wrongMethodJob: await send('get', `/devices/${LISTED}/add-job`)
+      };
+      authAnswer = new CountinghouseError('USER_HAS_NO_DEVICE');
+      shapes.ungranted = await send('get', `/devices/${LISTED}/whatever`);
+      authAnswer = null;
+      for (const [k, v] of Object.entries(shapes)) assert.deepStrictEqual(v, {answer: want, units: 1}, k);
+      limited = true;
+      try {
+        const over = [await send('get', `/devices/${LISTED}/whatever`), await send('get', `/devices/${LISTED}/invoke-action`)];
+        for (const v of over) assert.deepStrictEqual([JSON.parse(v.answer).status, JSON.parse(v.answer).body.code], [429, 'RATE_LIMIT_EXCEEDED']);
+      } finally {
+        limited = false;
+      }
+    });
 
     it('invoke-action: a device gone between the check and the dispatch answers the same one answer', async () => {
       const late = await call(ROUTES[0], GONE_LATE);

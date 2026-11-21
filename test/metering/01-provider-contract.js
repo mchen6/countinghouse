@@ -78,6 +78,27 @@ for (const [name, kind] of Object.entries(PROVIDERS)) {
       } finally { p.close(); }
     });
 
+    // the limiter PR's medium, 5: a raw API key is never a limiter's key
+    // (CLAUDE.md: a Map key, a Redis key, a long-lived structure) -- the
+    // limiter is handed the key's fingerprint, meterId
+    it('rateLimit hands its limiter the key\'s fingerprint, never the key', async function() {
+      const p = await kind.make(null, 2);
+      if (p == null) return this.skip();
+      try {
+        const {meterId} = require('../../lib/key-fingerprint');
+        const real = p._rateLimiter;
+        const seen = [];
+        p._rateLimiter = (id, cb) => { seen.push(id); return real(id, cb); };
+        for (let i = 0; i < 3; i++) await call(p, 'rateLimit', KEY);
+        assert.deepStrictEqual(seen, [meterId(KEY), meterId(KEY), meterId(KEY)]);
+        assert.strictEqual((await call(p, 'rateLimit', KEY)).result.limited, true, 'still limited by the fingerprint');
+        if (p.redisClient != null) {
+          const keys = await new Promise((resolve) => p.redisClient.keys('meteringRateLimiter*', (err, k) => resolve(k || [])));
+          assert.ok(keys.length > 0 && keys.every((k) => !k.includes(KEY)), JSON.stringify(keys));
+        }
+      } finally { p.close(); }
+    });
+
     it('limits the calls a key makes in a window, when a limit is set', async function() {
       const p = await kind.make(null, 2);
       if (p == null) return this.skip();
