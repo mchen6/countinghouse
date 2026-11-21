@@ -118,7 +118,8 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
     try {
       const r = mip.checkStartPlan([here], []);
       assert.deepStrictEqual(r.tops, [], `kept: ${JSON.stringify(r.tops)}`);
-      assert.deepStrictEqual(r.refused, [{name: 'ch-pack-here', code: 'MODULE_PATH_OUTSIDE_ROOT'}]);
+      // (named by the package at the real path judged)
+      assert.deepStrictEqual(r.refused, [{name: '@t/away', code: 'MODULE_PATH_OUTSIDE_ROOT'}]);
     } finally {
       fs.realpathSync.native = native;
       fs.rmSync(outside, {recursive: true, force: true});

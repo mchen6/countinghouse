@@ -132,14 +132,20 @@ describe('module-loading 45: registration in a startup turn (C-startup-order, th
     assert.strictEqual(dm.registerFromSpec(wms.a), false);
   });
 
-  it('the pinned index names the earliest holder while the start\'s discovery lasts, the last spawner after', () => {
+  it('the order holds while the start\'s discovery lasts, and ends with it', () => {
     const mm = Object.create(ModuleManager.prototype);
     mm.startupRanks = new Map([['a', 0], ['b', 1]]);
     assert.strictEqual(mm.startupEarlier('a', 'b'), true);
     assert.strictEqual(mm.startupEarlier('b', 'a'), false);
     assert.strictEqual(mm.startupEarlier('a', 'elsewhere'), true, 'a load in place');
     assert.strictEqual(mm.startupEarlier('elsewhere', 'a'), false);
-    mm.startupRanks = null;
+    // (the start's discovery ending clears it: the last listed module discovered)
+    mm.startupDiscovery(['a', 'b']);
+    mm.emit = () => {};
+    mm.moduleDiscovered('a');
+    assert.strictEqual(mm.startupEarlier('a', 'b'), true, 'b still to come');
+    mm.moduleDiscovered('b');
+    assert.strictEqual(mm.startupRanks, null);
     assert.strictEqual(mm.startupEarlier('a', 'b'), false, 'after discovery: no order');
   });
 });
