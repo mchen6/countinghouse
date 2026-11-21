@@ -116,6 +116,48 @@ describe('stdio 51: the authoring tools in the single-identity profile (B-own-ru
     assert.ok(!JSON.stringify(r).includes('sk-very-secret'), 'the linked file\'s text');
   });
 
+  // (the reviewer's high on #499, 1) package.json linked, or a second name
+  // of, a JSON file elsewhere: refused before anything is read, its name
+  // never in the answer
+  it('validate_module reads nothing of a package.json that is a link or a second name of another file', async () => {
+    const other = path.join(home, 'someone-elses.json');
+    fs.writeFileSync(other, JSON.stringify({name: 'LEAKED-NAME-FROM-HOME'}));
+    const linked = writeModule(path.join(work, 'pkg-link'));
+    fs.rmSync(path.join(linked, 'package.json'));
+    fs.symlinkSync(other, path.join(linked, 'package.json'));
+    const twice = writeModule(path.join(work, 'pkg-twice'));
+    fs.rmSync(path.join(twice, 'package.json'));
+    fs.linkSync(other, path.join(twice, 'package.json'));
+    for (const dir of [linked, twice]) {
+      const r = resultOf(await call('countinghouse_validate_module', {path: dir}));
+      assert.strictEqual(r.structuredContent.ok, false, JSON.stringify(r));
+      assert.ok(!JSON.stringify(r).includes('LEAKED-NAME'), `${dir}: ${JSON.stringify(r)}`);
+    }
+  });
+
+  // (the reviewer's high on #499, 2) a FIFO never holds the runtime
+  it('validate_module never opens a FIFO in the folder', async function() {
+    if (process.platform === 'win32') this.skip();
+    const dir = writeModule(path.join(work, 'fifo'));
+    fs.rmSync(path.join(dir, 'api.json'));
+    require('child_process').execFileSync('mkfifo', [path.join(dir, 'api.json')]);
+    const r = resultOf(await call('countinghouse_validate_module', {path: dir}));
+    assert.strictEqual(r.structuredContent.ok, false);
+    assert.ok(r.structuredContent.problems.some((p) => /neither a file nor a folder \(api\.json\)/.test(p.message)), JSON.stringify(r.structuredContent));
+    // and the runtime still answers
+    assert.ok((await io.request({jsonrpc: '2.0', id: id++, method: 'tools/list', params: {}}, 10000)).result != null);
+  });
+
+  // (the reviewer's high on #499, 3) a parse error's text never reaches the
+  // answer, past a ';' or a line break too
+  it('validate_module names a file that does not parse, never its text', async () => {
+    const dir = writeModule(path.join(work, 'bad-json'));
+    fs.writeFileSync(path.join(dir, 'api.json'), 'x;SECRET-A\nSECRET-B');
+    const r = resultOf(await call('countinghouse_validate_module', {path: dir}));
+    assert.strictEqual(r.structuredContent.ok, false);
+    assert.ok(!/SECRET/.test(JSON.stringify(r)), JSON.stringify(r));
+  });
+
   it('validate_module refuses a folder that holds the home', async () => {
     const r = resultOf(await call('countinghouse_validate_module', {path: path.dirname(home)}));
     assert.strictEqual(r._meta['countinghouse/code'], 'OWN_MODULE_PATH_REFUSED', JSON.stringify(r));
@@ -132,10 +174,10 @@ describe('stdio 51: the authoring tools in the single-identity profile (B-own-ru
     // a folder no shell would read plainly is left out of the command
     const odd = writeModule(path.join(work, 'odd$(x)'));
     const o = resultOf(await call('countinghouse_load_module', {path: odd, name: 'my-own-tool'}));
-    assert.strictEqual(o.content[0].text, 'Loading your own module needs your confirmation: run `ch-local add-module <its folder>` in your own terminal.');
+    assert.strictEqual(o.content[0].text, 'Loading your own module needs your confirmation: run `ch-local add-module "<its folder>"` in your own terminal.');
     // (the medium, 8) a character that changes how the command is shown
     const bidi = resultOf(await call('countinghouse_load_module', {path: `${work}/ok\u202Eevil`, name: 'my-own-tool'}));
-    assert.strictEqual(bidi.content[0].text, 'Loading your own module needs your confirmation: run `ch-local add-module <its folder>` in your own terminal.');
+    assert.strictEqual(bidi.content[0].text, 'Loading your own module needs your confirmation: run `ch-local add-module "<its folder>"` in your own terminal.');
   });
 
   tmp.hooks();

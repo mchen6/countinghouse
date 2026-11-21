@@ -42,24 +42,46 @@ describe('module-authoring 08: an own module\'s folder, as the profile reads it 
     fs.writeFileSync(secret, 'sk-not-json');
     const linked = mod(path.join(base, 'linked'));
     fs.symlinkSync(secret, path.join(linked, 'api.json'));
-    const l = check.treeProblems(linked, {countinghouse: {role: 'scenario'}});
+    const l = check.treeProblems(linked);
     assert.strictEqual(l.blocking, true);
     assert.ok(l.problems.some((p) => /link \(api\.json\)/.test(p)), JSON.stringify(l.problems));
     const twice = mod(path.join(base, 'twice'));
     fs.linkSync(secret, path.join(twice, 'api.json'));
-    const t = check.treeProblems(twice, {countinghouse: {role: 'scenario'}});
+    const t = check.treeProblems(twice);
     assert.strictEqual(t.blocking, true);
     assert.ok(t.problems.some((p) => /second name \(api\.json\)/.test(p)), JSON.stringify(t.problems));
-    assert.strictEqual(check.treeProblems(mod(path.join(base, 'plain')), {countinghouse: {role: 'scenario'}}).blocking, false);
+    assert.strictEqual(check.treeProblems(mod(path.join(base, 'plain'))).blocking, false);
   });
 
   it(`treeProblems: more than ${check.MAX_ENTRIES} entries blocks the read`, () => {
     const dir = mod(path.join(real(tmp.mkdtemp('ch-mauth-08-')), 'many'));
     fs.mkdirSync(path.join(dir, 'f'));
     for (let i = 0; i < check.MAX_ENTRIES; i++) fs.writeFileSync(path.join(dir, 'f', `${i}`), '');
-    const r = check.treeProblems(dir, {countinghouse: {role: 'scenario'}});
+    const r = check.treeProblems(dir);
     assert.strictEqual(r.blocking, true);
     assert.ok(r.problems.some((p) => p.includes(`more than ${check.MAX_ENTRIES} entries`)));
+  });
+
+  it('pkgProblems: a scenario with no dependencies passes; any other role, or dependencies, is said', () => {
+    assert.deepStrictEqual(check.pkgProblems({countinghouse: {role: 'scenario'}}), []);
+    assert.strictEqual(check.pkgProblems({}).length, 1);
+    assert.strictEqual(check.pkgProblems(null).length, 1);
+    assert.ok(check.pkgProblems({countinghouse: {role: 'scenario'}, dependencies: {a: '1'}})[0].includes('dependencies'));
+  });
+
+  it('treeProblems: anything but a file or a folder inside blocks the read', function() {
+    if (process.platform === 'win32') this.skip();
+    const dir = mod(path.join(real(tmp.mkdtemp('ch-mauth-08-')), 'with-fifo'));
+    require('child_process').execFileSync('mkfifo', [path.join(dir, 'api.json')]);
+    const r = check.treeProblems(dir);
+    assert.strictEqual(r.blocking, true);
+    assert.ok(r.problems.some((p) => /neither a file nor a folder \(api\.json\)/.test(p)), JSON.stringify(r.problems));
+  });
+
+  it('scrub: whatever follows "cannot be parsed" or "cannot be read" is cut, whatever the parser said', () => {
+    assert.strictEqual(check.scrub('api.json cannot be parsed: Unexpected token \'x\', "x;SECRET\nMORE" is not valid JSON'), 'api.json cannot be parsed');
+    assert.strictEqual(check.scrub('package.json cannot be read: EACCES'), 'package.json cannot be read');
+    assert.strictEqual(check.scrub('the folder holds a link (a)'), 'the folder holds a link (a)');
   });
 
   it('scrub: a parse error\'s quote of the text it read is cut out', () => {
@@ -67,7 +89,7 @@ describe('module-authoring 08: an own module\'s folder, as the profile reads it 
     try { JSON.parse('sk-secret-token'); } catch (e) { message = `package.json cannot be parsed: ${e.message}`; }
     assert.ok(message.includes('sk-secret'), 'the runtime\'s Node quotes it');
     const out = check.scrub(message);
-    assert.ok(!out.includes('sk-secret') && /is not valid JSON/.test(out), out);
+    assert.ok(!out.includes('sk-secret') && out === 'package.json cannot be parsed', out);
   });
 
   tmp.hooks();

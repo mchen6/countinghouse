@@ -30,7 +30,7 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.strictEqual(F.restart, 'Restart your client to load it.');
       // (an own module held back: the own-modules design §5, line 11)
       assert.strictEqual(F.changed(null, '/home/u/my-tool'), 'Not loaded: its files changed since you added it: run `ch-local add-module "/home/u/my-tool"` again.');
-      assert.strictEqual(F.changed('/home/u/.ch/bin/ch-local.js', null), 'Not loaded: its files changed since you added it: run `node "/home/u/.ch/bin/ch-local.js" add-module <its folder>` again.');
+      assert.strictEqual(F.changed('/home/u/.ch/bin/ch-local.js', null), 'Not loaded: its files changed since you added it: run `node "/home/u/.ch/bin/ch-local.js" add-module "<its folder>"` again.');
       assert.strictEqual(F.sandbox(null), 'Not loaded: own modules run only with the sandbox enforced: run `ch-local settings set moduleSandbox enforce` in your own terminal.');
       assert.strictEqual(F.collision('ch-pack-other'), 'Not loaded: ch-pack-other uses its name.');
       assert.strictEqual(F.scenarios, `To build a scenario that combines modules, see the module development guide (${GUIDE}).`);
@@ -270,7 +270,7 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.strictEqual(by['my-b'].next, overview.FIXED.sandbox(L));
       assert.strictEqual(by['my-c'].next, overview.FIXED.collision('ch-pack-other'));
       // a folder no shell would read plainly is never put in a command
-      assert.strictEqual(overview.FIXED.changed(null, '/home/u/x$(y)'), 'Not loaded: its files changed since you added it: run `ch-local add-module <its folder>` again.');
+      assert.strictEqual(overview.FIXED.changed(null, '/home/u/x$(y)'), 'Not loaded: its files changed since you added it: run `ch-local add-module "<its folder>"` again.');
     });
 
     // the shared vectors ch-local's writer pins against
@@ -541,7 +541,6 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
     });
   });
 
-  // (the medium on B-firstrun, 2) each pack's own scenario, by the record's rule
   // (B-own-runtime; the own-modules design §2.2, §2.6) the user's own
   // modules, as ch-local's own.json beside the settings file names them
   describe('own modules (settings-tool installedOwn, own.json)', () => {
@@ -595,6 +594,7 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
     });
   });
 
+  // (the medium on B-firstrun, 2) each pack's own scenario, by the record's rule
   describe('the install record (settings-tool installedPacks)', () => {
     it('each pack gets its own scenario, never another pack\'s; one that cannot be read is said apart from none', () => {
       const settingsTool = require('../../lib/settings-tool');

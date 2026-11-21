@@ -30,10 +30,12 @@ In the single-identity profile with `--settingsFile` (`ch-local start`), the loc
 
 - **`countinghouse_validate_plan`** works as it does for an admin.
 - **`countinghouse_validate_module`** checks a folder **without running its code**:
+  - it refuses a folder inside the `ch-local` home, `--modulePath`, `--moduleDataPath` or the store, or holding one of them, or reached through a link (`OWN_MODULE_PATH_REFUSED`);
+  - it walks the folder first, reading no file: a link, a file with a second name, anything that is neither a file nor a folder (a FIFO, a socket, a device), more than 20,000 entries or more than 16 MiB, and **nothing in it is read**;
+  - otherwise each file it reads is opened without following a link and without blocking, and read only if it is a regular file under one name, within a bound;
   - the handler files are checked against `api.json` by name alone;
-  - a file that fails to parse is named, never quoted;
-  - it refuses a folder inside the `ch-local` home, `--modulePath`, `--moduleDataPath` or the store, or one reached through a link (`OWN_MODULE_PATH_REFUSED`);
-  - it reports what `ch-local add-module` will refuse: a module that isn't a scenario, npm dependencies, `node_modules`, a link inside, more than 20,000 entries, or more than 16 MiB.
+  - a file that fails to read or parse is named, never quoted;
+  - it also reports what `ch-local add-module` will refuse: a module that isn't a scenario, and npm dependencies or `node_modules`.
 - **`countinghouse_load_module`** never loads here. It answers `OWN_MODULE_NEEDS_TERMINAL`, naming the command the user runs in their own terminal (`ch-local add-module "<folder>"`). Adding a module is the user's own act.
 
 The overview lists the user's own modules, from `ch-local`'s `own.json`, after the packs, each marked `own: true`. The held-back file takes three own-module reasons:
