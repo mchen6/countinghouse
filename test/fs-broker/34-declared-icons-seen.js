@@ -18,11 +18,14 @@ const PNG = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000
 describe('fs-broker 34: a declared icon read in a Windows worker, its realpath in the module\'s own spelling', () => {
   let base;
   let saved = null;
+  // (Windows without the symlink privilege: the links can't be made, and
+  // each test skips -- never the before() itself, so test-tmp's runs)
+  let noLinks = false;
   // (identity's own Windows boundary, for the drive M: what a Windows
   // worker's default form is)
   const winForm = fromWinFor('M');
   const seen = seenFormFor('win32', 'M');
-  before(function() {
+  before(() => {
     // (by the kernel's real path, as the answers below are)
     base = fs.realpathSync.native(tmp.mkdtemp('icons-seen-'));
     for (const d of ['app/icons', 'apple', 'data', 'outside']) fs.mkdirSync(path.join(base, ...d.split('/')), {recursive: true});
@@ -34,7 +37,7 @@ describe('fs-broker 34: a declared icon read in a Windows worker, its realpath i
       fs.symlinkSync(path.join(base, 'apple', 'x.png'), path.join(base, 'app', 'icons', 'apple.png'));
     } catch (e) {
       // (Windows without the symlink privilege: the links can't be made here)
-      if (e.code === 'EPERM') return this.skip();
+      if (e.code === 'EPERM') { noLinks = true; return; }
       throw e;
     }
     // the namespace's /app, /data and /tmp (or M:\... in either separator)
@@ -69,13 +72,15 @@ describe('fs-broker 34: a declared icon read in a Windows worker, its realpath i
   // (last: its after() runs once this describe's own has put fs back)
   tmp.hooks();
 
-  it('an icon inside the module is read', () => {
+  it('an icon inside the module is read', function() {
+    if (noLinks) return this.skip();
     const r = require('../../lib/declared-icons').read('/app', 'icons/note.png', winForm);
     assert.strictEqual(r.problem, undefined, JSON.stringify(r));
     assert.strictEqual(r.mimeType, 'image/png');
   });
 
-  it('a link out of the module is refused: to a host file, to its own /data, to a sibling that only begins like /app', () => {
+  it('a link out of the module is refused: to a host file, to its own /data, to a sibling that only begins like /app', function() {
+    if (noLinks) return this.skip();
     const icons = require('../../lib/declared-icons');
     const OUT = {problem: 'is outside the module (a symlink that leaves it)'};
     assert.deepStrictEqual(icons.read('/app', 'icons/leak.png', winForm), OUT, 'a host file');
