@@ -10,7 +10,8 @@
 //
 // Which store: --store, or else as the runtime's own default is chosen --
 // local with --storePath, Redis without; --redisUrl defaults to the
-// runtime's (lib/cli-options.js DEFAULT_REDIS_URL), and an empty one is
+// runtime's (redis://127.0.0.1:6379, as lib/cli-options.js has it, which
+// exports nothing of it: auth 30), and an empty one is
 // refused (an unset variable must never fund a local Redis instead).
 //
 // The key is read from COUNTINGHOUSE_SEED_KEY only, never from an argument
@@ -26,6 +27,9 @@
 const path = require('path');
 const minimist = require('minimist');
 
+// the runtime's default Redis, as lib/cli-options.js has it (kept here: that
+// file exports nothing of it, being loaded in workers)
+const DEFAULT_REDIS_URL = 'redis://127.0.0.1:6379';
 const USAGE = 'usage: COUNTINGHOUSE_SEED_KEY=<key> countinghouse-meter set (--storePath <dir> | [--store redis] [--redisUrl <url>]) --balance <n>';
 
 function fail(message) {
@@ -51,7 +55,7 @@ if (argv.redisUrl === '' || (Array.isArray(argv.redisUrl))) fail('--redisUrl, wh
 // that left the option out once seeded this machine's own Redis (the
 // reviewer, on B-meter-keys (1)). The variable only adds this refusal.
 const testRedis = process.env.CH_TEST_REDIS_URL;
-if (store === 'redis' && argv.redisUrl == null && testRedis != null && testRedis !== '' && testRedis !== require('../lib/cli-options').DEFAULT_REDIS_URL) {
+if (store === 'redis' && argv.redisUrl == null && testRedis != null && testRedis !== '' && testRedis !== DEFAULT_REDIS_URL) {
   fail('--redisUrl is required while CH_TEST_REDIS_URL names a test Redis: the default is another Redis');
 }
 if (store === 'local' && (argv.storePath == null || argv.storePath === '')) fail('--storePath <dir> is required');
@@ -74,7 +78,7 @@ if (store === 'local') {
 } else {
   // (db 0, the ledger's, as lib/store.js's metering opens it; one field of
   // the hash set, its free-call counts kept)
-  const client = require('redis').createClient(argv.redisUrl != null ? argv.redisUrl : require('../lib/cli-options').DEFAULT_REDIS_URL, {db: 0});
+  const client = require('redis').createClient(argv.redisUrl != null ? argv.redisUrl : DEFAULT_REDIS_URL, {db: 0});
   // (the error's code only: a connection string can hold a password)
   client.on('error', (err) => fail(`Redis could not be reached (${err.code || 'error'})`));
   client.hset(id, 'balance', String(balance), (err) => {
