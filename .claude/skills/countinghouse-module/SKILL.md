@@ -43,8 +43,8 @@ An action may declare questions (`api.json`'s `questions`) and ask one with
 (`ASK_PENDING`), and the client's retry runs it again from the top. So put
 every `ctx.ask` **before** anything the handler cannot do twice:
 
-- every `ctx.call` before the ask runs again on the retry and is **billed
-  again**;
+- every `ctx.call` before the ask **runs again** on the retry, with
+  whatever it costs or changes;
 - a message sent, a record written or a payment made before the ask
   **happens twice**, and has happened once even if the user declines.
 
@@ -134,4 +134,4 @@ almost everything:
    the message quotes the earlier error.
 4. `LOAD_MODULE_FAIL` — a handler file threw while being required.
 5. Loaded but absent — an action with no `description` is skipped, and
-   `tools/list` is filtered per apiKey.
+   `tools/list` is filtered by what the caller may use.
