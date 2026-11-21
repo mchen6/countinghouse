@@ -171,6 +171,7 @@ default list (`require`, `node`, `node-addons`, `module-sync`). A plain
 | Writes outside the module's own area (outside the namespace, `/app`, `r` paths) | pass through | refused (`EACCES`), recorded | refused |
 | Disk quota | not counted | logged | enforced |
 | Lockdown, resource limits, clean environment | no | yes | yes |
+| Processes, threads and native code (`child_process`, `worker_threads`, `process.dlopen`, `process.binding`) | allowed | allowed, reported | refused |
 
 Under `off` and `audit`, Node's resolver internals and their host paths
 are module code's to see, as before: `Module._findPath` and
@@ -278,8 +279,8 @@ auth config) are still refused by file identity. Don't place symbolic
 links to files outside a module's folder in its writable folders. The fix
 comes in 1.1.
 
-**Under `audit` a module changes nothing outside its own area**
-(maintainer's decision, 2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
+**Under `audit` a module changes nothing outside its own area through
+`fs`** (maintainer's decision, 2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
 declared `rw`. Every write-class operation aimed anywhere else is refused
 `EACCES` and recorded as a denial: an open for writing, a create or truncate,
 `writeFile`, `appendFile`, `mkdir`, `rmdir`, `rm`, `unlink`, `rename` or
@@ -290,11 +291,26 @@ to an outside destination; writes to `/app` and to a path declared `r` too.
 A symlink made inside the namespace that points outside it is refused
 `EPERM`, in every mode, as before.
 
+**`audit` is not a boundary.** It holds a module's `fs` and loader traffic
+only. What `enforce` refuses beyond them, the lockdown reports under `audit`
+and then allows: `child_process` and the other blocked built-ins,
+`worker_threads`, `process.dlopen` and native addons, and `process.binding`.
+Through them a module can start a process or a thread the sandbox does not
+hold, or run native code, and so read the always-denied files and the
+protected paths, or change anything the OS user can. Only `enforce` confines
+a module. The runtime's own default is `--moduleSandbox audit`. ch-local
+starts packs under `enforce` by default: there `audit` is a loosening the
+user confirms, which an operator's ceiling can forbid and an own module
+refuses, and on Windows it falls back to `audit` only where `enforce` is
+not available.
+
 **Only `enforce` hides files.** Under `audit` and `off` reads outside a
 module's namespace pass through to the host, except the always-denied set
 and the protected paths above: under `audit` a module can read any other
 file the OS user can -- the operator's project directory, the current
-directory, `~/.npmrc`, `~/.ssh` -- and each read is logged. So don't run
+directory, `~/.npmrc`, `~/.ssh` -- and each read is logged (the first 100
+distinct reports per worker start; then one line says the rest were
+suppressed). So don't run
 untrusted packs under `audit` on a machine that holds secrets: use
 `enforce`. In `audit` every check runs, a violation is logged once per
 (module, rule, target), and a read goes ahead. In
@@ -544,8 +560,10 @@ name to get its policy entry and data. `__filename`, `__dirname`,
 frames, `process.cwd()` (`/app`) and `os.tmpdir()` (`/tmp`) are virtual, and
 so are paths in results and errors. Frames of the runtime's own files in a
 stack module code can read can still name the install directory (being
-fixed). Ancestors of a root (`/`, `/var`) answer as
-read-only directories that list only the way to the root. A declared path
+fixed). Under `enforce`, ancestors of a root (`/`, `/var`) answer as
+read-only directories that list only the way to the root; under `audit` and
+`off` they are the host's (`readdir('/')` lists the host's root), except
+one in a protected path, which is refused under `audit`. A declared path
 can never cover countinghouse's own directories (the install directory,
 `--modulePath`, `--moduleDataPath`, the auth and device-config paths, the
 policy file, the `--remoteCredentials` file) or an ancestor of one: such a declaration is refused in every
@@ -586,8 +604,9 @@ store, the auth and device configuration, the policy file, the
 ch-local's home (the
 directory of `--settingsFile`: its settings, the daemon's session secret
 under `run/`, the launcher, the pack records) is refused to a module's reads
-and writes under `audit` and `enforce` (`EACCES`, recorded), however it is
-named: directly, through `..`, a symlink or a hard link to the settings
+and writes through `fs` and the loader under `audit` and `enforce`
+(`EACCES`, recorded; under `audit`, not to a process or thread the module
+starts, above), however it is named: directly, through `..`, a symlink or a hard link to the settings
 files. The policy file and the `--remoteCredentials` file are refused by
 their paths, not by identity as the settings files and the auth
 configuration are: a hard link to one of them, under a name outside these
@@ -630,11 +649,15 @@ has a name outside its `/data` and `/tmp`, does not start until the operator
 removes it (the log names the entries). The disk quota (`diskMb`, `diskEntries`, one pool for
 `/data` and `/tmp`) answers `ENOSPC` under `enforce`.
 
-The main thread is protected in every mode: the thread pool is raised to 16
-unless the operator set `UV_THREADPOOL_SIZE`, brokered operations in flight
-are capped globally and scheduled round-robin across workers, each worker
-has a queue of 4096 (`EMFILE` past it) and at most 256 descriptors, and a
-transfer is at most 16 MB, with `readFile` served in chunks. A brokered call
+The main thread's file work is bounded in every mode: the thread pool is
+raised to 16 unless the operator set `UV_THREADPOOL_SIZE` (the runtime sets
+the variable as it starts; on Windows libuv may not see that, so set it in
+the environment there), brokered operations in flight are capped globally
+and scheduled round-robin across workers, each worker has a queue of 4096
+calls (`EMFILE` past it) and at most 256 descriptors, and a transfer is at
+most 16 MB, with `readFile` served in chunks. Calls waiting on a lock are
+not counted in that queue, and there is no budget on the bytes queued (a
+fix in 1.1). A brokered call
 that takes over 30 s answers `ETIMEDOUT`.
 
 **3. The bounded loader** (`lib/fs-broker/identity.js`). Node's loader reads
@@ -713,7 +736,11 @@ through the whole tree, resolves inside the module's directory), must not
 contain native code (`.node`, `binding.gyp`, `"gypfile": true`), and must
 have valid permissions; install scripts are warned about. In `enforce` a
 failing module is refused with `MODULE_SANDBOX_REFUSED`; in `audit` the
-failures are logged and the module loads. This is a structural check of
+failures are logged and the module loads. `enforce` also refuses a module
+whose directory holds a link to a directory, a link that does not resolve
+or a `package.json` that is a link, and one with a `package.json` whose
+`"main"` leads outside the module's directory or names the directory itself
+([module development](module-development.md)); `audit` reports them. This is a structural check of
 what is on disk at load time, not a review of what the code does.
 
 **6. Resource limits, restart and suspend.** `heapMb` (V8 `resourceLimits`,
@@ -732,7 +759,9 @@ decodes anything: over `--maxOutputBytes` plus 64 KiB (16 MiB plus 64 KiB on
 the file bridge) it is refused in the worker (`MESSAGE_TOO_LARGE`, or
 `EINVAL` for a file call), and under audit and enforce the lockdown pins the
 worker's ports, so module code that patches `MessagePort.prototype` is never
-handed one. A message that is not an envelope, or one over the cap, is a
+handed one. Under `audit`, though, `require('worker_threads')` is allowed
+(and reported), and it hands module code `parentPort` and the file bridge's
+ports in `workerData`: what follows holds under `enforce`. A message that is not an envelope, or one over the cap, is a
 tampered worker's: the main thread ends the worker (a bridge call is
 answered `EINVAL` and reported, and the worker is ended too). Module code
 gets no port by any other route either: the runtime's port callbacks run in
@@ -760,7 +789,11 @@ next start (and an uninstall) wait for them. This bounds memory, blocking,
 disk use and crash loops. It does not bound CPU use that yields to the event
 loop, or network traffic.
 
-A module's stdout and stderr are bounded the same way. Under audit and
+A module's stdout and stderr are bounded the same way. Unless the runtime
+runs with `--debug`, a module's worker makes every `console` method do
+nothing and drops `fs.writeSync` to descriptors 1 and 2, in every mode,
+before module code loads: what reaches the log is what a module writes with
+`process.stdout.write` and `process.stderr.write`. Under audit and
 enforce the lockdown gives module code runtime-owned streams for
 `process.stdout`, `process.stderr` and `process.stdin` (fixed getters),
 points `console` and `process._rawDebug` at them, and Node's own stdio
@@ -860,7 +893,8 @@ files with the runtime stopped.
 **7. `--hardened`.** Re-launches the server under Node's permission model
 (`--permission`) with read access to the install directory, `--modulePath`,
 `--moduleDataPath` and the configured config files, and write access to
-`--modulePath`, `--moduleDataPath` (and the SQLite auth directory). This
+`--modulePath`, `--moduleDataPath`, `--storePath` under `--store local` (read
+too), and the SQLite auth directory. This
 applies to the whole process, **main thread included**, so it limits what
 any module can reach on the host even under `audit`, but cannot separate a
 module from countinghouse's own data in the directories the process may
@@ -1904,8 +1938,10 @@ and the short list of what the in-process sandbox cannot give.
   (#170, #186, #190).** Every worker-to-main message is sent as bounded,
   transferred bytes, the main thread reads its length before decoding, and a
   worker whose message is not an envelope or is over the cap is ended; the
-  module's console output and its worker's log are capped. Under audit and
-  enforce module code is never handed a port to the main thread. What
+  module's console output and its worker's log are capped. Under `enforce`
+  module code is never handed a port to the main thread; under `audit`,
+  `require('worker_threads')` hands it `parentPort` and the file bridge's
+  ports. What
   remains: Node decodes a posted message on receipt, so a worker that did
   hold a port could have every message it queued decoded, even after it is
   ended; under `off` the bound is cooperative only.

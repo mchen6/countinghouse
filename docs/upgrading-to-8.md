@@ -387,13 +387,14 @@ Under worker mode, in every `--moduleSandbox` mode unless noted:
 - **`/data` and `/tmp` are private.** Each module writes under `/data`
   (kept) and `/tmp` (its own, not the host's, and **emptied every time its
   worker starts**). Anything a module left in `/tmp` is gone after a restart.
-- **Writes to `/app` are refused under `enforce`** (`EROFS`), logged under
+- **Writes to `/app` are refused**: `EROFS` under `enforce`, `EACCES` under
   `audit`.
 - **Outside paths must be declared under `enforce`.** Anything outside the
   namespace is `ENOENT` unless the module declares it in
   `countinghouse.permissions.fs` and your `--modulePolicy` approves it.
-  Under `audit` such access works and is logged, so run in `audit` first and
-  read the log.
+  Under `audit` a read of such a path works and is logged, so run in `audit`
+  first and read the log; a write outside the module's own area, and every
+  access to a protected path, is refused (`EACCES`) under `audit` too.
 - **A disk quota** on `/data` and `/tmp` together: `diskMb` (default ceiling
   1024) and `diskEntries` (default ceiling 100 000). Past it, writes are
   `ENOSPC` under `enforce`; under `audit` crossings of 75 % and 100 % are
@@ -814,8 +815,11 @@ says how to write a module for this.
   the entries.
 - **Under `enforce`, modules cannot read** `auth.json`, other modules' code
   and data, or anything else outside their namespace through `fs` or the
-  loader, by the routes the design knows of. Under `audit` you get a log of
-  what they would have been refused. The remaining gaps (network access
+  loader, by the routes the design knows of. Under `audit` the protected
+  files (`auth.json`, other modules' code and data) and writes outside a
+  module's own area are refused as well, and other reads go ahead and are
+  logged; `audit` does not stop a module that starts a process, a thread or
+  native code ([security model](security-model.md)). The remaining gaps (network access
   until parts 3 and 4, host processes racing the checks, module code
   reaching countinghouse's objects) are listed in
   [`security-model.md`](security-model.md#what-this-explicitly-does-not-provide-accepted-gaps-and-limits).
