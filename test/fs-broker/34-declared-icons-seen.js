@@ -9,19 +9,22 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const {virtualFormFor, seenFormFor} = require('../../lib/fs-broker/roots');
+const {seenFormFor} = require('../../lib/fs-broker/roots');
+const {fromWinFor} = require('../../lib/fs-broker/identity');
 const tmp = require('../helpers/test-tmp').forFile(['icons-seen-']);
 
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4d20000000049454e44ae426082', 'hex');
 
 describe('fs-broker 34: a declared icon read in a Windows worker, its realpath in the module\'s own spelling', () => {
-  tmp.hooks();
   let base;
   let saved = null;
-  const winForm = virtualFormFor('win32', 'M');
+  // (identity's own Windows boundary, for the drive M: what a Windows
+  // worker's default form is)
+  const winForm = fromWinFor('M');
   const seen = seenFormFor('win32', 'M');
   before(function() {
-    base = tmp.mkdtemp('icons-seen-');
+    // (by the kernel's real path, as the answers below are)
+    base = fs.realpathSync.native(tmp.mkdtemp('icons-seen-'));
     for (const d of ['app/icons', 'apple', 'data', 'outside']) fs.mkdirSync(path.join(base, ...d.split('/')), {recursive: true});
     fs.writeFileSync(path.join(base, 'app', 'icons', 'note.png'), PNG);
     for (const f of ['apple/x.png', 'data/d.png', 'outside/secret.png']) fs.writeFileSync(path.join(base, ...f.split('/')), PNG);
@@ -63,6 +66,8 @@ describe('fs-broker 34: a declared icon read in a Windows worker, its realpath i
       fs.openSync = saved.open;
     }
   });
+  // (last: its after() runs once this describe's own has put fs back)
+  tmp.hooks();
 
   it('an icon inside the module is read', () => {
     const r = require('../../lib/declared-icons').read('/app', 'icons/note.png', winForm);
