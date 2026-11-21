@@ -186,6 +186,31 @@ describe('fs-broker 12: virtual identity', function() {
     });
   }));
 
+  // (F4-1's follow-ups: a countinghouse code-root file -- the install's
+  // package.json, a lib file the worker never loaded -- through the same
+  // routes: refused under enforce, the runtime's grant never module code's.
+  // A grant stands only between a resolve the runtime made and its load;
+  // after the seal the runtime resolves nothing (sandbox 66), so no module
+  // code runs while one stands.)
+  ['extJs', 'extJson', 'moduleNewLoad'].forEach((what) => [path.join(ROOT, 'package.json'), path.join(ROOT, 'lib', 'couchdb-adapter', 'init-db.js')].forEach((file) => {
+    it(`F4-1: enforce refuses ${what} on countinghouse's own ${path.relative(ROOT, file)}`, async () => {
+      server = await start('enforce', 'route-probe');
+      const refused = toolOutput(await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what, target: file}));
+      assert.strictEqual(refused.outcome, 'refused', JSON.stringify(refused));
+    });
+  }));
+
+  // (and a code-root file that exists answers as one that doesn't: no
+  // answer says which of the install's files are there)
+  ['extJs', 'moduleNewLoad'].forEach((what) => {
+    it(`F4-1: enforce's ${what} answers a code-root file there and one not there alike`, async () => {
+      server = await start('enforce', 'route-probe');
+      const there = toolOutput(await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what, target: path.join(ROOT, 'lib', 'couchdb-adapter', 'init-db.js')}));
+      const notThere = toolOutput(await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what, target: path.join(ROOT, 'lib', 'couchdb-adapter', 'no-such-f41.js')}));
+      assert.deepStrictEqual(there, notThere);
+    });
+  });
+
   // #194's revision 6, item 9: F4-1's fix 2 resolves a module request with
   // Node's own resolver against the host parent; a not-found names only the
   // request, never Node's require stack (the host parent's path)
@@ -228,6 +253,7 @@ describe('fs-broker 12: virtual identity', function() {
   // lookup with a path under the module's root, lexically, that climbs out.
   // The hook now calls Node's own resolver directly: the accessor decides
   // nothing, in either mode, and the request is simply not found.
+  // (skipped on Windows: Windows module workers are not claimed, #480)
   (WIN ? it.skip : it)('F4-1: an accessor on Function.prototype.resolve never decides a resolution, under enforce or audit', async () => {
     const t = targets.home();
     fs.writeFileSync(t.file, '{"secret": true}');

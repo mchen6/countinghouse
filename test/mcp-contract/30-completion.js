@@ -221,7 +221,8 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
     try {
       limited = true;
       const refused = await complete(KEY_A, 'tints_tint', 'shade', 't');
-      assert.match(refused.error && refused.error.message, /rate limit/, JSON.stringify(refused));
+      // (every limiter's answer: -32000 with the key's limit code; A-rpc429)
+      assert.deepStrictEqual([refused.error && refused.error.code, refused.error && refused.error.data['countinghouse/code']], [-32000, 'RATE_LIMIT_EXCEEDED'], JSON.stringify(refused));
       assert.deepStrictEqual(ran, [], 'the action ran at the limit');
       // and under it, the action is what answers
       limited = false;
@@ -253,7 +254,8 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
         assert.ok(r.result != null, `${i}: ${JSON.stringify(r)}`);
       }
       const over = await complete(KEY_A, 'colours_paint', 'colour', 'r');
-      assert.match(over.error && over.error.message, /rate limit/, JSON.stringify(over));
+      // (every limiter's answer: -32000, A-rpc429)
+      assert.strictEqual(over.error && over.error.code, -32000, JSON.stringify(over));
       // (its data as every rate-limit error's: the code, the kind and when
       // to retry, the floor's 1 s; #482's high, round 3, 4)
       assert.deepStrictEqual(over.error.data, {'countinghouse/code': 'RATE_LIMIT_EXCEEDED', 'countinghouse/kind': 'caller', 'countinghouse/retryAfter': 1});
@@ -284,7 +286,7 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
   it('completion is rate limited', async () => {
     limited = true;
     const r = await complete(KEY_A, 'colours_paint', 'colour', 'r');
-    assert.match(r.error && r.error.message, /rate limit/);
+    assert.deepStrictEqual([r.error && r.error.code, r.error && r.error.data['countinghouse/code']], [-32000, 'RATE_LIMIT_EXCEEDED'], JSON.stringify(r));
   });
 
   it('single-thread mode (no worker spec record): the candidates are derived on the main thread', async () => {

@@ -317,7 +317,7 @@ describe('session-transport 03: the listener against hostile peers (#245 review)
     });
   });
 
-  it('a refused connection stays in the pre-auth count until it is gone, so evict-oldest still reaches it', async() => {
+  it('a refused connection stays in the pre-auth count until it is gone, so a flood is held to the pool', async() => {
     await start({listener: {preAuthMax: 64, preAuthDeadlineMs: 10000}});
     const net = require('net');
     const conns = [];
@@ -331,8 +331,11 @@ describe('session-transport 03: the listener against hostile peers (#245 review)
       c.write(frames.encode('H', JSON.stringify({protocol: 2, nc: handshake.newChallenge().toString('base64')})));
       conns.push({c, closed: () => closed});
     }
-    // within the 1 s grace, the server holds at most 64: the oldest were
-    // evicted (counted server side: a half-open client sees no close)
+    // the server holds at most 64, counted server side, well within the 1 s
+    // grace a connection refused its HELLO by shut() would otherwise keep its
+    // socket for (unbounded, all 80 would be held now): each one past the
+    // pool evicted one already refused (F1-6), or was refused itself (which
+    // of the two, timing decides: 02 pins each)
     await tick(300);
     const held = await new Promise((r) => listener.server.getConnections((e, n) => r(n)));
     assert.ok(held <= 64, `${held} held`);

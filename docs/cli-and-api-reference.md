@@ -84,6 +84,7 @@ internal ones.
 | `--modulesRoot <dir>` | none | *Set by `ch-local`.* Where a module the control channel loads in the module form may be (`<home>/module-store`). Each directory a load names (`dirs`) must lie inside one by real path, with no link leading out, and holds the package its key names; a module's closure is found only among the directories given, never on a `node_modules` search path. With none, no module loads in the module form. A start given it loads only what lies inside it: every `--loadModule` and `--partDir` directory is checked the same way, a called part is looked for only among those directories, and a top-level module that cannot load is not loaded and is told to `ch-local` (`module-stopped`, `when: "start"`). Repeatable. Refused with `--hardened`: in-place loading isn't available under `--hardened` in this release. |
 | `--partDir <dir>` | none | *Set by `ch-local`.* The directory of a part the start loads, one per part. Only with `--modulesRoot`, which it must lie inside; a module a start loads calls its parts only from these and the `--loadModule` directories. Repeatable. Like `--modulesRoot`, refused with `--hardened`. |
 | `--settingsFile <path>` | none | *Set by `ch-local`.* The user's `settings.json`, which the built-in `countinghouse_settings` reads and tightens. Only in the single-identity profile: given anywhere else (a hosted server, or a start with `--authConfigPath` or `--authProvider`), or with no path, it stops the start (exit 2). |
+| `--heldBackFile <path>` | none | *Set by `ch-local`.* A JSON file (`{"v": 1, "modules": [{"name", "reason", "root"?, "via"?}], "launcher"?}`) naming the top-level modules `ch-local` held back and why (`credential`, `off`, `ceiling` (the operator's settings ceiling), `missing`, `pin`, `withdrawn`, `stopped` (the runtime stopped it for good, until its version changes), `restart` (it loads once the client restarts), or `calls` with the `root` reason of the part `via` names, or `not-installed` for a callee nothing installed), and the home's `bin/ch-local.js`. `countinghouse_overview` reads it to say why a pack is not loaded and, for a missing credential, the command the user runs in their own terminal; `ch-local` asks for it again with the control message `{type: 'reread', what: 'held-back'}`. Package names only (none starting with `-` or `~`), at most 256, none twice. The file is judged as `ch-local`'s other private files are: a regular file under one name, never a link, this user's alone (`0600`; its ACL on Windows), and this user's own. A file that is anything else is not used (logged): no module is then named held back. The launcher is shown only if its real path is exactly the home's `bin/ch-local.js` and safe inside a quoted command; otherwise only the launcher is dropped (logged) and the overview shows the bare `ch-local` command. It grants nothing. Only with `--settingsFile`: elsewhere, or with no path, it stops the start (exit 2). |
 | `--settingsTool` | — | *Internal.* Whether `countinghouse_settings` is served, given to each module's worker (which never gets the file's path), so a size cap's error can say how to raise it. On with `--settingsFile` in the single-identity profile; a value given on the command line is ignored. |
 | `--outputCeiling <n>` | — | *Internal.* The most `--maxOutputBytes` may be raised to under the operator's ceiling, as the main thread read it when it spawned a worker, given to that worker for the same error. |
 
@@ -119,9 +120,17 @@ rate-limit refusal adds `countinghouse/retryAfter`: when to retry, in whole
 seconds, the limiter's own, within its window (a REST 429 or 503 says the
 same in `Retry-After`). It appears only where a limiter wrote it: an error
 a module passes on from a part's call is the module's answer (kind
-`module`) and carries none. A JSON-RPC rate-limit error (`tools/list`,
-`prompts/list`, `completion/complete`, a resource read) carries the same
-three keys in its `error.data`.
+`module`) and carries none. Every limit's refusal on `/mcp` outside
+`tools/call` -- a key over its budget (`tools/list`, `prompts/list`,
+`prompts/get`, `completion/complete`, `tasks/*`, a resource read), an
+address over `--unauthRateLimit`, a key or session with as many
+subscriptions open as it may have (`TOO_MANY_SUBSCRIPTIONS`), and the
+runtime at its limit (`RUNTIME_BUSY`) -- is the JSON-RPC error -32000, the
+catalogue's message (or the subscription limit's own), and the same keys in
+its `error.data`. A single request's is sent with its code's HTTP status,
+429 (503 for `RUNTIME_BUSY`), and `Retry-After` when a hint was written. A
+legacy batch stays 200, with `Retry-After` the longest hint among its
+limited messages.
 
 **Module names.** A load (`/load-module`, `countinghouse_load_module`, `--loadModule`, the registry at startup, restarts) must use the module's package.json name; any other name is refused with `MODULE_NAME_MISMATCH`. `POST /load-module` may leave `name` out, and then uses the package.json name.
 

@@ -453,6 +453,11 @@ describe('mcp-contract 26: module resources (M7)', function() {
   const BUILTINS = [
     {name: 'countinghouse_check_balance', key: KEY_A, nothing: () => [spent, balances]},
     {name: 'countinghouse_usage_report', key: KEY_A, nothing: () => [spent]},
+    // (the overview's key, grants and who are the gate's, read just before:
+    // no read of its own (#490's high round 2, 7), so its rate-limit unit is
+    // spent at once, as a call that is not billed still counts, and the read
+    // held is its listing's; past it, it runs and bills nothing)
+    {name: 'countinghouse_overview', key: KEY_A, nothing: () => [invoked, billed]},
     {name: 'countinghouse_reload_auth', key: KEY_ADMIN, authoring: true, nothing: () => [reloads]},
     {name: 'countinghouse_load_module', key: KEY_ADMIN, authoring: true, args: {path: '/nowhere', name: 'x'}, nothing: () => [loads]},
     {name: 'countinghouse_settings', key: KEY_A, single: true, args: {action: 'set', name: 'requestTimeout', value: '20s'}, nothing: () => [settingsWrites()]}
@@ -697,11 +702,16 @@ describe('mcp-contract 26: module resources (M7)', function() {
     try {
       invoked.length = 0;
       const probe = await read(KEY_A, 'countinghouse://m/nobody/x/1');
-      assert.strictEqual(probe.error && probe.error.code, -32603, JSON.stringify(probe));
+      // (every limiter's answer, -32000, a module read's included: A-rpc429)
+      assert.strictEqual(probe.error && probe.error.code, -32000, JSON.stringify(probe));
       assert.strictEqual(probe.error.data && probe.error.data['countinghouse/code'], 'RATE_LIMIT_EXCEEDED');
       // a limited read of a real resource, refused by the call path's own limit: the same answer
       const real = await read(KEY_A, 'countinghouse://m/notes/notes/one');
-      assert.deepStrictEqual(probe.error, real.error, 'the limit says nothing of what exists');
+      // (the key's limit says nothing of what exists. At the runtime's own
+      // limit, --globalRateLimit, only a listed URI's read meets it, 503,
+      // while an unlisted one stays -32602; that tells a caller only of its
+      // own list, which resources/list gives it anyway: #494's high, 3)
+      assert.deepStrictEqual(probe.error, real.error, 'the key\'s limit says nothing of what exists');
       assert.deepStrictEqual(invoked, [], 'no module reached');
     } finally {
       limited = false;

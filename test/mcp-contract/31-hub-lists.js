@@ -442,7 +442,7 @@ describe('M8: the listen hub, resources and prompts', function() {
     it('a client\'s resources/list at its limit is refused; the hub\'s whole-list read is answered', async() => {
       for (const method of ['resources/list', 'resources/templates/list']) {
         const asked = await ask(method, {});
-        assert.ok(asked.error != null && /rate limit/.test(asked.error.message), JSON.stringify(asked));
+        assert.ok(asked.error != null && asked.error.code === -32000 && asked.error.data['countinghouse/code'] === 'RATE_LIMIT_EXCEEDED', JSON.stringify(asked));
         const hubs = await ask(method, {wholeList: true});
         assert.ok(hubs.result != null, JSON.stringify(hubs));
       }

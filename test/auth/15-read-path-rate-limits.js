@@ -91,11 +91,17 @@ function httpDenials(responses) {
   return responses.filter((r) => r.res != null && r.res.status === 429);
 }
 
+// a key over its budget on /mcp: every limiter's answer, -32000 with the
+// limit's code (sent as 429 with Retry-After for a single request: A-rpc429)
+const isKeyLimited = (answer) => answer != null && answer.error != null && answer.error.code === -32000 &&
+  answer.error.data != null && answer.error.data['countinghouse/code'] === 'RATE_LIMIT_EXCEEDED';
 function mcpDenials(responses) {
   return responses.filter((r) => {
     const body = (r.res != null) ? r.res.body : null;
-    return body != null && body.error != null &&
-           /rate limit exceeded/.test(String(body.error.message));
+    if (!isKeyLimited(body)) return false;
+    // (a single request's limit is its 429, with when to retry)
+    if (r.res.status !== 429 || r.res.headers['retry-after'] == null) throw new Error(`a limited answer sent as ${r.res.status}, Retry-After ${r.res.headers['retry-after']}`);
+    return true;
   });
 }
 
@@ -298,7 +304,8 @@ describe('auth 15: the authenticated read paths are rate limited', function() {
         if (err) return done(err);
         const answers = Array.isArray(res.body) ? res.body : [];
         if (answers.length !== BURST) return done(new Error(`${answers.length} answers: ${JSON.stringify(res.body).slice(0, 300)}`));
-        if (!answers.some((a) => a.error != null && /rate limit exceeded/.test(String(a.error.message)))) {
+        // (a batch stays 200; its limited messages carry the limit's shape)
+        if (res.status !== 200 || !answers.some(isKeyLimited)) {
           return done(new Error(`no list in a batch of ${BURST} was rate limited`));
         }
         return done();
