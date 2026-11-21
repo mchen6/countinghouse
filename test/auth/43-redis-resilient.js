@@ -103,4 +103,51 @@ describe('auth 43: the resilient Redis client and rate limiter (M5)', function()
     assert.strictEqual(second.err, null);
     assert.ok(second.timeLeft > 0, JSON.stringify(second));
   });
+
+  // The reviewer's countinghouse high (#443): the in-memory window counted
+  // only the checks Redis didn't answer, so a key at its limit got a fresh
+  // allowance when Redis dropped, and a flapping Redis gave up to twice it.
+  // Every check is counted in memory too, and a check passes only when every
+  // count it has allows it.
+  const zsetRedis = () => {
+    const sets = new Map();
+    let hang = false;
+    return {
+      options: {},
+      hang: (h) => { hang = h; },
+      multi() {
+        const ops = [];
+        const b = {
+          zremrangebyscore(key, lo, hi) { ops.push(() => { const z = (sets.get(key) || []).filter(([, sc]) => !(sc >= lo && sc <= hi)); sets.set(key, z); return 0; }); return b; },
+          zrange(key) { ops.push(() => (sets.get(key) || []).flatMap(([m, sc]) => [m, String(sc)])); return b; },
+          zadd(key, score, member) { ops.push(() => { sets.set(key, (sets.get(key) || []).concat([[member, score]])); return 1; }); return b; },
+          expire() { ops.push(() => 1); return b; },
+          exec(cb) { if (hang) return; const out = ops.map((f) => f()); setImmediate(() => cb(null, out)); }
+        };
+        return b;
+      }
+    };
+  };
+  const check = (limit, id) => new Promise((resolve) => limit(id, (err, timeLeft) => resolve({err, timeLeft})));
+
+  it('a key at its limit through Redis is still limited when Redis stops answering', async () => {
+    const redis = zsetRedis();
+    const limit = redisResilient.rateLimiter({redis, interval: 60000, maxInInterval: 5}, 100);
+    for (let i = 0; i < 5; i++) assert.strictEqual((await check(limit, 'k')).timeLeft, 0, `call ${i + 1} allowed`);
+    redis.hang(true);
+    const sixth = await check(limit, 'k');
+    assert.strictEqual(sixth.err, null);
+    assert.ok(sixth.timeLeft > 0, `the sixth in the window limited, with Redis silent: ${JSON.stringify(sixth)}`);
+  });
+
+  it('a flapping Redis never lets more than the limit through in one window', async () => {
+    const redis = zsetRedis();
+    const limit = redisResilient.rateLimiter({redis, interval: 60000, maxInInterval: 5}, 50);
+    let allowed = 0;
+    for (let i = 0; i < 20; i++) {
+      redis.hang(i % 2 === 1);
+      if ((await check(limit, 'k')).timeLeft === 0) allowed += 1;
+    }
+    assert.ok(allowed <= 5, `${allowed} allowed`);
+  });
 });
