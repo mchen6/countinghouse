@@ -34,7 +34,7 @@ describe('metering 02: the local provider (LM1 B2)', function() {
       assert.deepStrictEqual({charged: r.result.charged, balance: r.result.balance}, {charged: 0, balance: null});
       assert.strictEqual((await call(p, 'rateLimit', key)).result.limited, false);
     }
-    assert.deepStrictEqual((await call(p, 'checkBalance', key)).result, {apiKey: key, balance: null});
+    assert.deepStrictEqual((await call(p, 'checkBalance', key)).result, {balance: null});
     assert.strictEqual(p.callCount(key, 'tool'), 1000);
     // (and no Map holds the key: the limiter PR's medium, 5)
     assert.ok(![...p.calls.keys()].includes(key), 'calls is keyed by the fingerprint');
@@ -49,7 +49,7 @@ describe('metering 02: the local provider (LM1 B2)', function() {
     await call(a, 'recordCall', key, 'tool', 2);
     a.close();
     const b = new LocalMeteringProvider({storePath, meter: true});
-    assert.deepStrictEqual((await call(b, 'checkBalance', key)).result, {apiKey: key, balance: -2});
+    assert.deepStrictEqual((await call(b, 'checkBalance', key)).result, {balance: -2});
     b.close();
     const {meterId} = require('../../lib/key-fingerprint');
     assert.deepStrictEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(storePath, 'metering.json'), 'utf8'))), [meterId(key)]);

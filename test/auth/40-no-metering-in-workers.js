@@ -15,6 +15,8 @@ const {redisUrlFor} = require('../helpers/test-env');
 const KEY    = 'm6-debug-key';
 const PORT   = testPort(9650);
 const VICTIM = `m6-victim-${process.pid}`;
+// (the ledger names a key's record by its fingerprint, never the key: B-meter-keys (1))
+const VICTIM_LEDGER = require('../../lib/key-fingerprint').meterId(VICTIM);
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'metering-forge');
 
 // (each start with the test's late-load probe, --testLateLoads: since
@@ -28,11 +30,11 @@ describe('auth 40: a module worker holds no metering provider (M6)', function() 
 
   before(async () => {
     client = redis.createClient(redisUrlFor(), {db: 0});
-    await cmd('hset', VICTIM, 'balance', '50');
+    await cmd('hset', VICTIM_LEDGER, 'balance', '50');
   });
   after(async () => {
     stopServer(server);
-    if (client != null) { await cmd('del', VICTIM).catch(() => {}); client.quit(); }
+    if (client != null) { await cmd('del', VICTIM_LEDGER).catch(() => {}); client.quit(); }
   });
 
   it('CHUtil.ci.recordCall(key, t, -100) from module code is refused and the balance does not move', async () => {
@@ -44,7 +46,7 @@ describe('auth 40: a module worker holds no metering provider (M6)', function() 
     const out = toolOutput(r);
     assert.strictEqual(out.reached, true, `the module never reached the runtime's countinghouse-util: ${JSON.stringify(out)}`);
     // The ledger first: what a module could do with the provider.
-    assert.strictEqual(await cmd('hget', VICTIM, 'balance'), '50', `the module moved the balance: ${JSON.stringify(out)}`);
+    assert.strictEqual(await cmd('hget', VICTIM_LEDGER, 'balance'), '50', `the module moved the balance: ${JSON.stringify(out)}`);
     assert.strictEqual(out.provider, 'none', JSON.stringify(out));
     assert.ok(out.recordCall.startsWith('error: '), JSON.stringify(out));
     assert.ok(out.checkBalance.startsWith('error: '), JSON.stringify(out));
