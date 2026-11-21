@@ -24,6 +24,24 @@ subscription the runtime may hold open). A legacy batch stays 200, with
 session's open subscriptions is the new code `TOO_MANY_SUBSCRIPTIONS` (429).
 `tools/call` still answers a limit as a tool error result. A client that read
 a limit by `-32603` or its message reads `countinghouse/code` instead.
+### Added — authoring your own modules under `ch-local`
+
+In the single-identity profile with `--settingsFile` (`ch-local start`), the local user gets three authoring tools, with no admin key and no `--authoringTools`:
+
+- **`countinghouse_validate_plan`** works as it does for an admin.
+- **`countinghouse_validate_module`** checks a folder **without running its code**:
+  - the handler files are checked against `api.json` by name alone;
+  - a file that fails to parse is named, never quoted;
+  - it refuses a folder inside the `ch-local` home, `--modulePath`, `--moduleDataPath` or the store, or one reached through a link (`OWN_MODULE_PATH_REFUSED`);
+  - it reports what `ch-local add-module` will refuse: a module that isn't a scenario, npm dependencies, `node_modules`, a link inside, more than 20,000 entries, or more than 16 MiB.
+- **`countinghouse_load_module`** never loads here. It answers `OWN_MODULE_NEEDS_TERMINAL`, naming the command the user runs in their own terminal (`ch-local add-module "<folder>"`). Adding a module is the user's own act.
+
+The overview lists the user's own modules, from `ch-local`'s `own.json`, after the packs, each marked `own: true`. The held-back file takes three own-module reasons:
+- `changed`: its files changed since the user added it;
+- `sandbox`: the sandbox is not enforced;
+- `collision`: another module uses its name, named in `via`.
+
+Each has its own `next` line. The rest of own-module hosting (add-module, loading the confirmed copy, credentials) is `ch-local`'s.
 
 ### Added — the server's instructions, and `countinghouse_overview`
 
