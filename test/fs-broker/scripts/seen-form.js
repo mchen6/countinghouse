@@ -45,6 +45,10 @@ module.exports = async () => {
       case 'readFile':
         if (at.endsWith('/missing.json')) throw enoent(at);
         if (at.endsWith('/hosterr')) throw enoent('C:\\host\\secret.json');
+        if (at.endsWith('/sentence')) throw Object.assign(new Error('boom at /app/x.json.'), {code: 'EBOOM', path: '/app/x.json'});
+        if (at.endsWith('/both')) throw Object.assign(new Error("ENOENT: no such file or directory, open '/app/x' (resolved /app/x)"), {code: 'ENOENT', path: '/app/x'});
+        if (at.endsWith('/typed')) throw Object.assign(new TypeError('bad /app/x', {cause: 'why'}), {code: 'ETYPED', path: '/app/x'});
+        if (at.endsWith('/caused')) throw Object.assign(new Error("EIO: i/o error, open '/app/x'", {cause: 'why'}), {code: 'EIO', path: '/app/x'});
         if (at.endsWith('/unquoted')) throw Object.assign(new Error('boom at /app/x.json, not /app/x.jsonl'), {code: 'EBOOM', path: '/app/x.json'});
         if (at.endsWith('/two')) {
           throw Object.assign(new Error(`EXDEV: cross-device link not permitted, rename '/app/a' -> '/data/b'`), {code: 'EXDEV', path: '/app/a', dest: '/data/b'});
@@ -88,6 +92,10 @@ module.exports = async () => {
     } finally { Error.prepareStackTrace = prior; }
   }
   out.errorUnquoted = caught(() => fs.readFileSync('/app/unquoted'));
+  out.errorSentence = caught(() => fs.readFileSync('/app/sentence')).message;
+  out.errorBoth = caught(() => fs.readFileSync('/app/both')).message;
+  try { fs.readFileSync('/app/typed'); } catch (e) { out.errorTyped = [e instanceof TypeError, e.cause, e.path, e.message]; }
+  try { fs.readFileSync('/app/caused'); } catch (e) { out.errorCaused = [e.cause, e.code, e.path]; }
   // mkdtemp, mkdir's first directory made, the disposable mkdtemps
   out.mkdtemp = fs.mkdtempSync('/tmp/ch-');
   out.mkdtempPromise = await fsp.mkdtemp('/tmp/ch-');
@@ -164,6 +172,7 @@ module.exports = async () => {
       realpath: fs.realpathSync('M:\\app\\handlers\\probe'),
       glob: fs.globSync('M:/app/plugins/*.js'),
       globExcludeOwn: fs.globSync('M:/app/plugins/*', {exclude: ['M:/app/plugins/b.txt']}),
+      globExcludeBackslash: fs.globSync('\\app\\plugins\\*', {exclude: ['\\app\\plugins\\b.txt']}),
       error: caught(() => fs.readFileSync('M:\\app\\missing.json')),
       dir: fs.opendirSync('M:\\app\\plugins').path,
       dirUrl: fs.opendirSync(new URL('file:///M:/app/plugins')).path,

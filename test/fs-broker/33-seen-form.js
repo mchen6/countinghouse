@@ -54,6 +54,10 @@ describe('fs-broker 33: the paths a module is handed on Windows are in its own s
       cpCallback: 'done', cpFilterCallback: [[M('app\\file'), M('data\\new')]],
       errorStackHead: `Error: ENOENT: no such file or directory, open '${missing}'`,
       moduleFormatter: {ranInCall: 0, stack: `formatted: ENOENT: no such file or directory, open '${missing}'`, ranOnRead: 1},
+      errorSentence: `boom at ${M('app\\x.json')}.`,
+      errorBoth: `ENOENT: no such file or directory, open '${M('app\\x')}' (resolved ${M('app\\x')})`,
+      errorTyped: [true, 'why', M('app\\x'), `bad ${M('app\\x')}`],
+      errorCaused: ['why', 'EIO', M('app\\x')],
       errorUnquoted: {path: M('app\\x.json'), dest: undefined, message: `boom at ${M('app\\x.json')}, not /app/x.jsonl`},
       errorSync: {path: missing, dest: undefined, message: `ENOENT: no such file or directory, open '${missing}'`},
       errorCallback: {path: missing, message: `ENOENT: no such file or directory, open '${missing}'`},
@@ -62,7 +66,7 @@ describe('fs-broker 33: the paths a module is handed on Windows are in its own s
       errorHost: {path: 'C:\\host\\secret.json', dest: undefined, message: 'ENOENT: no such file or directory, open \'C:\\host\\secret.json\''},
       askedForeign: [],
       ...(process.platform === 'win32' ? {own: {
-        realpath: probe, glob: [M('app\\plugins\\a.js')], globExcludeOwn: [M('app\\plugins\\a.js')],
+        realpath: probe, glob: [M('app\\plugins\\a.js')], globExcludeOwn: [M('app\\plugins\\a.js')], globExcludeBackslash: [M('app\\plugins\\a.js')],
         error: {path: missing, dest: undefined, message: `ENOENT: no such file or directory, open '${missing}'`},
         dir: M('app\\plugins'), dirUrl: M('app\\plugins'), globBackslash: [M('app\\plugins\\a.js')], mkdtemp: M('tmp\\ch-abc')
       }} : {})
@@ -79,6 +83,12 @@ describe('fs-broker 33: the paths a module is handed on Windows are in its own s
     assert.strictEqual(readlinkAnswer(ns, 'D:/host/y', link), 'D:\\host\\y');
     assert.strictEqual(readlinkAnswer(ns, 'C:\\ns\\vendor\\x', link), '/app/vendor/x', 'in a root: the namespace\'s');
     assert.strictEqual(readlinkAnswer(ns, '\\\\srv\\share\\x', link), '\\\\srv\\share\\x', 'UNC: as the host has it');
+    // (the link's drive or share from its host path, a long form read as its plain one)
+    assert.strictEqual(readlinkAnswer(ns, '\\data\\x', '\\\\?\\UNC\\srv\\share\\h\\l'), '\\\\srv\\share\\data\\x');
+    assert.strictEqual(readlinkAnswer(ns, '\\data\\x', '\\\\?\\D:\\h\\l'), 'D:\\data\\x');
+    assert.strictEqual(readlinkAnswer(ns, '\\data\\x', '\\\\srv\\share\\h\\l'), '\\\\srv\\share\\data\\x');
+    // (no drive or share to put it on: refused, never answered drive-less)
+    for (const l of [undefined, '', 'h\\l', '\\h\\l']) assert.throws(() => readlinkAnswer(ns, '/data/secret', l), {code: 'EINVAL'}, String(l));
     assert.strictEqual(readlinkAnswer(ns, '../vendor/x', link), '../vendor/x', 'relative: as it is');
     const seen = seenFormFor('win32', 'M');
     // (and the module resolving it from its link never lands in its own namespace)
