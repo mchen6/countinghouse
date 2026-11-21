@@ -253,7 +253,11 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
     // (on Windows Node answers a package's self-reference findPackageJSON in
     // its long form, \\?\D:\...; the sandbox answers the plain form by
     // design, fs-broker 26: compared as the plain form)
-    const plain = (p) => ((typeof(p) === 'string' && p.startsWith('\\\\?\\')) ? p.slice(4) : p);
+    const plain = (p) => {
+      if (typeof(p) !== 'string') return p;
+      if (p.startsWith('\\\\?\\UNC\\')) return `\\\\${p.slice(8)}`;
+      return p.startsWith('\\\\?\\') ? p.slice(4) : p;
+    };
     return JSON.parse(r.stdout).map(([answer, pj, pjBase]) => [answer, plain(pj), plain(pjBase)]);
   };
   const resolver = () => createResolver({

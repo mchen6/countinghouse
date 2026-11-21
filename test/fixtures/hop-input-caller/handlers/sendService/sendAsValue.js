@@ -8,9 +8,11 @@
 // and a patched prototype never sees it).
 const MessagePort = globalThis.MessagePort;
 const runtimeEnvelope = () => {
-  const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]message-envelope\.js$/.test(k) && !/^(\/app\/|[A-Z]:\\app\\)/.test(k));
+  const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]message-envelope\.js$/.test(k) && !k.startsWith(OWN_ROOT + require('path').sep));
   return key != null ? require.cache[key].exports : null;
 };
+// (this module's own root, however the OS spells it: its own files are not the runtime's)
+const OWN_ROOT = require('path').resolve(__dirname, '..', '..');
 module.exports = async (input, ctx) => {
   const post = MessagePort.prototype.postMessage;
   const env = runtimeEnvelope();

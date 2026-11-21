@@ -64,7 +64,9 @@ for (const mode of ['enforce', 'audit']) {
       assert.ok(!/\x1b|\x07/.test(server.output), 'no escape reached the log');
     });
 
-    it('10 MB to stdout: the main thread\'s CPU stays bounded; at most 256 KiB is written, and one line says what was dropped', async () => {
+    // (the main thread's CPU is read from /proc: Linux only, said as pending elsewhere)
+    if (process.platform !== 'linux') it('10 MB to stdout: the main thread\'s CPU stays bounded (Linux only: read from /proc)');
+    it('10 MB to stdout: at most 256 KiB is written, and one line says what was dropped; on Linux the main thread\'s CPU stays bounded', async () => {
       const before = mainCpu(server.pid);
       await call('flood', {mb: 10});
       await settle(1000);
