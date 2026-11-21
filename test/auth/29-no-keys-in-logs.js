@@ -1,7 +1,5 @@
-// A log line never carries an API key. Where only the key is in hand -- a
-// peer channel's grant record -- the line names it by a short fingerprint
-// instead (`key sha256:<8 hex>`),
-// enough to tell two tenants apart in a log, not to recover the key.
+// A log line never carries an API key: a peer channel's grant record holds
+// no key, and its line names the caller by its opaque id (C-meter-keys-3).
 //
 // Each case runs in a child process: requiring the peer channel broker or
 // countinghouse-util on a main thread opens Redis clients, which would keep
@@ -13,7 +11,6 @@ const spawnSync = require('child_process').spawnSync;
 
 const LIB = path.join(__dirname, '..', '..', 'lib');
 const KEY = 'tenant-secret-key-0123456789abcdef';
-const FINGERPRINT = `key sha256:${crypto.createHash('sha256').update(KEY).digest('hex').slice(0, 8)}`;
 
 // Runs `body` with LOG.I captured and returns the lines it logged.
 function loggedBy(body) {
@@ -34,22 +31,19 @@ function loggedBy(body) {
   return JSON.parse(out.slice('LINES '.length));
 }
 
-function assertFingerprinted(lines) {
-  assert.strictEqual(lines.length, 1, JSON.stringify(lines));
-  assert.ok(!lines[0].includes(KEY), lines[0]);
-  assert.ok(lines[0].includes(FINGERPRINT), lines[0]);
-}
-
 describe('auth 29: no API key in a log line', function() {
   this.timeout(30000);
 
-  it('a peer channel closed for a revoked grant names the tenant by fingerprint', () => {
-    assertFingerprinted(loggedBy(`
+  // (C-meter-keys-3: the grant record holds no key, only the caller's id)
+  it('a peer channel closed for a revoked grant names the caller by its id', () => {
+    const lines = loggedBy(`
       const PeerChannelBroker = lib('peer-channel-broker');
       const broker = new PeerChannelBroker({});
       const entry = {callerWM: {workerId: 1, sendPeerInvalidateToChild: () => {}}, calleeWM: {workerId: 2, sendPeerInvalidateToChild: () => {}}};
       broker.channelRegistry['1:2'] = entry;
-      broker.closeRevoked('1:2', entry, {appKey: KEY, deviceID: 'dev-1'}, {code: 'DEVICE_ACCESS_DENIED'});`));
+      broker.closeRevoked('1:2', entry, {id: 'u_${'B'.repeat(22)}', deviceID: 'dev-1'}, {code: 'DEVICE_ACCESS_DENIED'});`);
+    assert.strictEqual(lines.length, 1, JSON.stringify(lines));
+    assert.ok(lines[0].includes(`caller u_${'B'.repeat(22)}`), lines[0]);
   });
 
   // R2-1 Task 5: a module's recordUsage has the caller's opaque id in hand,

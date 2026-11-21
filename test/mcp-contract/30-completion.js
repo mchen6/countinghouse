@@ -283,6 +283,26 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
     }
   });
 
+  it('the floor and the running count are kept by the key\'s meterId, never the key (C-meter-keys-3)', async () => {
+    limited = false;
+    const {meterId} = require('../../lib/key-fingerprint');
+    const {rawKeyPaths} = require('../helpers/no-raw-key');
+    const held = [];
+    ci.invokeDeviceAction = (deviceID, serviceID, actionName, args, session) => { held.push(session); };
+    try {
+      const pending = complete(KEY_A, 'tints_tint', 'shade', 't');
+      await new Promise((r) => setTimeout(r, 100));
+      assert.strictEqual(held.length, 1, 'one runs');
+      const kept = gateway.completionKeysForTests();
+      assert.deepStrictEqual(rawKeyPaths(kept, KEY_A), [], JSON.stringify(kept));
+      assert.deepStrictEqual(kept, {floor: [meterId(KEY_A)], runs: [meterId(KEY_A)]});
+      held[0].callbackWithoutTimer(null, {output: {values: ['teal-blue']}});
+      await pending;
+    } finally {
+      delete ci.invokeDeviceAction;
+    }
+  });
+
   it('completion is rate limited', async () => {
     limited = true;
     const r = await complete(KEY_A, 'colours_paint', 'colour', 'r');

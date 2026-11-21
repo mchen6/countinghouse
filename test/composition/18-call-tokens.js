@@ -1907,6 +1907,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       }
     });
 
+    // (C-meter-keys-3: the record holds the id and each key's meterId; the
+    // re-check asks for the key the index lists for the id)
     it('(T4-review) two keys of one identity on a pair: revoking the first closes the channel', async () => {
       const authPath = require.resolve('../../lib/user-auth');
       const idPath = require.resolve('../../lib/identity');
@@ -1916,7 +1918,11 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const revoked = new Set();
       require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,
         exports: (a, b, deviceID, appKey, c, d, localCB, cb) => setImmediate(() => cb(revoked.has(appKey) ? Object.assign(new Error('revoked'), {code: 'USER_HAS_NO_DEVICE'}) : null))};
-      require.cache[idPath] = {id: idPath, filename: idPath, loaded: true, exports: Object.assign({}, require('../../lib/identity'), {idForKey: () => 'u_same'})};
+      // (the index lists k1 for the id now: k2, granted under it before, is
+      // no longer the id's key either way)
+      let listedNow = 'k1';
+      require.cache[idPath] = {id: idPath, filename: idPath, loaded: true, exports: Object.assign({}, require('../../lib/identity'), {idForKey: () => 'u_same',
+        lookup: (id) => (id === 'u_same' && listedNow != null ? {apiKey: listedNow, userName: null, isAdmin: false} : null)})};
       delete require.cache[brokerPath];
       try {
         cli.setOptions({workerThread: true, peerChannelAuthRecheckSeconds: 0, peerChannelAuthLookupTimeoutMs: 500});
@@ -1929,6 +1935,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         b.grant('d', 'k2', caller, callee, ['svc|act']);
         const grants = b.channelRegistry['51:52'].grants;
         assert.strictEqual(Object.keys(grants).length, 1, 'one record per identity and device');
+        assert.ok(!JSON.stringify([...Object.values(grants)[0].meters]).includes('k1'), 'the record holds no key');
+        listedNow = 'k1';
         revoked.add('k1');
         b.recheckGrants();
         await sleep(100);
@@ -1947,6 +1955,12 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const savedAuth = require.cache[authPath];
       let lookups = 0;
       require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: () => { lookups++; }};   // never answers
+      // (the record names the caller by id; the index lists its key)
+      const idPath = require.resolve('../../lib/identity');
+      const savedId = require.cache[idPath];
+      require.cache[idPath] = {id: idPath, filename: idPath, loaded: true, exports: Object.assign({}, require('../../lib/identity'), {
+        lookup: (id) => (id === 'u_k' ? {apiKey: 'k', userName: null, isAdmin: false} : null)})};
+      const record = () => ({g: {id: 'u_k', deviceID: 'd', meters: new Set([require('../../lib/key-fingerprint').meterId('k')])}});
       delete require.cache[brokerPath];
       try {
         cli.setOptions({workerThread: true, peerChannelAuthRecheckSeconds: 0, peerChannelAuthLookupTimeoutMs: 200});
@@ -1954,17 +1968,18 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         const broker = new PeerChannelBroker({deviceMap: {}});
         const closed = [];
         broker.closeRevoked = (pairKey) => { closed.push(pairKey); delete broker.channelRegistry[pairKey]; };
-        broker.channelRegistry['21:22'] = {callerWM: {workerId: 21}, calleeWM: {workerId: 22}, grants: {g: {appKey: 'k', deviceID: 'd'}}};
+        broker.channelRegistry['21:22'] = {callerWM: {workerId: 21}, calleeWM: {workerId: 22}, grants: record()};
         broker.recheckGrants();
         await sleep(400);
         assert.deepStrictEqual(closed, ['21:22'], 'the channel behind a hung lookup stayed open');
         assert.strictEqual(broker.recheckInFlight, 0, 'a hung lookup left a re-check in flight');
-        broker.channelRegistry['23:24'] = {callerWM: {workerId: 23}, calleeWM: {workerId: 24}, grants: {g: {appKey: 'k', deviceID: 'd'}}};
+        broker.channelRegistry['23:24'] = {callerWM: {workerId: 23}, calleeWM: {workerId: 24}, grants: record()};
         const before = lookups;
         broker.recheckGrants();
         assert.ok(lookups > before, 'the next re-check did not run');
       } finally {
         if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
+        if (savedId != null) require.cache[idPath] = savedId; else delete require.cache[idPath];
         delete require.cache[brokerPath];
         cli.setOptions({workerThread: false});
       }
