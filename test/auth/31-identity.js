@@ -379,6 +379,8 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
 
     it('a miss inside the throttle waits for a refill that asks the provider after it, never one from before', () => {
       const out = run(`
+        // (the throttle's wait passes at once: an injected clock, no real 5 s)
+        identity.stateForTests().setClock({now: () => Date.now(), setTimeout: (fn, ms) => (ms <= 5000 ? setImmediate(fn) : setTimeout(fn, ms))});
         let list = [{apiKey: 'k-a', userName: 'a'}];
         let reads = 0;
         const p = {entries: (cb) => { reads++; cb(null, list.slice()); }};
@@ -388,6 +390,29 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
         const late = await identity.know('k-late', () => p);
         return {late: late != null && identity.lookup(late) != null, reads};`);
       assert.deepStrictEqual(out, {late: true, reads: 2});
+    });
+
+    it('a provider that never answers is refused at the deadline, and the refills after it still run', () => {
+      const out = run(`
+        // (the deadline passes at once: an injected clock)
+        identity.stateForTests().setClock({now: () => Date.now(), setTimeout: (fn, ms) => setImmediate(fn)});
+        const hung = {entries: () => {}};
+        const good = {entries: (cb) => cb(null, [{apiKey: 'k-good', userName: 'g'}])};
+        const first = await identity.know('k-x', () => hung).then(() => 'resolved', (e) => e.code);
+        const next = await identity.know('k-good', () => good).then((id) => identity.lookup(id) != null, (e) => e.code);
+        return {first, next};`);
+      assert.deepStrictEqual(out, {first: 'IDENTITY_REFILL_TIMEOUT', next: true});
+    });
+
+    it('a key remembered under --debug keeps its id once a provider lists it under a stable one: its jobs are not orphaned', () => {
+      const out = run(`
+        let list = [];
+        const p = {entries: (cb) => cb(null, list.slice())};
+        const kept = await identity.know('k-later', () => p, {rememberUnlisted: true});
+        list = [{apiKey: 'k-later', userName: 'l', id: 'later-stable'}];
+        await identity.rebuild(p);
+        return {old: identity.lookup(kept) != null, now: identity.idForKey('k-later') === identity.idFor({id: 'later-stable'}, 'x')};`);
+      assert.deepStrictEqual(out, {old: true, now: true});
     });
 
     it('--debug\'s remembered keys: a key used again is kept, the one used longest ago goes', function() {

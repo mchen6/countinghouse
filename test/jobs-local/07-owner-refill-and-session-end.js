@@ -38,6 +38,9 @@ function child(body, keys = []) {
     const billed = [];
     runner.initJobProcess({recordCall: (k, t, c, cb) => { billed.push(k); if (cb) cb(null); },
       invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback) => setImmediate(callback, null, {ok: 1})});
+    // the refill throttle's clock: its wait passes at once, its deadline is
+    // real (identity.stateForTests().setClock; never a real 5 s wait)
+    identity.stateForTests().setClock({now: () => Date.now(), setTimeout: (fn, ms) => (ms <= 5000 ? setImmediate(fn) : setTimeout(fn, ms))});
     const add = (ctx, opts = {name: 'n'}) => new Promise((resolve) => runner.addJob(ctx, opts, 'dev', 'svc', 'act', {}, (err, r) => resolve({err, r})));
     const stateOf = (id) => new Promise((resolve) => runner.getJob(INTERNAL, id, (e, rec) => resolve(rec)));
     (async () => { const out = await (async () => { ${body} })(); process.stdout.write('OUT ' + JSON.stringify(out) + '\\n'); process.exit(0); })()
@@ -54,11 +57,13 @@ describe('jobs-local 07: the owner refill a run waits for, and a session ending 
   it('M1: an owner missing from the index just after a refill is found by the next one, and the run is billed to it', () => {
     const out = child(`
       provider.list = [{apiKey: 'owner-m1', userName: 'o'}];
-      const added = await add({appKey: 'owner-m1'});
+      // (its run after the owner leaves the index, below)
+      const added = await add({appKey: 'owner-m1'}, {name: 'n', delay: 500});
       if (added.err) return {addErr: added.err.code || added.err.message};
-      // a refill moments ago (another miss's, an operator lookup's), then
-      // the owner gone from the index -- the provider still lists it
-      await new Promise((resolve) => identity.resolve('u_nobody', provider, resolve));
+      // a refill moments ago (another miss's), then the owner gone from the
+      // index -- the provider still lists it
+      await identity.freshRefill(provider);
+      const readsBefore = provider.reads;
       identity.stateForTests().forget();
       const t0 = Date.now();
       let rec = null;
@@ -67,8 +72,29 @@ describe('jobs-local 07: the owner refill a run waits for, and a session ending 
         if (rec != null && (rec.state === 'completed' || rec.state === 'failed')) break;
         await sleep(50);
       }
-      return {state: rec && rec.state, reason: rec && rec.job ? rec.job.failedReason || null : null, billed};`);
-    assert.deepStrictEqual(out, {state: 'completed', reason: null, billed: ['owner-m1']}, JSON.stringify(out));
+      return {state: rec && rec.state, reason: rec && rec.job ? rec.job.failedReason || null : null, billed, askedAgain: provider.reads > readsBefore};`);
+    assert.deepStrictEqual(out, {state: 'completed', reason: null, billed: ['owner-m1'], askedAgain: true}, JSON.stringify(out));
+  });
+
+  // the medium on the round: an owned repeating job whose key does not come
+  // back from authorizeRun is refused for good AND its scheduler stops
+  it('an owned scheduler whose authorization brings back no key stops, as a final refusal\'s does', () => {
+    const out = child(`
+      provider.list = [{apiKey: 'owner-rep', userName: 'o'}];
+      runner.authorizeRun = () => Promise.resolve(null);
+      const ctx = {appKey: 'owner-rep'};
+      const added = await add(ctx, {name: 'rep', repeat: {every: 1000}});
+      if (added.err) return {addErr: added.err.code || added.err.message};
+      const t0 = Date.now();
+      let rec = null;
+      while (Date.now() - t0 < 10000) {
+        rec = await stateOf(added.r.id);
+        if (rec != null && rec.state === 'failed') break;
+        await sleep(50);
+      }
+      const removed = await new Promise((resolve) => runner.removeJob(ctx, 'rep', null, true, (err) => resolve(err != null ? err.code : 'removed')));
+      return {state: rec && rec.state, scheduler: removed, billed};`);
+    assert.deepStrictEqual(out, {state: 'failed', scheduler: 'JOB_NOT_FOUND', billed: []}, JSON.stringify(out));
   });
 
   it('M2: a session that ends while its owner is being made known gets no job', () => {
