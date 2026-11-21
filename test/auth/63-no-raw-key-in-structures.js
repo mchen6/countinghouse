@@ -13,7 +13,7 @@ const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 // (a bound on something observable, never a fixed wait)
 const until = async (f, what) => { for (let i = 0; i < 1000 && !f(); i++) await tick(5); assert.ok(f(), what); };
 
-describe('auth 61: no raw API key in the main thread\'s structures (C-meter-keys-3)', function() {
+describe('auth 63: no raw API key in the main thread\'s structures (C-meter-keys-3)', function() {
   this.timeout(30000);
 
   describe('the subscriptions hub', () => {
