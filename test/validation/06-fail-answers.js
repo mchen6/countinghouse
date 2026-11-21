@@ -312,6 +312,33 @@ describe('validation 06: the review of c15 -- every failure is answered, and log
     assert.strictEqual(again, after, 'handed over once');
   });
 
+  // (#493's high: under enforce a worker's stacks name the runtime's files
+  // countinghouse:/lib/... -- countinghouse:\lib\... on Windows -- and a
+  // runtime bug's frame is still found, by the runtime file it names)
+  it('names a runtime bug\'s frame by its virtual name too, as the runtime file it is', () => {
+    const {spawnSync} = require('child_process');
+    const lib = require('path').resolve(__dirname, '../../lib');
+    const script = `
+      const lib = ${JSON.stringify(lib)};
+      const {whereFrom, runtimeFilesAre} = require(lib + '/handler-answer');
+      runtimeFilesAre([lib + '/cli-options.js', lib + '/logger.js']);
+      const err = new TypeError('x');
+      err.stack = 'TypeError: x\\n    at f (countinghouse:/lib/logger.js:10:5)\\n    at g (countinghouse:/lib/cli-options.js:20:3)';
+      const posix = whereFrom(err);
+      err.stack = 'TypeError: x\\n    at f (countinghouse:\\\\lib\\\\cli-options.js:21:3)';
+      const win = whereFrom(err);
+      err.stack = 'TypeError: x\\n    at f (countinghouse:/lib/not-a-runtime-file.js:1:1)';
+      const other = whereFrom(err);
+      process.stdout.write(JSON.stringify([posix, win, other]));
+    `;
+    const r = spawnSync(process.execPath, ['-e', script], {encoding: 'utf8', timeout: 30000});
+    assert.strictEqual(r.status, 0, r.stderr);
+    const [posix, win, other] = JSON.parse(r.stdout);
+    assert.strictEqual(posix, 'TypeError at lib/logger.js:10');
+    assert.strictEqual(win, 'TypeError at lib/cli-options.js:21');
+    assert.strictEqual(other, 'TypeError', 'a name no runtime file has is never logged');
+  });
+
   it('the debug API log line carries neither the caller\'s input nor the module\'s message or fault', () => {
     // In a child process, so the options it sets (--debug) stay out of
     // this folder's process.

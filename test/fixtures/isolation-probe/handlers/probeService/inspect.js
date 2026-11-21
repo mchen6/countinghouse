@@ -926,6 +926,48 @@ const STEPS = {
     } finally { Error.prepareStackTrace = saved2; }
     return out.join(' ');
   },
+  // (#493's high, round 1: globalThis.Error swapped or deleted reaches no
+  // raw frame; a module's save/swap/restore keeps its own function; the
+  // stack wrappers' prototype is an object's; Error.captureStackTrace as
+  // the runtime holds it)
+  stackHold: () => {
+    const out = [];
+    const E = Error;
+    const rawFrom = (text) => (Array.isArray(text) || /\(\/home|\(\/(usr|opt|srv|tmp)\//.test(String(text)) ? 'raw' : 'held');
+    let swapped = 'held';
+    try {
+      try { globalThis.Error = {prepareStackTrace: (e, cs) => cs}; } catch (e) { /* held */ }
+      swapped = rawFrom(new E('x').stack);
+    } finally { try { globalThis.Error = E; } catch (e) { /* held */ } }
+    out.push(`swap-${swapped}`);
+    let deleted = 'held';
+    try {
+      try { delete globalThis.Error; } catch (e) { /* held */ }
+      deleted = globalThis.Error === E ? rawFrom(new E('y').stack) : `gone-${rawFrom(new E('y').stack)}`;
+    } finally { if (globalThis.Error !== E) { try { globalThis.Error = E; } catch (e) { /* held */ } } }
+    out.push(`delete-${deleted}`);
+    const saved0 = E.prepareStackTrace;
+    try {
+      E.prepareStackTrace = () => 'mine';
+      const saved = E.prepareStackTrace;
+      E.prepareStackTrace = () => 'other';
+      E.prepareStackTrace = saved;
+      out.push(new E('z').stack === 'mine' ? 'restore' : `restore(${String(new E('z').stack).slice(0, 30)})`);
+      // (a function that hands the one it replaced no frames, or others of
+      // its own: the default text, never round again)
+      E.prepareStackTrace = undefined;
+      const prev = E.prepareStackTrace;
+      E.prepareStackTrace = (e, f) => prev(e, []);
+      let filtered;
+      try { filtered = /^Error: q/.test(String(new E('q').stack)) ? 'filtered' : 'filtered-other'; } catch (e) { filtered = `filtered-threw-${e.name}`; }
+      out.push(filtered);
+      let proto = null;
+      E.prepareStackTrace = (e, f) => { proto = Object.getPrototypeOf(Object.getPrototypeOf(f[0])); return 'x'; };
+      void new E('w').stack;
+      out.push(proto === Object.prototype ? 'wrapper-object' : 'wrapper-null');
+    } finally { E.prepareStackTrace = saved0; }
+    return out.join(' ');
+  },
   // (C-lows d: process.argv as module code reads it under enforce)
   argv: () => {
     let pushed = false;

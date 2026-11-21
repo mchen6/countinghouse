@@ -173,6 +173,36 @@ describe('sandbox 64: the worker\'s token path, read as source', () => {
     });
   }
 
+  // (#493's high: Error.captureStackTrace and Error.prepareStackTrace read
+  // by their live global names in a runtime file hand module code that
+  // replaced them the runtime's own errors: each is taken at load. Every
+  // lib file, read as source; the reviewed sites each say why)
+  it('no runtime file calls Error.captureStackTrace or sets Error.prepareStackTrace by its live name, but the reviewed', () => {
+    const REVIEWED_LIVE = [
+      ['single-thread-facade.js', /Error\.(captureStackTrace|prepareStackTrace)/, 'the main thread\'s, in single-thread mode only: no worker'],
+      ['lean-worker.js', /Error\.prepareStackTrace/, 'the test\'s late-load probe: never in a normal start']
+    ];
+    const found = [];
+    const walk = (dir) => {
+      for (const e of fs.readdirSync(dir, {withFileTypes: true})) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (e.name.endsWith('.js')) {
+          fs.readFileSync(p, 'utf8').split('\n').forEach((line, i) => {
+            const t = line.trim();
+            if (t.startsWith('//') || t.startsWith('*')) return;
+            if (!/\bError\.captureStackTrace\(|\bError\.prepareStackTrace\s*=[^=]/.test(t)) return;
+            const rel = path.relative(LIB, p);
+            if (REVIEWED_LIVE.some(([f, re]) => rel === f && re.test(t))) return;
+            found.push(`${rel}:${i + 1}: ${t}`);
+          });
+        }
+      }
+    };
+    walk(LIB);
+    assert.deepStrictEqual(found, []);
+  });
+
   it('every reviewed exception still matches a line (none is stale)', () => {
     const stale = REVIEWED.filter(([file, rule, re]) => !offenders(fs.readFileSync(path.join(LIB, `${file}.js`), 'utf8')).some((o) => o.rule === rule && re.test(o.text)));
     assert.deepStrictEqual(stale.map(([file, rule, re, why]) => `${file} ${rule} ${re} (${why})`), []);

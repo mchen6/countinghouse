@@ -202,6 +202,14 @@ spawns read it. A module's own `vm` realm, with a `prepareStackTrace` of
 its own there, sees the runtime's file paths in its raw stack frames;
 never a receiver or a function of the runtime's (its files are strict
 mode). Under `--enable-source-maps`, a stack is not source-mapped. A
+`prepareStackTrace` of the module's own also formats the stacks of the
+runtime's own errors read in its worker, as on master: it is handed the
+error and its frames (wrapped, renamed), the error's message as it is.
+Reading `Error.prepareStackTrace` after setting it gives a view of the
+module's function, not the function itself (`=== myFn` is false); set
+back, the view restores it. `globalThis.Error` can't be replaced or
+deleted under `enforce` (Node reads the stack formatter from it), so a
+library that swaps the global `Error` (zone.js's) fails to load there. A
 frame with no file -- a module's own `eval` or `new Function`, a
 builtin's -- answers `getThis()` and `getFunction()` with `undefined`.
 On Windows a stack or a message spells the runtime's files

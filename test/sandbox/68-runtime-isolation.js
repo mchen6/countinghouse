@@ -191,6 +191,21 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     fs.rmSync(home, {recursive: true, force: true});
     fs.rmSync(spaced, {recursive: true, force: true});
   });
+  // (#493's high, round 1: under --hardened, process.execArgv carried every
+  // --allow-fs-* grant -- the install, each dependency's real path, the
+  // modules path: no channel names a host path there either)
+  describe('enforce, --hardened', () => {
+    let server = null;
+    before(async () => {
+      server = await startServer(testPort(9759), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
+        '--modulePath', path.dirname(probe), '--loadModule', probe]);
+    });
+    after(() => { stopServer(server); server = null; });
+    it('no module-object channel and no process value names a host path, process.execArgv included', async () => {
+      const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'hostChannels', needles: [probe, ROOT]});
+      assert.strictEqual(detail(r), 'none', JSON.stringify(r).slice(0, 1500));
+    });
+  });
   ['enforce', 'audit'].forEach((mode) => describe(mode, () => {
     let server = null;
     before(async () => {
@@ -251,6 +266,10 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       it('stack edges: a vm realm sees no runtime receiver; a chained prepareStackTrace; no builtin frame\'s receiver; util.getCallSites virtual; _initPaths', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'stackEdges'});
         assert.strictEqual(detail(r), 'vm-no-receivers chained builtin-no-this callsites-virtual initPaths alias counts eval-none boundary rewrapped', JSON.stringify(r).slice(0, 1500));
+      });
+      it('the stack hold: globalThis.Error swapped or deleted gives no raw frame; save/swap/restore keeps the module\'s function; wrappers are objects', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'stackHold'});
+        assert.strictEqual(detail(r), 'swap-held delete-held restore filtered wrapper-object', JSON.stringify(r).slice(0, 1500));
       });
       it('process.argv is a frozen copy: node, then the runtime\'s worker by its virtual name', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'argv'});
