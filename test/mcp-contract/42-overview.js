@@ -594,6 +594,49 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
     });
   });
 
+  // (Matt's (d), the own-modules design §2.7) the last update check the
+  // user asked for, as ch-local left it in the home -- the overview never
+  // contacts the network
+  describe('the last update check (settings-tool upgradeAvailable)', () => {
+    const settingsTool = require('../../lib/settings-tool');
+    const file = (dir, v) => fs.writeFileSync(path.join(dir, 'upgrade-available.json'), JSON.stringify(v));
+    const good = {v: 1, checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: '1.5.0', major: false, breaking: false, plugin: null};
+
+    it('reads the check as ch-local wrote it; none, or anything malformed, is no line', () => {
+      const dir = tmp.mkdtemp('ch-mcp-42-');
+      assert.strictEqual(settingsTool.upgradeAvailable(dir), null, 'none');
+      file(dir, good);
+      assert.deepStrictEqual(settingsTool.upgradeAvailable(dir), {checkedAt: good.checkedAt, installed: '1.4.0', available: '1.5.0', major: false, pluginLatest: null});
+      file(dir, Object.assign({}, good, {plugin: {installed: '0.6.0', latest: '0.7.0'}}));
+      assert.strictEqual(settingsTool.upgradeAvailable(dir).pluginLatest, '0.7.0');
+      file(dir, Object.assign({}, good, {plugin: {installed: '0.7.0', latest: '0.7.0'}}));
+      assert.strictEqual(settingsTool.upgradeAvailable(dir).pluginLatest, null, 'the plugin is up to date');
+      for (const bad of [{v: 2}, Object.assign({}, good, {available: '1.5.0; rm -rf ~'}), Object.assign({}, good, {checkedAt: 'yesterday'}),
+        Object.assign({}, good, {installed: 7}), Object.assign({}, good, {major: 'yes'})]) {
+        file(dir, bad);
+        assert.strictEqual(settingsTool.upgradeAvailable(dir), null, JSON.stringify(bad));
+      }
+      fs.writeFileSync(path.join(dir, 'upgrade-available.json'), '{');
+      assert.strictEqual(settingsTool.upgradeAvailable(dir), null);
+    });
+
+    it('the overview says it in one fixed sentence', () => {
+      const F = overview.FIXED;
+      assert.strictEqual(F.update(null, {checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: '1.5.0', major: false, pluginLatest: null}),
+        'ch-local 1.5.0 is available (you have 1.4.0; checked 2026-11-21): run `ch-local upgrade` in your own terminal.');
+      assert.strictEqual(F.update('/home/u/.ch/bin/ch-local.js', {checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: '2.0.0', major: true, pluginLatest: '0.7.0'}),
+        'ch-local 2.0.0 is available (you have 1.4.0; checked 2026-11-21): run `node "/home/u/.ch/bin/ch-local.js" upgrade` in your own terminal. It is a new major version: its release notes say what changes. The plugin can then be updated to 0.7.0.');
+      assert.strictEqual(F.update(null, {checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: null, major: false, pluginLatest: null}),
+        'ch-local 1.4.0 was up to date when you last checked (2026-11-21).');
+      const data = overview.build({version: '1', settingsProfile: true, packs: [], update: {checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: null, major: false, pluginLatest: null}});
+      assert.strictEqual(data.update, F.update(null, {checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: null, major: false, pluginLatest: null}));
+      assert.strictEqual(overview.build({version: '1', settingsProfile: false, packs: [], update: {checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: null, major: false, pluginLatest: null}}).update,
+        undefined, 'never on a hosted runtime');
+      assert.strictEqual(overview.OUTPUT_SCHEMA.properties.update.description,
+        'The last update check you asked for (ch-local upgrade --check), as it was left on this machine: countinghouse itself never checks the network.');
+    });
+  });
+
   // (the medium on B-firstrun, 2) each pack's own scenario, by the record's rule
   describe('the install record (settings-tool installedPacks)', () => {
     it('each pack gets its own scenario, never another pack\'s; one that cannot be read is said apart from none', () => {
