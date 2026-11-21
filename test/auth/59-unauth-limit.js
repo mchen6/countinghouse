@@ -262,9 +262,9 @@ describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () 
     const sent = [];
     const res = {set() { return res; }, status(c) { sent.push(c); return res; }, json() { return res; }};
     const carried = {jsonrpc: '2.0', id: 3, error: {code: -32603, message: 'x', data: {'countinghouse/code': 'UNAUTH_RATE_LIMITED'}}};
-    assert.strictEqual(unauthLimit.answerRpcLimited(res, carried), false);
-    const own = unauthLimit.rpcLimited(3, unauthLimit.refusal());
-    assert.strictEqual(unauthLimit.answerRpcLimited(res, own), true);
+    assert.strictEqual(require('../../lib/mcp/error-data').answerLimit(res, carried), false);
+    const own = require('../../lib/mcp/error-data').limitAnswer(3, unauthLimit.refusal());
+    assert.strictEqual(require('../../lib/mcp/error-data').answerLimit(res, own), true);
     assert.deepStrictEqual(sent, [429]);
   });
 
@@ -538,7 +538,7 @@ describe('auth 59: a refusal met under way answers one shape on every route', fu
 
 // (the high review of #483, round 2, 7) every error the gateway answers by
 // its own message goes through identityRefusal, so the limit, wherever it
-// is met, answers in the one shape (rpcLimited)
+// is met, answers in the one shape (error-data limitAnswer)
 describe('auth 59: the gateway answers an error by one path', () => {
   it('no JSON-RPC error is made from an error\'s message but by identityRefusal', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'lib', 'mcp', 'gateway.js'), 'utf8');
