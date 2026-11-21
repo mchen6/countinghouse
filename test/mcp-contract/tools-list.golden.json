@@ -162,7 +162,7 @@
         },
         "update": {
           "type": "string",
-          "description": "The last update check you asked for (ch-local upgrade --check), as it was left on this machine: countinghouse itself never checks the network."
+          "description": "The last update check you asked for (ch-local upgrade --check), as it was left on this machine: countinghouse itself never checks for updates."
         }
       },
       "required": [

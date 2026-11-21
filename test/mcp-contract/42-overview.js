@@ -699,7 +699,7 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.strictEqual(overview.build({version: '1', settingsProfile: true, packs: [], update: {unreadable: true}}).update,
         'The last update check could not be read: run `ch-local upgrade --check` in your own terminal to check again.');
       assert.strictEqual(overview.OUTPUT_SCHEMA.properties.update.description,
-        'The last update check you asked for (ch-local upgrade --check), as it was left on this machine: countinghouse itself never checks the network.');
+        'The last update check you asked for (ch-local upgrade --check), as it was left on this machine: countinghouse itself never checks for updates.');
     });
 
     // (A's medium, 7) the gateway passes the home's check in the settings
