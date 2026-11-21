@@ -1002,8 +1002,8 @@ per process, and again when the file changes.
   entry.
 - `{"confirm": true}` and `{"conversation": false}` are rules for a change
   in conversation. They bind once the settings tool changes module settings
-  (its `module.*` names; until then no conversation can change one): the
-  first needs the user's confirmation, the second allows the terminal only.
+  (its `module.*` names): the first needs the user's confirmation, the
+  second allows the terminal only.
   `"conversation": false` directly under `moduleSettings` makes every module
   setting terminal-only.
 
@@ -1130,8 +1130,11 @@ A dialog is shown only when all of these hold:
   three dialogs.
 
 The dialog has one checkbox and no default. Its text is built from the
-change alone, naming the current value (and a module's version, from
-ch-local's `modules.json`); no text from the model appears in it. The model's arguments
+change, naming the current value (and a module's version, from ch-local's
+`modules.json`). For a runtime setting no text from the model appears in
+it. A module setting's dialog quotes the old value and the value asked for,
+which is the model's, each cut to 200 characters, and the module's own
+title for the setting, labelled as the module's own words. The model's arguments
 cannot carry the answer: `requestState` and the user's answer are read only
 from the request's own parameters. `requestState` carries only a random
 nonce and an HMAC, under a key held in memory for this start, binding the
@@ -1175,8 +1178,11 @@ sessions) all of this is each session's own, for the two caps:
   is that session's override, for its calls only, until the session ends.
   It is judged against the value the session runs with. The options every
   session shares, and `settings.json`, are not touched; every history line
-  names the session, and only that session reads it. Every other setting,
-  a pack included, is changed from a terminal.
+  names the session, and only that session reads it. A session may also
+  turn a module on or off (`enabled.*`) and change a module's settings
+  (`module.*`), under the same rules as a single-user runtime: those are
+  written to `settings.json` and apply to every session of the user. Every
+  other setting is changed from a terminal.
 - **The dialog.** Each session has its own pending change, nonce, decline
   locks and three dialogs. The key is one for the runtime and the session's
   id, which comes from its connection and not from the request, is in the
@@ -1247,8 +1253,8 @@ too: its own lower value for that setting goes, and it is told; another
 session's own tighter value stays. What is written without a dialog never
 raises what the file yields (a runtime started above it by a flag, or a
 tighter value stored for the next start): such a value holds for every
-session until the runtime restarts. Every other setting stays the
-terminal's.
+session until the runtime restarts. Besides `enabled.*` and `module.*`
+(above), every other setting stays the terminal's.
 
 **Across a runtime restart.** The runtime keeps nothing of a session on
 disk. After every change it tells ch-local's daemon the session's whole
@@ -1461,8 +1467,7 @@ notice never tells a caller about a module it cannot reach. A
 `resources/updated` notice goes only to the subscriptions of the key whose
 call succeeded: a module that keeps data per caller would otherwise tell one
 tenant when another was active. Each subscription's URIs are resolved in its
-own view (a pack a session doesn't list resolves nothing for it), and on a
-shared runtime a per-session module's change reaches only the calling
+own view (its key and session), and on a shared runtime a per-session module's change reaches only the calling
 session. A URI the caller can't read is left out of what is agreed, so a
 listen can't be used to learn that another tenant's resource exists. A call
 is announced where it is recorded, on the main thread, by every entry path;
@@ -1489,8 +1494,8 @@ tenant's task exists. A change is announced by its id alone. Every
 `notifications/tasks` is built by that same lookup again when it is sent,
 with the caller's key resolved again, and it is the task exactly as
 `tasks/get` would answer it. A task the caller can no longer read (its job
-gone, its session ended, its key revoked or no longer an admin's) is dropped
-silently. A working task's notices are coalesced to at most one a second
+gone, its session ended, or no longer an admin's) is dropped silently. A
+listen whose key no longer resolves (revoked) ends, with an error. A working task's notices are coalesced to at most one a second
 per listener and task, a flood of changes costs one lookup at a time, and a
 closed listen frees its timers.
 
@@ -1543,8 +1548,10 @@ and every one is bounded.
   every call, so within those 5 s a revoked grant's tool gets the auth
   refusal (which tells it from a name never registered), and a new grant's
   answers "unknown tool". A reload of the auth config ends that window at
-  once for the file provider; the sqlite and CouchDB providers have no
-  change signal, so for them the 5 s is the bound. The cost: a key not in
+  once for the file provider; the sqlite provider has no change signal, so
+  for it the 5 s is the bound. The CouchDB provider keeps its own cache of
+  the users it has looked up (at most 1024), which never expires: a change
+  made in CouchDB is seen only after a restart. The cost: a key not in
   the cache -- never seen, pushed out past the 1024, or after a reload
   cleared every key -- is resolved before its grants are read, so an
   unknown key costs one provider read and a valid key's first call one
@@ -1825,7 +1832,7 @@ and the short list of what the in-process sandbox cannot give.
   others may read, or whose ACL can't be checked, applies only what
   tightens. CouchDB is a remote store, and its access control is
   its operator's; the CouchDB provider keeps a cache of looked-up users in
-  memory, keyed by the raw key until it is keyed by meterId. In memory, the
+  memory, keyed by the key's meterId, never the key. In memory, the
   main thread holds raw keys for as long as it needs them:
   - for the process's life: the loaded auth config, the identity index (to
     re-check and bill a queued job's owner), `COUNTINGHOUSE_API_KEY`, and the
@@ -2231,10 +2238,11 @@ HTTP request's disconnect changes nothing.
   The outer call is billed only if its handler returned a success, as
   always: a handler that ran to its end after the cancel is billed, and one
   stopped by a refused hop is not. Its usage record is written once, with
-  outcome `cancelled`. The client's slot is freed at the cancel, but the
-  process waits for a cancelled call still running, up to the request
-  timeout, before it exits or reports a drain done, so a shutdown never
-  loses that bill. A task-augmented call cancelled before its task's id
+  outcome `cancelled`. The client's slot is freed at the cancel. A stdio
+  server's exit at the end of its input, and a session's drain, wait for a
+  cancelled call still running, up to the request timeout, so they never
+  lose that bill; `SIGTERM` and `/shutdown` exit at once, and may lose
+  the bill of a cancelled call still running then. A task-augmented call cancelled before its task's id
   was sent has its job removed if it hasn't started; one a worker has
   already started runs to its end and is billed, its result unread.
 
@@ -2422,8 +2430,9 @@ these are the checks that predate them and still apply:
     the main thread, with no such window.
     See [`direct-peer-channels.md`](direct-peer-channels.md) and D3 in
     [`design-decisions.md`](design-decisions.md#direct-peer-channels-five-decisions-d1d5).
-  - **`FileAuthProvider`'s zero-config first run generates and prints a
-    wildcard-access demo key** if no `auth.json` exists yet, specifically
+  - **`FileAuthProvider`'s zero-config first run generates a
+    wildcard-access demo key** if no `auth.json` exists yet, writes it
+    owner-only and prints the file's path, never the key, specifically
     so a fresh checkout is immediately usable. This is meant for local
     development and evaluation, not left running in a real deployment —
     treat an auto-generated `demo-*` key the same as any other credential
@@ -2431,14 +2440,9 @@ these are the checks that predate them and still apply:
     `auth.json`/`COUNTINGHOUSE_API_KEY`) before exposing the server beyond
     localhost.
   - **An internal cross-worker call whose caller identity can't be
-    resolved is metered for free rather than denied** (see
-    `docs/cross-cutting-matrix.md`'s two "Direct peer channel" rows) — this
-    is a `MeteringProvider`-side gap (billing, not authorization: the call
-    itself still only succeeds if the resolvable identity, when there is
-    one, is separately authorized), found and documented, not fixed, since
-    the correct behavior (deny vs. bill a fallback identity vs. the
-    current silent skip) is a real design decision, not implied by
-    anything already decided.
+    resolved is refused** (`HOP_IDENTITY_UNRESOLVED`, before anything is
+    charged or run; see `docs/cross-cutting-matrix.md`'s two "Direct peer
+    channel" rows): a call nobody can be charged for does not proceed.
 
 ### Hardening with systemd
 
