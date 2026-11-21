@@ -30,8 +30,8 @@ function startServer(port, args, opts) {
        stdio: ['ignore', 'pipe', 'pipe'], detached: true});
     server.output = '';
     server.exitCode = null;
-    server.stdout.on('data', (chunk) => { server.output += chunk.toString(); });
-    server.stderr.on('data', (chunk) => { server.output += chunk.toString(); });
+    server.stdout.on('data', (chunk) => { server.output += chunk.toString(); process.stderr.write(`[srv ${port}] ${chunk}`); });
+    server.stderr.on('data', (chunk) => { server.output += chunk.toString(); process.stderr.write(`[srv ${port} err] ${chunk}`); });
     if (opts.expectExit === true) {
       const timer = setTimeout(() => {
         stopServer(server);
