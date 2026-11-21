@@ -195,6 +195,21 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     fs.rmSync(home, {recursive: true, force: true});
     fs.rmSync(spaced, {recursive: true, force: true});
   });
+  // (#493's high, round 1: under --hardened, process.execArgv carried every
+  // --allow-fs-* grant -- the install, each dependency's real path, the
+  // modules path: no channel names a host path there either)
+  describe('enforce, --hardened', () => {
+    let server = null;
+    before(async () => {
+      server = await startServer(testPort(9759), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
+        '--modulePath', path.dirname(probe), '--loadModule', probe]);
+    });
+    after(() => { stopServer(server); server = null; });
+    it('no module-object channel and no process value names a host path, process.execArgv included', async () => {
+      const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'hostChannels', needles: [probe, ROOT]});
+      assert.strictEqual(detail(r), 'none', JSON.stringify(r).slice(0, 1500));
+    });
+  });
   ['enforce', 'audit'].forEach((mode) => describe(mode, () => {
     let server = null;
     before(async () => {
@@ -252,6 +267,44 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       assert.strictEqual(detail(r), 'none', JSON.stringify(r).slice(0, 1500));
     });
     if (mode === 'enforce') {
+      // (C-lows d: no channel from a module object, nor process.argv, names
+      // the root's host path or the install directory)
+      it('no module-object channel and no process value names the root\'s host path or the install directory', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'hostChannels', needles: [probe, ROOT]});
+        assert.strictEqual(detail(r), 'none', JSON.stringify(r).slice(0, 1500));
+      });
+      it('stack edges: a vm realm sees no runtime receiver; a chained prepareStackTrace; no builtin frame\'s receiver; util.getCallSites virtual; _initPaths', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'stackEdges'});
+        assert.strictEqual(detail(r), 'vm-no-receivers chained callsites-virtual initPaths alias counts', JSON.stringify(r).slice(0, 1500));
+      });
+      // (#493's regression read: what works on master works under enforce)
+      it('compatibility: an identity-guarded install twice, a restore if still its own, defineProperty and delete, Node\'s error header, argv and globalPaths ordinary arrays', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'stackCompat'});
+        assert.strictEqual(detail(r), 'guarded restored defined deleted node-header argv globalPaths', JSON.stringify(r).slice(0, 1500));
+      });
+      it('the stack hold: a module may swap and delete globalThis.Error; save/swap/restore keeps the module\'s function; wrappers are objects', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'stackHold'});
+        assert.strictEqual(detail(r), 'swappable deletable restore wrapper-object', JSON.stringify(r).slice(0, 1500));
+      });
+      it('process.argv is a copy: node, then the runtime\'s worker by its virtual name', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'argv'});
+        assert.strictEqual(detail(r), '["node","countinghouse:/lib/lean-worker.js"]', JSON.stringify(r).slice(0, 1500));
+      });
+      // (C-lows: Node's warnings as it resolves inside the root name no host path)
+      it('a warning Node emits resolving inside the root names no host path, by import and require', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'warningPaths'});
+        assert.match(detail(r), /^no-host /, JSON.stringify(r).slice(0, 1500));
+      });
+      // (C-lows: Node's global lookup directories are none to module code)
+      it('module.constructor.globalPaths is an empty list', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'globalPaths'});
+        assert.strictEqual(detail(r), 'none', JSON.stringify(r).slice(0, 1500));
+      });
+      // (C-lows: no stack module code can read names the install directory)
+      it('every stack module code reads names the runtime\'s frames countinghouse:, by every route; no runtime object through a frame', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'stackFrames'});
+        assert.strictEqual(detail(r), 'virtual no-objects custom runtime-frames', JSON.stringify(r).slice(0, 1500));
+      });
       // (the compatibility PR: the reduced module's two statics, confined)
       it('the reduced module\'s _nodeModulePaths and _resolveFilename: only inside the root, virtual answers, every refusal', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'reducedStatics'});

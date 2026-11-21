@@ -788,6 +788,264 @@ const STEPS = {
     return stuck.length === 0 ? 'none replaced' : `replaced: ${stuck.join(' ')}`;
   },
   // S: an entry planted in Node's path cache reads as never there
+  // (C-lows: every stack module code can read names no host file of the
+  // runtime's -- its own frames by /app, Node's by node:, the runtime's by
+  // countinghouse: -- by every route: a plain stack, captureStackTrace, a
+  // V8 error, an async frame, an error the runtime made, and a function the
+  // module assigned to Error.prepareStackTrace, whose frames' getThis and
+  // getFunction answer nothing for a runtime frame)
+  stackFrames: async () => {
+    const files = [];
+    const look = (text) => {
+      for (const line of String(text).split('\n').slice(1)) {
+        const m = /\(?((?:file:\/\/)?[^\s()]+?):\d+:\d+\)?\s*$/.exec(line);
+        if (m) files.push(m[1]);
+      }
+    };
+    look(new Error('x').stack);
+    const o = {};
+    Error.captureStackTrace(o);
+    look(o.stack);
+    try { null.x; } catch (e) { look(e.stack); }
+    await Promise.resolve();
+    look(new Error('y').stack);
+    try { M._resolveFilename('no-such-c-lows-pkg', {id: __filename, filename: __filename, paths: []}); } catch (e) { look(e.stack); }
+    const saved = Error.prepareStackTrace;
+    const viaFn = [];
+    let objects = 0;
+    let custom = false;
+    try {
+      Error.prepareStackTrace = (e, frames) => {
+        for (const f of frames) {
+          const n = f.getFileName();
+          if (typeof(n) === 'string') viaFn.push(n);
+          if (typeof(n) === 'string' && n.startsWith('countinghouse:') && (f.getThis() !== undefined || f.getFunction() !== undefined)) objects++;
+        }
+        return 'custom';
+      };
+      custom = new Error('z').stack === 'custom';
+    } finally { Error.prepareStackTrace = saved; }
+    // (a module's own prepareStackTrace sees V8's frames, as on master: its
+    // names are not judged here -- ruled on #493, a listed limit)
+    const bad = files.filter((f) => !/^(\/app(\/|$)|[A-Z]:\\app(\\|$)|node:|countinghouse:|native$|<anonymous>$|evalmachine)/.test(f));
+    const runtime = files.filter((f) => f.startsWith('countinghouse:')).length;
+    return `${bad.length === 0 ? 'virtual' : `host(${bad.slice(0, 3).join('|')})`} ${objects === 0 ? 'no-objects' : 'objects'} ${custom && viaFn.length > 0 ? 'custom' : 'not-custom'} ${runtime > 0 ? 'runtime-frames' : 'no-runtime-frames'}`;
+  },
+  // (#493's regression read: the stack formatter is a plain data property,
+  // as on master -- an identity-guarded install twice, a restore only if
+  // still its own, defineProperty and a strict delete, Node's own error
+  // header; process.argv and Module.globalPaths ordinary arrays)
+  stackCompat: () => {
+    'use strict';
+    const out = [];
+    const E = Error;
+    const saved = E.prepareStackTrace;
+    try {
+      // 1: an install guarded by identity, run twice, chaining the previous
+      let prev;
+      const hook = function hook(e, f) { return typeof(prev) === 'function' ? prev(e, f) : `${e}`; };
+      const install = () => { if (E.prepareStackTrace !== hook) { prev = E.prepareStackTrace; E.prepareStackTrace = hook; } };
+      install();
+      install();
+      let one;
+      try { one = typeof(new E('one').stack) === 'string' ? 'guarded' : 'guarded-not-text'; } catch (e) { one = `guarded-threw-${e.name}`; }
+      out.push(one);
+      E.prepareStackTrace = saved;
+      // 2: restore only if still its own
+      const mine = (e, f) => f;
+      E.prepareStackTrace = mine;
+      if (E.prepareStackTrace === mine) E.prepareStackTrace = saved;
+      out.push(typeof(new E('two').stack) === 'string' ? 'restored' : 'not-restored');
+      // 3: defineProperty, and a strict delete
+      let three;
+      try {
+        Object.defineProperty(E, 'prepareStackTrace', {value: (e, f) => 'defined', configurable: true, writable: true});
+        three = new E('three').stack === 'defined' ? 'defined' : 'not-defined';
+        delete E.prepareStackTrace;
+        three += ' deleted';
+      } catch (e) { three = `define-threw-${e.name}`; }
+      out.push(three);
+    } finally {
+      Object.defineProperty(E, 'prepareStackTrace', {value: saved, configurable: true, writable: true, enumerable: false});
+    }
+    // 6: Node's own error, its header `name [code]: message`
+    let six;
+    try { Buffer.alloc(-1); } catch (e) { six = /^RangeError \[ERR_OUT_OF_RANGE\]: /.test(String(e.stack)) ? 'node-header' : `header(${String(e.stack).split('\n')[0].slice(0, 60)})`; }
+    out.push(six);
+    // 4: process.argv an ordinary array; 5: Module.globalPaths too
+    const argv = process.argv.slice();
+    try { process.argv.push('x'); process.argv.splice(-1, 1); process.argv = argv.slice(); out.push('argv'); } catch (e) { out.push(`argv-threw-${e.name}`); } finally { try { process.argv = argv; } catch (e) { /* as it is */ } }
+    const g = module.constructor.globalPaths;
+    try { g.push('/nowhere.invalid'); g.pop(); out.push('globalPaths'); } catch (e) { out.push(`globalPaths-threw-${e.name}`); }
+    return out.join(' ');
+  },
+  // (C-lows, the medium's round: a vm realm's own prepareStackTrace sees
+  // raw frames -- the runtime's files by path, never a receiver or a
+  // function of the runtime's (its files are strict); an assigned function
+  // that calls the one it replaced; a frame of no file of the module's
+  // answers no receiver; util.getCallSites names no host file;
+  // Module._initPaths is no throw)
+  stackEdges: () => {
+    const out = [];
+    const vm = require('vm');
+    const raw = vm.runInNewContext(`Error.prepareStackTrace = (e, f) => f.map((s) => [String(s.getFileName()), s.getThis() !== undefined, s.getFunction() !== undefined]); new Error().stack`);
+    const runtimeFrames = raw.filter(([f]) => !/^(\/app(\/|$)|[A-Z]:\\app(\\|$)|node:|undefined$|evalmachine)/.test(f));
+    out.push(runtimeFrames.some(([, t, fn]) => t || fn) ? 'vm-receivers' : 'vm-no-receivers');
+    const saved = Error.prepareStackTrace;
+    try {
+      const prev = Error.prepareStackTrace;
+      Error.prepareStackTrace = (e, f) => (prev != null ? prev(e, f) : 'none');
+      let s;
+      try { s = String(new Error('chained').stack); } catch (e) { s = `threw ${e.name}`; }
+      out.push(/^Error: chained\n {4}at /.test(s) ? 'chained' : `chained(${s.slice(0, 80)})`);
+    } finally { Error.prepareStackTrace = saved; }
+    const util = require('util');
+    if (typeof(util.getCallSites) === 'function') {
+      const names = util.getCallSites().map((c) => String(c.scriptName));
+      out.push(names.every((n) => /^(\/app(\/|$)|[A-Z]:\\app(\\|$)|node:|countinghouse:|$)/.test(n)) ? 'callsites-virtual' : `callsites-host`);
+    } else out.push('callsites-virtual');
+    try { module.constructor._initPaths(); out.push('initPaths'); } catch (e) { out.push(`initPaths-${e.name}`); }
+    // (the round's second medium: Node 22's alias; Node's counts; an eval's
+    // frame of the module's own; frames handed back to the formatter)
+    // (the first site is this probe's own frame: no frame of the runtime's
+    // before it; exact counts. On a Node with no alias: said so.)
+    const ownFirst = (sites) => sites.length > 0 && /inspect\.js$/.test(String(sites[0].scriptName));
+    if (typeof(util.getCallSite) === 'function') {
+      const sites = util.getCallSite();
+      const names = sites.map((c) => String(c.scriptName));
+      out.push(ownFirst(sites) && names.every((n) => /^(\/app(\/|$)|[A-Z]:\\app(\\|$)|file:|node:|countinghouse:|$)/.test(n)) ? 'alias' : `alias(${names.slice(0, 2).join('|')})`);
+    } else out.push('alias');
+    if (typeof(util.getCallSites) === 'function') {
+      let counts;
+      // (relative to this stack's depth: all of it, then 10 of it at most)
+      try {
+        const depth = util.getCallSites(200).length;
+        const ten = Math.min(10, depth);
+        counts = `${util.getCallSites(2).length === Math.min(2, depth) && util.getCallSites(2.7).length === Math.min(2, depth)} ${util.getCallSites({}).length === ten} ${util.getCallSites(undefined, {}).length === ten} ${util.getCallSites().length === ten} ${ownFirst(util.getCallSites(3))}`;
+        let refused = 'no';
+        try { util.getCallSites(null, {}); } catch (e) { refused = String(e.code); }
+        let refused2 = 'no';
+        try { util.getCallSites({}, {}); } catch (e) { refused2 = String(e.code); }
+        counts += ` ${refused} ${refused2}`;
+      } catch (e) { counts = `threw ${e.code}`; }
+      out.push(counts === 'true true true true true ERR_INVALID_ARG_TYPE ERR_INVALID_ARG_TYPE' ? 'counts' : `counts(${counts})`);
+    } else out.push('counts');
+    return out.join(' ');
+  },
+  // (#493's high, round 1: globalThis.Error swapped or deleted reaches no
+  // raw frame; a module's save/swap/restore keeps its own function; the
+  // stack wrappers' prototype is an object's; Error.captureStackTrace as
+  // the runtime holds it)
+  stackHold: () => {
+    const out = [];
+    const E = Error;
+    // (a module may swap and delete globalThis.Error -- a library that does
+    // must load; ruled on #493: what a swapped Error's own formatter sees is
+    // a listed limit)
+    let swapped = 'held';
+    try {
+      try { globalThis.Error = class Wrapped extends E {}; swapped = globalThis.Error !== E ? 'swappable' : 'held'; } catch (e) { swapped = 'threw'; }
+    } finally { globalThis.Error = E; }
+    out.push(swapped);
+    let deleted = 'held';
+    try {
+      try { deleted = (delete globalThis.Error) && globalThis.Error === undefined ? 'deletable' : 'held'; } catch (e) { deleted = 'threw'; }
+    } finally { globalThis.Error = E; }
+    out.push(deleted);
+    const saved0 = E.prepareStackTrace;
+    try {
+      E.prepareStackTrace = () => 'mine';
+      const saved = E.prepareStackTrace;
+      E.prepareStackTrace = () => 'other';
+      E.prepareStackTrace = saved;
+      out.push(new E('z').stack === 'mine' ? 'restore' : `restore(${String(new E('z').stack).slice(0, 30)})`);
+      let proto = null;
+      E.prepareStackTrace = (e, f) => { proto = Object.getPrototypeOf(Object.getPrototypeOf(f[0])); return 'x'; };
+      void new E('w').stack;
+      out.push(proto === Object.prototype ? 'wrapper-object' : 'wrapper-null');
+    } finally { E.prepareStackTrace = saved0; }
+    return out.join(' ');
+  },
+  // (C-lows d: process.argv as module code reads it under enforce)
+  argv: () => JSON.stringify(process.argv),
+  // (C-lows d, a report: every channel from a module object that could name
+  // the root's host path or the install directory, each listed by name with
+  // what it named; input.needles, the host paths to look for)
+  hostChannels: async (input) => {
+    const needles = Array.isArray(input && input.needles) ? input.needles.filter((n) => typeof(n) === 'string' && n.length > 1) : [];
+    const hits = [];
+    const look = (name, v) => {
+      let t;
+      try { t = typeof(v) === 'string' ? v : JSON.stringify(v, (k, x) => (typeof(x) === 'function' ? `fn ${x.name}` : x)); } catch (e) { t = `unreadable ${e && e.code}`; }
+      if (typeof(t) !== 'string') return;
+      for (const n of needles) if (t.includes(n) || t.includes(encodeURI(n))) { hits.push(`${name}=${t.slice(t.indexOf(n) - 20 < 0 ? 0 : t.indexOf(n) - 20, t.indexOf(n) + n.length + 40)}`); return; }
+    };
+    const safe = (name, fn) => { try { look(name, fn()); } catch (e) { look(`${name}!`, String(e && e.message) + String(e && e.stack)); } };
+    const modOf = (name, m) => {
+      if (m == null || typeof(m) !== 'object') return;
+      for (const k of ['id', 'filename', 'path', 'paths', 'loaded']) safe(`${name}.${k}`, () => m[k]);
+      safe(`${name}.parent`, () => (m.parent != null ? m.parent.filename : null));
+      safe(`${name}.children`, () => (Array.isArray(m.children) ? m.children.map((c) => [c.id, c.filename, c.path]) : null));
+    };
+    modOf('module', module);
+    safe('__filename', () => __filename);
+    safe('require.cache', () => Object.keys(require.cache));
+    for (const [k, m] of Object.entries(require.cache)) modOf(`cache[${k.slice(-24)}]`, m);
+    modOf('require.main', require.main);
+    modOf('process.mainModule', process.mainModule);
+    const C = module.constructor;
+    safe('Module._cache', () => Object.keys(C._cache || {}));
+    try { require('./node-version.js'); } catch (e) { /* none */ }
+    safe('Module._pathCache', () => C._pathCache);
+    safe('Module._findPath', () => C._findPath('./node-version.js', [__dirname]));
+    safe('Module._findPath(abs)', () => C._findPath(__filename, []));
+    safe('Module._nodeModulePaths', () => C._nodeModulePaths(__dirname));
+    safe('Module._resolveFilename', () => C._resolveFilename('./node-version.js', module));
+    safe('Module._resolveLookupPaths', () => (typeof(C._resolveLookupPaths) === 'function' ? C._resolveLookupPaths('x', module) : null));
+    safe('Module.globalPaths', () => C.globalPaths);
+    safe('require.resolve', () => require.resolve('./node-version.js'));
+    safe('require.resolve.paths', () => require.resolve.paths('x'));
+    safe('Module.prototype keys', () => Object.getOwnPropertyNames(C.prototype));
+    safe('process.argv', () => process.argv);
+    safe('process.execArgv', () => process.execArgv);
+    safe('process.cwd', () => process.cwd());
+    safe('process.env', () => process.env);
+    safe('process.title', () => process.title);
+    safe('workerData', () => require('worker_threads').workerData);
+    safe('process.report', () => (process.report != null && typeof(process.report.getReport) === 'function' ? process.report.getReport() : null));
+    safe('new Module', () => { const m = new C('x', module); return [m.id, m.path, m.paths]; });
+    safe('createRequire', () => require('module').createRequire(__filename).resolve('./node-version.js'));
+    let im = null;
+    try { im = await import('./node-version.js'); } catch (e) { look('import()!', String(e && e.message)); }
+    look('import() ns', im != null ? Object.keys(im) : null);
+    return hits.length === 0 ? 'none' : hits.join('\n');
+  },
+  // (C-lows: a warning Node emits as it resolves inside the root -- a
+  // pattern's empty segment, an invalid target's segment -- names no host
+  // path, by import and by require alike)
+  warningPaths: async () => {
+    const heard = [];
+    const listen = (w) => heard.push(`${w && w.code} ${String(w && w.message)}`);
+    process.on('warning', listen);
+    const tries = [];
+    for (const spec of ['#pat//x.mjs', '#badFirst', '#pat/./x.mjs']) {
+      try { await import(spec); tries.push('found'); } catch (e) { tries.push(String(e.code)); }
+      try { require(spec); tries.push('found'); } catch (e) { tries.push(String(e.code)); }
+    }
+    for (let i = 0; i < 3; i++) await new Promise((r) => setImmediate(r));
+    process.removeListener('warning', listen);
+    const paths = heard.join(' ').match(/(?:file:\/\/)?\/[^\s'"]+/g) || [];
+    const host = paths.filter((p) => !/^(file:\/\/)?\/([A-Za-z]:\/)?app(\/|$)/.test(p));
+    return host.length === 0 ? `no-host ${heard.length}` : `host(${heard.slice(0, 2).join(' | ').slice(0, 400)})`;
+  },
+  // (C-lows: Node's global lookup directories, as module.constructor
+  // exposes them -- the install's prefix and $HOME -- are none to module
+  // code under enforce)
+  globalPaths: () => {
+    const g = module.constructor.globalPaths;
+    if (!Array.isArray(g)) return `not a list: ${typeof(g)}`;
+    return g.length === 0 ? 'none' : `${g.length} paths`;
+  },
   // (F4-1's follow-ups: every error the load hook throws -- its own read of a
   // module file, Node's next step -- and resolution's past not-found names no
   // host path, in its message, any own property or a cause; input.needles,
