@@ -63,19 +63,83 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     assert.throws(() => new FileAuthProvider({configPath: link}), (e) => e.code === 'AUTH_CONFIG_INVALID' && /symbolic link/.test(e.message) && !/chmod/.test(e.message));
   });
 
-  (POSIX ? it : it.skip)('a reload of a file made loose meanwhile is refused, the config kept', (done) => {
-    const file = write('reload.json', {[KEY]: {userName: 'u', devices: ['*']}}, 0o600);
+  // (the high on #520, M2) a reload whose file can't be verified as the
+  // operator's own -- made loose meanwhile (a `jq ... > tmp && mv` edit leaves
+  // 0644), or under --hardened on Windows, where no ACL can be read -- still
+  // applies what tightens: a revoked key must not stay live. What adds or
+  // widens is refused, by entry number, never a key
+  (POSIX ? it : it.skip)('a reload of a file made loose meanwhile applies only what tightens, naming chmod and restart', (done) => {
+    const OTHER = `other-${KEY}`;
+    const NEW = `new-${KEY}`;
+    const file = write('reload.json', {[KEY]: {userName: 'u', devices: ['*'], admin: true}, [OTHER]: {userName: 'o', devices: ['d1']}}, 0o600);
     const p = new FileAuthProvider({configPath: file});
-    fs.chmodSync(file, 0o644);
+    // the edit: u narrowed to one device and its admin dropped (tightening),
+    // o removed (tightening), a new key added (refused)
+    write('reload.json', {[KEY]: {userName: 'u', devices: ['d1'], admin: false}, [NEW]: {userName: 'n', devices: ['*']}}, 0o644);
+    p.reload((err, r) => {
+      try {
+        assert.ifError(err);
+        assert.strictEqual(r.verified, false, JSON.stringify(r));
+        // (u's devices narrowed, its admin dropped, o removed)
+        assert.strictEqual(r.changed, 3, JSON.stringify(r));
+        assert.strictEqual(r.refused, 1, JSON.stringify(r));
+        assert.match(r.message, /chmod 600/);
+        assert.match(r.message, /entry #2: a new key/);
+        for (const k of [KEY, OTHER, NEW]) assert.ok(!JSON.stringify(r).includes(k), 'no key in the answer');
+        assert.deepStrictEqual(p._lookup(KEY), {userName: 'u', devices: ['d1'], admin: false});
+        assert.strictEqual(p._lookup(OTHER), null, 'the removed key is gone');
+        assert.strictEqual(p._lookup(NEW), null, 'the new key is not admitted');
+        done();
+      } catch (e) { done(e); }
+    });
+  });
+
+  (POSIX ? it : it.skip)('a reload through a link is still refused whole, the config kept', (done) => {
+    const real = write('reload-real.json', {[KEY]: {userName: 'u', devices: ['*']}}, 0o600);
+    const p = new FileAuthProvider({configPath: write('reload-l.json', {[KEY]: {userName: 'u', devices: ['*']}}, 0o600)});
+    fs.unlinkSync(p.configPath);
+    fs.symlinkSync(real, p.configPath);
     p.reload((err) => {
       try {
-        assert.ok(err != null && err.code === 'AUTH_RELOAD_INVALID', String(err && err.code));
-        assert.match(err.message, /chmod 600/);
-        assert.ok(!err.message.includes(KEY));
+        assert.ok(err != null && err.code === 'AUTH_RELOAD_INVALID' && /symbolic link/.test(err.message), String(err && err.message));
         assert.strictEqual(p._lookup(KEY).userName, 'u', 'the config kept');
         done();
       } catch (e) { done(e); }
     });
+  });
+
+  it('tightenOnly: removals, narrowings and admin dropped apply; a new key, an id or userName change and any widening are refused', () => {
+    const t = FileAuthProvider.tightenOnly;
+    assert.strictEqual(typeof(t), 'function');
+    const k = (n) => `${KEY}-${n}`;
+    const old = {
+      [k(1)]: {userName: 'a', devices: ['*'], admin: true, id: 'ida', runsModules: ['m1', 'm2']},
+      [k(2)]: {userName: 'b', devices: ['d1', 'd2']},
+      [k(3)]: {userName: 'c', devices: ['d1']},
+      [k(4)]: {userName: 'd', devices: ['*']}
+    };
+    const next = {
+      // '*' -> a list: the list; admin dropped; a module removed and one added
+      [k(1)]: {userName: 'a', devices: ['d9'], admin: false, id: 'ida', runsModules: ['m1', 'm3']},
+      // a list -> '*': kept; a new name: kept
+      [k(2)]: {userName: 'B', devices: ['*']},
+      // a list, part new: the old ones it keeps; a new id: kept; admin granted: refused
+      [k(3)]: {userName: 'c', devices: ['d1', 'd7'], id: 'new-id', admin: true},
+      // k(4) removed; k(5) new
+      [k(5)]: {userName: 'e', devices: []}
+    };
+    const r = t(old, next);
+    assert.deepStrictEqual(r.config[k(1)], {userName: 'a', devices: ['d9'], admin: false, id: 'ida', runsModules: ['m1']});
+    assert.deepStrictEqual(r.config[k(2)], {userName: 'b', devices: ['d1', 'd2']});
+    assert.deepStrictEqual(r.config[k(3)], {userName: 'c', devices: ['d1']});
+    assert.ok(!(k(4) in r.config), 'removed');
+    assert.ok(!(k(5) in r.config), 'a new key refused');
+    // applied: k1 devices, admin, runsModules; k4 removed
+    assert.strictEqual(r.applied, 4, JSON.stringify(r));
+    const said = r.refused.join(' | ');
+    for (const want of [/entry #1: runsModules widened/, /entry #2: its userName changed/, /entry #2: devices widened/, /entry #3: devices widened/,
+      /entry #3: its id changed/, /entry #3: admin granted/, /entry #4: a new key/]) assert.match(said, want);
+    assert.ok(!said.includes(KEY), 'no key named');
   });
 
   it('the demo key is written to a 0600 auth.json, and only its path is printed', () => {
@@ -250,6 +314,29 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
       catch (e) { process.stdout.write(JSON.stringify({code: e.code, message: e.message})); }`],
     {encoding: 'utf8', env: bare, timeout: 20000});
     assert.match(r.stdout, /AUTH_CONFIG_INVALID.*created before the relaunch: start countinghouse with --hardened itself/, r.stdout + r.stderr);
+  });
+
+  // (M2) under --hardened on Windows a reload applies what tightens too
+  (POSIX ? it : it.skip)('under --hardened on Windows a reload applies what tightens and refuses the rest, naming restart', () => {
+    const file = path.join(dir, 'win-hardened-reload.json');
+    const env = Object.assign({}, process.env, {COUNTINGHOUSE_API_KEY: `env-${KEY}`});
+    const r = spawnSync(process.execPath, ['--permission', '--allow-fs-read=*', '--allow-fs-write=*', '-e', `
+      Object.defineProperty(process, 'platform', {value: 'win32'});
+      require(${JSON.stringify(path.join(ROOT, 'lib', 'logger'))}).createLogger();
+      const fs = require('fs');
+      const F = require(${JSON.stringify(path.join(ROOT, 'lib', 'auth', 'file-provider'))});
+      const p = new F({configPath: ${JSON.stringify(file)}});
+      fs.writeFileSync(${JSON.stringify(file)}, JSON.stringify({${JSON.stringify(`new-${KEY}`)}: {userName: 'n', devices: ['*']}}));
+      p.reload((err, r) => process.stdout.write('\\nOUT ' + JSON.stringify({err: err && err.message, r, admitted: p._lookup(${JSON.stringify(`new-${KEY}`)}) != null}) + '\\n'));`],
+    {encoding: 'utf8', env, timeout: 20000});
+    const line = (r.stdout || '').split('\n').find((l) => l.startsWith('OUT '));
+    assert.ok(line != null, r.stdout + r.stderr);
+    const o = JSON.parse(line.slice(4));
+    assert.strictEqual(o.err, null, r.stdout + r.stderr);
+    assert.strictEqual(o.r.verified, false);
+    assert.strictEqual(o.r.refused, 1);
+    assert.match(o.r.message, /restart countinghouse/);
+    assert.strictEqual(o.admitted, false);
   });
 
   // (the second medium's 2) a Windows --hardened child finding no auth.json
