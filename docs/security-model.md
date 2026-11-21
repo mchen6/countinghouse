@@ -1771,11 +1771,25 @@ and the short list of what the in-process sandbox cannot give.
   `0600`; on Windows an ACL that lets only that user read it), and it
   creates them so. Anything else refuses the start, naming the fix. CouchDB
   is a remote store, and its access control is its operator's. In memory, the
-  main thread holds raw keys: the loaded auth config, the identity index (to
-  re-check and bill a queued job's owner) and a call's token for that call's
-  lifetime. None of these reaches a module, a log, Redis or a job's stored
-  data. Keeping keys only as keyed hashes in the stores and only as handles
-  in memory is planned after release 1.
+  main thread holds raw keys for as long as it needs them:
+  - for the process's life: the loaded auth config, the identity index (to
+    re-check and bill a queued job's owner), `COUNTINGHOUSE_API_KEY`, and the
+    single-identity profile's own key;
+  - while a composing module is loaded: its bound composition identity;
+  - until a call answers, at most an hour: the call token's entry on the main
+    thread, which holds the call's billing and identity keys (the token a
+    worker holds is only a handle);
+  - until a hop is billed or forgotten, at most 4096 per channel: a peer
+    channel's unbilled hops;
+  - for a running job: its owner's key, found again from the owner's id;
+  - and for a request: that request's key, an open subscription's among them.
+
+  None of these reaches a module in a worker (the default), a log, Redis or a
+  job's stored data. In single-thread mode a module runs in the main thread
+  beside them, with no sandbox
+  ([Single-thread mode has no sandbox](#single-thread-mode-has-no-sandbox)).
+  Keeping keys only as keyed hashes in the stores and only as handles in
+  memory is planned after release 1.
 - **A module is handed no API key and no user name (R2-1).** `ctx.caller` is
   `{id, isAdmin}`, an opaque id (an HMAC of the key, or of the entry's `id`
   field, under a server secret) and the admin flag; `httpHeaders` lose
