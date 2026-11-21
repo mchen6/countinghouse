@@ -52,12 +52,17 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
   // B-meter-keys (1): the Redis store's ledger, seeded the same way --
   // under the key's fingerprint, on db 0 where the runtime reads it
   it('--store redis: sets the balance under the key\'s fingerprint on the runtime\'s ledger db; no Redis key holds the key', async function() {
-    const {redisUrlFor} = require('../helpers/test-env');
+    const {redisUrlFor, redisAnswers} = require('../helpers/test-env');
+    // (a run with no Redis -- CI's local-store job runs this file with none
+    // -- skips; a PING on a client with nothing to connect to would wait
+    // forever. A Redis the run configured, CH_TEST_REDIS_URL, must answer.)
+    const configured = process.env.CH_TEST_REDIS_URL != null && process.env.CH_TEST_REDIS_URL !== '';
+    let up = false;
+    try { up = await redisAnswers(); } catch (e) { if (configured) throw e; up = false; }
+    if (!up) return this.skip();
     const redis = require('redis');
     const client = redis.createClient(redisUrlFor(), {db: 0});
     client.on('error', () => {});
-    const ok = await new Promise((resolve) => client.ping((err) => resolve(err == null)));
-    if (!ok) { client.quit(); return this.skip(); }
     const id = meterId(KEY);
     try {
       await new Promise((resolve) => client.hmset(id, 'toolPriceRecord', JSON.stringify({t: {count: 3}}), resolve));
