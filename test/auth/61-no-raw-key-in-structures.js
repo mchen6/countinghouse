@@ -293,7 +293,7 @@ describe('auth 61: no raw API key in the main thread\'s structures (C-meter-keys
         assert.strictEqual(closedLines().length, 2, JSON.stringify(lines));
         assert.ok(closedLines()[1].includes('(SYSTEM_ERROR_UNKNOWN_USER: its id is no longer listed)'), closedLines()[1]);
         // under --debug (a key the provider doesn't list remembered), a miss
-        // is a key no longer remembered, never a removal
+        // is either: said as both
         cli.setOptions({workerThread: true, debug: true, peerChannelAuthRecheckSeconds: 0, peerChannelAuthLookupTimeoutMs: 20000});
         try {
           await identity.know(KEY, provider, {rememberUnlisted: true});
@@ -301,7 +301,7 @@ describe('auth 61: no raw API key in the main thread\'s structures (C-meter-keys
           savedIdentity.forget();
           b.recheckGrants();
           await until(() => b.channelRegistry['67:68'] === undefined, 'closed: lost');
-          assert.ok(closedLines()[2].includes(`(SYSTEM_ERROR_UNKNOWN_USER: ${identity.OWNER_LOST_WITHOUT_PROVIDER})`), closedLines()[2]);
+          assert.ok(closedLines()[2].includes('(SYSTEM_ERROR_UNKNOWN_USER: its id is no longer listed, nor remembered)'), closedLines()[2]);
         } finally {
           cli.setOptions({workerThread: true, debug: false, peerChannelAuthRecheckSeconds: 0, peerChannelAuthLookupTimeoutMs: 20000});
         }
