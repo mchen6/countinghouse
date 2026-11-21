@@ -48,6 +48,10 @@ module.exports = async () => {
       case 'readFile':
         if (at.endsWith('/missing.json')) throw enoent(at);
         if (at.endsWith('/hosterr')) throw enoent('C:\\host\\secret.json');
+        // (an Error not made by the client: an assigned message, a non-enumerable path, a numeric message)
+        if (at.endsWith('/assigned')) throw Object.assign(new Error(), {message: "open '/app/x'", code: 'ENOENT', path: '/app/x'});
+        if (at.endsWith('/hidden')) { const h = Object.assign(new Error("open '/data/y'"), {dest: '/data/y'}); Object.defineProperty(h, 'path', {value: '/app/x', enumerable: false}); throw h; }
+        if (at.endsWith('/numeric')) { const n = new Error(); Object.defineProperty(n, 'message', {value: 42}); n.path = '/app/x'; throw n; }
         if (at.endsWith('/overlap')) throw toError({message: 'z/app/a /app/a /app/a', code: 'EBOOM', path: '/app/a /app/a'});
         if (at.endsWith('/dotdash')) throw toError({message: 'failed /app/x.-tmp', code: 'EBOOM', path: '/app/x'});
         if (at.endsWith('/sentence')) throw Object.assign(new Error('boom at /app/x.json.'), {code: 'EBOOM', path: '/app/x.json'});
@@ -152,6 +156,9 @@ module.exports = async () => {
   }
   out.errorSentence = caught(() => fs.readFileSync('/app/sentence')).message;
   out.errorOverlap = caught(() => fs.readFileSync('/app/overlap')).message;
+  out.errorAssigned = caught(() => fs.readFileSync('/app/assigned')).message;
+  out.errorHidden = caught(() => fs.readFileSync('/app/hidden'));
+  out.errorNumeric = caught(() => fs.readFileSync('/app/numeric'));
   out.errorDotDash = caught(() => fs.readFileSync('/app/dotdash')).message;
   out.errorBoth = caught(() => fs.readFileSync('/app/both')).message;
   try { fs.readFileSync('/app/typed'); } catch (e) { out.errorTyped = [e instanceof TypeError, e.cause, e.path, e.message]; }

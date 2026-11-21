@@ -61,6 +61,9 @@ describe('fs-broker 33: the paths a module is handed on Windows are in its own s
       replacedIntrinsics: {ran: '', path: missing, ownDest: false, code: 'ENOENT', message: `ENOENT: no such file or directory, open '${missing}'`,
         asyncPath: missing, asyncCode: 'ENOENT'},
       // (an occurrence overlapping a rejected one is found; "." then "-" after a path ends it)
+      errorAssigned: `open '${M('app\\x')}'`,
+      errorHidden: {path: M('app\\x'), dest: M('data\\y'), message: `open '${M('data\\y')}'`},
+      errorNumeric: {path: M('app\\x'), dest: undefined, message: ''},
       errorOverlap: `z/app/a ${M('app\\a \\app\\a')}`,
       errorDotDash: `failed ${M('app\\x')}.-tmp`,
       dirBufferPath: [true, plugins],
