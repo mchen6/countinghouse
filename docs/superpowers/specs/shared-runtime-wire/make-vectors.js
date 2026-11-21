@@ -297,7 +297,7 @@ const out = {
     const slot = 'COUNTINGHOUSE_CREDENTIAL_1';
     const creds = {'@countinghouse/ch-access-example': {'https://api.example.com': {EXAMPLE_TOKEN: slot}}};
     return {
-      rule: 'load names one top-level module (name) and reload one or more (names), each by its package name, with dirs: the absolute directory of each module of their closures, by package name, 1 to 64; credentials (optional) is the per-module allowance of the version 2 --remoteCredentials file, each environment name a slot, each package one dirs names. unload names one top-level module; its notice is told once, as given, on the next result of any tool, unless it carries reason: "off" (the module turned off), the runtime serves the settings tool (the single-identity profile with --settingsFile) and its settings file holds enabled.<name> false, when it tells every session its own off text instead: what went with it (the callers loaded at that unload; one unloaded before it is told by its own unload) and both ways back. With reason: "calls" and because: <the package it went with>, on such a runtime whose settings file holds enabled.<because> false, it tells "<name> unloaded: it calls <because>, which is turned off for all your sessions (turning <because> on brings it back)." reason and because are optional and not checked: any other value, or none, is the notice as given. A module-form message carries no scenario, pack, global or remoteCredentials. notice: module a package name or null, and text. reread: what is module-settings. module-stopped (the runtime to ch-local, unasked, no id): name, code, when start or restart',
+      rule: 'load names one top-level module (name) and reload one or more (names), each by its package name, with dirs: the absolute directory of each module of their closures, by package name, 1 to 64; credentials (optional) is the per-module allowance of the version 2 --remoteCredentials file, each environment name a slot, each package one dirs names. unload names one top-level module; its notice is told once, as given, on the next result of any tool, unless it carries reason: "off" (the module turned off), the runtime serves the settings tool (the single-identity profile with --settingsFile) and its settings file holds enabled.<name> false, when it tells every session its own off text instead: what went with it (the callers loaded at that unload; one unloaded before it is told by its own unload) and both ways back. With reason: "calls" and because: <the package it went with>, on such a runtime whose settings file holds enabled.<because> false, it tells "<name> unloaded: it calls <because>, which is turned off for all your sessions (turning <because> on brings it back)." reason and because are optional and not checked: any other value, or none, is the notice as given. A module-form message carries no scenario, pack, global or remoteCredentials. notice: module a package name or null, and text. reread: what is module-settings or held-back (the --heldBackFile list), and it carries nothing but id, type and what. module-stopped (the runtime to ch-local, unasked, no id): name, code, when start or restart',
       packagePattern: '^(?:@[a-z0-9~-][a-z0-9._~-]*/)?[a-z0-9~-][a-z0-9._~-]*$',
       slotPattern: '^COUNTINGHOUSE_CREDENTIAL_[1-9][0-9]{0,3}$',
       accepted: [
@@ -312,6 +312,7 @@ const out = {
         {why: 'an unload of a module turned off, said so: the runtime tells every session its full off text', message: {id: 9, type: 'unload', name: scenario, notice: 'example turned off', reason: 'off'}},
         {why: 'an unload of a caller, with the module turned off it went with: the runtime tells its line with the way back', message: {id: 10, type: 'unload', name: '@countinghouse/ch-pack-other', notice: 'ch-pack-other unloaded: it calls ch-pack-example, which is turned off', reason: 'calls', because: scenario}},
         {why: 'a reread of the module settings', message: {id: 6, type: 'reread', what: 'module-settings'}},
+        {why: 'a reread of the held-back list (--heldBackFile; countinghouse_overview)', message: {id: 21, type: 'reread', what: 'held-back'}},
         {why: 'a notice about a module', message: {id: 7, type: 'notice', module: scenario, text: 'example upgraded 1.0.0 → 1.1.0'}},
         {why: 'a notice about no module', message: {id: 8, type: 'notice', module: null, text: 'requestTimeout set to 60 s'}},
         {why: 'the runtime stopped a module for good', message: {type: 'module-stopped', name: scenario, code: 'MODULE_SUSPENDED', when: 'restart'}}
@@ -330,11 +331,47 @@ const out = {
           remoteCredentials: '/home/example/.countinghouse/run/start-1/remote-credentials.json'}},
         // M6: a notice carrying the pack form's fields is refused too
         {why: 'a notice with a leftover pack field', reason: 'old-field', message: {id: 20, type: 'notice', module: null, text: 'x', pack: 'example'}},
-        // M2a: reread names only the module settings
-        {why: 'a reread of anything but the module settings', reason: 'name', message: {id: 19, type: 'reread', what: 'everything'}}
+        // M2a: reread names only the module settings, and since B-firstrun
+        // the held-back list; nothing else rides on it
+        {why: 'a reread of anything but the module settings or the held-back list', reason: 'name', message: {id: 19, type: 'reread', what: 'everything'}},
+        {why: 'a reread with a field beside id, type and what', reason: 'name', message: {id: 22, type: 'reread', what: 'held-back', file: '/home/example/.countinghouse/run/held-back.json'}}
       ]
     };
   })(),
+  // the held-back file ch-local writes for --heldBackFile (lib/held-back.js
+  // parse; #490), read by countinghouse_overview: ch-local pins its writer,
+  // the runtime its reader. Accepted files and one refused file per rule
+  // (any refusal empties the whole list). The launcher is the home's real
+  // bin/ch-local.js path, so it is checked by path, not here: one that is not
+  // the home's own, or not safe in a quoted command, is dropped alone.
+  heldBackFile: {
+    rule: 'exactly {v: 1, modules: [...], launcher?}; at most 256 modules, none named twice; each exactly {name, reason, root?, via?}; name an npm package name not starting with - or ~; reason one of credential, off, ceiling, missing, pin, withdrawn, stopped, restart, calls; root only on calls, one of credential, off, ceiling, missing, pin, withdrawn or not-installed; via exactly when root is: a package name (not starting with - or ~), or for not-installed the callee\'s declared name (1 to 64 characters, no / or . or control character). The file is a regular file, one name, no link, 0600 (or a private ACL on Windows), this user\'s own, at most 65536 bytes.',
+    accepted: [
+      {why: 'none held back', file: {v: 1, modules: []}},
+      {why: 'each reason', file: {v: 1, modules: ['credential', 'off', 'ceiling', 'missing', 'pin', 'withdrawn', 'stopped', 'restart'].map((reason, i) => ({name: `@countinghouse/ch-m${i}`, reason}))}},
+      {why: 'a part blocked by a credential', file: {v: 1, modules: [{name: '@countinghouse/ch-pack-example', reason: 'calls', root: 'credential', via: '@countinghouse/ch-access-example'}]}},
+      {why: 'a part turned off by the ceiling', file: {v: 1, modules: [{name: 'ch-pack-a', reason: 'calls', root: 'ceiling', via: 'ch-part-b'}]}},
+      {why: 'a callee nothing installed, by its declared name', file: {v: 1, modules: [{name: 'ch-pack-a', reason: 'calls', root: 'not-installed', via: 'GitHub Access'}]}}
+    ],
+    refused: [
+      {why: 'another version', file: {v: 2, modules: []}},
+      {why: 'a top-level field not read', file: {v: 1, modules: [], token: 'x'}},
+      {why: 'a module field not read', file: {v: 1, modules: [{name: 'a', reason: 'off', note: 'x'}]}},
+      {why: 'not a package name', file: {v: 1, modules: [{name: 'Example Pack', reason: 'off'}]}},
+      {why: 'a name read as an option', file: {v: 1, modules: [{name: '-x', reason: 'off'}]}},
+      {why: 'a name read as a home', file: {v: 1, modules: [{name: '~x', reason: 'off'}]}},
+      {why: 'a name twice', file: {v: 1, modules: [{name: 'a', reason: 'off'}, {name: 'a', reason: 'pin'}]}},
+      {why: 'a reason not known', file: {v: 1, modules: [{name: 'a', reason: 'gone'}]}},
+      {why: 'not-installed as a reason', file: {v: 1, modules: [{name: 'a', reason: 'not-installed'}]}},
+      {why: 'a root on an entry that is not calls', file: {v: 1, modules: [{name: 'a', reason: 'off', root: 'credential', via: 'b'}]}},
+      {why: 'calls as a root', file: {v: 1, modules: [{name: 'a', reason: 'calls', root: 'calls', via: 'b'}]}},
+      {why: 'a root without via', file: {v: 1, modules: [{name: 'a', reason: 'calls', root: 'credential'}]}},
+      {why: 'a credential\'s via that is not a package name', file: {v: 1, modules: [{name: 'a', reason: 'calls', root: 'credential', via: 'GitHub Access'}]}},
+      {why: 'a not-installed via with a /', file: {v: 1, modules: [{name: 'a', reason: 'calls', root: 'not-installed', via: 'a/b'}]}},
+      {why: 'a not-installed via over 64 characters', file: {v: 1, modules: [{name: 'a', reason: 'calls', root: 'not-installed', via: 'x'.repeat(65)}]}},
+      {why: 'more than 256 modules', file: {v: 1, modules: Array.from({length: 257}, (_, i) => ({name: `m${i}`, reason: 'off'}))}}
+    ]
+  },
   // ch-local daemon's restore rows (#236 section 6): one shape for
   // countinghouse's restore.js, ch-local's session-table.js and B2's export,
   // which all read these cases

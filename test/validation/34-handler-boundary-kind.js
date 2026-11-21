@@ -13,6 +13,7 @@
 // record and a job's public record; a crash fallback drops it.
 const assert = require('assert');
 const optionsScope = require('../helpers/options-scope');
+const {preloadLibs} = require('../helpers/preload-libs');
 const {CountinghouseError, statusOf, kindOf, setRetryAfter, retryAfterOf, fromHandler} = require('../../lib/countinghouse-error');
 const {CODES} = require('../../lib/error-catalogue');
 const {buildCtx} = require('../../lib/handler-ctx');
@@ -63,6 +64,11 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
     require('../../lib/cli-options').setOptions({workerThread: false});
   });
   after(() => optionsScope.restore(keptOptions));
+  // every lib a case requires, loaded once after the options above, under
+  // its own bound: a case's first load ran past its 2 s timeout under load
+  // (test/helpers/preload-libs.js)
+  before(preloadLibs(['device-manager', 'job-control-common', 'mcp/gateway', 'mcp/tool-registry', 'listing-scope',
+    'sessions', 'session-module-record', 'metering/local-provider', 'store', 'rate-limit-gate']));
 
   it('ctx.call: a refusal before the invoke (the part\'s device query, DEVICE_NOT_FOUND), passed on by the composer, answers 500, kind module', () =>
     withServiceClient(queryRefuses('DEVICE_NOT_FOUND'), async () => {
