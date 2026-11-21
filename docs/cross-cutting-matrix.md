@@ -287,7 +287,12 @@ answer fails closed: the request is refused `RUNTIME_BUSY` (503), never let
 through as "not limited" (CLAUDE.md's invariants). Redis down is neither:
 each check is also counted in memory (`lib/redis-resilient.js`
 `rateLimiter`), so a key at its limit stays limited when Redis stops
-answering, and the larger count wins. *(Corrected for M5:)* "Redis down"
+answering, and the larger count wins. The in-memory count is per process:
+N runtimes on one Redis allow up to N times a key's limit while Redis is
+out, as `--unauthRateLimit`'s budget is per process (one process in
+release 1). A request under `/devices/<id>/` that no device route answers
+(a sub-path none serves, a method a route doesn't take) spends one unit
+and gets the one `MODULE_NOT_LISTED` answer (`lib/routes/device-fallback.js`). *(Corrected for M5:)* "Redis down"
 used to mean a hang, not a pass: node_redis queued the
 check until Redis came back. The metering and limiter clients
 (`lib/redis-resilient.js`) now queue only until their first connect (at

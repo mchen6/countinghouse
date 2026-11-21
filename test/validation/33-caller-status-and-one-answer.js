@@ -219,7 +219,8 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       app = express();
       app.use(express.json());
       const devices = express.Router({mergeParams: true});
-      app.use('/devices/:deviceID', user(cdif), devices);
+      // (after every device route, as lib/route-manager.js mounts it)
+      app.use('/devices/:deviceID', user(cdif), devices, require('../../lib/routes/device-fallback')(cdif));
       devices.use('/invoke-action', require('../../lib/routes/invoke-action')(null, cdif));
       devices.use('/get-spec', require('../../lib/routes/get-spec')(null, cdif));
       devices.use('/schema', require('../../lib/routes/schema')(null, cdif));
@@ -262,6 +263,23 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
         assert.deepStrictEqual({missing, unlisted, hidden, ungranted}, {missing: expected, unlisted: expected, hidden: expected, ungranted: expected});
         assert.deepStrictEqual(invoked, [], 'nothing dispatched');
       });
+
+      // #512's high, 3: one unit per request, whatever it asked (invoke-
+      // action's dispatched call spends its unit in invokeDeviceAction, not
+      // here: its refusals are counted by validation 33's test above)
+      if (route.name !== 'invoke-action') {
+        it(`${route.name}: exactly one per-key unit per request under the limit, refused or answered`, async () => {
+          const units = async(deviceID) => { spent.length = 0; await call(route, deviceID); return spent.length; };
+          const seen = {missing: await units(NOWHERE), unlisted: await units(PART), listed: await units(LISTED)};
+          visibility.hide(['listed-mod']);
+          seen.hidden = await units(LISTED);
+          visibility.show(['listed-mod']);
+          authAnswer = new CountinghouseError('USER_HAS_NO_DEVICE');
+          seen.ungranted = await units(LISTED);
+          authAnswer = null;
+          assert.deepStrictEqual(seen, {missing: 1, unlisted: 1, listed: 1, hidden: 1, ungranted: 1});
+        });
+      }
     }
 
     // #482's high, round 2, 6: decided at the route, before any limiter
@@ -339,6 +357,36 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
         assert.deepStrictEqual(invoked, [], 'nothing dispatched');
       });
     }
+
+    // #512's high, 1: a path no device route answers, or a method a route
+    // doesn't take, under a device the key is granted: one unit, and the one
+    // JSON answer an ungranted device gets -- never Express's HTML 404
+    // (unlimited, and telling a key its own grants)
+    it('a sub-path no route serves, or a method a route doesn\'t take: one unit, the one answer, granted or not', async () => {
+      const want = JSON.stringify({status: 404, body: {code: 'MODULE_NOT_LISTED', message: CODES.MODULE_NOT_LISTED.en, kind: 'caller'}});
+      const send = async(method, p) => {
+        spent.length = 0;
+        const res = await request(app)[method](p).set('X-CH-Key', 'k');
+        return {answer: JSON.stringify({status: res.status, body: res.body}), units: spent.length};
+      };
+      const shapes = {
+        unrouted: await send('get', `/devices/${LISTED}/whatever`),
+        bare: await send('get', `/devices/${LISTED}`),
+        wrongMethod: await send('get', `/devices/${LISTED}/invoke-action`),
+        wrongMethodJob: await send('get', `/devices/${LISTED}/add-job`)
+      };
+      authAnswer = new CountinghouseError('USER_HAS_NO_DEVICE');
+      shapes.ungranted = await send('get', `/devices/${LISTED}/whatever`);
+      authAnswer = null;
+      for (const [k, v] of Object.entries(shapes)) assert.deepStrictEqual(v, {answer: want, units: 1}, k);
+      limited = true;
+      try {
+        const over = [await send('get', `/devices/${LISTED}/whatever`), await send('get', `/devices/${LISTED}/invoke-action`)];
+        for (const v of over) assert.deepStrictEqual([JSON.parse(v.answer).status, JSON.parse(v.answer).body.code], [429, 'RATE_LIMIT_EXCEEDED']);
+      } finally {
+        limited = false;
+      }
+    });
 
     it('invoke-action: a device gone between the check and the dispatch answers the same one answer', async () => {
       const late = await call(ROUTES[0], GONE_LATE);

@@ -230,6 +230,24 @@ describe('auth 54: get-spec and the schema route answer only what the caller\'s 
     }
   });
 
+  // #512's high, 1: under /devices/<id>/, a path no route serves or a method
+  // a route doesn't take, for a device the key is granted, answers as one it
+  // isn't granted: the one JSON answer (lib/routes/device-fallback.js, mounted
+  // last by lib/route-manager.js), never Express's HTML 404
+  it('a sub-path no device route serves, or a wrong method, answers as a device the key isn\'t granted: one JSON answer', async () => {
+    const send = (key, method, p) => new Promise((resolve, reject) => request(url)[method](p).set('X-CH-Key', key)
+      .end((err, res) => (err ? reject(err) : resolve(JSON.stringify({status: res.status, type: (res.headers['content-type'] || '').split(';')[0], body: res.body})))));
+    const want = JSON.stringify({status: 404, type: 'application/json', body: {code: 'MODULE_NOT_LISTED', message: require('../../lib/error-catalogue').CODES.MODULE_NOT_LISTED.en, kind: 'caller'}});
+    const granted = idOf('transform');
+    const seen = {
+      unrouted: await send(WILDCARD_KEY, 'get', `/devices/${granted}/whatever`),
+      bare: await send(WILDCARD_KEY, 'get', `/devices/${granted}`),
+      wrongMethod: await send(WILDCARD_KEY, 'get', `/devices/${granted}/invoke-action`),
+      ungranted: await send(SCOPED_KEY, 'get', `/devices/${granted}/whatever`)
+    };
+    assert.deepStrictEqual(seen, {unrouted: want, bare: want, wrongMethod: want, ungranted: want});
+  });
+
   // post-rel caller 400, an access fix: add-job queued an unlisted part's
   // action and ran it (no listing check at all). Now it is refused, and no
   // run is ever recorded.
