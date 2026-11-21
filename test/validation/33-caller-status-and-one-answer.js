@@ -181,6 +181,11 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       // (one in this thread names it; a worker's crosses as its code alone);
       // a device gone between the route's check and the dispatch
       invokeDeviceAction(deviceID, serviceID, actionName, args, session) {
+        // (its per-key limit first, as the real one's: lib/countinghouse-interface.js)
+        if (limited) {
+          spent.push(session.appKey);
+          return session.callbackWithoutTimer(require('../../lib/countinghouse-error').setRetryAfter(new CountinghouseError('RATE_LIMIT_EXCEEDED'), 1500, 60000));
+        }
         invoked.push([deviceID, serviceID, actionName]);
         // a listed device still loading (shared mode's startup): its own answer
         if (actionName === 'still-loading') return session.callbackWithoutTimer(new CountinghouseError('DEVICE_NOT_FOUND', deviceID));
@@ -210,10 +215,6 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
         return cb(null, new Session(req, res, 'u', appKey, 0, deviceID, null, null));
       }};
       delete require.cache[userRouteId];
-      const rateLimitGate = require('../../lib/rate-limit-gate');
-      const savedGuard = rateLimitGate.guard;
-      rateLimitGate.guard = (c, session, res, next) => next();
-      rateLimitGate.restore = () => { rateLimitGate.guard = savedGuard; };
       const user = require('../../lib/routes/user');
       app = express();
       app.use(express.json());
@@ -229,7 +230,6 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       visibility.configure(savedDeps);
       if (savedUserAuth != null) require.cache[userAuthId] = savedUserAuth; else delete require.cache[userAuthId];
       delete require.cache[userRouteId];
-      require('../../lib/rate-limit-gate').restore();
       verdict.forget(LISTED);
     });
     afterEach(() => { authAnswer = null; visibility.show(Object.values(MODULE_OF)); dm.deviceMap[GONE_LATE] = device('gone-mod', null); });
@@ -311,6 +311,34 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       assert.strictEqual(new Set(Object.values(over)).size, 1, 'byte for byte');
       assert.deepStrictEqual(invoked, [], 'nothing dispatched');
     });
+
+    // (the medium on it: get-spec, schema and add-job are limited first, as
+    // package-info is, so no device route answers by reason over the limit)
+    for (const route of ROUTES) {
+      it(`${route.name}: over the key's limit, missing, not listed, hidden, not granted and listed are one answer, byte for byte: RATE_LIMIT_EXCEEDED 429`, async () => {
+        invoked = [];
+        limited = true;
+        let got;
+        try {
+          const missing = await call(route, NOWHERE);
+          const unlisted = await call(route, PART);
+          visibility.hide(['listed-mod']);
+          const hidden = await call(route, LISTED);
+          visibility.show(['listed-mod']);
+          authAnswer = new CountinghouseError('USER_HAS_NO_DEVICE');
+          const ungranted = await call(route, LISTED);
+          authAnswer = null;
+          const listed = await call(route, LISTED);
+          got = {missing, unlisted, hidden, ungranted, listed};
+        } finally {
+          limited = false;
+        }
+        const first = JSON.parse(got.missing);
+        assert.deepStrictEqual([first.status, first.body.code], [429, 'RATE_LIMIT_EXCEEDED'], JSON.stringify(got));
+        assert.strictEqual(new Set(Object.values(got)).size, 1, JSON.stringify(got));
+        assert.deepStrictEqual(invoked, [], 'nothing dispatched');
+      });
+    }
 
     it('invoke-action: a device gone between the check and the dispatch answers the same one answer', async () => {
       const late = await call(ROUTES[0], GONE_LATE);

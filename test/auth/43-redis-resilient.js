@@ -150,4 +150,41 @@ describe('auth 43: the resilient Redis client and rate limiter (M5)', function()
     }
     assert.ok(allowed <= 5, `${allowed} allowed`);
   });
+
+  // the limiter PR's medium, on the combined answer
+  it('limited by this process\'s count, it says no actions left, whatever Redis\'s count says', async () => {
+    const redis = zsetRedis();
+    const limit = redisResilient.rateLimiter({redis, interval: 60000, maxInInterval: 2}, 50);
+    redis.hang(true);
+    await check(limit, 'k');
+    await check(limit, 'k');
+    redis.hang(false);
+    const third = await new Promise((resolve) => limit('k', (err, timeLeft, actionsLeft) => resolve({err, timeLeft, actionsLeft})));
+    assert.ok(third.timeLeft > 0, JSON.stringify(third));
+    // (rolling-rate-limiter's own convention: at or below 0 once limited --
+    // it counts the refused calls too; never "calls left" while limited)
+    assert.ok(third.actionsLeft <= 0, `limited, with no calls left: ${JSON.stringify(third)}`);
+  });
+
+  it('decided in memory (Redis silent), a throw in the callback stays an exception, never an unhandled rejection', async () => {
+    const redis = zsetRedis();
+    redis.hang(true);
+    const limit = redisResilient.rateLimiter({redis, interval: 60000, maxInInterval: 5}, 30);
+    const rejections = [];
+    const uncaught = [];
+    const onRejection = (r) => rejections.push(r);
+    const saved = process.listeners('uncaughtException');
+    process.removeAllListeners('uncaughtException');
+    process.on('uncaughtException', (e) => uncaught.push(e));
+    process.on('unhandledRejection', onRejection);
+    try {
+      limit('k', () => { throw new Error('the caller threw'); });
+      for (let i = 0; i < 40 && uncaught.length + rejections.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+    } finally {
+      process.removeAllListeners('uncaughtException');
+      for (const l of saved) process.on('uncaughtException', l);
+      process.removeListener('unhandledRejection', onRejection);
+    }
+    assert.deepStrictEqual([uncaught.map((e) => e.message), rejections.length], [['the caller threw'], 0]);
+  });
 });
