@@ -14,9 +14,10 @@ const tmp = require('../helpers/test-tmp').forFile(['ch-stdio-51-'], {base: requ
 
 const SVC = (s) => `urn:countinghouse-test:serviceID:${s}`;
 // a module folder; marker: a file its handler writes when it is required
-function writeModule(dir, {name = 'my-own-tool', deps = null, marker = null} = {}) {
+function writeModule(dir, {name = 'my-own-tool', deps = null, marker = null, role = 'scenario'} = {}) {
   fs.mkdirSync(path.join(dir, 'handlers', 'toolService'), {recursive: true});
   const pkg = {name, version: '1.0.0', license: 'Apache-2.0'};
+  if (role != null) pkg.countinghouse = {role};
   if (deps != null) pkg.dependencies = deps;
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
   fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: name, manufacturer: 'me', modelDescription: 'mine',
@@ -70,6 +71,14 @@ describe('stdio 51: the authoring tools in the single-identity profile (B-own-ru
     assert.strictEqual(r.isError, false, `${JSON.stringify(r)}\n${withoutRedisNoise(io.err).slice(-1500)}`);
     assert.strictEqual(r.structuredContent.ok, true, JSON.stringify(r.structuredContent));
     assert.strictEqual(fs.existsSync(marker), false, 'its handler file was required: its code ran');
+  });
+
+  // (an own module is a scenario: the profile lists only scenarios' tools)
+  it('validate_module says an own module is a scenario', async () => {
+    const dir = writeModule(path.join(work, 'no-role'), {role: null});
+    const r = resultOf(await call('countinghouse_validate_module', {path: dir}));
+    assert.strictEqual(r.structuredContent.ok, false);
+    assert.ok(r.structuredContent.problems.some((p) => /"role": "scenario"/.test(p.message)), JSON.stringify(r.structuredContent.problems));
   });
 
   it('validate_module refuses dependencies, as add-module will', async () => {

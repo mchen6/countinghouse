@@ -542,6 +542,53 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
   });
 
   // (the medium on B-firstrun, 2) each pack's own scenario, by the record's rule
+  // (B-own-runtime; the own-modules design §2.2, §2.6) the user's own
+  // modules, as ch-local's own.json beside the settings file names them
+  describe('own modules (settings-tool installedOwn, own.json)', () => {
+    const settingsTool = require('../../lib/settings-tool');
+    const ownJson = (dir, modules) => fs.writeFileSync(path.join(dir, 'own.json'), JSON.stringify({v: 1, modules}));
+    const entry = (from) => ({tree: 'a'.repeat(64), version: '1.0.0', friendlyName: 'x', addedAt: '2026-11-20T00:00:00.000Z', from});
+
+    it('installedOwn: each own module and the folder it was added from; none, or one that cannot be read, said apart', () => {
+      const dir = tmp.mkdtemp('ch-mcp-42-');
+      assert.strictEqual(settingsTool.installedOwn(dir), null, 'no own.json');
+      ownJson(dir, {'my-b': entry('/home/u/b'), 'my-a': entry('relative/a'), 'Not A Package': entry('/x')});
+      assert.deepStrictEqual(settingsTool.installedOwn(dir), [{name: 'my-a', from: null}, {name: 'my-b', from: '/home/u/b'}]);
+      fs.writeFileSync(path.join(dir, 'own.json'), '{');
+      assert.strictEqual(settingsTool.installedOwn(dir), settingsTool.UNREADABLE);
+      fs.writeFileSync(path.join(dir, 'own.json'), JSON.stringify({v: 2, modules: {}}));
+      assert.strictEqual(settingsTool.installedOwn(dir), settingsTool.UNREADABLE, 'another version');
+    });
+
+    it('an own module is marked own, loaded or not; a pack never is', () => {
+      const data = overview.build({version: '1', settingsProfile: true, packs: [pack({name: 'p', module: 'p'}), pack({name: 'mine', module: 'mine', own: true}),
+        pack({name: 'mine-down', module: 'mine-down', own: true, loaded: false, held: {reason: 'changed'}, from: '/home/u/mine'})]});
+      const by = Object.fromEntries(data.packs.map((x) => [x.name, x]));
+      assert.deepStrictEqual([by.p.own, by.mine.own, by['mine-down'].own], [undefined, true, true]);
+      assert.strictEqual(by['mine-down'].next, overview.FIXED.changed(null, '/home/u/mine'));
+    });
+
+    it('the gateway lists the own modules after the packs, each marked, a loaded one ready', () => {
+      const options = require('../../lib/cli-options');
+      const kept = {singleIdentity: options.singleIdentity, settingsFile: options.settingsFile};
+      const home = tmp.mkdtemp('ch-mcp-42-');
+      ownJson(home, {'my-tool': entry('/home/u/my-tool'), 'my-gone': entry('/home/u/my-gone')});
+      Object.assign(options, {singleIdentity: true, settingsFile: path.join(home, 'settings.json')});
+      heldBack.resetForTests();
+      try {
+        const spec = (n) => ({device: {friendlyName: n, modelDescription: `${n} does things.`}, serviceList: {}});
+        // (an own module is a scenario: the profile lists only scenarios)
+        const dm = {getAllDeviceSpecs: () => ({'d-mine': spec('my-tool')}),
+          deviceMap: {'d-mine': {moduleName: 'my-tool', packageInfo: {name: 'my-tool', countinghouse: {role: 'scenario'}}}}, moduleOfDevice: (id) => (id === 'd-mine' ? 'my-tool' : null)};
+        const got = require('../../lib/mcp/gateway').overviewFor({deviceManager: dm}, null, [{name: 'mine_run', target: {deviceID: 'd-mine'}}], [], {isAdmin: false});
+        assert.deepStrictEqual(got.packs.map((x) => [x.name, x.state, x.own, x.tools]), [['my-gone', 'not loaded', true, []], ['my-tool', 'ready', true, ['mine_run']]]);
+      } finally {
+        Object.assign(options, kept);
+        heldBack.resetForTests();
+      }
+    });
+  });
+
   describe('the install record (settings-tool installedPacks)', () => {
     it('each pack gets its own scenario, never another pack\'s; one that cannot be read is said apart from none', () => {
       const settingsTool = require('../../lib/settings-tool');
