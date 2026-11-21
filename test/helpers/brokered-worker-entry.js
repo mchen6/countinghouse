@@ -28,7 +28,7 @@ const LIB = path.join(__dirname, '..', '..', 'lib', 'fs-broker');
     // (classes: a base exported too, so its statics are named as its own;
     // a static getter that reads a file; a static name() method; one named
     // by itself)
-    class FakeBase { static helper(p) { return read(p, 'utf8'); } static get hostname() { return read('/etc/hostname', 'utf8'); } }
+    class FakeBase { static helper(p) { return read(p, 'utf8'); } static get hostname() { return read(__filename, 'utf8'); } }
     fsLib.FakeBase = FakeBase;
     fsLib.FakeNamed = class { static name(p) { return read(p, 'utf8'); } };
     const SelfNamed = class { static helper(p) { return read(p, 'utf8'); } };
@@ -55,7 +55,7 @@ const LIB = path.join(__dirname, '..', '..', 'lib', 'fs-broker');
     // array iterator and a Map iterator holding host functions, a Map with
     // a nulled prototype, an unchangeable writable null filled later, a
     // namespace a module keeps that gains a method later)
-    fsLib.fakeGen = (function*() { yield read('/etc/hostname', 'utf8'); })();
+    fsLib.fakeGen = (function*() { yield read(__filename, 'utf8'); })();
     fsLib.fakeIter = [(p) => read(p, 'utf8')][Symbol.iterator]();
     fsLib.fakeMapIter = new Map([['r', (p) => read(p, 'utf8')]]).values();
     const bare = new Map([['r', (p) => read(p, 'utf8')]]);

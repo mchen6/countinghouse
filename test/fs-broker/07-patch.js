@@ -22,6 +22,8 @@ describe('fs-broker 07: the worker patch', function() {
     const r = m.r;
     assert.match(r.refusal, /cannot guard this Node's fs\.fakeFixedSync, fs\.fakeNcLater, fs\.fakeNcUndef, fs\.fakeFixedGetSync, fs\.fakeNcSync .*not starting under enforce -- if it is a constant, add it to PASSTHROUGH in lib\/fs-broker\/patch\.js/);
     for (const [k, v] of Object.entries(r.calls)) assert.strictEqual(v, U, `calling ${k}`);
+    // (first, the control: the host file the members try is readable from the host)
+    assert.strictEqual(r.ncLater, 'ran');
     for (const [k, v] of Object.entries(r.members)) assert.ok(v !== 'ran' && v !== 'a promise', `${k} reached the host: ${v}`);
     assert.deepStrictEqual(r.lockedShape, [true, true, 'function', 'string']);
     assert.strictEqual(r.copy, 'ran');

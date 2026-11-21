@@ -36,6 +36,8 @@ describe('metering 02: the local provider (LM1 B2)', function() {
     }
     assert.deepStrictEqual((await call(p, 'checkBalance', key)).result, {balance: null});
     assert.strictEqual(p.callCount(key, 'tool'), 1000);
+    // (and no Map holds the key: the limiter PR's medium, 5)
+    assert.ok(![...p.calls.keys()].includes(key), 'calls is keyed by the fingerprint');
     p.close();
     for (const f of filesUnder(storePath)) assert.ok(!fs.readFileSync(f, 'utf8').includes(key), f);
   });

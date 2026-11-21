@@ -250,7 +250,15 @@ describe('sandbox 70: the in-root resolver against Node\'s own, over a corpus of
     })));
     const r = spawnSync(process.execPath, ['--expose-internals', '--no-warnings', '-e', script, casesFile, JSON.stringify(conditions)], {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024});
     assert.strictEqual(r.status, 0, r.stderr);
-    return JSON.parse(r.stdout);
+    // (on Windows Node answers a package's self-reference findPackageJSON in
+    // its long form, \\?\D:\...; the sandbox answers the plain form by
+    // design, fs-broker 26: compared as the plain form)
+    const plain = (p) => {
+      if (typeof(p) !== 'string') return p;
+      if (p.startsWith('\\\\?\\UNC\\')) return `\\\\${p.slice(8)}`;
+      return p.startsWith('\\\\?\\') ? p.slice(4) : p;
+    };
+    return JSON.parse(r.stdout).map(([answer, pj, pjBase]) => [answer, plain(pj), plain(pjBase)]);
   };
   const resolver = () => createResolver({
     root,

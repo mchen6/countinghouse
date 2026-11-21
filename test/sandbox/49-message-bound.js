@@ -53,7 +53,16 @@ describe('sandbox 49: messages to the main thread are bounded (#170)', function(
     assert.notStrictEqual(r.code, 'MESSAGE_TOO_LARGE', JSON.stringify(r));
     assert.ok(r.refused, JSON.stringify(r));
     await new Promise((resolve) => setTimeout(resolve, 300));
-    assert.match(server.output, /violation loadFile \/etc\/a+\.\.\. \(\d+ characters\)/);
+    if (process.platform !== 'win32') {
+      assert.match(server.output, /violation loadFile \/etc\/a+\.\.\. \(\d+ characters\)/);
+    } else {
+      // (on Windows the module resolves /etc/... on its own drive,
+      // <V>:\etc\..., never the host's, named in the JSON log with its "\"
+      // escaped)
+      const m = /violation loadFile ([A-Z]):\\\\etc\\\\a+\.\.\. \(\d+ characters\)/.exec(server.output);
+      assert.ok(m != null, server.output.slice(-2000));
+      assert.notStrictEqual(m[1], path.parse(process.cwd()).root[0].toUpperCase(), 'on the module\'s own drive, not the host\'s');
+    }
   });
 
   // the review of #186, HIGH 1

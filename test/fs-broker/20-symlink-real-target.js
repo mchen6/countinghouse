@@ -9,7 +9,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const {createNamespace} = require('../../lib/fs-broker/namespace');
-const {FsBroker} = require('../../lib/fs-broker/broker');
+const {FsBroker, windowsTrims} = require('../../lib/fs-broker/broker');
 const {mkdtemp} = require('../helpers/test-tmp');
 
 async function setup(mode) {
@@ -65,6 +65,32 @@ describe('fs-broker 20: a symlink is decided by its real target, and takes no ".
     }
   });
 
+  // C-win-excl (the C-fb-rename belt pulled into release 1): Windows trims a
+  // path segment's trailing dots and spaces when it resolves it, so ".. "
+  // or "..." could mean ".." to it and lead out of a link's root. On
+  // Windows the broker refuses any such segment; on POSIX they are names.
+  it('the segments Windows takes as other than their text (trailing dots or spaces, device names): which they are', () => {
+    for (const t of ['.. ', '...', 'x.', 'x ', 'a/.. /f', 'a/.../f', 'a/b./f', '. ', '..  ', 'CON', 'nul', 'a/COM1', 'Lpt9.txt', 'aux.x', 'CONIN$', 'conout$', 'nul.tar.gz', 'a/CON.txt.bak', 'con .txt', 'nul  .log', 'COM\u00b9', 'lpt\u00b3.x', 'lpt0', 'com0']) assert.strictEqual(windowsTrims(t), true, t);
+    for (const t of ['.', 'x', 'a/b/f', './x', 'x.y', '.x', ' x', 'a/.x/f', 'console', 'nullable', 'com10', 'lpt', 'a/conx', 'conin$.txt', 'conout$.log', 'nul\u00a0', 'aux\u3000', 'nulx.txt']) assert.strictEqual(windowsTrims(t), false, t);
+  });
+
+  it('a target with such a segment is refused EPERM on Windows, in every mode; a name on POSIX', async () => {
+    for (const mode of MODES) {
+      const t = await setup(mode);
+      try {
+        fs.mkdirSync(path.join(t.dirs.data, 'a', 'b'), {recursive: true});
+        for (const [target, at] of [['... ', '/data/a/b/l1'], ['.. ', '/data/a/b/l2'], ['.../f', '/data/a/l3'], ['x.', '/data/l4'], ['COM1', '/data/l5'], ['a/NUL.txt', '/data/l6']]) {
+          if (process.platform === 'win32') {
+            await assert.rejects(t.broker.handle('symlink', [target, at]), eperm, `${mode} ${JSON.stringify(target)}`);
+            assert.ok(!isLink(path.join(t.dirs.data, ...at.split('/').slice(2))), `${mode} ${JSON.stringify(target)}: no link made`);
+          } else {
+            await t.broker.handle('symlink', [target, at]);
+          }
+        }
+      } finally { await t.done(); }
+    }
+  });
+
   it('targets without ".." still work, and still lead inside after the module renames their directory', async () => {
     for (const mode of MODES) {
       const t = await setup(mode);
@@ -79,7 +105,9 @@ describe('fs-broker 20: a symlink is decided by its real target, and takes no ".
         assert.strictEqual(fs.readFileSync(path.join(t.dirs.data, 'b', 'l2', 'f'), 'utf8'), 'ok', mode);
         // (the dangling l3: made, moved with its directory, and once what it
         // names is created there it leads inside, to that)
-        assert.strictEqual(fs.readlinkSync(path.join(t.dirs.data, 'b', 'l3')), 'missing/later', mode);
+        // (Windows stores a file link's target in its own separators: Node's
+        // fs.symlink rewrites "/" for a 'file' or 'dir' link there)
+        assert.strictEqual(fs.readlinkSync(path.join(t.dirs.data, 'b', 'l3')), path.join('missing', 'later'), mode);
         await t.broker.handle('mkdir', ['/data/b/missing']);
         // (written through the dangling link itself: under enforce and audit
         // refused, a link to nothing being followed nowhere it was judged
