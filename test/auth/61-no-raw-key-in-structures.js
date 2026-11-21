@@ -157,7 +157,7 @@ describe('auth 61: no raw API key in the main thread\'s structures (C-meter-keys
       identity.initSync({moduleDataPath: dir});
     });
     after(() => {
-      if (savedIdentity != null) identity.restoreForTests(savedIdentity);
+      if (savedIdentity != null) savedIdentity.restore();
       if (dir != null) tmp.remove(dir);
       if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
       delete require.cache[brokerPath];
@@ -191,7 +191,7 @@ describe('auth 61: no raw API key in the main thread\'s structures (C-meter-keys
         await until(() => b.channelRegistry['65:66'] === undefined, 'closed');
         const closedLine = lines.find((l) => l.includes('peer channel 65:66 closed'));
         assert.ok(closedLine != null, JSON.stringify(lines));
-        assert.ok(closedLine.includes('its key is no longer held: past the keys this process remembers without a provider'), closedLine);
+        assert.ok(closedLine.includes(`(SYSTEM_ERROR_UNKNOWN_USER: ${identity.OWNER_LOST_WITHOUT_PROVIDER})`), closedLine);
         assert.ok(!closedLine.includes(KEY), closedLine);
         // the next request makes it known again (the broker's grant does,
         // composition 18), and the channel holds
@@ -200,6 +200,99 @@ describe('auth 61: no raw API key in the main thread\'s structures (C-meter-keys
         b.recheckGrants();
         await until(() => b.recheckInFlight === 0, 'the re-check done');
         assert.ok(b.channelRegistry['65:66'] != null, 'reopened');
+      } finally {
+        LOG.I = savedI;
+      }
+    });
+  });
+
+  // A re-check's miss asks the provider (identity.resolve: freshRefill). The
+  // channel closes as removed only when the provider was asked and doesn't
+  // list the caller; one the provider couldn't answer closes retryably, and
+  // the caller's next request re-grants once it can (#518's M1 rule).
+  describe('the peer channel broker\'s re-check: removed, or not confirmed now', () => {
+    const cli = require('../../lib/cli-options');
+    const identity = require('../../lib/identity');
+    const auth = require('../../lib/auth');
+    const LOG = require('../../lib/logger');
+    const tmp = require('../helpers/test-tmp');
+    const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
+    const authPath = require.resolve('../../lib/user-auth');
+    const brokerPath = require.resolve('../../lib/peer-channel-broker');
+    let kept = null;
+    let savedAuth = null;
+    let savedIdentity = null;
+    let savedSource = null;
+    let dir = null;
+    let PeerChannelBroker = null;
+    // the provider: the keys it lists, or down
+    const listed = [];
+    let down = false;
+    const provider = {entries: (cb) => setImmediate(() => (down ? cb(new Error('the provider is down')) : cb(null, listed.map((k, i) => ({apiKey: k, userName: `u${i}`, isAdmin: false, id: `stable-${i}`})))))};
+    before(() => {
+      kept = optionsNow();
+      cli.setOptions({workerThread: true, debug: false, peerChannelAuthRecheckSeconds: 0, peerChannelAuthLookupTimeoutMs: 20000});
+      LOG.createLogger();
+      savedAuth = require.cache[authPath];
+      require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: (a, b, deviceID, appKey, c, d, localCB, cb) => setImmediate(() => cb(null))};
+      savedSource = auth.identitySource;
+      auth.identitySource = () => provider;
+      delete require.cache[brokerPath];
+      PeerChannelBroker = require('../../lib/peer-channel-broker');
+      savedIdentity = identity.stateForTests();
+      dir = tmp.mkdtemp('ch-auth61-recheck-');
+      identity.initSync({moduleDataPath: dir});
+      // (the refill throttle's waits taken at once; its 10 s deadline kept)
+      savedIdentity.setClock({now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms >= 10000 ? ms : 0)});
+    });
+    after(() => {
+      if (savedIdentity != null) savedIdentity.restore();
+      if (dir != null) tmp.remove(dir);
+      auth.identitySource = savedSource;
+      if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
+      delete require.cache[brokerPath];
+      restoreOptions(kept);
+    });
+
+    it('provider down: closed retryably, never as removed; back, the next grant holds; then removed: closed as removed', async () => {
+      const lines = [];
+      const savedI = LOG.I;
+      LOG.I = (m) => { lines.push(String(m)); return m; };
+      try {
+        const b = new PeerChannelBroker({deviceMap: {}});
+        const grantFor = () => {
+          const callee = {workerId: 68, ended: null, unloading: false, sendPeerChannelOpenToChild: () => {}, sendPeerInvalidateToChild: () => {}};
+          const caller = {workerId: 67, ended: null, unloading: false, sendPeerChannelGrantToChild: () => {}, sendPeerInvalidateToChild: () => {}};
+          b.grant('d', KEY, caller, callee, ['svc|act']);
+        };
+        const closedLines = () => lines.filter((l) => l.includes('peer channel 67:68 closed'));
+        listed.push(KEY);
+        await identity.know(KEY, provider);
+        grantFor();
+        // the index loses it (a reload meanwhile) and the provider is down
+        savedIdentity.forget();
+        down = true;
+        b.recheckGrants();
+        await until(() => b.channelRegistry['67:68'] === undefined, 'closed: not confirmed');
+        assert.strictEqual(closedLines().length, 1, JSON.stringify(lines));
+        assert.ok(closedLines()[0].includes('(SYSTEM_ERROR_USERDB_NA: the caller could not be confirmed now; its next request asks again)'), closedLines()[0]);
+        assert.ok(!closedLines()[0].includes('no longer listed'), 'never said removed');
+        // back: the next request makes it known (asking the provider), and
+        // the re-check keeps it
+        down = false;
+        await identity.know(KEY, provider);
+        grantFor();
+        b.recheckGrants();
+        await until(() => b.recheckInFlight === 0, 'the re-check done');
+        assert.ok(b.channelRegistry['67:68'] != null, 'held once confirmed');
+        // removed from the provider, and the index refilled (a reload)
+        listed.length = 0;
+        await identity.freshRefill(provider);
+        b.recheckGrants();
+        await until(() => b.channelRegistry['67:68'] === undefined, 'closed: removed');
+        assert.strictEqual(closedLines().length, 2, JSON.stringify(lines));
+        assert.ok(closedLines()[1].includes('(SYSTEM_ERROR_UNKNOWN_USER: its id is no longer listed)'), closedLines()[1]);
+        assert.ok(lines.every((l) => !l.includes(KEY)), 'no key in a line');
       } finally {
         LOG.I = savedI;
       }

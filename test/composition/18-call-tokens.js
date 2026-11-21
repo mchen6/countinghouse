@@ -1238,6 +1238,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const until = async (f) => { for (let i = 0; i < 400 && !f(); i++) await sleep(5); return f(); };
       try {
         identity.initSync({moduleDataPath: dir});
+        // (the refill throttle's waits taken at once; its 10 s deadline kept)
+        saved.setClock({now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms >= 10000 ? ms : 0)});
         const known = ENTRY(19);
         listed.push(known.identityKey);
         assert.strictEqual(identity.lookup(identity.idFor({id: 'stable-0'}, known.identityKey)), null, 'not in the index yet');
@@ -1258,7 +1260,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         Object.assign(provider, savedProvider);
         delete callee.sendPeerChannelOpenToChild;
         delete broker.channelRegistry['19:12'];
-        identity.restoreForTests(saved);
+        saved.restore();
         tmp.remove(dir);
       }
     });
