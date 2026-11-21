@@ -265,15 +265,20 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       });
       it('stack edges: a vm realm sees no runtime receiver; a chained prepareStackTrace; no builtin frame\'s receiver; util.getCallSites virtual; _initPaths', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'stackEdges'});
-        assert.strictEqual(detail(r), 'vm-no-receivers chained builtin-no-this callsites-virtual initPaths alias counts eval-none boundary rewrapped', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'vm-no-receivers chained callsites-virtual initPaths alias counts', JSON.stringify(r).slice(0, 1500));
+      });
+      // (#493's regression read: what works on master works under enforce)
+      it('compatibility: an identity-guarded install twice, a restore if still its own, defineProperty and delete, Node\'s error header, argv and globalPaths ordinary arrays', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'stackCompat'});
+        assert.strictEqual(detail(r), 'guarded restored defined deleted node-header argv globalPaths', JSON.stringify(r).slice(0, 1500));
       });
       it('the stack hold: a module may swap and delete globalThis.Error; save/swap/restore keeps the module\'s function; wrappers are objects', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'stackHold'});
-        assert.strictEqual(detail(r), 'swappable deletable restore filtered wrapper-object', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'swappable deletable restore wrapper-object', JSON.stringify(r).slice(0, 1500));
       });
-      it('process.argv is a frozen copy: node, then the runtime\'s worker by its virtual name', async () => {
+      it('process.argv is a copy: node, then the runtime\'s worker by its virtual name', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'argv'});
-        assert.strictEqual(detail(r), '["node","countinghouse:/lib/lean-worker.js"] frozen', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), '["node","countinghouse:/lib/lean-worker.js"]', JSON.stringify(r).slice(0, 1500));
       });
       // (C-lows: Node's warnings as it resolves inside the root name no host path)
       it('a warning Node emits resolving inside the root names no host path, by import and require', async () => {
@@ -281,9 +286,9 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
         assert.match(detail(r), /^no-host /, JSON.stringify(r).slice(0, 1500));
       });
       // (C-lows: Node's global lookup directories are none to module code)
-      it('module.constructor.globalPaths is an empty, frozen list', async () => {
+      it('module.constructor.globalPaths is an empty list', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'globalPaths'});
-        assert.strictEqual(detail(r), 'none frozen', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'none', JSON.stringify(r).slice(0, 1500));
       });
       // (C-lows: no stack module code can read names the install directory)
       it('every stack module code reads names the runtime\'s frames countinghouse:, by every route; no runtime object through a frame', async () => {

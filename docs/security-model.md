@@ -183,42 +183,33 @@ answers or throws holds no host path there: an answer outside the module
 is not found, and any error is a plain not-found. Which calls are mapped
 is `lib/fs-broker/identity.js`'s `parentMapped` and `hostOf`.
 
-Under `enforce`, no host path of the runtime's own reaches module code
-either: every stack it can read (`e.stack`, `Error.captureStackTrace`, a
-`Error.prepareStackTrace` of its own) names the runtime's frames
+Under `enforce`, the runtime's own files are named by virtual names in
+what module code reads by default: a stack formatted by the runtime's
+default formatter (`e.stack`, `Error.captureStackTrace`; Node's own errors
+keep their `name [code]: message` header) names the runtime's frames
 `countinghouse:/lib/...` (a hoisted dependency's
-`countinghouse:/node_modules/<name>/...`; a linked install's files too),
-`util.getCallSites()` names them so, and only a frame of the module's own
-files answers `getThis()` and `getFunction()`; reading
-`Error.prepareStackTrace` gives the runtime's formatter, while what module
-code assigns is what formats its stacks (one that calls the function it
-replaced gets the default text). `module.constructor.globalPaths` is an
-empty, frozen list (`_initPaths()` does nothing), and `process.argv` a
-frozen copy, `['node', 'countinghouse:/lib/lean-worker.js']`. A warning
-Node's own resolution step would give is not given to module code.
-Known limits: `process.execPath` (and `process.argv0`) can name the Node
-binary's install path (e.g. under the user's home with nvm); Node's own
-spawns read it. A module's own `vm` realm, with a `prepareStackTrace` of
-its own there, sees the runtime's file paths in its raw stack frames;
-never a receiver or a function of the runtime's (its files are strict
-mode). Under `--enable-source-maps`, a stack is not source-mapped. A
-`prepareStackTrace` of the module's own also formats the stacks of the
-runtime's own errors read in its worker, as on master: it is handed the
-error and its frames (wrapped, renamed), the error's message as it is.
-Reading `Error.prepareStackTrace` after setting it gives a view of the
-module's function, not the function itself (`=== myFn` is false); set
-back, the view restores it. Module code may replace `globalThis.Error`,
-which Node reads the stack formatter from at format time: one replaced by
-an object of the module's own with a `prepareStackTrace` of its own sees
-V8's raw frames there -- the runtime's file paths, never a receiver or a
-function of the runtime's. A
-frame with no file -- a module's own `eval` or `new Function`, a
-builtin's -- answers `getThis()` and `getFunction()` with `undefined`.
-On Windows a stack or a message spells the runtime's files
-`countinghouse:\lib\x.js` (a file URL's form, and `process.argv`,
-with `/`).
-`util.getCallSite` (Node 22's deprecated alias) gives no deprecation
-warning, and `util.getCallSites(200)` gives at most 199 frames.
+`countinghouse:/node_modules/<@scope/name>/...`; a linked install's files
+too), and `util.getCallSites()` names them so.
+`module.constructor.globalPaths` is an empty array (`_initPaths()` does
+nothing), and `process.argv` and `process.execArgv` are copies without
+host paths -- `['node', 'countinghouse:/lib/lean-worker.js']`, and no
+`--allow-fs-*` grant. A warning Node's own resolution step would give is
+not given to module code. Each of these stays an ordinary value module code
+may change, as on master.
+Known limits: `Error.prepareStackTrace` is an ordinary property set to the
+runtime's formatter; a module that assigns or defines its own -- in its own
+realm, a `vm` realm, or on a `globalThis.Error` it replaced -- gets V8's
+frames as on master: the runtime's file paths, never a receiver or a
+function of the runtime's (its files are strict mode); and its function
+also formats the runtime's own errors read in its worker, as on master.
+`process.execPath` (and `process.argv0`) can name the Node binary's install
+path (e.g. under the user's home with nvm); Node's own spawns read it.
+Under `--enable-source-maps` (or `process.setSourceMapsEnabled`), the
+runtime's formatter applies no source map. On Windows a stack or a message
+spells the runtime's files `countinghouse:\lib\x.js` (a file URL's form,
+and `process.argv`, with `/`). `util.getCallSite` (Node 22's deprecated
+alias) gives no deprecation warning, and `util.getCallSites(200)` gives at
+most 199 frames.
 
 **On Windows** a module's files carry a drive (#195): the module sees them,
 its current directory and its stack frames as `<V>:\app\...`, V a drive

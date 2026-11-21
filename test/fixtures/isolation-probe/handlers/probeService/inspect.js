@@ -825,10 +825,59 @@ const STEPS = {
       };
       custom = new Error('z').stack === 'custom';
     } finally { Error.prepareStackTrace = saved; }
-    files.push(...viaFn);
+    // (a module's own prepareStackTrace sees V8's frames, as on master: its
+    // names are not judged here -- ruled on #493, a listed limit)
     const bad = files.filter((f) => !/^(\/app(\/|$)|[A-Z]:\\app(\\|$)|node:|countinghouse:|native$|<anonymous>$|evalmachine)/.test(f));
     const runtime = files.filter((f) => f.startsWith('countinghouse:')).length;
     return `${bad.length === 0 ? 'virtual' : `host(${bad.slice(0, 3).join('|')})`} ${objects === 0 ? 'no-objects' : 'objects'} ${custom && viaFn.length > 0 ? 'custom' : 'not-custom'} ${runtime > 0 ? 'runtime-frames' : 'no-runtime-frames'}`;
+  },
+  // (#493's regression read: the stack formatter is a plain data property,
+  // as on master -- an identity-guarded install twice, a restore only if
+  // still its own, defineProperty and a strict delete, Node's own error
+  // header; process.argv and Module.globalPaths ordinary arrays)
+  stackCompat: () => {
+    'use strict';
+    const out = [];
+    const E = Error;
+    const saved = E.prepareStackTrace;
+    try {
+      // 1: an install guarded by identity, run twice, chaining the previous
+      let prev;
+      const hook = function hook(e, f) { return typeof(prev) === 'function' ? prev(e, f) : `${e}`; };
+      const install = () => { if (E.prepareStackTrace !== hook) { prev = E.prepareStackTrace; E.prepareStackTrace = hook; } };
+      install();
+      install();
+      let one;
+      try { one = typeof(new E('one').stack) === 'string' ? 'guarded' : 'guarded-not-text'; } catch (e) { one = `guarded-threw-${e.name}`; }
+      out.push(one);
+      E.prepareStackTrace = saved;
+      // 2: restore only if still its own
+      const mine = (e, f) => f;
+      E.prepareStackTrace = mine;
+      if (E.prepareStackTrace === mine) E.prepareStackTrace = saved;
+      out.push(typeof(new E('two').stack) === 'string' ? 'restored' : 'not-restored');
+      // 3: defineProperty, and a strict delete
+      let three;
+      try {
+        Object.defineProperty(E, 'prepareStackTrace', {value: (e, f) => 'defined', configurable: true, writable: true});
+        three = new E('three').stack === 'defined' ? 'defined' : 'not-defined';
+        delete E.prepareStackTrace;
+        three += ' deleted';
+      } catch (e) { three = `define-threw-${e.name}`; }
+      out.push(three);
+    } finally {
+      Object.defineProperty(E, 'prepareStackTrace', {value: saved, configurable: true, writable: true, enumerable: false});
+    }
+    // 6: Node's own error, its header `name [code]: message`
+    let six;
+    try { Buffer.alloc(-1); } catch (e) { six = /^RangeError \[ERR_OUT_OF_RANGE\]: /.test(String(e.stack)) ? 'node-header' : `header(${String(e.stack).split('\n')[0].slice(0, 60)})`; }
+    out.push(six);
+    // 4: process.argv an ordinary array; 5: Module.globalPaths too
+    const argv = process.argv.slice();
+    try { process.argv.push('x'); process.argv.splice(-1, 1); process.argv = argv.slice(); out.push('argv'); } catch (e) { out.push(`argv-threw-${e.name}`); } finally { try { process.argv = argv; } catch (e) { /* as it is */ } }
+    const g = module.constructor.globalPaths;
+    try { g.push('/nowhere.invalid'); g.pop(); out.push('globalPaths'); } catch (e) { out.push(`globalPaths-threw-${e.name}`); }
+    return out.join(' ');
   },
   // (C-lows, the medium's round: a vm realm's own prepareStackTrace sees
   // raw frames -- the runtime's files by path, never a receiver or a
@@ -849,16 +898,6 @@ const STEPS = {
       let s;
       try { s = String(new Error('chained').stack); } catch (e) { s = `threw ${e.name}`; }
       out.push(/^Error: chained\n {4}at /.test(s) ? 'chained' : `chained(${s.slice(0, 80)})`);
-      let builtinThis = null;
-      let found = false;
-      Error.prepareStackTrace = (e, f) => {
-        for (const site of f) {
-          if (/forEach/.test(String(site.getFunctionName()))) { found = true; builtinThis = site.getThis(); }
-        }
-        return 'x';
-      };
-      [1].forEach(() => new Error('b').stack);
-      out.push(!found ? 'builtin-none' : builtinThis === undefined ? 'builtin-no-this' : 'builtin-this');
     } finally { Error.prepareStackTrace = saved; }
     const util = require('util');
     if (typeof(util.getCallSites) === 'function') {
@@ -891,39 +930,6 @@ const STEPS = {
       } catch (e) { counts = `threw ${e.code}`; }
       out.push(counts === 'true true true true true ERR_INVALID_ARG_TYPE ERR_INVALID_ARG_TYPE' ? 'counts' : `counts(${counts})`);
     } else out.push('counts');
-    const saved2 = Error.prepareStackTrace;
-    try {
-      let evalFn = null;
-      let evalSeen = false;
-      let kept = null;
-      Error.prepareStackTrace = (e, f) => {
-        kept = f;
-        for (const site of f) {
-          if (site.isEval() && site.getFileName() == null && !evalSeen) { evalSeen = true; evalFn = site.getFunction(); }
-        }
-        return 'x';
-      };
-      // (a frame with no file -- a new Function's -- answers no function:
-      // ruled M-eval, a listed limit)
-      new Function('return new Error("e").stack')();
-      out.push(!evalSeen ? 'eval-unseen' : evalFn == null ? 'eval-none' : 'eval-function');
-      // (a file only like the root's -- '/apps-...' is not '/app' -- is no
-      // file of the module's: its frame answers no function)
-      let near = 'unseen';
-      Error.prepareStackTrace = (e, f) => {
-        for (const site of f) if (site.getFileName() === '/apps-not-the-root/x.js') near = site.getFunction() === undefined ? 'boundary' : 'boundary-function';
-        return 'x';
-      };
-      require('vm').runInThisContext('(function near() { return new Error("n").stack; })()', {filename: '/apps-not-the-root/x.js'});
-      out.push(near);
-      // (frames kept from one stack, handed to the formatter again with a
-      // function of the module's assigned: read as frames, never wrapped twice)
-      Error.prepareStackTrace = (e, f) => f.map((site) => String(site.getFileName())).join(',');
-      const fmt = Error.prepareStackTrace;
-      let text;
-      try { text = String(fmt(new Error('again'), kept)); } catch (e) { text = `threw ${e.name}`; }
-      out.push(/^threw/.test(text) || text === '' ? `rewrapped(${text.slice(0, 60)})` : 'rewrapped');
-    } finally { Error.prepareStackTrace = saved2; }
     return out.join(' ');
   },
   // (#493's high, round 1: globalThis.Error swapped or deleted reaches no
@@ -953,14 +959,6 @@ const STEPS = {
       E.prepareStackTrace = () => 'other';
       E.prepareStackTrace = saved;
       out.push(new E('z').stack === 'mine' ? 'restore' : `restore(${String(new E('z').stack).slice(0, 30)})`);
-      // (a function that hands the one it replaced no frames, or others of
-      // its own: the default text, never round again)
-      E.prepareStackTrace = undefined;
-      const prev = E.prepareStackTrace;
-      E.prepareStackTrace = (e, f) => prev(e, []);
-      let filtered;
-      try { filtered = /^Error: q/.test(String(new E('q').stack)) ? 'filtered' : 'filtered-other'; } catch (e) { filtered = `filtered-threw-${e.name}`; }
-      out.push(filtered);
       let proto = null;
       E.prepareStackTrace = (e, f) => { proto = Object.getPrototypeOf(Object.getPrototypeOf(f[0])); return 'x'; };
       void new E('w').stack;
@@ -969,11 +967,7 @@ const STEPS = {
     return out.join(' ');
   },
   // (C-lows d: process.argv as module code reads it under enforce)
-  argv: () => {
-    let pushed = false;
-    try { process.argv.push('x'); pushed = true; } catch (e) { /* frozen */ }
-    return `${JSON.stringify(process.argv)} ${pushed ? 'writable' : 'frozen'}`;
-  },
+  argv: () => JSON.stringify(process.argv),
   // (C-lows d, a report: every channel from a module object that could name
   // the root's host path or the install directory, each listed by name with
   // what it named; input.needles, the host paths to look for)
@@ -1050,9 +1044,7 @@ const STEPS = {
   globalPaths: () => {
     const g = module.constructor.globalPaths;
     if (!Array.isArray(g)) return `not a list: ${typeof(g)}`;
-    let pushed = false;
-    try { g.push('/nowhere'); pushed = true; } catch (e) { /* frozen */ }
-    return `${g.length === 0 ? 'none' : `${g.length} paths`} ${pushed ? 'writable' : 'frozen'}`;
+    return g.length === 0 ? 'none' : `${g.length} paths`;
   },
   pathCache: () => {
     const key = `planted\0${ROOT}`;
