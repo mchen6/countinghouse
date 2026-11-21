@@ -160,15 +160,17 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
   // where the file provider's auth.json is, and whether there is one: one
   // function, for the --hardened parent's create and check and the child's
   // grant
-  // a --authConfigPath that is no path (a number, given twice) is refused at
-  // the start, as one given empty: the --hardened parent, the grant, the
+  // a --authConfigPath given twice is refused at the start, as one given
+  // empty or bare: the --hardened parent, the grant, the
   // provider and the broker's protected lists all name one file
-  it('a --authConfigPath that is not one string is refused at the start', () => {
+  it('a --authConfigPath given twice, bare or empty is refused at the start; an all-digit name is that file', () => {
     const r = spawnSync(process.execPath, ['-e', `const o = require(${JSON.stringify(path.join(ROOT, 'lib', 'cli-options'))});
       const out = [];
-      for (const v of [1234, ['a.json', 'b.json'], '', true, 'ok.json']) { o.setOptions({authConfigPath: v}); out.push(o.authConfigPathInvalid === true); }
+      for (const v of [['a.json', 'b.json'], '', true, 'ok.json', 1234]) { o.setOptions({authConfigPath: v}); out.push([o.authConfigPathInvalid === true, o.authConfigPath]); }
       process.stdout.write(JSON.stringify(out));`], {encoding: 'utf8', timeout: 20000});
-    assert.deepStrictEqual(JSON.parse(r.stdout), [true, true, true, true, false], r.stderr);
+    const out = JSON.parse(r.stdout);
+    assert.deepStrictEqual(out.map((x) => x[0]), [true, true, true, false, false], r.stderr);
+    assert.strictEqual(out[4][1], '1234', 'the file named 1234');
   });
 
   it('fileAuthPathOf: the file provider\'s auth.json, or null when none is read', () => {
@@ -181,6 +183,24 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     for (const o of [{debug: true}, {singleIdentity: true}, {authProvider: 'sqlite'}, {authProvider: 'couchdb'}]) {
       assert.strictEqual(fileAuthPathOf(Object.assign({authProvider: 'file'}, o), cwd), null, JSON.stringify(o));
     }
+  });
+
+  // the sqlite store's default is its own file, and the broker protects the
+  // file that holds the keys, whichever store it is
+  it('authConfigPathOf names the sqlite store\'s default, and the broker protects and denies it', () => {
+    const {authConfigPathOf} = require('../../lib/auth/auth-file-defaults');
+    const cwd = path.join(dir, 'cwd');
+    assert.strictEqual(authConfigPathOf({authProvider: 'sqlite'}, cwd), path.join(cwd, 'auth.sqlite3'));
+    assert.strictEqual(authConfigPathOf({authProvider: 'sqlite', authConfigPath: 'k.db'}, cwd), path.join(cwd, 'k.db'));
+    const r = spawnSync(process.execPath, ['-e', `const broker = require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))});
+      const denied = require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker', 'denied'))});
+      const options = {authProvider: 'sqlite', modulePath: 'm', moduleDataPath: 'd'};
+      process.stdout.write(JSON.stringify({prot: broker.protectedPaths(options), denied: denied.deniedPathsFor(options)}));`],
+    {cwd: dir, encoding: 'utf8', timeout: 20000});
+    const o = JSON.parse(r.stdout);
+    const db = path.join(fs.realpathSync(dir), 'auth.sqlite3');
+    assert.ok(o.prot.map((p) => path.resolve(dir, String(p))).some((p) => fs.realpathSync(path.dirname(p)) === path.dirname(db) && path.basename(p) === 'auth.sqlite3'), JSON.stringify(o.prot));
+    assert.ok(o.denied.some((p) => /auth\.sqlite3-wal$/.test(p)), JSON.stringify(o.denied));
   });
 
   // (the third medium's run of remote 08) on POSIX too the parent makes it:

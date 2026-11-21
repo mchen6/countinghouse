@@ -321,13 +321,16 @@ if (options.hardened === true && process.permission == null) {
   }
   // The file auth provider's auth.json, when it reads one (B-meter-keys 4r):
   // a missing one is made here, the demo key, after the grant probe passed
-  // (a refused start leaves no key file), as the child is granted it
-  // read-only (lib/hardened-launch.js; a grant on a file needs no file
-  // there). On Windows it is made and checked below (prepareForHardened).
+  // (a start the probe refuses leaves no key file), as the child is granted
+  // it read-only (lib/hardened-launch.js; a grant on a file needs no file
+  // there), and its real path is recorded for the child as the protected
+  // paths' are (precompute ran before it existed). On Windows it is made and
+  // checked below (prepareForHardened).
   var fileAuthPath = require('./lib/auth/auth-file-defaults').fileAuthPathOf(options, process.cwd());
   if (fileAuthPath != null && process.platform !== 'win32') {
     try {
       require('./lib/auth/file-provider').makeForHardened(fileAuthPath);
+      realpathRecorder.realpath(fileAuthPath);
     } catch (e) {
       console.error(e.message);
       process.exit(2);
@@ -351,7 +354,10 @@ if (options.hardened === true && process.permission == null) {
       require('./lib/server-id').prepareForHardened(options);
       // (the auth file, when it is one: it holds API keys, read only as this
       // user's own, B-meter-keys 4r; made here when missing)
-      if (fileAuthPath != null) require('./lib/auth/file-provider').prepareForHardened(fileAuthPath);
+      if (fileAuthPath != null) {
+        require('./lib/auth/file-provider').prepareForHardened(fileAuthPath);
+        realpathRecorder.realpath(fileAuthPath);
+      }
     } catch (e) {
       console.error(e.message);
       process.exit(2);
