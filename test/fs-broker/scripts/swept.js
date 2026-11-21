@@ -15,8 +15,9 @@ module.exports = async (fs, root, ctx) => {
   ctx.growNs();
   const release = ctx.handled.grant.boot([root]);
   let underBoot;
-  try { underBoot = [outcome(() => fs.fakeHiddenSync('/etc/hostname')), outcome(() => fs.fakeLazySync('/etc/hostname'))]; } finally { release(); }
-  const H = '/etc/hostname';
+  // (a host file outside the namespace, there on every OS: this script)
+  const H = __filename;
+  try { underBoot = [outcome(() => fs.fakeHiddenSync(H)), outcome(() => fs.fakeLazySync(H))]; } finally { release(); }
   return {
     calls: {
       method: outcome(() => fs.fakeAddedSync(H)), lazy: outcome(() => fs.fakeLazySync(H)), hidden: outcome(() => fs.fakeHiddenSync(H)),
