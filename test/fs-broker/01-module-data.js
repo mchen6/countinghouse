@@ -19,6 +19,12 @@ describe('fs-broker 01: module data directories', () => {
       .forEach((n) => assert.strictEqual(md.safeName(n), false, JSON.stringify(n)));
   });
 
+  // (Windows drops a trailing dot or space from a path's part, so "x." and
+  // "x " would share x's directory: the reviewer's high on ch-local#113, 1)
+  it('refuses a part that ends in a dot or a space', () => {
+    ['my-tool.', 'my-tool ', '@acme./x', '@acme/x.', '@acme/x '].forEach((n) => assert.strictEqual(md.safeName(n), false, JSON.stringify(n)));
+  });
+
   it('lays scoped names out as node_modules does', () => {
     const d = md.dirsFor('/srv/data', '@acme/x');
     // the host's form of the path (D:\srv\data\... on Windows)
