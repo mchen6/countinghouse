@@ -31,6 +31,8 @@ async function until(check, ms = 3000) {
 const tick = () => new Promise((r) => setTimeout(r, 20));
 
 describe('sessions 26: an ended session\'s tasks are cancelled (shared runtime B5, Task 4)', function() {
+  // (its jobs' owners known to the identity index, as a server's: B-meter-keys (2))
+  require('../helpers/identity-scope').useIdentity(['k']);
   this.timeout(20000);
   let saved;
   let runner;

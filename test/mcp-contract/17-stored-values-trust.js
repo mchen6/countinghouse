@@ -25,6 +25,8 @@ const until = async (fn, ms = 10000) => {
 };
 
 describe('mcp-contract 17: stored values, in-process (M6)', function() {
+  // (its jobs' owners known to the identity index, as a server's: B-meter-keys (2))
+  require('../helpers/identity-scope').useIdentity([KEY]);
   this.timeout(30000);
   // (the BullMQ runner's queue and the job history are this server's: B-j1)
   require('../helpers/server-id').useServerId();

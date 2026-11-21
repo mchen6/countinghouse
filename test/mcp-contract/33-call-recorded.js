@@ -22,6 +22,8 @@ async function until(check, ms = 3000) {
 
 describe('mcp-contract 33: a call recorded is a call said, with its session (M8)', function() {
   this.timeout(20000);
+  // (its jobs' owner known to the identity index, as a server's: B-meter-keys (2))
+  require('../helpers/identity-scope').useIdentity(['k']);
 
   it('recordCall says each recorded call with its session, before metering answers; a call with no key is neither', () => {
     const ci = Object.create(CdifInterface.prototype);

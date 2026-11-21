@@ -10,7 +10,6 @@
 const assert  = require('assert');
 const crypto  = require('crypto');
 const fs      = require('fs');
-const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
 const redis   = require('redis');
@@ -20,6 +19,7 @@ const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
 const {testPort, redisConnectionFor, redisUrlFor} = require('../helpers/test-env');
 const {prefixFor} = require('../helpers/job-queue');
 const {deviceIDForName} = require('../../lib/call-address');
+const tmp = require('../helpers/test-tmp').forFile(['ch-owner-']);
 
 const DEVICE  = deviceIDForName('job-snoop');
 const SERVICE = 'urn:countinghouse-test:serviceID:jobService';
@@ -86,7 +86,7 @@ describe('auth 61: a job names its owner by id, never by the key (B-meter-keys (
     let server = null;
     let queue = null;
     before(async () => {
-      base = fs.mkdtempSync(path.join(os.homedir(), '.ch-owner-id-'));
+      base = tmp.mkdtemp('ch-owner-id-');
       store = path.join(base, 'store');
       const authPath = path.join(base, 'auth.json');
       fs.writeFileSync(authPath, JSON.stringify({[ALICE]: {userName: 'alice', devices: [DEVICE]}}));
@@ -101,7 +101,6 @@ describe('auth 61: a job names its owner by id, never by the key (B-meter-keys (
         await queue.close();
       }
       stopServer(server);
-      if (base != null) fs.rmSync(base, {recursive: true, force: true});
     });
 
     it('its data, a scheduler\'s template and the queue hold the owner\'s id and never the key', async () => {
@@ -152,7 +151,7 @@ describe('auth 61: a job names its owner by id, never by the key (B-meter-keys (
     let queue = null;
     const cli = (...args) => execFileSync(process.execPath, [path.join(ROOT, 'bin', 'countinghouse-auth-sqlite.js'), '--dbPath', db].concat(args), {encoding: 'utf8'});
     before(async () => {
-      base = fs.mkdtempSync(path.join(os.homedir(), '.ch-owner-sqlite-'));
+      base = tmp.mkdtemp('ch-owner-sqlite-');
       store = path.join(base, 'store');
       db = path.join(base, 'auth.sqlite3');
       cli('add-user', ADMIN, 'admin');
@@ -164,7 +163,6 @@ describe('auth 61: a job names its owner by id, never by the key (B-meter-keys (
     after(async () => {
       if (queue != null) { await queue.obliterate({force: true}).catch(() => {}); await queue.close(); }
       stopServer(server);
-      if (base != null) fs.rmSync(base, {recursive: true, force: true});
     });
 
     it('is named by its stable id from its first job, never its key', async () => {
@@ -190,7 +188,7 @@ describe('auth 61: a job names its owner by id, never by the key (B-meter-keys (
     let queue = null;
     const start = () => startServer(PORT, ['--debug', '--workerThread', '--moduleDataPath', store, '--loadModule', FIXTURE]);
     before(async () => {
-      base = fs.mkdtempSync(path.join(os.homedir(), '.ch-owner-debug-'));
+      base = tmp.mkdtemp('ch-owner-debug-');
       store = path.join(base, 'store');
       server = await start();
       queue = new Queue('job-queue', {prefix: prefixFor(store), connection: redisConnectionFor(11)});
@@ -198,7 +196,6 @@ describe('auth 61: a job names its owner by id, never by the key (B-meter-keys (
     after(async () => {
       if (queue != null) { await queue.obliterate({force: true}).catch(() => {}); await queue.close(); }
       stopServer(server);
-      if (base != null) fs.rmSync(base, {recursive: true, force: true});
     });
 
     it('after a restart its job fails for good, saying why, never the key', async () => {
@@ -216,4 +213,6 @@ describe('auth 61: a job names its owner by id, never by the key (B-meter-keys (
       assert.strictEqual((await queue.getJob(added.body.id)).attemptsMade, 1, 'retried');
     });
   });
+  // (its trees removed, failed or not: test/helpers/test-tmp.js)
+  tmp.hooks();
 });

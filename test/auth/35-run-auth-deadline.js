@@ -29,11 +29,8 @@ function run(behaviour) {
       }};
     // (a job names its owner by id, the key found from the identity index:
     // B-meter-keys (2))
-    const identity = require(${JSON.stringify(path.join(LIB, 'identity'))});
-    const idDir = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'ch-35-'));
-    process.on('exit', () => require('fs').rmSync(idDir, {recursive: true, force: true}));
-    identity.initSync({moduleDataPath: idDir});
-    const owner = identity.addKey('some-key', 'u', false);
+    ${require('../helpers/identity-scope').identityLines(LIB, ['some-key'])}
+    const owner = require(${JSON.stringify(path.join(LIB, 'identity'))}).idForKey('some-key');
     const JobControl = require(${JSON.stringify(path.join(LIB, 'job-control'))});
     JobControl.authorizeRunMs = 300;
     const started = Date.now();

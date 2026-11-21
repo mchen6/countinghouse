@@ -43,6 +43,8 @@ function runnerWith(answer, opts) {
 const state = async (runner, id, auth = INTERNAL) => (await call(runner, 'getJob', auth, id)).r;
 
 describe('jobs-local 01: the local job runner (LM1 B5)', function() {
+  // (its jobs' owners known to the identity index, as a server's: B-meter-keys (2))
+  require('../helpers/identity-scope').useIdentity(['a', 'b', 'owner', 'secret-owner-key-1', 'someone-else', 'z']);
   this.timeout(20000);
   // the runner, as job-control.js, serves only in worker mode
   const options = require('../../lib/cli-options');
@@ -248,6 +250,8 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
 
 // The review of B5 (/code-review medium on 9795453).
 describe('jobs-local 01: the review of B5', function() {
+  // (its jobs' owners known to the identity index, as a server's: B-meter-keys (2))
+  require('../helpers/identity-scope').useIdentity(['a', 'b', 'owner', 'secret-owner-key-1', 'someone-else', 'z']);
   this.timeout(20000);
   // (the job history's key is this server's: B-j1)
   require('../helpers/server-id').useServerId();

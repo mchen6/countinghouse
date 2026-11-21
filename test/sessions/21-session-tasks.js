@@ -27,6 +27,8 @@ async function until(check, ms = 3000) {
 }
 
 describe('sessions 21: tasks by key and session (shared runtime B5, Task 2)', function() {
+  // (its jobs' owners known to the identity index, as a server's: B-meter-keys (2))
+  require('../helpers/identity-scope').useIdentity(['k', 'other']);
   this.timeout(20000);
   let saved;
   let runner;
