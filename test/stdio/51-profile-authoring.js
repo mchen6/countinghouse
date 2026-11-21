@@ -102,6 +102,25 @@ describe('stdio 51: the authoring tools in the single-identity profile (B-own-ru
     }
   });
 
+  // (the medium on B-own-runtime, 1) a link inside the folder is never read
+  // through, and nothing it points at reaches the answer
+  it('validate_module never reads through a link inside the folder, nor quotes what it points at', async () => {
+    const secret = path.join(work, 'outside-secret.txt');
+    fs.writeFileSync(secret, 'sk-very-secret-value');
+    const dir = writeModule(path.join(work, 'with-link'));
+    fs.rmSync(path.join(dir, 'api.json'));
+    fs.symlinkSync(secret, path.join(dir, 'api.json'));
+    const r = resultOf(await call('countinghouse_validate_module', {path: dir}));
+    assert.strictEqual(r.structuredContent.ok, false);
+    assert.ok(r.structuredContent.problems.some((p) => /link/.test(p.message)), JSON.stringify(r.structuredContent));
+    assert.ok(!JSON.stringify(r).includes('sk-very-secret'), 'the linked file\'s text');
+  });
+
+  it('validate_module refuses a folder that holds the home', async () => {
+    const r = resultOf(await call('countinghouse_validate_module', {path: path.dirname(home)}));
+    assert.strictEqual(r._meta['countinghouse/code'], 'OWN_MODULE_PATH_REFUSED', JSON.stringify(r));
+  });
+
   it('load_module never loads here: it names the command for the user\'s own terminal', async () => {
     const dir = writeModule(path.join(work, 'to-load'));
     const r = resultOf(await call('countinghouse_load_module', {path: dir, name: 'my-own-tool'}));
@@ -114,6 +133,9 @@ describe('stdio 51: the authoring tools in the single-identity profile (B-own-ru
     const odd = writeModule(path.join(work, 'odd$(x)'));
     const o = resultOf(await call('countinghouse_load_module', {path: odd, name: 'my-own-tool'}));
     assert.strictEqual(o.content[0].text, 'Loading your own module needs your confirmation: run `ch-local add-module <its folder>` in your own terminal.');
+    // (the medium, 8) a character that changes how the command is shown
+    const bidi = resultOf(await call('countinghouse_load_module', {path: `${work}/ok\u202Eevil`, name: 'my-own-tool'}));
+    assert.strictEqual(bidi.content[0].text, 'Loading your own module needs your confirmation: run `ch-local add-module <its folder>` in your own terminal.');
   });
 
   tmp.hooks();

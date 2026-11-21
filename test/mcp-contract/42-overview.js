@@ -560,6 +560,12 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.strictEqual(settingsTool.installedOwn(dir), settingsTool.UNREADABLE, 'another version');
     });
 
+    it('an own.json that cannot be read is said, never "none added"', () => {
+      const data = overview.build({version: '1', settingsProfile: true, packs: [pack()], ownUnreadable: true});
+      assert.strictEqual(data.notice, overview.FIXED.ownUnreadable(null));
+      assert.strictEqual(overview.FIXED.ownUnreadable(null), 'The list of your own modules could not be read: run `ch-local status` in your own terminal.');
+    });
+
     it('an own module is marked own, loaded or not; a pack never is', () => {
       const data = overview.build({version: '1', settingsProfile: true, packs: [pack({name: 'p', module: 'p'}), pack({name: 'mine', module: 'mine', own: true}),
         pack({name: 'mine-down', module: 'mine-down', own: true, loaded: false, held: {reason: 'changed'}, from: '/home/u/mine'})]});
