@@ -13,11 +13,14 @@ const FILE = 0o100644;
 module.exports = async () => {
   const patch = require(path.join(__dirname, '..', '..', '..', 'lib', 'fs-broker', 'patch'));
   const asked = [];
-  const enoent = (where) => Object.assign(new Error(`ENOENT: no such file or directory, open '${where}'`), {code: 'ENOENT', errno: -2, syscall: 'open', path: where});
+  // (errors made as the broker client makes them, lib/fs-broker/client.js)
+  const {toError} = require(path.join(__dirname, '..', '..', '..', 'lib', 'fs-broker', 'client'));
+  const enoent = (where) => toError({message: `ENOENT: no such file or directory, open '${where}'`, code: 'ENOENT', errno: -2, syscall: 'open', path: where});
   // (what the broker answers for each request, by its path)
   const answer = (op, args) => {
     const at = String(args[0]);
-    asked.push(`${op} ${at}`);
+    // (not push: a check below replaces Array.prototype.push around a call)
+    asked[asked.length] = `${op} ${at}`;
     switch (op) {
       case 'realpath':
         if (at.endsWith('/hostlike')) return 'C:\\Users\\someone\\secret';
@@ -92,6 +95,45 @@ module.exports = async () => {
     } finally { Error.prepareStackTrace = prior; }
   }
   out.errorUnquoted = caught(() => fs.readFileSync('/app/unquoted'));
+  // (respelling runs in the runtime's error path: module code that replaced
+  // what it could -- a pattern's replace and exec, an array's iterator,
+  // string split and indexOf, a setter or getter on Object.prototype -- is
+  // never run by it, and the error is respelled all the same)
+  {
+    const saved = {split: String.prototype.split, indexOf: String.prototype.indexOf, replace: String.prototype.replace, iter: Array.prototype[Symbol.iterator],
+      reReplace: RegExp.prototype[Symbol.replace], exec: RegExp.prototype.exec, push: Array.prototype.push};
+    let ran = '';
+    const trap = (name) => function() { ran += `${name} `; throw new Error(`trap ${name}`); };
+    let got = null;
+    try {
+      String.prototype.split = trap('split');
+      String.prototype.indexOf = trap('indexOf');
+      String.prototype.replace = trap('replace');
+      Array.prototype[Symbol.iterator] = trap('iterator');
+      Array.prototype.push = trap('push');
+      RegExp.prototype[Symbol.replace] = trap('reReplace');
+      RegExp.prototype.exec = trap('exec');
+      Object.defineProperty(Object.prototype, 'dest', {configurable: true, get() { ran += 'dest '; return '/app/planted'; }});
+      Object.defineProperty(Object.prototype, 'code', {configurable: true, get() { return undefined; }, set(v) { ran += 'code '; }});
+      try { fs.readFileSync('/app/missing.json'); } catch (e) { got = e; }
+    } finally {
+      String.prototype.split = saved.split;
+      String.prototype.indexOf = saved.indexOf;
+      String.prototype.replace = saved.replace;
+      Array.prototype[Symbol.iterator] = saved.iter;
+      Array.prototype.push = saved.push;
+      RegExp.prototype[Symbol.replace] = saved.reReplace;
+      RegExp.prototype.exec = saved.exec;
+      delete Object.prototype.dest;
+      delete Object.prototype.code;
+    }
+    out.replacedIntrinsics = {ran, path: got && got.path, ownDest: got != null && Object.hasOwn(got, 'dest'), code: got && got.code, message: got && got.message};
+  }
+  // (a Buffer given to opendir: its path a Buffer, in the module's spelling)
+  {
+    const b = fs.opendirSync(Buffer.from('/app/plugins')).path;
+    out.dirBufferPath = [Buffer.isBuffer(b), b.toString()];
+  }
   out.errorSentence = caught(() => fs.readFileSync('/app/sentence')).message;
   out.errorBoth = caught(() => fs.readFileSync('/app/both')).message;
   try { fs.readFileSync('/app/typed'); } catch (e) { out.errorTyped = [e instanceof TypeError, e.cause, e.path, e.message]; }
