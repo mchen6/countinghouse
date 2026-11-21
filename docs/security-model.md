@@ -829,10 +829,13 @@ file renamed into place under `<storePath>/.lock`, merged by key, so
 several processes may share the store. No file under it holds an API key:
 metering without `--meter` records calls in memory only, and with
 `--meter` `metering.json` keeps each key's balance and free calls under
-the key's fingerprint (a full, domain-separated sha256). The seeding
-command, `countinghouse-meter`, reads the key from
-`COUNTINGHOUSE_SEED_KEY`, never from its arguments, and prints only the
-fingerprint.
+the key's fingerprint (a full, domain-separated sha256). The Redis store's
+ledger does the same: one hash per key on db 0, named by that fingerprint,
+so a Redis dump, a `KEYS` listing or a replica holds no key. The seeding
+command, `countinghouse-meter` (`--storePath <dir>` for the local store,
+`--store redis` for Redis's), reads the key from `COUNTINGHOUSE_SEED_KEY`,
+never from its arguments, and prints only the fingerprint. No metering
+answer carries the key: `GET /balance` answers the balance alone.
 
 The store's files are written back every 5 seconds, and at a clean stop. So
 a runtime killed without one (SIGKILL, a power loss) can lose up to the

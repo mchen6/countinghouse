@@ -15,6 +15,8 @@ const {startRemoteServer} = require('../helpers/remote-mcp-server');
 const {redisUrlFor} = require('../helpers/test-env');
 
 const KEY    = 'remote-route-key';
+// (the ledger names a key's record by its fingerprint, never the key: B-meter-keys (1))
+const LEDGER = require('../../lib/key-fingerprint').meterId(KEY);
 const TOKEN  = `ghp_${'A'.repeat(36)}`;
 const REMOTE = 9688;
 const PROBE  = path.join(ROOT, 'test', 'fixtures', 'remote-probe');
@@ -46,7 +48,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     after(async () => {
       await stopServer(server);
       await remote.close();
-      await new Promise((resolve) => db.del(KEY, () => db.quit(() => resolve())));
+      await new Promise((resolve) => db.del(LEDGER, () => db.quit(() => resolve())));
     });
 
     it('the module gets the raw result, sent with the declared headers and the credential', async () => {
@@ -87,7 +89,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     // The outer call is charged whatever happens inside; the remote hop
     // adds one charge (--mcpToolCallCost 1) to the outer caller.
     it('a remote call is metered to the outer caller as an inner hop', async () => {
-      const read = () => new Promise((resolve) => db.hget(KEY, 'balance', (e, v) => resolve(Number(v))));
+      const read = () => new Promise((resolve) => db.hget(LEDGER, 'balance', (e, v) => resolve(Number(v))));
       // Charges land after the answer: wait until two reads 300 ms apart
       // agree, so an earlier test's late charge is not counted here.
       const settled = async () => {
@@ -102,7 +104,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       };
       const balanceAfter = async (action, input) => {
         await settled();
-        await new Promise((resolve) => db.hset(KEY, 'balance', '100', () => resolve()));
+        await new Promise((resolve) => db.hset(LEDGER, 'balance', '100', () => resolve()));
         await call(port, 'remote-probe', action, input);
         return settled();
       };

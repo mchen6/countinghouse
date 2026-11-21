@@ -32,7 +32,9 @@ const PROVIDERS = {
       if (!ok) { client.quit(); return null; }
       await new Promise((resolve) => client.flushdb(resolve));
       if (seed != null) {
-        await new Promise((resolve) => client.hmset(KEY, 'balance', String(seed.balance),
+        // (the ledger's record is named by the key's fingerprint, never the
+        // key: B-meter-keys (1))
+        await new Promise((resolve) => client.hmset(require('../../lib/key-fingerprint').meterId(KEY), 'balance', String(seed.balance),
           'toolPriceRecord', JSON.stringify(seed.toolPriceRecord || {}), resolve));
       }
       const RedisMeteringProvider = require('../../lib/metering/redis-provider');
@@ -65,7 +67,25 @@ for (const [name, kind] of Object.entries(PROVIDERS)) {
         const charged = [];
         for (let i = 0; i < 4; i++) charged.push((await call(p, 'recordCall', KEY, TOOL, 3)).result.charged);
         assert.deepStrictEqual(charged, [0, 0, 3, 3]);
-        assert.deepStrictEqual((await call(p, 'checkBalance', KEY)).result, {apiKey: KEY, balance: 4});
+        // (the answer carries no key: B-meter-keys (1), C1)
+        assert.deepStrictEqual((await call(p, 'checkBalance', KEY)).result, {balance: 4});
+      } finally { p.close(); }
+    });
+
+    // B-meter-keys (1): no store holds the raw key, and no answer carries it
+    it('the ledger names a key\'s record by its fingerprint: no Redis key or file holds the key, and no answer carries it', async function() {
+      const p = await kind.make(null);
+      if (p == null) return this.skip();
+      try {
+        const charged = (await call(p, 'recordCall', KEY, TOOL, 2)).result;
+        const balance = (await call(p, 'checkBalance', KEY)).result;
+        assert.ok(!JSON.stringify([charged, balance]).includes(KEY), JSON.stringify([charged, balance]));
+        assert.strictEqual(balance.balance, -2);
+        if (p.redisClient != null) {
+          const keys = await new Promise((resolve) => p.redisClient.keys('*', (err, k) => resolve(k || [])));
+          assert.ok(keys.includes(require('../../lib/key-fingerprint').meterId(KEY)), JSON.stringify(keys));
+          assert.ok(keys.every((k) => !k.includes(KEY)), JSON.stringify(keys));
+        }
       } finally { p.close(); }
     });
 
@@ -73,7 +93,7 @@ for (const [name, kind] of Object.entries(PROVIDERS)) {
       const p = await kind.make(null);
       if (p == null) return this.skip();
       try {
-        assert.deepStrictEqual((await call(p, 'checkBalance', KEY)).result, {apiKey: KEY, balance: 0});
+        assert.deepStrictEqual((await call(p, 'checkBalance', KEY)).result, {balance: 0});
         assert.strictEqual((await call(p, 'recordCall', KEY, TOOL, 2)).result.balance, -2);
       } finally { p.close(); }
     });

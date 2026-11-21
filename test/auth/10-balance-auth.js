@@ -49,10 +49,30 @@ describe('auth 10: /balance and countinghouse_check_balance require a real apiKe
     stopAll(done);
   });
 
-  it('GET /balance: a known key gets its own balance', (done) => {
+  // (its own: a balance seeded under its fingerprint, the ledger's name for
+  // it; and the answer carries the balance, never the key -- B-meter-keys (1))
+  it('GET /balance: a known key gets its own balance, never its key', (done) => {
+    const redis = require('redis');
+    const {redisUrlFor} = require('../helpers/test-env');
+    const ledger = redis.createClient(redisUrlFor(), {db: 0});
+    const id = require('../../lib/key-fingerprint').meterId(ALICE);
+    const finish = (e) => ledger.del(id, () => ledger.quit(() => done(e)));
+    ledger.hset(id, 'balance', '37', (seedErr) => {
+      if (seedErr) return finish(seedErr);
+      request(url).get('/balance').set('X-CH-Key', ALICE).expect(200, (err, res) => {
+        if (err) return finish(err);
+        if (JSON.stringify(res.body) !== JSON.stringify({balance: 37})) {
+          return finish(new Error(`expected the caller's own balance, alone, got: ${JSON.stringify(res.body)}`));
+        }
+        return finish();
+      });
+    });
+  });
+
+  it('GET /balance: a key with no record gets 0', (done) => {
     request(url).get('/balance').set('X-CH-Key', ALICE).expect(200, (err, res) => {
       if (err) return done(err);
-      if (res.body.apiKey !== ALICE || typeof(res.body.balance) !== 'number') {
+      if (res.body.balance !== 0 || 'apiKey' in res.body) {
         return done(new Error(`expected the caller's own balance, got: ${JSON.stringify(res.body)}`));
       }
       return done();

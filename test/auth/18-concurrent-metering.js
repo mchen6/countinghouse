@@ -23,6 +23,8 @@ describe('auth 18: RedisMeteringProvider.recordCall keeps every charge under con
   this.timeout(20000);
 
   const KEY  = `concurrent-metering-18-${process.pid}`;
+  // (the ledger names a key's record by its fingerprint, never the key: B-meter-keys (1))
+  const LEDGER = require('../../lib/key-fingerprint').meterId(KEY);
   const TOOL = 'concurrent-metering-tool';
 
   let provider = null;
@@ -33,10 +35,10 @@ describe('auth 18: RedisMeteringProvider.recordCall keeps every charge under con
     recordCall = util.promisify(provider.recordCall.bind(provider));
   });
 
-  beforeEach((done) => { provider.redisClient.del(KEY, done); });
+  beforeEach((done) => { provider.redisClient.del(LEDGER, done); });
 
   after((done) => {
-    provider.redisClient.del(KEY, () => { provider.redisClient.quit(done); });
+    provider.redisClient.del(LEDGER, () => { provider.redisClient.quit(done); });
   });
 
   function storedBalance() {
@@ -65,7 +67,7 @@ describe('auth 18: RedisMeteringProvider.recordCall keeps every charge under con
     const record = {};
     record[TOOL] = {count: 5};
     await util.promisify(provider.redisClient.hmset.bind(provider.redisClient))(
-      KEY, 'toolPriceRecord', JSON.stringify(record));
+      LEDGER, 'toolPriceRecord', JSON.stringify(record));
 
     const results = await concurrentCalls(20);
     const free    = results.filter((r) => r.charged === 0);
@@ -76,7 +78,7 @@ describe('auth 18: RedisMeteringProvider.recordCall keeps every charge under con
     assert.strictEqual(await storedBalance(), -15);
 
     const stored = await util.promisify(provider.redisClient.hget.bind(provider.redisClient))(
-      KEY, 'toolPriceRecord');
+      LEDGER, 'toolPriceRecord');
     assert.strictEqual(JSON.parse(stored)[TOOL].count, 0);
   });
 
@@ -90,7 +92,7 @@ describe('auth 18: RedisMeteringProvider.recordCall keeps every charge under con
     const priceRecord = {};
     priceRecord[SERVICE_ID] = {echo: {count: 2}};
     await util.promisify(provider.redisClient.hmset.bind(provider.redisClient))(
-      KEY, 'devices', JSON.stringify([{deviceID: DEVICE_ID, priceRecord: priceRecord}]));
+      LEDGER, 'devices', JSON.stringify([{deviceID: DEVICE_ID, priceRecord: priceRecord}]));
 
     const first  = await recordCall(KEY, legacyTool, 1);
     const second = await recordCall(KEY, legacyTool, 1);
