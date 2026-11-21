@@ -21,12 +21,13 @@ const path = require('path');
 const {runBrokered} = require('../helpers/brokered-worker');
 const {createNamespace} = require('../../lib/fs-broker/namespace');
 const {FsBroker} = require('../../lib/fs-broker/broker');
+const {Quota} = require('../../lib/fs-broker/quota');
 const tmp = require('../helpers/test-tmp').forFile(['broker-shapes-']);
 
 const SCRIPT = path.join(__dirname, 'scripts', 'node-shapes.js');
 const WIN = process.platform === 'win32';
 
-async function setup(mode, {guarded = true} = {}) {
+async function setup(mode, {guarded = true, quota = null} = {}) {
   const base = tmp.mkdtemp('broker-shapes-');
   const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp'), log: path.join(base, 'log')};
   Object.values(dirs).forEach((d) => fs.mkdirSync(d));
@@ -34,9 +35,12 @@ async function setup(mode, {guarded = true} = {}) {
   const namespace = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [{path: dirs.log, access: 'rw'}], protectedPaths: []});
   await namespace.prepare();
   const reports = [];
-  const broker = new FsBroker({name: 'm', mode, namespace, cwd: '/', report: (rule, target) => reports.push(`${rule} ${target}`),
+  const report = (rule, target) => reports.push(`${rule} ${target}`);
+  // (a quota as createForWorker gives one: the walk's counts, enforce's own)
+  const q = quota != null ? new Quota(Object.assign({}, quota, {enforce: mode === 'enforce', report})) : null;
+  const broker = new FsBroker({name: 'm', mode, namespace, cwd: '/', report, quota: q,
     ...(guarded ? {installSecrets: path.join(base, 'no-install'), deniedTrees: []} : {})});
-  return {base, dirs, broker, reports, done: () => broker.closeAll()};
+  return {base, dirs, broker, reports, quota: q, done: () => broker.closeAll()};
 }
 const code = (c) => (e) => e.code === c;
 
@@ -50,6 +54,18 @@ describe('fs-broker 36: Node\'s own answers, through the broker (the final pass,
       assert.strictEqual(real.ok, true, JSON.stringify(real));
       assert.strictEqual(brokered.ok, true, JSON.stringify(brokered));
       for (let i = 0; i < Math.max(real.r.length, brokered.r.length); i++) assert.deepStrictEqual(brokered.r[i], real.r[i], `step ${JSON.stringify(real.r[i] && real.r[i][0])}`);
+      // (Node's own answers, pinned: a compare of two failures alike would
+      // pass without the paths running -- the high on this change)
+      const node = Object.fromEntries(real.r);
+      assert.deepStrictEqual(node['appendFile with a falsy flag'], ['one\ntwo\nthree\nfour\n', 'x']);
+      assert.deepStrictEqual(node['copyFile onto itself'], ['hello', 'hello']);
+      assert.deepStrictEqual(node['rmdir recursive'], [false, false, false]);
+      assert.strictEqual(node['rmdir recursive, missing'], 'throws ENOENT');
+      assert.strictEqual(node['rmdir recursive, a file'], WIN ? 'throws ENOENT' : 'throws ENOTDIR');
+      assert.deepStrictEqual(node['cp into a missing parent'], ['hello', 'hello']);
+      assert.strictEqual(node['statSync throwIfNoEntry, ENOTDIR'], undefined);
+      assert.deepStrictEqual(node['mkdtemp(dir + sep)'], [true, true, true, true]);
+      assert.strictEqual(node['promisify(exists)'], true);
     });
 
     it(`${mode}: readdir and opendir of a missing directory answer ENOENT, unreported (A1)`, async () => {
@@ -67,6 +83,16 @@ describe('fs-broker 36: Node\'s own answers, through the broker (the final pass,
         await assert.rejects(t.broker.handle('readdir', ['/data/f/x', {}]), code(WIN ? 'ENOENT' : 'ENOTDIR'));
         assert.deepStrictEqual(t.reports, []);
         assert.deepStrictEqual(await t.broker.handle('readdir', ['/data', {}]), linked ? ['dangling', 'f'] : ['f']);
+        // (enforce: a link out answers the same whether what it leads to
+        // exists or not -- nothing about outside is told)
+        if (linked && mode === 'enforce') {
+          const out = path.join(t.base, 'outside');
+          fs.mkdirSync(path.join(out, 'there'), {recursive: true});
+          fs.symlinkSync(path.join(out, 'there'), path.join(t.dirs.data, 'out-there'));
+          fs.symlinkSync(path.join(out, 'missing'), path.join(t.dirs.data, 'out-missing'));
+          const answer = (p) => t.broker.handle('readdir', [p, {}]).then(() => 'ok', (e) => e.code);
+          assert.deepStrictEqual([await answer('/data/out-there'), await answer('/data/out-missing')], ['ENOENT', 'ENOENT']);
+        }
       } finally { await t.done(); }
     });
 
@@ -102,7 +128,9 @@ describe('fs-broker 36: Node\'s own answers, through the broker (the final pass,
           linked = false;
         }
         if (linked) {
-          await assert.rejects(t.broker.handle('mkdtemp', ['/data/to-out/']));
+          t.reports.length = 0;
+          await assert.rejects(t.broker.handle('mkdtemp', ['/data/to-out/']), code(mode === 'enforce' ? 'ENOENT' : 'EACCES'));
+          assert.deepStrictEqual(t.reports, mode === 'enforce' ? ['escape /data/to-out'] : ['escape /data/to-out', 'denied /data/to-out']);
           assert.deepStrictEqual(fs.readdirSync(out), [], 'nothing made outside');
           // (made where the link leads, answered in the module's own spelling)
           const made = await t.broker.handle('mkdtemp', ['/data/to-tmp/']);
@@ -133,10 +161,59 @@ describe('fs-broker 36: Node\'s own answers, through the broker (the final pass,
         assert.match(await broker.handle('mkdtemp', ['/tmp/x-']), /^\/tmp\/x-[A-Za-z0-9]{6}$/, mode);
         assert.match(await broker.handle('mkdtemp', ['/tmp/']), /^\/tmp\/[A-Za-z0-9]{6}$/, mode);
         const before = fs.readdirSync(base).sort();
-        await assert.rejects(broker.handle('mkdtemp', ['/data']), (e) => e.code === 'EROFS' || e.code === 'EACCES', mode);
+        await assert.rejects(broker.handle('mkdtemp', ['/data']), code(mode === 'enforce' ? 'EROFS' : 'EACCES'), mode);
         assert.deepStrictEqual(fs.readdirSync(base).sort(), before, `${mode}: nothing beside /data`);
       } finally { await broker.closeAll(); }
     }
+  });
+
+  for (const mode of ['audit', 'enforce']) {
+    it(`${mode}: rmdir recursive: a root is EBUSY, its contents kept; a link is not followed; the quota gives back a tree's entries; mkdtemp counts one, '/tmp/' too`, async () => {
+      const t = await setup(mode, {quota: {maxBytes: 1e6, maxEntries: 100, entries: 10}});
+      try {
+        fs.mkdirSync(path.join(t.dirs.data, 'tree', 'a'), {recursive: true});
+        fs.writeFileSync(path.join(t.dirs.data, 'tree', 'a', 'x'), 'xyz');
+        fs.mkdirSync(path.join(t.dirs.data, 'target'));
+        fs.writeFileSync(path.join(t.dirs.data, 'target', 'keep'), '1');
+        await assert.rejects(t.broker.handle('rmdir', ['/data', {recursive: true}]), code('EBUSY'));
+        assert.ok(fs.existsSync(path.join(t.dirs.data, 'tree', 'a', 'x')), 'contents kept');
+        if (!WIN) {
+          fs.symlinkSync(path.join(t.dirs.data, 'target'), path.join(t.dirs.data, 'lnk'));
+          await assert.rejects(t.broker.handle('rmdir', ['/data/lnk', {recursive: true}]), code('ENOTDIR'));
+          assert.ok(fs.existsSync(path.join(t.dirs.data, 'target', 'keep')), 'the link\'s target is kept');
+        }
+        assert.strictEqual(t.quota.entries, 10);
+        await t.broker.handle('mkdtemp', ['/tmp/']);
+        await t.broker.handle('mkdtemp', ['/data/pre-']);
+        assert.strictEqual(t.quota.entries, 12, 'each mkdtemp counted once');
+        await t.broker.handle('rmdir', ['/data/tree', {recursive: true}]);
+        assert.strictEqual(fs.existsSync(path.join(t.dirs.data, 'tree')), false);
+        assert.strictEqual(t.quota.entries, 9, 'the tree\'s three entries given back');
+      } finally { await t.done(); }
+    });
+  }
+
+  for (const mode of ['audit', 'enforce']) {
+    it(`${mode}: cp onto a declared rw root not made yet copies, making no parent (the high's F3)`, async function() {
+      if (WIN) return this.skip(); // (a declared root is named by its host path: POSIX's here)
+      const declared = (base) => {
+        fs.mkdirSync(path.join(base, 'decl'));
+        return [{path: path.join(base, 'decl', 'one.txt'), access: 'rw'}, {path: path.join(base, 'decl', 'two.txt'), access: 'rw'}];
+      };
+      const m = await runBrokered(path.join(__dirname, 'scripts', 'cp-root.js'), {patch: true, mode, declared});
+      assert.strictEqual(m.ok, true, JSON.stringify(m));
+      assert.deepStrictEqual(m.r, {sync: 'hello', promise: 'hello'});
+    });
+  }
+
+  it('POSIX: a backslash at a prefix\'s end is a name\'s character, as Node reads it', async function() {
+    if (WIN) return this.skip();
+    const t = await setup('enforce');
+    try {
+      const made = await t.broker.handle('mkdtemp', ['/data/foo\\']);
+      assert.ok(made.startsWith('/data/foo\\') && made.length === '/data/foo\\'.length + 6, made);
+      assert.ok(fs.statSync(path.join(t.dirs.data, path.posix.basename(made))).isDirectory());
+    } finally { await t.done(); }
   });
 
   tmp.hooks();
