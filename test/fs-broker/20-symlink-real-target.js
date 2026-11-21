@@ -70,8 +70,8 @@ describe('fs-broker 20: a symlink is decided by its real target, and takes no ".
   // or "..." could mean ".." to it and lead out of a link's root. On
   // Windows the broker refuses any such segment; on POSIX they are names.
   it('the segments Windows takes as other than their text (trailing dots or spaces, device names): which they are', () => {
-    for (const t of ['.. ', '...', 'x.', 'x ', 'a/.. /f', 'a/.../f', 'a/b./f', '. ', '..  ', 'CON', 'nul', 'a/COM1', 'Lpt9.txt', 'aux.x', 'CONIN$', 'conout$']) assert.strictEqual(windowsTrims(t), true, t);
-    for (const t of ['.', 'x', 'a/b/f', './x', 'x.y', '.x', ' x', 'a/.x/f', 'console', 'nullable', 'com10', 'lpt', 'a/conx']) assert.strictEqual(windowsTrims(t), false, t);
+    for (const t of ['.. ', '...', 'x.', 'x ', 'a/.. /f', 'a/.../f', 'a/b./f', '. ', '..  ', 'CON', 'nul', 'a/COM1', 'Lpt9.txt', 'aux.x', 'CONIN$', 'conout$', 'nul.tar.gz', 'a/CON.txt.bak', 'con .txt', 'nul  .log', 'COM\u00b9', 'lpt\u00b3.x', 'lpt0', 'com0']) assert.strictEqual(windowsTrims(t), true, t);
+    for (const t of ['.', 'x', 'a/b/f', './x', 'x.y', '.x', ' x', 'a/.x/f', 'console', 'nullable', 'com10', 'lpt', 'a/conx', 'conin$.txt', 'conout$.log', 'nul\u00a0', 'aux\u3000', 'nulx.txt']) assert.strictEqual(windowsTrims(t), false, t);
   });
 
   it('a target with such a segment is refused EPERM on Windows, in every mode; a name on POSIX', async () => {
