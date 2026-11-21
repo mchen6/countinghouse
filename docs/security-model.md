@@ -267,13 +267,25 @@ a Windows runner, each failure given its cause):
   file-broker suites run on Windows only when the Windows subset workflow is
   dispatched by hand with them: no pull request or merge runs them there.
 
+**A hard link through a symbolic link (macOS, and possibly Windows).** The
+broker judges a hard link's source by its path as named. On Linux `link`
+does not follow a symbolic link in its source. On macOS it does, and
+Windows documents the same. So a symbolic link the operator places inside a
+module's writable folder, pointing at a file outside it on the same volume,
+lets that module make a hard link to that file and then read and write it
+as a file of its own. The always-denied files (the identity secret, the
+auth config) are still refused by file identity. Don't place symbolic
+links to files outside a module's folder in its writable folders. The fix
+comes in 1.1.
+
 **Under `audit` a module changes nothing outside its own area**
 (maintainer's decision, 2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
 declared `rw`. Every write-class operation aimed anywhere else is refused
 `EACCES` and recorded as a denial: an open for writing, a create or truncate,
 `writeFile`, `appendFile`, `mkdir`, `rmdir`, `rm`, `unlink`, `rename` or
-`link` with either end outside (a hard link's source included), a symlink
-made outside, `chmod`, `chown`, `utimes`, `truncate`, and `copyFile` or `cp`
+`link` with either end outside (its source judged by the path as named; see
+the limit on hard links through a symbolic link, above), a symlink made
+outside, `chmod`, `chown`, `utimes`, `truncate`, and `copyFile` or `cp`
 to an outside destination; writes to `/app` and to a path declared `r` too.
 A symlink made inside the namespace that points outside it is refused
 `EPERM`, in every mode, as before.
@@ -2069,7 +2081,9 @@ the main thread's, not the module's (spec:
   put in a worker message, the worker's environment, a log line, an error
   message or a result. `COUNTINGHOUSE_*` variables are still never handed
   to a worker; a remote's credential may be one of them, because only the
-  main thread reads it.
+  main thread reads it. One limit: a remote that echoes a credential back
+  with extra whitespace can get it into the local log line; the fix comes
+  in 1.1.
 - **The threat it answers.** A declaration is the module author's, and the
   token is the user's. If the declaration alone decided what is read, any
   installed module could name `GITHUB_TOKEN` and a `url` of its own, and
