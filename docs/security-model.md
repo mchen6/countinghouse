@@ -1719,6 +1719,20 @@ unprivileged user in a container with limits and the default seccomp
 profile: [deployment.md](deployment.md) gives the posture, a reference setup,
 and the short list of what the in-process sandbox cannot give.
 
+- **API keys are held in the clear by the auth stores and in the main
+  thread's memory.** The auth stores keep keys as they are: `auth.json`, the
+  sqlite database and the CouchDB documents. So protect them as secrets. The
+  runtime enforces what it can check on the files it reads: it reads
+  `auth.json` and opens the sqlite database only when the file is its own
+  user's, a regular file under one name, never a link, and owner-only (mode
+  `0600`; on Windows an ACL that lets only that user read it), and it
+  creates them so. Anything else refuses the start, naming the fix. CouchDB
+  is a remote store, and its access control is its operator's. In memory, the
+  main thread holds raw keys: the loaded auth config, the identity index (to
+  re-check and bill a queued job's owner) and a call's token for that call's
+  lifetime. None of these reaches a module, a log, Redis or a job's stored
+  data. Keeping keys only as keyed hashes in the stores and only as handles
+  in memory is planned after release 1.
 - **A module is handed no API key and no user name (R2-1).** `ctx.caller` is
   `{id, isAdmin}`, an opaque id (an HMAC of the key, or of the entry's `id`
   field, under a server secret) and the admin flag; `httpHeaders` lose

@@ -136,7 +136,8 @@ you have to do. What the sandbox does and does not protect is in
   (the bundled `echo-device-client-module`, whose device is
   `echo-device-client`), list the module name; one identity runs a module,
   all its devices. Under `--authProvider sqlite`, bind with
-  `countinghouse-auth-sqlite bind-module <apiKey> <moduleName>`. Remove the
+  `countinghouse-auth-sqlite bind-module <moduleName>`, with the identity's
+  key on stdin. Remove the
   old friendlyName entries too (from `runsModules`, or with
   `unbind-module <friendlyName>`): a stale entry still binds whatever module
   is loaded under that name. A module left unbound is unloaded at startup

@@ -108,9 +108,10 @@ npx countinghouse --workerThread --bindAddr 127.0.0.1 \
   --loadModule ./node_modules/countinghouse/pre-installed-packages/echo-device-module
 ```
 
-The first run generates `auth.json` with a demo API key and prints it once at
-startup. It grants wildcard access to every device with no expiry — replace it
-before any real deployment. See [`docs/authentication.md`](https://github.com/mchen6/countinghouse/blob/master/docs/authentication.md).
+The first run generates `auth.json` with a demo API key, owner-only, and prints
+where it is (never the key). It grants wildcard access to every device with no
+expiry — replace it before any real deployment. The runtime reads `auth.json`
+only when it is yours alone (mode `0600`): it holds keys in the clear. See [`docs/authentication.md`](https://github.com/mchen6/countinghouse/blob/master/docs/authentication.md).
 
 ## Writing one
 

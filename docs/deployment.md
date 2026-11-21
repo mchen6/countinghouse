@@ -189,6 +189,13 @@ networks:
 ```
 
 Notes:
+- The auth file holds API keys in the clear, and the runtime reads it only
+  when it is the runtime user's own and owner-only (mode `0600`); anything
+  else refuses the start. A Compose `file:` secret (outside swarm) is a bind
+  mount that keeps the host file's owner and mode, so give the host file to
+  the image's user and make it owner-only:
+  `sudo chown 1000 ./secrets/auth.json && chmod 600 ./secrets/auth.json`
+  (1000 is the `node` user in `node:*` images).
 - `back` holds only countinghouse and Redis, and is `internal`, so it has no
   route out.
 - Each module's `data` and `tmp` under `--moduleDataPath` are made 0700 at
@@ -226,8 +233,12 @@ The same posture, in outline:
     `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`,
     `capabilities: {drop: [ALL]}`, `seccompProfile: {type: RuntimeDefault}`;
   - `resources.limits` for memory and CPU;
-  - the auth config from a **Secret**, mounted read-only at
-    `/run/secrets/auth.json`;
+  - the auth config from a **Secret**. A Secret volume's files are owned by
+    root, and the runtime reads the auth file only when it is its own user's
+    and owner-only (it holds keys), so an initContainer, running as the same
+    user, copies it into an `emptyDir` with mode `0600`
+    (`install -m 600 /secret/auth.json /run/secrets/auth.json`), and the
+    server reads it from there;
   - module data on a **PersistentVolumeClaim**, and modules baked into the
     image or on a read-only volume. Operator review happens when the image
     is built, which keeps "countinghouse never fetches code over the
