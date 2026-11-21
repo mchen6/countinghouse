@@ -58,7 +58,11 @@ describe('fs-broker 33: the paths a module is handed on Windows are in its own s
       errorBoth: `ENOENT: no such file or directory, open '${M('app\\x')}' (resolved ${M('app\\x')})`,
       errorTyped: [true, 'why', M('app\\x'), `bad ${M('app\\x')}`],
       errorCaused: ['why', 'EIO', M('app\\x')],
-      replacedIntrinsics: {ran: '', path: missing, ownDest: false, code: 'ENOENT', message: `ENOENT: no such file or directory, open '${missing}'`},
+      replacedIntrinsics: {ran: '', path: missing, ownDest: false, code: 'ENOENT', message: `ENOENT: no such file or directory, open '${missing}'`,
+        asyncPath: missing, asyncCode: 'ENOENT'},
+      // (an occurrence overlapping a rejected one is found; "." then "-" after a path ends it)
+      errorOverlap: `z/app/a ${M('app\\a \\app\\a')}`,
+      errorDotDash: `failed ${M('app\\x')}.-tmp`,
       dirBufferPath: [true, plugins],
       errorUnquoted: {path: M('app\\x.json'), dest: undefined, message: `boom at ${M('app\\x.json')}, not /app/x.jsonl`},
       errorSync: {path: missing, dest: undefined, message: `ENOENT: no such file or directory, open '${missing}'`},

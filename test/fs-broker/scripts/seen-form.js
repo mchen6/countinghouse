@@ -48,6 +48,8 @@ module.exports = async () => {
       case 'readFile':
         if (at.endsWith('/missing.json')) throw enoent(at);
         if (at.endsWith('/hosterr')) throw enoent('C:\\host\\secret.json');
+        if (at.endsWith('/overlap')) throw toError({message: 'z/app/a /app/a /app/a', code: 'EBOOM', path: '/app/a /app/a'});
+        if (at.endsWith('/dotdash')) throw toError({message: 'failed /app/x.-tmp', code: 'EBOOM', path: '/app/x'});
         if (at.endsWith('/sentence')) throw Object.assign(new Error('boom at /app/x.json.'), {code: 'EBOOM', path: '/app/x.json'});
         if (at.endsWith('/both')) throw Object.assign(new Error("ENOENT: no such file or directory, open '/app/x' (resolved /app/x)"), {code: 'ENOENT', path: '/app/x'});
         if (at.endsWith('/typed')) throw Object.assign(new TypeError('bad /app/x', {cause: 'why'}), {code: 'ETYPED', path: '/app/x'});
@@ -101,11 +103,15 @@ module.exports = async () => {
   // never run by it, and the error is respelled all the same)
   {
     const saved = {split: String.prototype.split, indexOf: String.prototype.indexOf, replace: String.prototype.replace, iter: Array.prototype[Symbol.iterator],
-      reReplace: RegExp.prototype[Symbol.replace], exec: RegExp.prototype.exec, push: Array.prototype.push};
+      reReplace: RegExp.prototype[Symbol.replace], exec: RegExp.prototype.exec, push: Array.prototype.push, replaceAll: String.prototype.replaceAll,
+      strReplace: String.prototype[Symbol.replace]};
     let ran = '';
     const trap = (name) => function() { ran += `${name} `; throw new Error(`trap ${name}`); };
     let got = null;
+    let gotAsync = null;
     try {
+      String.prototype.replaceAll = trap('replaceAll');
+      Object.defineProperty(String.prototype, Symbol.replace, {configurable: true, writable: true, value: trap('strReplace')});
       String.prototype.split = trap('split');
       String.prototype.indexOf = trap('indexOf');
       String.prototype.replace = trap('replace');
@@ -115,8 +121,17 @@ module.exports = async () => {
       RegExp.prototype.exec = trap('exec');
       Object.defineProperty(Object.prototype, 'dest', {configurable: true, get() { ran += 'dest '; return '/app/planted'; }});
       Object.defineProperty(Object.prototype, 'code', {configurable: true, get() { return undefined; }, set(v) { ran += 'code '; }});
+      // (last: any defineProperty after these would read them itself)
+      Object.defineProperty(Object.prototype, 'get', {configurable: true, get() { ran += 'get '; return undefined; }});
+      Object.defineProperty(Object.prototype, 'set', {configurable: true, get() { ran += 'set '; return undefined; }});
       try { fs.readFileSync('/app/missing.json'); } catch (e) { got = e; }
+      // (and the async path)
+      try { await fsp.readFile('/app/missing.json'); } catch (e) { gotAsync = e; }
     } finally {
+      String.prototype.replaceAll = saved.replaceAll;
+      if (saved.strReplace === undefined) delete String.prototype[Symbol.replace]; else String.prototype[Symbol.replace] = saved.strReplace;
+      delete Object.prototype.get;
+      delete Object.prototype.set;
       String.prototype.split = saved.split;
       String.prototype.indexOf = saved.indexOf;
       String.prototype.replace = saved.replace;
@@ -127,7 +142,8 @@ module.exports = async () => {
       delete Object.prototype.dest;
       delete Object.prototype.code;
     }
-    out.replacedIntrinsics = {ran, path: got && got.path, ownDest: got != null && Object.hasOwn(got, 'dest'), code: got && got.code, message: got && got.message};
+    out.replacedIntrinsics = {ran, path: got && got.path, ownDest: got != null && Object.hasOwn(got, 'dest'), code: got && got.code, message: got && got.message,
+      asyncPath: gotAsync && gotAsync.path, asyncCode: gotAsync && gotAsync.code};
   }
   // (a Buffer given to opendir: its path a Buffer, in the module's spelling)
   {
@@ -135,6 +151,8 @@ module.exports = async () => {
     out.dirBufferPath = [Buffer.isBuffer(b), b.toString()];
   }
   out.errorSentence = caught(() => fs.readFileSync('/app/sentence')).message;
+  out.errorOverlap = caught(() => fs.readFileSync('/app/overlap')).message;
+  out.errorDotDash = caught(() => fs.readFileSync('/app/dotdash')).message;
   out.errorBoth = caught(() => fs.readFileSync('/app/both')).message;
   try { fs.readFileSync('/app/typed'); } catch (e) { out.errorTyped = [e instanceof TypeError, e.cause, e.path, e.message]; }
   try { fs.readFileSync('/app/caused'); } catch (e) { out.errorCaused = [e.cause, e.code, e.path]; }
