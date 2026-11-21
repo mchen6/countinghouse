@@ -43,8 +43,8 @@ An action may declare questions (`api.json`'s `questions`) and ask one with
 (`ASK_PENDING`), and the client's retry runs it again from the top. So put
 every `ctx.ask` **before** anything the handler cannot do twice:
 
-- every `ctx.call` before the ask runs again on the retry and is **billed
-  again**;
+- every `ctx.call` before the ask **runs again** on the retry, with
+  whatever it costs or changes;
 - a message sent, a record written or a payment made before the ask
   **happens twice**, and has happened once even if the user declines.
 
@@ -111,8 +111,12 @@ Full reference: `docs/module-development.md`.
 5. `countinghouse_call_tool` with one of those names, and real arguments.
 6. Show the user the call and its output.
 
-Without a running server, `npx countinghouse-validate ./my-module` is the same
-check from a shell (exit 0 clean, 1 problems, 2 unusable path).
+Without a running server, the installed `countinghouse-validate` is the same
+check from a shell (exit 0 clean, 1 problems, 2 unusable path): in a project
+that has countinghouse, `npx --no-install countinghouse-validate ./my-module`;
+with ch-local, `node "<home>/app/node_modules/countinghouse/bin/countinghouse-validate.js" ./my-module`.
+Never a bare `npx countinghouse-validate`: without a local copy it fetches
+whatever npm package has that name.
 
 The authoring tools need the runtime started with `--authoringTools` and an
 admin key. If they are missing from `tools/list`, that is why. Keep the
@@ -133,5 +137,7 @@ almost everything:
 3. `MODULE_NO_DEVICE_ONLINE` — the device assembled from `api.json` failed;
    the message quotes the earlier error.
 4. `LOAD_MODULE_FAIL` — a handler file threw while being required.
-5. Loaded but absent — an action with no `description` is skipped, and
-   `tools/list` is filtered per apiKey.
+5. Loaded but absent — an action with no `description`, or whose input or
+   output schema holds a hidden character, is skipped; under `--stdio` or the
+   shared runtime only a module with `role: "scenario"` is listed (a part
+   never is); and `tools/list` is filtered by what the caller may use.
