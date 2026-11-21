@@ -74,9 +74,11 @@ for (const [name, kind] of Object.entries(PROVIDERS)) {
 
     // B-meter-keys (1): no store holds the raw key, and no answer carries it
     it('the ledger names a key\'s record by its fingerprint: no Redis key or file holds the key, and no answer carries it', async function() {
-      const p = await kind.make(null);
+      // (with a rate limit, checked too: its window's Redis key as well)
+      const p = await kind.make(null, 5);
       if (p == null) return this.skip();
       try {
+        assert.strictEqual((await call(p, 'rateLimit', KEY)).result.limited, false);
         const charged = (await call(p, 'recordCall', KEY, TOOL, 2)).result;
         const balance = (await call(p, 'checkBalance', KEY)).result;
         assert.ok(!JSON.stringify([charged, balance]).includes(KEY), JSON.stringify([charged, balance]));
@@ -84,6 +86,7 @@ for (const [name, kind] of Object.entries(PROVIDERS)) {
         if (p.redisClient != null) {
           const keys = await new Promise((resolve) => p.redisClient.keys('*', (err, k) => resolve(k || [])));
           assert.ok(keys.includes(require('../../lib/key-fingerprint').meterId(KEY)), JSON.stringify(keys));
+          assert.ok(keys.some((k) => k.startsWith('meteringRateLimiter')), `the limiter's key is there: ${JSON.stringify(keys)}`);
           assert.ok(keys.every((k) => !k.includes(KEY)), JSON.stringify(keys));
         }
       } finally { p.close(); }
