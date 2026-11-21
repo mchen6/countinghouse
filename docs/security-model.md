@@ -243,9 +243,11 @@ a Windows runner, each failure given its cause):
   its namespaced form (`\\?\`) for the calls checked on a Windows runner
   (open, read, write), where Win32's name rules don't apply: a module's
   `/data/COM1` or `/data/NUL.txt` is an ordinary file, not a device, and
-  `/data/note.` is a file of its own, not `note`. An NTFS stream does work:
-  `/data/note::$DATA` is `note`'s own bytes, `note:alt` a stream of it -- the
-  module's own data. The broker's checks of a protected file at each
+  `/data/note.` is a file of its own, not `note`. A name with a `:` in a
+  segment of the module's own `/app`, `/data` or `/tmp` names an NTFS stream
+  (`note:alt`, `note::$DATA`): under `enforce` it answers ENOENT, as if
+  nothing were there, since a stream's bytes escape the disk quota's count
+  at a spawn; `audit` reports it and lets it through. The broker's checks of a protected file at each
   operation compare a Windows name with its case folded and its `:stream`
   suffix and trailing dots and spaces stripped (lib/fs-broker/denied.js), or
   compare the file itself. The namespace's start-time check that a declared
