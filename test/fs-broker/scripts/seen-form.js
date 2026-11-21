@@ -40,7 +40,7 @@ module.exports = async () => {
       case 'stat':
       case 'lstat':
         return {bigint: false, fields: {mode: at === '/app/src' ? DIR : FILE, size: 0}};
-      case 'exists': return false;
+      case 'exists': return at === '/data/there';
       case 'copyFile': case 'rm': case 'unlink': case 'utimes': return null;
       case 'readFile':
         if (at.endsWith('/missing.json')) throw enoent(at);
@@ -71,12 +71,19 @@ module.exports = async () => {
   out.realpathApps = fs.realpathSync('/app/apps');
   out.realpathApplication = fs.realpathSync('/app/application');
   out.realpathUnc = fs.realpathSync('/app/unc');
+  // the stack's first line says what the message says
+  try { fs.readFileSync('/app/missing.json'); } catch (e) { out.errorStackHead = e.stack.split('\n')[0]; }
   // mkdtemp, mkdir's first directory made, the disposable mkdtemps
   out.mkdtemp = fs.mkdtempSync('/tmp/ch-');
   out.mkdtempPromise = await fsp.mkdtemp('/tmp/ch-');
   out.mkdirRecursive = fs.mkdirSync('/app/cache/a', {recursive: true});
   out.mkdirPromise = await fsp.mkdir('/app/cache/a', {recursive: true});
   out.mkdirPlain = String(fs.mkdirSync('/app/cache/b'));
+  out.callbacks = await Promise.all([
+    new Promise((resolve) => fs.mkdtemp('/tmp/ch-', (e, r) => resolve(e ? e.code : r))),
+    new Promise((resolve) => fs.mkdir('/app/cache/a', {recursive: true}, (e, r) => resolve(e ? e.code : r))),
+    new Promise((resolve) => fs.readlink('/app/node_modules/abs', (e, r) => resolve(e ? e.code : r)))
+  ]);
   const before = asked.length;
   const disposable = fs.mkdtempDisposableSync('/tmp/ch-');
   out.disposable = disposable.path;
@@ -89,23 +96,28 @@ module.exports = async () => {
   out.readlinkAbs = fs.readlinkSync('/app/node_modules/abs');
   out.readlinkRel = fs.readlinkSync('/app/node_modules/rel');
   out.readlinkHost = fs.readlinkSync('/app/node_modules/host');
-  // Dirents' parentPath; a Dir's path; a host-looking parentPath as it is
+  // Dirents' parentPath; a Dir's entries; a Dir's path as given, as Node's; a host-looking parentPath as it is
   const ents = fs.readdirSync('/app/plugins', {withFileTypes: true});
   out.direntParent = ents.map((d) => d.parentPath);
   out.direntPromise = (await fsp.readdir('/app/plugins', {withFileTypes: true})).map((d) => d.parentPath);
   out.direntHost = fs.readdirSync('/data/host', {withFileTypes: true}).map((d) => d.parentPath);
   out.names = fs.readdirSync('/app/plugins');
+  out.direntRecursive = fs.readdirSync('/app/plugins', {withFileTypes: true, recursive: true}).map((d) => d.parentPath);
   const dir = fs.opendirSync('/app/plugins');
   out.dirPath = dir.path;
   out.dirEntry = dir.readSync().parentPath;
   dir.closeSync();
   out.dirPromisePath = (await fsp.opendir('/app/plugins')).path;
+  out.dirCallback = await new Promise((resolve) => fs.opendir('/app/plugins', {recursive: true}, (e, dd) => resolve(e ? e.code : [dd.path, dd.readSync().parentPath])));
   // glob: absolute matches, and Dirents
   out.globSync = fs.globSync('/app/plugins/*.js');
   out.globDirents = fs.globSync('/app/plugins/*.js', {withFileTypes: true}).map((d) => d.parentPath);
   out.globPromise = [];
   for await (const m of fsp.glob('/app/plugins/*.js')) out.globPromise.push(m);
   out.globCallback = await new Promise((resolve) => fs.glob('/app/plugins/*.js', (e, r) => resolve(e ? e.code : r)));
+  const excluded = [];
+  out.globExclude = fs.globSync('/app/plugins/*', {exclude: (m) => { excluded.push(m); return m === 'M:\\app\\plugins\\b.txt'; }});
+  out.globExcludeSaw = excluded;
   // cp's filter: its arguments in the module's spelling; the copies done on the namespace's
   const filtered = [];
   const copyBefore = asked.length;
@@ -117,12 +129,29 @@ module.exports = async () => {
   out.cpFilterAsync = filteredAsync;
   out.cpError = caught(() => fs.cpSync('/app/src', '/data/dst'));
   out.cpSelf = caught(() => fs.cpSync('/app/src', '/app/src/in', {recursive: true}));
+  out.cpExists = caught(() => fs.cpSync('/app/file', '/data/there', {force: false, errorOnExist: true}));
+  const filteredCallback = [];
+  out.cpCallback = await new Promise((resolve) => fs.cp('/app/file', '/data/new', {filter: (s, dd) => { filteredCallback.push([s, dd]); return false; }}, (e) => resolve(e ? e.code : 'done')));
+  out.cpFilterCallback = filteredCallback;
   // errors: path, dest and message; a host-looking path as it is
   out.errorSync = caught(() => fs.readFileSync('/app/missing.json'));
   out.errorCallback = await new Promise((resolve) => fs.readFile('/app/missing.json', (e) => resolve(e ? {path: e.path, message: e.message} : 'no error')));
   out.errorPromise = await caughtAsync(() => fsp.readFile('/app/missing.json'));
   out.errorTwo = caught(() => fs.readFileSync('/app/two'));
   out.errorHost = caught(() => fs.readFileSync('/app/hosterr'));
+  // On Windows with the virtual drive in the worker's data (a module
+  // worker's), the module's own spelling in: the broker is asked in the
+  // namespace's form (askedForeign below) and answers come back in it
+  if (process.platform === 'win32' && require('worker_threads').workerData.virtualDrive === 'M') {
+    out.own = {
+      realpath: fs.realpathSync('M:\\app\\handlers\\probe'),
+      glob: fs.globSync('M:/app/plugins/*.js'),
+      globExcludeOwn: fs.globSync('M:/app/plugins/*', {exclude: ['M:/app/plugins/b.txt']}),
+      error: caught(() => fs.readFileSync('M:\\app\\missing.json')),
+      dir: fs.opendirSync('M:\\app\\plugins').path,
+      mkdtemp: fs.mkdtempSync('M:\\tmp\\ch-')
+    };
+  }
   // what the broker was asked: the namespace's own form throughout
   out.askedForeign = asked.filter((a) => /^[a-zA-Z]+ [A-Z]:/.test(a));
   return out;

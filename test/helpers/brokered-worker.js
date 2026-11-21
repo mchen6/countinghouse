@@ -23,7 +23,8 @@ async function runBrokered(script, opts) {
   let bridge = null;
   const ops = {};
   // repo: the worker entry loads the script under a boot grant over it
-  const data = {script: script, root: dirs.data, fsBridge: null, extra: opts.extra || {}, repo: fs.realpathSync(REPO)};
+  // (opts.workerData: more of the worker's own data, as a module worker's -- virtualDrive)
+  const data = Object.assign({}, opts.workerData || {}, {script: script, root: dirs.data, fsBridge: null, extra: opts.extra || {}, repo: fs.realpathSync(REPO)});
   let transferList = [];
   if (usePatch) {
     const ns = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [], protectedPaths: []});
