@@ -87,6 +87,24 @@ describe('fs-broker 36: Node\'s own answers, through the broker (the final pass,
         assert.deepStrictEqual(fs.readdirSync(t.base).sort(), before, 'nothing made beside a root');
         // (a prefix inside a root, as before)
         assert.match(await t.broker.handle('mkdtemp', ['/data/pre-']), /^\/data\/pre-[A-Za-z0-9]{6}$/);
+        // (the prefix's directory a link: judged by where it leads -- one out
+        // is refused and nothing is made there; the medium on this PR, 1)
+        const out = path.join(t.base, 'outside');
+        fs.mkdirSync(out);
+        let linked = true;
+        try {
+          fs.symlinkSync(out, path.join(t.dirs.data, 'to-out'), 'dir');
+          fs.symlinkSync(path.join(t.dirs.tmp), path.join(t.dirs.data, 'to-tmp'), 'dir');
+        } catch (e) {
+          if (e.code !== 'EPERM') throw e;
+          linked = false;
+        }
+        if (linked) {
+          await assert.rejects(t.broker.handle('mkdtemp', ['/data/to-out/']));
+          assert.deepStrictEqual(fs.readdirSync(out), [], 'nothing made outside');
+          const made = await t.broker.handle('mkdtemp', ['/data/to-tmp/']);
+          assert.strictEqual(fs.readdirSync(t.dirs.tmp).filter((n) => n.length === 6).length >= 1, true, made);
+        }
       } finally { await t.done(); }
     });
   }
