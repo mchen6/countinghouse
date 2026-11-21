@@ -36,13 +36,28 @@ function writeModule(dir, {name, role, calls, service, actions}) {
 }
 
 // another process holding the store lock for ms, once it has it
-function holdLock(dir, ms) {
+// another process holding the store lock until the test releases it (a
+// file appears), never past 30 s (so a test that fails can't wedge it):
+// the lock is held until what the test observes, never for a fixed time
+function holdLock(dir) {
+  const release = path.join(dir, '..', `release-${process.pid}-${Date.now()}`);
   const holder = spawn(process.execPath, ['-e', `
+    const fs = require('fs');
     const {withStoreLock} = require(${JSON.stringify(path.join(ROOT, 'lib', 'store', 'json-file'))});
-    withStoreLock(${JSON.stringify(dir)}, () => { process.stdout.write('held\\n'); const t = Date.now(); while (Date.now() - t < ${ms}) {} });
+    const nap = new Int32Array(new SharedArrayBuffer(4));
+    withStoreLock(${JSON.stringify(dir)}, () => {
+      process.stdout.write('held\\n');
+      const t = Date.now();
+      while (!fs.existsSync(${JSON.stringify(release)}) && Date.now() - t < 30000) Atomics.wait(nap, 0, 0, 10);
+    });
   `], {stdio: ['ignore', 'pipe', 'inherit']});
   const exited = new Promise((resolve) => holder.on('exit', resolve));
-  return new Promise((resolve) => holder.stdout.once('data', () => resolve({holder, exited})));
+  const free = async () => {
+    fs.writeFileSync(release, '');
+    await exited;
+    fs.rmSync(release, {force: true});
+  };
+  return new Promise((resolve) => holder.stdout.once('data', () => resolve({holder, free})));
 }
 
 // the store's metering records: meterId -> balance
@@ -123,23 +138,17 @@ describe('stdio 50: a routed hop waits for its charge at most METER_PENDING_MS (
     // (the first case's two charges settled first)
     assert.ok(await eventually(() => Object.keys(balances(store)).length > 0), 'a metering record');
     const before = await settled(store);
-    const {holder, exited} = await holdLock(store, 4000);
-    let took = null;
+    const {holder, free} = await holdLock(store);
     let out = null;
     try {
-      const t0 = Date.now();
+      // (answered while the lock is still held: only the bound answers it)
       const r = await call('tool_chb');
-      took = Date.now() - t0;
       assert.ok(r.result != null && r.result.isError !== true, `${JSON.stringify(r)}\n${io.err.slice(-1500)}`);
       out = toolOutput(r.result);
     } finally {
-      await exited;
+      await free();
       if (holder.exitCode == null) holder.kill('SIGKILL');
     }
-    // (the observable proof: billing pending is answered only at the bound,
-    // while the lock -- held 4 s -- still kept the charge; the time is
-    // logged, not asserted)
-    console.log(`    [observed] the hop answered after ${took} ms, the lock held 4000 ms`);
     assert.deepStrictEqual([out.part, out.metering], ['own', {billingPending: true}]);
     // once the lock is free: the outer call's charge and the hop's, each once
     assert.strictEqual(await settled(store), before - 2, 'charged exactly twice, once the lock was free: never again');
@@ -154,18 +163,25 @@ describe('stdio 50: a routed hop waits for its charge at most METER_PENDING_MS (
     const MAX_PENDING_PER_KEY = 4;
     const n = MAX_PENDING_PER_KEY + 1;
     const before = await settled(store);
-    const {holder, exited} = await holdLock(store, 4000);
-    let outs = null;
+    const {holder, free} = await holdLock(store);
+    const outs = [];
+    let all = null;
     try {
-      const rs = await Promise.all(Array.from({length: n}, () => call('tool_chb')));
-      outs = rs.map((r) => {
+      const calls = Array.from({length: n}, () => call('tool_chb').then((r) => {
         assert.ok(r.result != null && r.result.isError !== true, `${JSON.stringify(r)}\n${io.err.slice(-1500)}`);
-        return toolOutput(r.result);
-      });
+        outs.push(toolOutput(r.result));
+      }));
+      all = Promise.all(calls);
+      // the lock held until the allowance has answered pending and the one
+      // past it is seen waiting for its own charge -- observed, not timed
+      assert.ok(await eventually(() => outs.length === MAX_PENDING_PER_KEY && /charges pending; waiting for it/.test(io.err), 30000),
+        `${outs.length} answered\n${io.err.slice(-1500)}`);
+      assert.strictEqual(outs.length, MAX_PENDING_PER_KEY, 'the one past the allowance still waits while the lock is held');
     } finally {
-      await exited;
+      await free();
       if (holder.exitCode == null) holder.kill('SIGKILL');
     }
+    await all;
     const pending = outs.filter((o) => o.metering != null && o.metering.billingPending === true).length;
     const waited = outs.filter((o) => o.metering != null && o.metering.charged === 1).length;
     assert.deepStrictEqual([pending, waited], [MAX_PENDING_PER_KEY, 1], JSON.stringify(outs.map((o) => o.metering)));
