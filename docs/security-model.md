@@ -225,7 +225,38 @@ above applies on Windows as it does elsewhere. With no free drive letter,
 root is a host path, which there carries a drive, and the broker takes every
 drive-qualified path as outside the namespace. Under `enforce` such a path is
 refused (ENOENT): it fails closed. The module gets its own `/data` and
-`/tmp`.
+`/tmp`. A declaration itself must be POSIX-absolute (`countinghouse.permissions.fs`,
+lib/module-permissions.js), so a Windows host path can't be declared at all.
+
+**Other Windows limits** (C-win-baseline: every sandbox and file-broker test
+run on Windows, each failure given its cause):
+
+- **`--hardened` loads no module in a Windows worker yet.** Every module
+  load there fails with Node's "Access to this API has been restricted"
+  (a read the permission model's grants don't cover). It fails closed. ch-local
+  doesn't pass `--hardened`.
+- **The Redis store is untested on Windows.** CI's Windows runners have no
+  Redis, so the tests that use it run on Linux only. On Windows, ch-local
+  runs the local store (`--store local`), which is tested there.
+- **Names Windows reads specially.** Node's fs gives Windows an absolute path
+  in its namespaced form (`\\?\`), where Win32's name rules don't apply. A
+  module's `/data/COM1` or `/data/NUL.txt` is an ordinary file, not a device.
+  `/data/note.` is a file of its own, not `note` (checked on a Windows runner).
+  An NTFS stream does work: `/data/note::$DATA` is `note`'s own bytes,
+  `note:alt` a stream of it. That is the module's own data. Every check of a
+  protected file compares a Windows name with its case folded and its
+  `:stream` suffix and trailing dots and spaces stripped
+  (lib/fs-broker/denied.js), or compares the file itself, so a stream's
+  spelling reaches nothing a plain name couldn't.
+- **A link a module makes** is refused, on Windows, when a segment of its
+  target is one Windows reads as other than its text: trailing dots or
+  spaces, or a device name. A Windows runner showed a link's target is not
+  trimmed when followed, so this is defence in depth.
+- **An exclusive create** (`open` with `wx`, `copyFile` with
+  `COPYFILE_EXCL`) never follows a link on Windows. A link at the name
+  answers EEXIST before any open, as POSIX's kernel answers it.
+- **CI's Windows legs** run the stdio and local-store suites. The sandbox and
+  file-broker suites run on Windows by the manual Windows subset workflow.
 
 **Under `audit` a module changes nothing outside its own area**
 (maintainer's decision, 2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
