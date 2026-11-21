@@ -120,6 +120,12 @@ if (options.moduleLoadTimeoutInvalid != null) {
 }
 // RC1-min: a module cannot choose where a credential goes; the operator's
 // file does. One that cannot be read as {origin: [variable]} stops the start.
+if (options.rateLimitInvalid != null) {
+  const v = options.rateLimitInvalid.value;
+  console.error('--' + options.rateLimitInvalid.name + ' must be a positive integer, calls a second (got ' +
+    (v === true ? 'no value' : JSON.stringify(String(v))) + ')');
+  process.exit(2);
+}
 if (options.remoteLimitInvalid != null) {
   console.error('--' + options.remoteLimitInvalid.name + ' must be a positive number (got ' +
     JSON.stringify(String(options.remoteLimitInvalid.value)) + ')');
