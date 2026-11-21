@@ -45,7 +45,7 @@ const {testPort} = require('../helpers/test-env');
 
 const PORT = testPort(9557);
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
-const AUTH_CONFIG = path.join(__dirname, 'fixtures-auth.json');
+const AUTH_CONFIG = require('../helpers/private-auth').privateAuth(path.join(__dirname, 'fixtures-auth.json'));
 const BASE = `http://127.0.0.1:${PORT}`;
 
 let server;

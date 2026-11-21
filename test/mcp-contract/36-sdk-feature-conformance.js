@@ -46,7 +46,7 @@ describe('mcp-contract 36: the official SDK client accepts each feature\'s answe
   before(async () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-36-'));
     const auth = path.join(tmp, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'sdk', devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'sdk', devices: ['*']}}), {mode: 0o600});
     const pre = path.join(ROOT, 'pre-installed-packages');
     const modules = fs.readdirSync(pre).filter((d) => fs.statSync(path.join(pre, d)).isDirectory()).flatMap((d) => ['--loadModule', path.join(pre, d)]);
     const port = await freePort();

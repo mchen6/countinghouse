@@ -23,7 +23,7 @@ const KEY = 'stdio-test-key';
 async function capture({workerThread = true} = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-everything-'));
   const auth = path.join(home, 'auth.json');
-  fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
+  fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}), {mode: 0o600});
   const io = startStdio([workerThread ? '--workerThread' : '--no-workerThread', '--loadModule', FIXTURE, '--authConfigPath', auth,
     '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`], {env: {COUNTINGHOUSE_API_KEY: KEY}});
   try {

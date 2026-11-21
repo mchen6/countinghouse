@@ -43,7 +43,7 @@ describe('auth 08: a job is billed to the authenticated caller, never to a reque
     const config = {};
     config[ALICE]   = {userName: 'alice',   devices: ['*']};
     config[MALLORY] = {userName: 'mallory', devices: ['*']};
-    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
+    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config), {mode: 0o600});
 
     console.log('starting countinghouse WITHOUT --debug, --mcpToolCallCost 1, for billing-identity test...');
     // a nonzero cost is what makes recordCall's effect observable as a

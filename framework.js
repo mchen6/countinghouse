@@ -4,7 +4,9 @@
 // operator chose otherwise; it must be set before the pool is first used.
 if (process.env.UV_THREADPOOL_SIZE == null) process.env.UV_THREADPOOL_SIZE = '16';
 
-var argv          = require('minimist')(process.argv.slice(1));
+// (--authConfigPath a string as given: an all-digit file name keeps its
+// spelling, 007 never 7)
+var argv          = require('minimist')(process.argv.slice(1), {string: ['authConfigPath']});
 var options       = require('./lib/cli-options');
 var fs            = require('fs');
 var packageJson   = require('./package.json');
@@ -319,6 +321,22 @@ if (options.hardened === true && process.permission == null) {
     console.error(hardenedLaunch.refusalMessage(probe, hardenedLaunch.grantOverlaps(hardenedFlags), process.version));
     process.exit(2);
   }
+  // The file auth provider's auth.json, when it reads one (B-meter-keys 4r):
+  // a missing one is made here, the demo key, after the grant probe passed
+  // (a start the probe refuses leaves no key file), as the child is granted
+  // it read-only (lib/hardened-launch.js; a grant on a file needs no file
+  // there), and a file made here has its real path recorded for the child
+  // as the protected paths' are (precompute ran before it existed). On Windows it is made and
+  // checked below (prepareForHardened).
+  var fileAuthPath = require('./lib/auth/auth-file-defaults').fileAuthPathOf(options, process.cwd());
+  if (fileAuthPath != null && process.platform !== 'win32') {
+    try {
+      if (require('./lib/auth/file-provider').makeForHardened(fileAuthPath)) realpathRecorder.realpath(fileAuthPath);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(2);
+    }
+  }
   // enforce on Windows: the virtual drive is picked here, where looking at
   // drive letters is allowed, and handed to the child (#195;
   // lib/fs-broker/virtual-drive.js)
@@ -335,6 +353,11 @@ if (options.hardened === true && process.permission == null) {
       prefetchOwnFileAcls();
       require('./lib/identity').prepareForHardened(options);
       require('./lib/server-id').prepareForHardened(options);
+      // (the auth file, when it is one: it holds API keys, read only as this
+      // user's own, B-meter-keys 4r; made here when missing)
+      if (fileAuthPath != null) {
+        if (require('./lib/auth/file-provider').prepareForHardened(fileAuthPath)) realpathRecorder.realpath(fileAuthPath);
+      }
     } catch (e) {
       console.error(e.message);
       process.exit(2);

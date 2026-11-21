@@ -24,7 +24,7 @@ const FileAuthProvider = require('../../lib/auth/file-provider');
 
 function tmpAuthFile(config) {
   const p = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-ident-')), 'auth.json');
-  fs.writeFileSync(p, JSON.stringify(config));
+  fs.writeFileSync(p, JSON.stringify(config), {mode: 0o600});
   return p;
 }
 

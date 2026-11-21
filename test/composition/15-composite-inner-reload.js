@@ -40,7 +40,7 @@ const balance = (port) => request(`http://127.0.0.1:${port}`).get('/balance').se
     before(async () => {
       base = fs.mkdtempSync(path.join(os.homedir(), '.ch-composite-reload-'));
       const authPath = path.join(base, 'auth.json');
-      fs.writeFileSync(authPath, JSON.stringify({[KEY]: {userName: 'worker-end-caller-internal', devices: ['*'], runsModules: ['worker-end-caller']}}));
+      fs.writeFileSync(authPath, JSON.stringify({[KEY]: {userName: 'worker-end-caller-internal', devices: ['*'], runsModules: ['worker-end-caller']}}), {mode: 0o600});
       server = await startServer(variant.port, ['--workerThread', '--debug', '--debugKey', KEY, '--mcpToolCallCost', '1',
         '--authConfigPath', authPath, '--loadModule', INNER, '--loadModule', OUTER].concat(variant.flags));
     });

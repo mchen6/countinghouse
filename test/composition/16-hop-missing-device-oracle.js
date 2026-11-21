@@ -55,7 +55,7 @@ const authFor = (granted) => JSON.stringify({
       before(async () => {
         base = fs.mkdtempSync(path.join(os.homedir(), '.ch-hop-oracle-'));
         authPath = path.join(base, 'auth.json');
-        fs.writeFileSync(authPath, authFor(true));
+        fs.writeFileSync(authPath, authFor(true), {mode: 0o600});
         server = await startServer(variant.port, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath,
           '--loadModule', INNER, '--loadModule', PROBER].concat(variant.flags));
         // the client cached while the device is loaded, or no hop at all
@@ -86,7 +86,7 @@ const authFor = (granted) => JSON.stringify({
       // last: the grant is withdrawn (POST /reload-auth); the identity then
       // gets the access error, and so learns nothing about the device
       it('once its grant is withdrawn, the identity gets the access error: USER_HAS_NO_DEVICE', async () => {
-        fs.writeFileSync(authPath, authFor(false));
+        fs.writeFileSync(authPath, authFor(false), {mode: 0o600});
         assert.strictEqual((await post(variant.port, ADMIN, '/reload-auth', {})).status, 200);
         assert.strictEqual(toolErrorCode(await probe(DEVICE)), 'USER_HAS_NO_DEVICE');
         assert.strictEqual((await observe(DEVICE)).code, 'USER_HAS_NO_DEVICE');

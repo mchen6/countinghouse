@@ -73,8 +73,10 @@ It scans this repository by default, so there is nothing to configure.
 ### Calling the tool yourself
 
 One command. The script loads all four modules and points
-`--authConfigPath` at [`auth.json`](auth.json) in this directory, so it never
-touches -- or needs -- an `auth.json` in the repository root:
+`--authConfigPath` at [`auth.json`](auth.json) in this directory (made
+owner-only first: the runtime reads an auth file only at mode `0600`, and git
+keeps it `0644`), so it never touches -- or needs -- an `auth.json` in the
+repository root:
 
 ```sh
 npm run demo:repo-review

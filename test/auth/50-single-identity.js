@@ -80,7 +80,7 @@ describe('auth 50: the single-identity profile (LM1 B4)', function() {
 
   it('the profile picks the memory provider; --meter with an auth file keeps the file provider', () => {
     const authFile = path.join(tmp('ch-auth-50-'), 'auth.json');
-    fs.writeFileSync(authFile, JSON.stringify({'operator-key-0001': {userName: 'operator', devices: ['*']}}));
+    fs.writeFileSync(authFile, JSON.stringify({'operator-key-0001': {userName: 'operator', devices: ['*']}}), {mode: 0o600});
     const out = child(`
       const options = lib('cli-options');
       options.setOptions({store: 'local', stdio: true});
@@ -143,7 +143,7 @@ describe('auth 50: the review of B4', function() {
     const storePath = path.join(tmp('ch-auth-50r-'), 'store');
     const moduleDataPath = path.join(tmp('ch-auth-50r-'), 'module_data');
     const authFile = path.join(tmp('ch-auth-50r-'), 'auth.json');
-    fs.writeFileSync(authFile, JSON.stringify({'operator-key-0002': {userName: 'operator', devices: ['*']}}));
+    fs.writeFileSync(authFile, JSON.stringify({'operator-key-0002': {userName: 'operator', devices: ['*']}}), {mode: 0o600});
     child(`
       const options = lib('cli-options');
       options.setOptions({store: 'local', storePath: ${JSON.stringify(storePath)}, moduleDataPath: ${JSON.stringify(moduleDataPath)}, authConfigPath: ${JSON.stringify(authFile)}});

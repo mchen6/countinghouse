@@ -58,7 +58,7 @@ function writeCaller(dir) {
       // One key: the debug key and the identity that runs hop-caller's hops
       // (runsModules), as test/composition/04 does.
       const auth = path.join(root, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'remote-11', devices: ['*'], runsModules: ['hop-caller']}}));
+      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'remote-11', devices: ['*'], runsModules: ['hop-caller']}}), {mode: 0o600});
       const allowance = path.join(root, 'remote-credentials.json');
       fs.writeFileSync(allowance, JSON.stringify({[`http://127.0.0.1:${STAND_IN}`]: ['CH_TEST_REMOTE_TOKEN']}));
       standIn = await startRemoteServer(STAND_IN);

@@ -367,7 +367,7 @@ describe('sandbox 05: worker lockdown', function() {
     // channels are at their default, on.
     before(async () => {
       server = await startServer(testPort(9610), ['--workerThread', '--moduleSandbox', 'enforce',
-        '--authConfigPath', path.join(ROOT, 'test', 'composition', 'fixtures-auth.json'),
+        '--authConfigPath', require('../helpers/private-auth').privateAuth(path.join(ROOT, 'test', 'composition', 'fixtures-auth.json')),
         '--loadModule', path.join(ROOT, 'test', 'fixtures', 'compose-callee'),
         '--loadModule', path.join(ROOT, 'test', 'fixtures', 'compose-caller')]);
     });

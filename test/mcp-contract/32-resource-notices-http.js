@@ -63,7 +63,7 @@ describe('mcp-contract 32: resources/updated over HTTP: the calling key\'s only,
   before(async () => {
     base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-32-'));
     const auth = path.join(base, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[A]: {userName: 'a', devices: ['*']}, [B]: {userName: 'b', devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[A]: {userName: 'a', devices: ['*']}, [B]: {userName: 'b', devices: ['*']}}), {mode: 0o600});
     server = await startServer(PORT, ['--workerThread', '--authConfigPath', auth, '--moduleDataPath', path.join(base, 'store'), '--loadModule', NOTES]);
   });
   after(() => {

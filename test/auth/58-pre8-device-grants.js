@@ -92,7 +92,7 @@ describe('auth 58: a grant naming a loaded module\'s pre-8.0 device ID is said o
     const dir = require('../helpers/test-tmp').mkdtemp('ch-auth-58u-');
     try {
       const auth = path.join(dir, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({'key-one-0123456789': {userName: 'one', devices: ['a', 'b']}, 'key-two-0123456789': {userName: 'two', devices: ['*', 'b', 'c']}}));
+      fs.writeFileSync(auth, JSON.stringify({'key-one-0123456789': {userName: 'one', devices: ['a', 'b']}, 'key-two-0123456789': {userName: 'two', devices: ['*', 'b', 'c']}}), {mode: 0o600});
       const FileAuthProvider = require('../../lib/auth/file-provider');
       const ids = await new Promise((resolve, reject) => new FileAuthProvider({configPath: auth}).grantedDeviceIDs((e, v) => (e ? reject(e) : resolve(v))));
       assert.deepStrictEqual(ids.sort(), ['a', 'b', 'c']);
@@ -131,7 +131,7 @@ describe('auth 58: a grant naming a loaded module\'s pre-8.0 device ID is said o
       const {pre8DeviceIDForName} = require('../../lib/pre-8-device-ids');
       const dir = tmp.mkdtemp('ch-auth-58-');
       const auth = path.join(dir, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({[`k${process.pid}abcdefabcdef`]: {userName: 'u', devices: [pre8DeviceIDForName('echo-device')]}}));
+      fs.writeFileSync(auth, JSON.stringify({[`k${process.pid}abcdefabcdef`]: {userName: 'u', devices: [pre8DeviceIDForName('echo-device')]}}), {mode: 0o600});
       server = await startServer(port, [...flags, '--authProvider', 'file', '--authConfigPath', auth,
         '--moduleDataPath', path.join(dir, 'data'), '--loadModule', path.join(ROOT, 'pre-installed-packages', 'echo-device-module')]);
       const line = `grant for echo-device names its pre-8.0 device ID ${pre8DeviceIDForName('echo-device')}; the new one is ${deviceIDForName('echo-device')}`;

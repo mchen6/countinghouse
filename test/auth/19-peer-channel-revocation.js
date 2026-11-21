@@ -27,17 +27,22 @@ const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env'
 const ROOT    = path.join(__dirname, '..', '..');
 const PORT    = testPort(9601);
 const url     = `http://127.0.0.1:${PORT}`;
-const DB_PATH = `/tmp/countinghouse-test-auth-19-${process.pid}.sqlite3`;
+// (in a directory only this user can write in, as the sqlite store requires;
+// made in before())
+const tmp = require('../helpers/test-tmp').forFile(['ch-auth-19-']);
+let DB_PATH = null;
 
 const CALLER          = `caller-key-19-${process.pid}`;
 const MODULE_IDENTITY = 'aabbcc';
 
 const RECHECK_SECONDS = 1;
 
+// (a key goes on stdin: test/helpers/auth-cli.js)
 function authCli(args) {
+  const k = require('../helpers/auth-cli').keyed(args);
   execFileSync(process.execPath,
-    [path.join(ROOT, 'bin', 'countinghouse-auth-sqlite.js'), '--dbPath', DB_PATH].concat(args),
-    {cwd: ROOT, stdio: 'pipe'});
+    [path.join(ROOT, 'bin', 'countinghouse-auth-sqlite.js'), '--dbPath', DB_PATH].concat(k.args),
+    {cwd: ROOT, input: k.input, stdio: ['pipe', 'pipe', 'pipe']});
 }
 
 function callThroughTheHop(cb) {
@@ -71,6 +76,7 @@ describe('auth 19: revoking a module identity closes its open peer channel', fun
   this.timeout(0);
 
   before((done) => {
+    DB_PATH = path.join(tmp.mkdtemp('ch-auth-19-'), 'auth.sqlite3');
     authCli(['add-user', CALLER, 'caller']);
     authCli(['grant', CALLER, '*']);
     authCli(['add-user', MODULE_IDENTITY, 'echo-device-client-module']);
@@ -89,7 +95,6 @@ describe('auth 19: revoking a module identity closes its open peer channel', fun
 
   after((done) => {
     stopAll(() => {
-      try { fs.unlinkSync(DB_PATH); } catch (e) { /* already gone */ }
       done();
     });
   });
@@ -121,6 +126,7 @@ describe('auth 19: revoking a module identity closes its open peer channel', fun
     authCli(['grant', MODULE_IDENTITY, '*']);
     untilHopIs(true, 8000, (err) => { done(err); });
   });
+  tmp.hooks();
 });
 
 describe('auth 19b: --peerChannelAuthRecheckSeconds', () => {

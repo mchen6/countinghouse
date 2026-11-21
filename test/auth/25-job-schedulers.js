@@ -31,7 +31,7 @@ describe('auth 25: repeatable job schedulers are per owner', function() {
     fs.writeFileSync(authPath, JSON.stringify({
       'alice-key': {userName: 'alice', devices: [DEVICE]},
       'bob-key':   {userName: 'bob', devices: [DEVICE]}
-    }));
+    }), {mode: 0o600});
     server = await startServer(testPort(9670), ['--workerThread', '--authConfigPath', authPath, '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'job-snoop')]);
     queue = new Queue('job-queue', {prefix: prefixFor(path.join(base, 'store')), connection: redisConnectionFor(11)});   // this server's own queue (B-j1)

@@ -40,7 +40,7 @@ describe('usage: where the usage files go by default', function() {
   it('a --store local start with no --usageDir writes its usage under <storePath>/usage/<day>/', async function() {
     const store = path.join(home, 'store');
     const auth = path.join(home, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'u', devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'u', devices: ['*']}}), {mode: 0o600});
     const child = spawn(process.execPath, [ENTRY, '--workerThread', '--store', 'local', '--storePath', store, '--loadModule', FIXTURE,
       '--authConfigPath', auth, '--moduleDataPath', path.join(home, 'module_data')],
     {env: {...process.env, COUNTINGHOUSE_API_KEY: KEY}, stdio: ['pipe', 'pipe', 'pipe']});

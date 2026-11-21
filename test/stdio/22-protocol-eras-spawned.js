@@ -16,7 +16,8 @@ const MODULE = path.join(__dirname, '..', 'fixtures', 'handler-map-module');
 const KEY = 'stdio-22-key';
 function startWithModule(home) {
   const auth = path.join(home, 'auth.json');
-  require('fs').writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
+  // (owner-only, on Windows too: the runtime reads no other)
+  require('../helpers/private-auth').writePrivate(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
   return startStdio(['--workerThread', '--loadModule', MODULE, '--authConfigPath', auth, '--moduleDataPath', path.join(home, 'module_data'),
     '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`], {env: {COUNTINGHOUSE_API_KEY: KEY}});
 }

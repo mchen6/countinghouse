@@ -27,24 +27,60 @@ A flat JSON file, `auth.json` in the working directory by default
 `devices` may list specific deviceIDs, or the literal string `"*"` for
 every device.
 
+**The file holds API keys in the clear, so keep it yours alone.** The
+runtime reads `auth.json` only when it is this user's own, a regular file
+under one name (never through a link) and owner-only: mode `0600` on
+Linux and macOS, an ACL that lets only you read it on Windows. Anything
+else refuses the start (exit 2), naming the fix, for example:
+
+```
+/path/to/auth.json is accessible by group or others (mode 644); it must be 0600, as it holds API keys: chmod 600 /path/to/auth.json
+```
+
+Create it with `install -m 600 /dev/null auth.json` (or `chmod 600
+auth.json` after writing it), and keep it so when you edit it.
+
+A `POST /reload-auth` of your own file that others may only read (an edit
+such as `jq ... > tmp && mv tmp auth.json` leaves it `0644`) still applies
+what tightens, so a revoked key never stays live: an entry removed, devices
+or `runsModules` narrowed, `admin` dropped. A module that two entries
+claimed stays unbound when one of them drops it. The reload refuses what
+adds or widens: a new key, a changed `id` or `userName`, or any wider grant.
+Its answer is `ok: false` while anything was refused, with `changed` (the
+entries changed) and a `note` naming each refused change by entry number and
+the fix: `chmod 600`, then reload again. A file another user owns, one others
+may write in, a link, or a file that is not a regular one under one name is
+refused whole, and the current config is kept.
+
+Under `--hardened`, the server creates a missing `auth.json`, the demo
+key, before it relaunches itself under Node's permission model. The
+relaunched server may read the file but never write it. On Windows the file's
+ACL is checked then too. The relaunched server can't read an ACL, so every
+`POST /reload-auth` there applies only what tightens, as above: restart it
+to apply what adds or widens.
+
+An entry with no `userName` has no name to callers: bills and
+`check_balance` show `null`, and the start warns. It is never named by its
+key.
+
 `admin` is optional and defaults to `false`. It is a **separate capability
 from `devices`** — see [Admin keys](#admin-keys) below. A key can have
 `devices: ["*"]` and still not be admin (that is exactly what the
 auto-generated demo key is), or be admin without any device grants.
 
 **Zero-config first run**: if `auth.json` doesn't exist yet, a demo key
-with wildcard access is generated, written to `auth.json` (so it survives
-a restart), and printed once:
+with wildcard access is generated and written to `auth.json`, owner-only
+(so it survives a restart). The key itself is never printed, only where to
+read it:
 
 ```
 ============================================================
 countinghouse: no /path/to/countinghouse/auth.json found.
-Generated a demo API key with access to every device --
-replace it before any real deployment:
+Generated a demo API key with access to every device, written to
+/path/to/countinghouse/auth.json (readable by you only); the key is not printed.
+Read it there, and replace it before any real deployment.
 
-  X-CH-Key: demo-a1b2c3d4e5f6...
-
-Edit /path/to/countinghouse/auth.json to add real keys, or set
+Edit /path/to/countinghouse/auth.json to add real keys (keep it mode 0600), or set
 COUNTINGHOUSE_API_KEY for single-key mode instead.
 ============================================================
 ```
@@ -118,29 +154,52 @@ The CLI below has the same requirement, and reports the same diagnosis.
 Start the server with `--authProvider sqlite` (`--authConfigPath` sets the
 db file path, default `./auth.sqlite3`), then manage users with the
 bundled CLI (it operates on the db file directly, not through the running
-server):
+server). The database holds keys in the clear: the CLI and the server
+create it owner-only (`0600`), and refuse one that is not this user's own
+and owner-only, naming the `chmod 600` that fixes it. SQLite's own files
+beside it (`-journal`, `-wal`, `-shm`) are held to the same rule. On Linux
+and macOS its directory must be one only you can write in (your own or
+root's, and not group- or world-writable, sticky or not), because SQLite
+plays back a `-journal` it finds beside the database, whoever put it there.
+Every directory above it must be yours or root's, and writable by no one
+else, except a sticky one such as `/tmp`, or your own primary group's. That
+group is accepted because most Linux systems give each user a private group
+of their own, and a umask of `0002` then leaves the directories in a home
+group-writable (`0775`) with no one else in the group. The store's own
+directory stays strict either way. If your primary group is shared with
+other users, keep the store under directories that group can't write in. So
+keep the database out of a shared directory such as `/tmp` itself. On Windows
+the directory is not checked: keep the database in a folder only you can
+create files in. Under `--hardened` on Windows the sqlite store is refused at
+every start (its ACL can't be checked there); use the file provider there.
+
+A command about a user reads that user's API key from **stdin**, never
+from an argument (an argument would sit in your shell history and in the
+process list): pipe it in, or run the command at a terminal and type it at
+the prompt `API key (input hidden): `, which does not show what you type.
+Nothing the CLI prints holds a key; `list` names users by name and id.
 
 ```sh
-node bin/countinghouse-auth-sqlite.js add-user my-api-key alice
-node bin/countinghouse-auth-sqlite.js grant my-api-key '*'
+printf '%s\n' "$KEY" | node bin/countinghouse-auth-sqlite.js add-user alice
+printf '%s\n' "$KEY" | node bin/countinghouse-auth-sqlite.js grant '*'
 node bin/countinghouse-auth-sqlite.js list
-# my-api-key (alice): *
+# alice (id -): *
 
-node bin/countinghouse-auth-sqlite.js revoke my-api-key '*'
-node bin/countinghouse-auth-sqlite.js grant my-api-key some-specific-device-id
-node bin/countinghouse-auth-sqlite.js remove-user my-api-key
+printf '%s\n' "$KEY" | node bin/countinghouse-auth-sqlite.js revoke '*'
+printf '%s\n' "$KEY" | node bin/countinghouse-auth-sqlite.js grant some-specific-device-id
+printf '%s\n' "$KEY" | node bin/countinghouse-auth-sqlite.js remove-user
 
 # admin rights (see "Admin keys" below) -- independent of device grants
-node bin/countinghouse-auth-sqlite.js set-admin my-api-key true
+printf '%s\n' "$KEY" | node bin/countinghouse-auth-sqlite.js set-admin true
 node bin/countinghouse-auth-sqlite.js list
-# my-api-key (alice, admin): some-specific-device-id
-node bin/countinghouse-auth-sqlite.js set-admin my-api-key false
+# alice (id -, admin): some-specific-device-id
+printf '%s\n' "$KEY" | node bin/countinghouse-auth-sqlite.js set-admin false
 
 # a composing module's identity (the sqlite form of auth.json's runsModules,
 # docs/composite-tools.md): by the module's package.json name
-node bin/countinghouse-auth-sqlite.js bind-module my-internal-key composite-demo
+printf '%s\n' "$INTERNAL_KEY" | node bin/countinghouse-auth-sqlite.js bind-module composite-demo
 node bin/countinghouse-auth-sqlite.js list
-# my-internal-key (composite-demo-identity): *; runs modules: composite-demo
+# composite-demo-identity (id -): *; runs modules: composite-demo
 node bin/countinghouse-auth-sqlite.js unbind-module composite-demo
 ```
 
@@ -235,9 +294,9 @@ How to grant it:
 ```
 
 ```sh
-# sqlite backend
-node bin/countinghouse-auth-sqlite.js add-user your-admin-key operator
-node bin/countinghouse-auth-sqlite.js set-admin your-admin-key true
+# sqlite backend (the key on stdin)
+printf '%s\n' "$ADMIN_KEY" | node bin/countinghouse-auth-sqlite.js add-user operator
+printf '%s\n' "$ADMIN_KEY" | node bin/countinghouse-auth-sqlite.js set-admin true
 ```
 
 ```sh

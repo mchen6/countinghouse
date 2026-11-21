@@ -173,7 +173,7 @@ function startServer(port, extraArgs, onLine, done) {
     '--workerThread', '--bindAddr', '127.0.0.1', '--port', String(port),
     '--mcpToolCallCost', '1',
     '--debug', '--debugKey', CALLER_KEY, // see header comment: needed so viaBoom.js's console.log survives loadFile's console-stripping
-    '--authConfigPath', path.join(__dirname, 'fixtures-auth.json'),
+    '--authConfigPath', require('../helpers/private-auth').privateAuth(path.join(__dirname, 'fixtures-auth.json')),
     '--loadModule', path.join(FIXTURES, 'compose-callee'),
     '--loadModule', path.join(FIXTURES, 'compose-caller')
   ].concat(extraArgs);

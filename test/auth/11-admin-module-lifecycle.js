@@ -52,7 +52,7 @@ describe('auth 11: the documented admin workflow works with authentication ON (n
     const config = {};
     config[OPERATOR] = {userName: 'operator', devices: ['*'], admin: true};
     config[TENANT]   = {userName: 'tenant',   devices: ['*']}; // no admin field
-    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
+    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config), {mode: 0o600});
 
     console.log('starting countinghouse WITHOUT --debug, for admin module-lifecycle test...');
     // deliberately starts with only echo-device-module -- transform-demo is

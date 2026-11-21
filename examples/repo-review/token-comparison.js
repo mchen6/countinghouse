@@ -88,10 +88,22 @@ const MODULES = ['repo-scan', 'secret-detect', 'dep-audit', 'repo-review'];
 // "runsModules" lists it before the composite enters tools/list. The demo's
 // own auth.json carries exactly that identity (repo-review-internal); the
 // API_KEY below is not in it and does not need to be, under --debug.
+// The runtime reads an auth file only when it is the operator's own and
+// owner-only (mode 0600: it holds keys); git keeps the demo's 0644, so the
+// server gets a private copy, removed when this script exits.
+function privateAuthCopy() {
+  const fsx = require('fs');
+  const copy = require('path').join(require('os').tmpdir(), `countinghouse-token-comparison-auth-${process.pid}.json`);
+  fsx.writeFileSync(copy, fsx.readFileSync(require('path').join(REPO_ROOT, 'examples', 'repo-review', 'auth.json')), {mode: 0o600});
+  fsx.chmodSync(copy, 0o600);
+  process.on('exit', () => { try { fsx.unlinkSync(copy); } catch (e) { /* gone */ } });
+  return copy;
+}
+
 function startServer() {
   const args = ['./framework.js', '--workerThread', '--debug', '--bindAddr', HOST,
                 '--port', String(PORT), '--mcpToolCallCost', '1',
-                '--authConfigPath', './examples/repo-review/auth.json'];
+                '--authConfigPath', privateAuthCopy()];
   MODULES.forEach((m) => { args.push('--loadModule', `./examples/repo-review/${m}`); });
 
   const child = cp.spawn(process.execPath, args, {cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe']});

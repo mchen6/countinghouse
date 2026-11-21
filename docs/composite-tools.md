@@ -355,7 +355,7 @@ node -e "var f='auth.json',fs=require('fs');
 With `--authProvider sqlite`, the same binding is a CLI command:
 
 ```sh
-node bin/countinghouse-auth-sqlite.js --dbPath auth.sqlite3 bind-module composite-demo-internal composite-demo
+printf '%s\n' composite-demo-internal | node bin/countinghouse-auth-sqlite.js --dbPath auth.sqlite3 bind-module composite-demo
 node bin/countinghouse-auth-sqlite.js --dbPath auth.sqlite3 unbind-module composite-demo   # removes it
 ```
 

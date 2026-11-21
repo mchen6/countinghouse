@@ -34,7 +34,7 @@ describe('stdio 31: module resources, spawned (M7)', function() {
       const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-31-'));
       homes.push(home);
       const auth = path.join(home, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
+      require('../helpers/private-auth').writePrivate(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
       io = startStdio([workerThread ? '--workerThread' : '--no-workerThread', '--loadModule', FIXTURE, '--authConfigPath', auth,
         '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`], {env: {COUNTINGHOUSE_API_KEY: KEY}});
       assert.ok((await io.request({...INITIALIZE, id: 1})).result != null);

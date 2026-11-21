@@ -22,7 +22,7 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-21-'));
 const AUTH = path.join(home, 'auth.json');
 const KEY_A = `test-a-${'a'.repeat(24)}`;
 const KEY_B = `test-b-${'b'.repeat(24)}`;
-fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['alpha', 'beta'], admin: true}, [KEY_B]: {userName: 'b', devices: ['beta']}}));
+fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['alpha', 'beta'], admin: true}, [KEY_B]: {userName: 'b', devices: ['beta']}}), {mode: 0o600});
 
 const options = require('../../lib/cli-options');
 // Set in this file's before(), with the auth provider routed to this file's

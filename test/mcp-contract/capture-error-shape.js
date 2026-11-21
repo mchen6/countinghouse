@@ -23,7 +23,7 @@ const {runCases, MODES} = require('../helpers/error-shape-cases');
 const ROOT    = path.join(__dirname, '..', '..');
 const OUT     = process.argv[2] || path.join(__dirname, 'error-shape.golden.json');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'error-shape-module');
-const AUTH    = path.join(__dirname, 'error-shape-auth.json');
+const AUTH    = require('../helpers/private-auth').privateAuth(path.join(__dirname, 'error-shape-auth.json'));
 
 (async () => {
   const golden = {};

@@ -36,7 +36,7 @@ describe('auth 34: what one add-job may ask for is bounded', function() {
   before(async () => {
     base = fs.mkdtempSync(path.join(os.homedir(), '.ch-job-bounds-'));
     const authPath = path.join(base, 'auth.json');
-    fs.writeFileSync(authPath, JSON.stringify({[KEY]: {userName: 'bounds', devices: [DEVICE]}}));
+    fs.writeFileSync(authPath, JSON.stringify({[KEY]: {userName: 'bounds', devices: [DEVICE]}}), {mode: 0o600});
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath,
       '--moduleDataPath', path.join(base, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'job-snoop')]);
     queue = new Queue('job-queue', {prefix: prefixFor(path.join(base, 'store')), connection: redisConnectionFor(11)});   // this server's own queue (B-j1)

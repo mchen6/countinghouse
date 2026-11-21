@@ -429,7 +429,7 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
       dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-28-'));
       const auth = path.join(dir, 'auth.json');
       authPath = auth;
-      fs.writeFileSync(auth, JSON.stringify(KEYS));
+      fs.writeFileSync(auth, JSON.stringify(KEYS), {mode: 0o600});
       server = await startServer(port, ['--workerThread', ...extraArgs, '--jobTimeout', '5', '--moduleDataPath', path.join(dir, 'module_data'),
         '--authConfigPath', auth, '--loadModule', path.join(ROOT, 'test', 'fixtures', 'm15-tasks'),
         '--loadModule', path.join(ROOT, 'test', 'fixtures', 'm22-task-ask')]);
@@ -596,7 +596,7 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
       assert.deepStrictEqual(ackOf(s).params.notifications, {taskIds: [t]});
       const kept = Object.assign({}, KEYS);
       delete kept[KEY_C];
-      fs.writeFileSync(authPath, JSON.stringify(kept));
+      fs.writeFileSync(authPath, JSON.stringify(kept), {mode: 0o600});
       const reloaded = await raw(port, ADMIN, '/reload-auth', {});
       assert.strictEqual(reloaded.status, 200, JSON.stringify(reloaded));
       await tick(3000);   // past its run's end
@@ -646,7 +646,7 @@ describe('mcp-contract 37: a listen\'s task ids spend the caller\'s rate limit, 
   before(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-37rl-'));
     const auth = path.join(dir, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify(KEYS));
+    fs.writeFileSync(auth, JSON.stringify(KEYS), {mode: 0o600});
     // three tokens a second per key (lib/store.js: a one-second rolling
     // window), under --store redis, whose metering builds the limiter
     // whenever --apiKeyRateLimit is set (the local store's only when it meters)

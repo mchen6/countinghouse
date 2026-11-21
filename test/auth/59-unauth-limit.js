@@ -571,7 +571,7 @@ describe('auth 59: on a running server', function() {
   const start = async (port, extra = []) => {
     const dir = tmp.mkdtemp('ch-auth-59-');
     const auth = path.join(dir, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'u', devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'u', devices: ['*']}}), {mode: 0o600});
     calls = path.join(dir, 'auth-calls');
     const s = await startServer(port, ['--workerThread', '--authProvider', 'file', '--authConfigPath', auth, '--unauthRateLimit', '3',
       '--moduleDataPath', path.join(dir, 'data'), '--loadModule', path.join(ROOT, 'pre-installed-packages', 'echo-device-module'), ...extra],

@@ -98,7 +98,7 @@ describe('auth 42: with Redis down a call still answers, and billing resumes whe
     direct = redis.createClient(redisUrlFor(), {db: 0});
     dir = mkdtemp('m5-');
     const authPath = path.join(dir, 'auth.json');
-    fs.writeFileSync(authPath, JSON.stringify({[CALLER]: {userName: 'm5', devices: ['*']}}));
+    fs.writeFileSync(authPath, JSON.stringify({[CALLER]: {userName: 'm5', devices: ['*']}}), {mode: 0o600});
     await proxy.up();
     proxyUp = true;
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath,

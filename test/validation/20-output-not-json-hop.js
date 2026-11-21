@@ -15,7 +15,7 @@ const FIXTURES = path.join(ROOT, 'test', 'fixtures');
 function start(port, extra) {
   return new Promise((resolve, reject) => {
     const server = spawn(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', String(port),
-      '--authConfigPath', path.join(__dirname, 'fixtures-not-json-auth.json'),
+      '--authConfigPath', require('../helpers/private-auth').privateAuth(path.join(__dirname, 'fixtures-not-json-auth.json')),
       '--loadModule', path.join(FIXTURES, 'not-json-callee'), '--loadModule', path.join(FIXTURES, 'not-json-caller'), ...extra],
     {cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe']});
     let out = '';

@@ -55,7 +55,7 @@ describe('auth 56: each runtime\'s job queue is its own (B-j1)', function() {
     for (const r of Object.values(RUNTIMES)) {
       const dir = tmp.mkdtemp('ch-auth-56-');
       const auth = path.join(dir, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'k', devices: ['*']}}));
+      fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'k', devices: ['*']}}), {mode: 0o600});
       r.dataDir = path.join(dir, 'store');
       r.server = await startServer(r.port, ['--workerThread', '--authProvider', 'file', '--authConfigPath', auth,
         '--moduleDataPath', r.dataDir, '--loadModule', r.module]);
@@ -119,7 +119,7 @@ describe('auth 56: each runtime\'s job queue is its own (B-j1)', function() {
   it('a start with a copied .server-id, while the server it was copied from runs, is refused (exit 2), naming the fix (round 2, 3)', async () => {
     const dir = tmp.mkdtemp('ch-auth-56-');
     const auth = path.join(dir, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'k', devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'k', devices: ['*']}}), {mode: 0o600});
     const dataDir = path.join(dir, 'store');
     fs.mkdirSync(dataDir, {recursive: true, mode: 0o700});
     fs.writeFileSync(path.join(dataDir, '.server-id'), fs.readFileSync(path.join(RUNTIMES.a.dataDir, '.server-id')), {mode: 0o600});
@@ -299,7 +299,7 @@ describe('auth 56: two --stdio runtimes on one data directory and one Redis', fu
   before(async () => {
     home = tmp.mkdtemp('ch-auth-56s-');
     const auth = path.join(home, 'auth.json');
-    fs.writeFileSync(auth, JSON.stringify({[STDIO_KEY]: {userName: 'k', devices: ['*']}}));
+    fs.writeFileSync(auth, JSON.stringify({[STDIO_KEY]: {userName: 'k', devices: ['*']}}), {mode: 0o600});
     for (let i = 0; i < 2; i++) {
       const io = startStdio(['--workerThread', ...redisArgs(), '--modulePath', path.join(home, `modules-${i}`), '--moduleDataPath', path.join(home, 'module_data'),
         '--authConfigPath', auth, '--loadModule', FIXTURE], {env: {COUNTINGHOUSE_API_KEY: STDIO_KEY}});

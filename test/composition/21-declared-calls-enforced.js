@@ -74,7 +74,7 @@ const IDS = {callee: deviceIDForName('token-callee'), other: deviceIDForName('co
         [KEYS.a]: {userName: `a-${hex()}`, devices: ['*']},
         [KEYS.reader]: {userName: `reader-${hex()}`, devices: ['*']},
         [KEYS.internal]: {userName: `declare-internal-${hex()}`, devices: ['*'], runsModules: ['declare-caller']}
-      }));
+      }), {mode: 0o600});
       server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath,
         '--mcpToolCallCost', '1', '--moduleSandbox', 'off', '--moduleDataPath', path.join(base, 'store'), flag,
         '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee'),
@@ -171,7 +171,7 @@ describe('composition 21: a device that claims another module\'s friendlyName', 
     fs.writeFileSync(path.join(base, 'auth.json'), JSON.stringify({
       [KEY]: {userName: `nc-${hex()}`, devices: ['*']},
       [INTERNAL]: {userName: `nc-internal-${hex()}`, devices: ['*'], runsModules: ['declare-caller']}
-    }));
+    }), {mode: 0o600});
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', path.join(base, 'auth.json'),
       '--mcpToolCallCost', '1', '--moduleSandbox', 'off', '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee'),
@@ -280,7 +280,7 @@ describe('composition 21: a declaring module under --debug', function() {
 
   it('with an auth file that claims it for no identity: purged as unbound, as anywhere else', async () => {
     const authPath = path.join(base, 'auth.json');
-    fs.writeFileSync(authPath, JSON.stringify({[KEY]: {userName: 'debug-tenant', devices: ['*'], admin: true}}));
+    fs.writeFileSync(authPath, JSON.stringify({[KEY]: {userName: 'debug-tenant', devices: ['*'], admin: true}}), {mode: 0o600});
     server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', KEY, '--authProvider', 'file', '--authConfigPath', authPath,
       '--moduleSandbox', 'off', '--moduleDataPath', path.join(base, 'store-b')].concat(modules));
     await waitFor(async () => /MODULE_COMPOSITION_INVALID|runsModules/.test(server.output), 20000, 'the composition verdict');
@@ -309,7 +309,7 @@ describe('composition 21: a declaring module under --debug', function() {
       fs.writeFileSync(path.join(base, 'auth.json'), JSON.stringify({
         [KEY]: {userName: `rw-${hex()}`, devices: ['*']},
         [INTERNAL]: {userName: `rw-internal-${hex()}`, devices: ['*'], runsModules: ['declare-rewriter']}
-      }));
+      }), {mode: 0o600});
       server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', path.join(base, 'auth.json'),
         '--mcpToolCallCost', '1', '--moduleSandbox', mode, '--moduleDataPath', path.join(base, 'store'),
         '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee'),
@@ -397,7 +397,7 @@ describe('composition 21: declared calls in single-thread mode', function() {
     fs.writeFileSync(path.join(base, 'auth.json'), JSON.stringify({
       [KEY]: {userName: `st-${hex()}`, devices: ['*']},
       [INTERNAL]: {userName: `st-internal-${hex()}`, devices: ['*'], runsModules: ['declare-caller']}
-    }));
+    }), {mode: 0o600});
     server = await startServer(PORT, ['--no-workerThread', '--authProvider', 'file', '--authConfigPath', path.join(base, 'auth.json'),
       '--mcpToolCallCost', '1', '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee'),

@@ -46,7 +46,7 @@ describe('the single-identity profile and direct peer channels', () => {
 
     it('with --authConfigPath it is not the profile, and the flag is not refused here', () => {
       const auth = path.join(home, 'auth.json');
-      fsx.writeFileSync(auth, '{}');
+      fsx.writeFileSync(auth, '{}', {mode: 0o600});
       const r = start('--authConfigPath', auth, '--directPeerChannels');
       assert.doesNotMatch(r.stderr, /single-identity profile: choose one/);
     });

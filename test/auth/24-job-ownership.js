@@ -27,7 +27,7 @@ describe('auth 24: a module reaches only its own jobs', function() {
     fs.writeFileSync(authPath, JSON.stringify({
       'alice-key': {userName: 'alice', devices: [DEVICE]},
       'bob-key':   {userName: 'bob', devices: [DEVICE]}
-    }));
+    }), {mode: 0o600});
     server = await startServer(testPort(9669), ['--workerThread', '--authConfigPath', authPath, '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'job-snoop')]);
   });

@@ -58,7 +58,7 @@ describe('auth 07: MCP tasks/* and the HTTP job routes enforce per-tenant job ow
 
   before(function(done) {
     this.timeout(0);
-    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(authConfig()));
+    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(authConfig()), {mode: 0o600});
 
     console.log('starting countinghouse WITHOUT --debug, --authProvider file, for task-ownership test...');
     waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT

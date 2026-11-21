@@ -18,7 +18,8 @@ const EARLY = 'validator pool: started with the process';
 
 function start(home, modules) {
   const auth = path.join(home, 'auth.json');
-  fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio-35', devices: ['*']}}));
+  // (owner-only, on Windows too: the runtime reads no other)
+  require('../helpers/private-auth').writePrivate(auth, JSON.stringify({[KEY]: {userName: 'stdio-35', devices: ['*']}}));
   return startStdio(['--workerThread', '--authConfigPath', auth, '--store', 'local', '--storePath', path.join(home, 'store'),
     '--moduleDataPath', path.join(home, 'module_data'), '--modulePath', path.join(home, 'modules'), ...modules.flatMap((m) => ['--loadModule', m])],
   {env: {COUNTINGHOUSE_API_KEY: KEY}});

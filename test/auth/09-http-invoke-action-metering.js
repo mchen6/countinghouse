@@ -82,7 +82,7 @@ describe('auth 09: HTTP invoke-action is metered, with the same record MCP tools
 
     const config = {};
     config[ALICE] = {userName: 'alice', devices: ['*']};
-    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
+    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config), {mode: 0o600});
 
     console.log('starting countinghouse WITHOUT --debug, --mcpToolCallCost 1, for HTTP metering test...');
     waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT

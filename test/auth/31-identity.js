@@ -102,7 +102,7 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
       base = fs.mkdtempSync(path.join(os.homedir(), '.ch-identity-'));
       authPath = path.join(base, 'auth.json');
       store = path.join(base, 'store');
-      fs.writeFileSync(authPath, JSON.stringify(config()));
+      fs.writeFileSync(authPath, JSON.stringify(config()), {mode: 0o600});
       server = await startServer(PORT, ['--workerThread', '--authoringTools', '--authProvider', 'file', '--authConfigPath', authPath,
         '--moduleDataPath', store]);
       secret = fs.readFileSync(path.join(store, '.identity-secret'), 'utf8').trim();
@@ -158,7 +158,7 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
     it('(i) after POST /reload-auth adds an entry, its id resolves', async () => {
       const carolId = idIn(secret, null, CAROL);
       assert.strictEqual((await lookup(ADMIN, carolId)).body.code, 'IDENTITY_NOT_FOUND');
-      fs.writeFileSync(authPath, JSON.stringify(config({[CAROL]: {userName: 'carol', devices: []}})));
+      fs.writeFileSync(authPath, JSON.stringify(config({[CAROL]: {userName: 'carol', devices: []}})), {mode: 0o600});
       const reloaded = await request(URL).post('/reload-auth').set('X-CH-Key', ADMIN).send({});
       assert.strictEqual(reloaded.status, 200, JSON.stringify(reloaded.body));
       const r = await lookup(ADMIN, carolId);
@@ -180,7 +180,7 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
       cfg[keys[1]].id = 'dup';
       cfg[keys[4]].id = 'dup';
       const authPath = path.join(base, 'auth.json');
-      fs.writeFileSync(authPath, JSON.stringify(cfg));
+      fs.writeFileSync(authPath, JSON.stringify(cfg), {mode: 0o600});
       const r = await startAndWait(args(authPath, path.join(base, 'store')));
       assert.strictEqual(r.code, 2, r.output.slice(-600));
       assert.match(r.output, /entries 2 and 5 share id/);
@@ -189,7 +189,7 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
 
     it('(e) a group-readable secret file refuses startup', async () => {
       const authPath = path.join(base, 'auth.json');
-      fs.writeFileSync(authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
+      fs.writeFileSync(authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}), {mode: 0o600});
       const store = path.join(base, 'store');
       fs.mkdirSync(store, {recursive: true});
       fs.writeFileSync(path.join(store, '.identity-secret'), hex(32), {mode: 0o644});
@@ -200,7 +200,7 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
 
     it('(e) a symlinked secret file refuses startup', async () => {
       const authPath = path.join(base, 'auth.json');
-      fs.writeFileSync(authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
+      fs.writeFileSync(authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}), {mode: 0o600});
       const store = path.join(base, 'store');
       fs.mkdirSync(store, {recursive: true});
       const real = path.join(base, 'real-secret');
@@ -213,7 +213,7 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
 
     it('(e) COUNTINGHOUSE_IDENTITY_SECRET that is not 64 hex characters refuses startup, without echoing it', async () => {
       const authPath = path.join(base, 'auth.json');
-      fs.writeFileSync(authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
+      fs.writeFileSync(authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}), {mode: 0o600});
       for (const bad of ['not-hex-at-all', hex(16), `${hex(32)}00`]) {
         const r = await startAndWait(args(authPath, path.join(base, 'store')), {COUNTINGHOUSE_IDENTITY_SECRET: bad});
         assert.strictEqual(r.code, 2, r.output.slice(-600));
@@ -225,7 +225,7 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
 
     it('(e) a secret file and a variable that differ refuse startup, naming the conflict and neither value', async () => {
       const authPath = path.join(base, 'auth.json');
-      fs.writeFileSync(authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
+      fs.writeFileSync(authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}), {mode: 0o600});
       const store = path.join(base, 'store');
       fs.mkdirSync(store, {recursive: true});
       const fileSecret = hex(32);
@@ -247,7 +247,7 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
     before(async () => {
       base = fs.mkdtempSync(path.join(os.homedir(), '.ch-identity-env-'));
       const authPath = path.join(base, 'auth.json');
-      fs.writeFileSync(authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}, [ALICE]: {userName: 'alice', devices: []}}));
+      fs.writeFileSync(authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}, [ALICE]: {userName: 'alice', devices: []}}), {mode: 0o600});
       proc = spawn(process.execPath, [path.join(ROOT, 'framework.js'), '--bindAddr', '127.0.0.1', '--port', String(PORT), '--workerThread',
         '--authProvider', 'file', '--authConfigPath', authPath, '--moduleDataPath', path.join(base, 'store')],
       {cwd: ROOT, env: Object.assign({}, process.env, {COUNTINGHOUSE_IDENTITY_SECRET: SECRET}), stdio: ['ignore', 'pipe', 'pipe'], detached: true});
@@ -276,7 +276,9 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
       const base = fs.mkdtempSync(path.join(os.homedir(), '.ch-identity-badidx-'));
       try {
         const dbPath = path.join(base, 'auth.db');
-        fs.writeFileSync(dbPath, crypto.randomBytes(4096));   // not a database
+        // not a database (owner-only, so the start reaches entries(): a loose
+        // store is refused before it, for its mode)
+        fs.writeFileSync(dbPath, crypto.randomBytes(4096), {mode: 0o600});
         const r = await startAndWait(['--workerThread', '--authProvider', 'sqlite', '--authConfigPath', dbPath,
           '--moduleDataPath', path.join(base, 'store'), '--port', String(testPort(9647))]);
         assert.strictEqual(r.code, 2, r.output.slice(-600));
@@ -448,7 +450,8 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
       base = fs.mkdtempSync(path.join(os.homedir(), '.ch-identity-sqlite-'));
     });
     after(() => { if (base != null) fs.rmSync(base, {recursive: true, force: true}); });
-    const cli = (dbPath, cmdArgs) => spawnSync(process.execPath, [CLI, '--dbPath', dbPath].concat(cmdArgs), {encoding: 'utf8', timeout: 20000});
+    // (a key goes on stdin: test/helpers/auth-cli.js)
+    const cli = (dbPath, cmdArgs) => { const k = require('../helpers/auth-cli').keyed(cmdArgs); return spawnSync(process.execPath, [CLI, '--dbPath', dbPath].concat(k.args), {encoding: 'utf8', timeout: 20000, input: k.input}); };
     const columns = (dbPath) => new Promise((resolve, reject) => {
       const db = new sqlite3.Database(dbPath);
       db.all('PRAGMA table_info(users)', (err, rows) => { db.close(); return err ? reject(err) : resolve(rows.map((r) => r.name)); });
@@ -491,7 +494,8 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
         db.serialize(() => {
           db.run('CREATE TABLE users (apiKey TEXT PRIMARY KEY, userName TEXT, admin INTEGER DEFAULT 0)');
           db.run('CREATE TABLE user_devices (apiKey TEXT NOT NULL, deviceID TEXT NOT NULL, PRIMARY KEY (apiKey, deviceID))');
-          db.run('INSERT INTO users (apiKey, userName, admin) VALUES (?, ?, 0)', [CAROL, 'carol'], (err) => { db.close(); return err ? reject(err) : resolve(); });
+          // (owner-only once made, as the CLI and the provider use a store: it holds keys)
+          db.run('INSERT INTO users (apiKey, userName, admin) VALUES (?, ?, 0)', [CAROL, 'carol'], (err) => db.close(() => { if (err) return reject(err); fs.chmodSync(dbPath, 0o600); return resolve(); }));
         });
       });
       assert.ok(!(await columns(dbPath)).includes('id'));

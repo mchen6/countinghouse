@@ -55,7 +55,7 @@ describe('auth 54: get-spec and the schema route answer only what the caller\'s 
       [SCOPED_KEY]: {userName: 'scoped', devices: [idOf('echo')]},
       [OTHER_KEY]: {userName: 'other', devices: [idOf('transform'), idOf('everything')]},
       [`scenario-${'i'.repeat(24)}`]: {userName: 'asks-through-part-identity', devices: ['*'], runsModules: ['asks-through-part']}
-    }));
+    }), {mode: 0o600});
     waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT} --authProvider file --authConfigPath ${auth}`
       + ` --modulesRoot ${ROOT} --loadModule ${DIRS.echo} --loadModule ${DIRS.transform} --loadModule ${DIRS.scenario} --partDir ${DIRS.part}`
       + ` --loadModule ${DIRS.everything}`,

@@ -33,7 +33,7 @@ function world(tag) {
   fs.writeFileSync(w.file, 'the user\'s');
   fs.writeFileSync(path.join(w.ro, 'ro.txt'), 'read only');
   fs.writeFileSync(path.join(w.rw, 'mine.txt'), 'mine');
-  fs.writeFileSync(w.authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
+  require('../helpers/private-auth').writePrivate(w.authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
   fs.writeFileSync(w.policy, JSON.stringify({modules: {[NAME]: {approve: 'as-declared'}}}));
   w.fixture = at(NAME);
   fs.cpSync(FIXTURE, w.fixture, {recursive: true});

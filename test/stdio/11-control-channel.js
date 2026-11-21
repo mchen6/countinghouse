@@ -53,7 +53,7 @@ describe('stdio 11: the control channel', function() {
   it('is refused outside the single-identity profile, and without an IPC fd, naming the flag', async () => {
     for (const [extra, stdio] of [[['--authConfigPath', path.join(home, 'auth.json')], ['pipe', 'pipe', 'pipe', 'ipc']],
       [[], ['pipe', 'pipe', 'pipe']]]) {
-      fs.writeFileSync(path.join(home, 'auth.json'), '{}');
+      require('../helpers/private-auth').writePrivate(path.join(home, 'auth.json'), '{}');
       const r = await run([...base(), '--controlChannel', 'ipc', ...extra], stdio);
       assert.strictEqual(r.status, 2, `${extra.join(' ')}: ${r.stderr}`);
       assert.match(r.stderr, /--controlChannel/);

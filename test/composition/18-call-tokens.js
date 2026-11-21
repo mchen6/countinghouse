@@ -94,7 +94,7 @@ PATHS.forEach((hopPath) => {
         [KEYS.admin]: {userName: `admin-${hex()}`, devices: ['*'], admin: true, runsModules: ['hop-prober']},
         [KEYS.granted]: {userName: `granted-${hex()}`, devices: [WORKER_END]},
         [KEYS.ungranted]: {userName: `ungranted-${hex()}`, devices: [deviceIDForName('some-other-module')]}
-      }));
+      }), {mode: 0o600});
       server = await startServer(hopPath.port, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath,
         '--mcpToolCallCost', '1', '--moduleSandbox', 'off', '--moduleDataPath', path.join(base, 'store')].concat(hopPath.flags, [
         '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee'),
@@ -179,7 +179,7 @@ describe('composition 18: a hop under --moduleSandbox enforce, on both paths', f
     fs.writeFileSync(path.join(base, 'auth.json'), JSON.stringify({
       [KEY]: {userName: `enforce-${hex()}`, devices: ['*']},
       [INTERNAL]: {userName: `forge-internal-${hex()}`, devices: ['*'], runsModules: ['token-forge']}
-    }));
+    }), {mode: 0o600});
   });
   afterEach(() => { stopServer(server); server = null; });
   after(() => { if (base != null) fs.rmSync(base, {recursive: true, force: true}); });
@@ -230,7 +230,7 @@ describe('composition 18: the caller\'s timeout, the worker\'s timer, and the me
       [KEY]: {userName: `bound-${hex()}`, devices: ['*']},
       [READER]: {userName: `reader-${hex()}`, devices: ['*']},
       [INTERNAL]: {userName: `forge-internal-${hex()}`, devices: ['*'], runsModules: ['token-forge']}
-    }));
+    }), {mode: 0o600});
   });
   afterEach(() => { stopServer(server); server = null; });
   after(() => { if (base != null) fs.rmSync(base, {recursive: true, force: true}); });
@@ -319,7 +319,7 @@ describe('composition 18: jobs, by their owner\'s identity', function() {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let base = null, authPath = null, server = null, queue = null;
   const write = (alice) => fs.writeFileSync(authPath, JSON.stringify(Object.assign(
-    {[ADMIN]: {userName: `admin-${hex()}`, devices: ['*'], admin: true}}, alice ? {[ALICE]: {userName: `alice-${hex()}`, devices: [DEVICE]}} : {})));
+    {[ADMIN]: {userName: `admin-${hex()}`, devices: ['*'], admin: true}}, alice ? {[ALICE]: {userName: `alice-${hex()}`, devices: [DEVICE]}} : {})), {mode: 0o600});
   const reload = () => request(URL).post('/reload-auth').set('X-CH-Key', ADMIN).send({});
   const addJob = (name, opts, note) => request(URL).post(`/devices/${DEVICE}/add-job`).set('X-CH-Key', ALICE)
     .send({serviceID: SERVICE, actionName: 'whoami', opts: Object.assign({name: name}, opts), input: {note: note}});
@@ -1850,7 +1850,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const FileAuthProvider = require('../../lib/auth/file-provider');
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-18-unknown-'));
       try {
-        fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify({[`known-${hex()}`]: {userName: 'known', devices: ['*']}}));
+        fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify({[`known-${hex()}`]: {userName: 'known', devices: ['*']}}), {mode: 0o600});
         const provider = new FileAuthProvider({configPath: path.join(dir, 'auth.json')});
         await new Promise((resolve, reject) => provider.reload((e) => (e ? reject(e) : resolve())));
         const key = `unknown-${hex()}`;

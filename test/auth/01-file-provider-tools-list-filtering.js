@@ -38,7 +38,7 @@ describe('auth 01: FileAuthProvider drives HTTP invoke-action, /device-list, and
     const config = {};
     config[WILDCARD_KEY] = {userName: 'wildcard-user', devices: ['*']};
     config[SCOPED_KEY]   = {userName: 'scoped-user',    devices: [ECHO_DEVICE_ID]};
-    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
+    fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config), {mode: 0o600});
 
     console.log('starting countinghouse WITHOUT --debug, --authProvider file, for AuthProvider e2e test...');
     waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT} --authProvider file --authConfigPath ${AUTH_CONFIG_PATH

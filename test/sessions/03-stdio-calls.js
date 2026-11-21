@@ -18,7 +18,7 @@ const PRELOAD = path.join(ROOT, 'test', 'fixtures', 'session-probe-preload.js');
 const CALLEE = path.join(ROOT, 'test', 'fixtures', 'hop-input-callee');
 const CALLER = path.join(ROOT, 'test', 'fixtures', 'hop-input-caller');
 // sandbox 54's keys: the client's, and the caller's runsModules binding
-const AUTH = path.join(ROOT, 'test', 'sandbox', '48-auth.json');
+const AUTH = require('../helpers/private-auth').privateAuth(path.join(ROOT, 'test', 'sandbox', '48-auth.json'));
 const KEY = 'hop-input-key';
 
 // the local store (its job runner, lib/job-control-local.js) on both hops,

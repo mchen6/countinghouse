@@ -47,7 +47,7 @@ function world(tag) {
   for (const f of [w.otherCode, w.otherData, w.device]) fs.writeFileSync(f, 'x');
   fs.writeFileSync(w.kv, '{}');
   fs.writeFileSync(path.join(w.rw, 'ok.txt'), 'declared');
-  fs.writeFileSync(w.authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
+  require('../helpers/private-auth').writePrivate(w.authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
   fs.writeFileSync(w.policy, JSON.stringify({modules: {[NAME]: {approve: 'as-declared'}}}));
   fs.mkdirSync(path.dirname(w.credentials));
   fs.writeFileSync(w.credentials, JSON.stringify({'https://api.example.com': ['EXAMPLE_TOKEN']}));

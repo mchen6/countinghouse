@@ -164,7 +164,8 @@ async function verifyPath(p, dirs) {
   config[caller]      = {userName: 'caller', devices: [TRIAGE_DEVICE]};
   config[AS_IDENTITY_KEY] = {userName: AS_IDENTITY, devices: [READ_DEVICE, REDACT_DEVICE, CLUSTER_DEVICE],
                              runsModules: ['log-triage']};
-  fs.writeFileSync(authPath, JSON.stringify(config, null, 2));
+  // (owner-only: the runtime reads an auth file only so, it holds keys)
+  fs.writeFileSync(authPath, JSON.stringify(config, null, 2), {mode: 0o600});
 
   console.log(`\n=== ${p.label} (port ${p.port}) ===`);
   const server = await startServer(p.port, authPath, p.flags);

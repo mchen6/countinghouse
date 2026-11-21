@@ -21,7 +21,7 @@ describe('auth 23: keys that name Object.prototype members', () => {
   it('the file provider authenticates none of them, and a real key still works', async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-auth-'));
     const configPath = path.join(dir, 'auth.json');
-    fs.writeFileSync(configPath, JSON.stringify({'real-key': {userName: 'real', devices: ['*']}}));
+    fs.writeFileSync(configPath, JSON.stringify({'real-key': {userName: 'real', devices: ['*']}}), {mode: 0o600});
     const provider = new FileAuthProvider({configPath: configPath});
     for (const key of PROTO_KEYS) {
       const r = await auth(provider, key, null);

@@ -62,7 +62,7 @@ describe('stdio 32: resource and prompt notices on a listen, spawned (M8)', func
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-32-'));
     const auth = path.join(home, 'auth.json');
     // (notes-editor composes: its hop runs as the identity bound to it)
-    fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']},
+    require('../helpers/private-auth').writePrivate(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']},
       'notes-editor-internal': {userName: 'notes-editor-internal', devices: ['*'], runsModules: ['notes-editor']}}));
     io = startStdio(['--workerThread', '--loadModule', NOTES, '--loadModule', EDITOR, '--authConfigPath', auth,
       '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`], {env: {COUNTINGHOUSE_API_KEY: KEY}});

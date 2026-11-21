@@ -20,7 +20,7 @@ const KEY_A = `test-a-${'a'.repeat(24)}`;
 const KEY_B = `test-b-${'b'.repeat(24)}`;
 // B is granted the colours device only
 const COLOURS_ID = require('../../lib/call-address').deviceIDForName('colours');
-fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: [COLOURS_ID]}}));
+fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: [COLOURS_ID]}}), {mode: 0o600});
 
 const options = require('../../lib/cli-options');
 const OPTIONS = {redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10};

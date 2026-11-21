@@ -54,7 +54,7 @@ function world(tag) {
   };
   fs.mkdirSync(w.rw);
   fs.writeFileSync(path.join(w.rw, 'ok.txt'), 'declared');
-  fs.writeFileSync(w.authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
+  require('../helpers/private-auth').writePrivate(w.authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
   // Under enforce a declaration is granted only by the operator's policy;
   // approving it as declared is what makes the rw directory the control
   // case (and the hard-link case) in both modes.
@@ -122,7 +122,7 @@ describe('sandbox 34: the always-denied set', function() {
       it('still EACCES through the symlink after the auth file is rewritten in place (a new inode)', async () => {
         const before = fs.statSync(w.authPath).ino;
         const tmp = path.join(w.base, 'auth.json.new');
-        fs.writeFileSync(tmp, fs.readFileSync(w.authPath));
+        require('../helpers/private-auth').writePrivate(tmp, fs.readFileSync(w.authPath));
         fs.renameSync(tmp, w.authPath);
         assert.notStrictEqual(fs.statSync(w.authPath).ino, before, 'premise: the rewrite changed the inode');
         assert.deepStrictEqual(await read('/tmp/auth-link'), {content: null, code: 'EACCES'});
@@ -212,7 +212,8 @@ describe('sandbox 34: the always-denied set', function() {
       w = world('sqlite');
       w.dbPath = path.join(w.base, 'auth.db');
       const {spawnSync} = require('child_process');
-      const cli = (args) => spawnSync(process.execPath, [CLI, '--dbPath', w.dbPath].concat(args), {encoding: 'utf8', timeout: 20000});
+      // (a key goes on stdin: test/helpers/auth-cli.js)
+      const cli = (args) => { const k = require('../helpers/auth-cli').keyed(args); return spawnSync(process.execPath, [CLI, '--dbPath', w.dbPath].concat(k.args), {encoding: 'utf8', timeout: 20000, input: k.input}); };
       assert.strictEqual(cli(['add-user', ADMIN, 'admin']).status, 0);
       assert.strictEqual(cli(['grant', ADMIN, '*']).status, 0);
       assert.strictEqual(cli(['set-admin', ADMIN, 'true']).status, 0);

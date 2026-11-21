@@ -1762,6 +1762,43 @@ unprivileged user in a container with limits and the default seccomp
 profile: [deployment.md](deployment.md) gives the posture, a reference setup,
 and the short list of what the in-process sandbox cannot give.
 
+- **API keys are held in the clear by the auth stores and in the main
+  thread's memory.** The auth stores keep keys as they are: `auth.json`, the
+  sqlite database and the CouchDB documents. So protect them as secrets. The
+  runtime enforces what it can check on the files it reads: it reads
+  `auth.json` only when the file is its own user's, a regular file under one
+  name, never a link, and owner-only (mode `0600`; on Windows an ACL that
+  lets only that user read it). The sqlite database is checked the same way
+  before it is opened, together with its side files (`-journal`, `-wal`,
+  `-shm`) and, on Linux and macOS, its directory and every directory above
+  it, which no other user may write in: SQLite plays back a journal it finds
+  there. On Windows its folder is not checked. The runtime creates both stores so.
+  Anything else refuses the start, naming the fix. Under `--hardened` on
+  Windows the sqlite store is refused at every start, as its ACL can't be
+  checked there. A reload of an `auth.json` that is this user's own but
+  others may read, or whose ACL can't be checked, applies only what
+  tightens. CouchDB is a remote store, and its access control is
+  its operator's; the CouchDB provider keeps a cache of looked-up users in
+  memory, keyed by the raw key until it is keyed by meterId. In memory, the
+  main thread holds raw keys for as long as it needs them:
+  - for the process's life: the loaded auth config, the identity index (to
+    re-check and bill a queued job's owner), `COUNTINGHOUSE_API_KEY`, and the
+    single-identity profile's own key;
+  - while a composing module is loaded: its bound composition identity;
+  - until a call answers, at most an hour: the call token's entry on the main
+    thread, which holds the call's billing and identity keys (the token a
+    worker holds is only a handle);
+  - until a hop is billed or forgotten, at most 4096 per channel: a peer
+    channel's unbilled hops;
+  - for a running job: its owner's key, found again from the owner's id;
+  - and for a request: that request's key, an open subscription's among them.
+
+  None of these reaches a module in a worker (the default), a log, Redis or a
+  job's stored data. In single-thread mode a module runs in the main thread
+  beside them, with no sandbox
+  ([Single-thread mode has no sandbox](#single-thread-mode-has-no-sandbox)).
+  Keeping keys only as keyed hashes in the stores and only as handles in
+  memory is planned after release 1.
 - **A module is handed no API key and no user name (R2-1).** `ctx.caller` is
   `{id, isAdmin}`, an opaque id (an HMAC of the key, or of the entry's `id`
   field, under a server secret) and the admin flag; `httpHeaders` lose

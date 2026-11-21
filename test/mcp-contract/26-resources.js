@@ -25,7 +25,7 @@ const KEY_B = `test-b-${'b'.repeat(24)}`;
 const KEY_ADMIN = `test-admin-${'c'.repeat(20)}`;
 const ID = (name) => callAddress.deviceIDForName(name);
 fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: [ID('notes')]},
-  [KEY_ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
+  [KEY_ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}), {mode: 0o600});
 
 const options = require('../../lib/cli-options');
 const OPTIONS = {redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10, workerThread: true};

@@ -33,7 +33,7 @@ const KEY = 'sandbox-40-key';
 function start(home, extra, MODULE) {
   // Every device for one key, as test/stdio/02 does, so the module's tool is listed.
   const auth = path.join(home, 'auth.json');
-  fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'sandbox-40', devices: ['*']}}));
+  require('../helpers/private-auth').writePrivate(auth, JSON.stringify({[KEY]: {userName: 'sandbox-40', devices: ['*']}}));
   // The operator approves the declared net permission (127.0.0.1): under
   // enforce an unapproved declaration is granted nothing.
   const policy = path.join(home, 'policy.json');
