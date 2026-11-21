@@ -161,6 +161,9 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
     let authAnswer = null;
     let invoked = [];
     let app = null;
+    // the per-key limiter, as the gate asks it (lib/rate-limit-gate.js)
+    const spent = [];
+    let limited = false;
     const userAuthId = require.resolve('../../lib/user-auth');
     const userRouteId = require.resolve('../../lib/routes/user');
     const dm = {
@@ -193,7 +196,8 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       },
       getDeviceSpec: (deviceID, session) => session.callbackWithoutTimer(null, {device: {serviceList: {}}}),
       getDeviceSchema: (deviceID, p, session) => session.callbackWithoutTimer(null, {}),
-      getDevicePackageInfo: (deviceID, cb) => cb(null, {name: 'x', version: '1.0.0'})
+      getDevicePackageInfo: (deviceID, cb) => cb(null, {name: 'x', version: '1.0.0'}),
+      rateLimit: (key, cb) => { spent.push(key); cb(null, limited ? {limited: true, timeLeft: 1500, windowMs: 60000} : {limited: false}); }
     };
 
     before(() => {
@@ -214,7 +218,7 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       app = express();
       app.use(express.json());
       const devices = express.Router({mergeParams: true});
-      app.use('/devices/:deviceID', user, devices);
+      app.use('/devices/:deviceID', user(cdif), devices);
       devices.use('/invoke-action', require('../../lib/routes/invoke-action')(null, cdif));
       devices.use('/get-spec', require('../../lib/routes/get-spec')(null, cdif));
       devices.use('/schema', require('../../lib/routes/schema')(null, cdif));
@@ -271,6 +275,42 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       assert.deepStrictEqual([loading.status, loading.body.code], [404, 'DEVICE_NOT_FOUND'], 'the medium on round 1, 6: not folded into "not listed to you"');
     });
 
+
+    // the limiter PR's medium, 3: a resolved key refused before the
+    // dispatch (not granted, not listed, a request-shape error) spends its
+    // per-key unit as a dispatched call does in invokeDeviceAction -- once;
+    // over its limit, each answers RATE_LIMIT_EXCEEDED alike (#482: one
+    // answer per level)
+    it('invoke-action: a resolved key refused before the dispatch spends one per-key unit; over its limit every such refusal is RATE_LIMIT_EXCEEDED, byte for byte', async () => {
+      invoked = [];
+      spent.length = 0;
+      const each = async() => {
+        const missing = await call(ROUTES[0], NOWHERE);
+        const unlisted = await call(ROUTES[0], PART);
+        authAnswer = new CountinghouseError('USER_HAS_NO_DEVICE');
+        const ungranted = await call(ROUTES[0], LISTED);
+        authAnswer = null;
+        verdict.set(LISTED, [[SERVICE, 'hidden-act']]);
+        const unusable = await call(ROUTES[0], LISTED, {serviceID: SERVICE, actionName: 'hidden-act', input: {}});
+        verdict.forget(LISTED);
+        const shape = await call(ROUTES[0], LISTED, {actionName: 'act', input: {}});
+        return {missing, unlisted, ungranted, unusable, shape};
+      };
+      const under = await each();
+      assert.deepStrictEqual(spent, ['k', 'k', 'k', 'k', 'k'], 'one unit each, by the resolved key');
+      assert.strictEqual(JSON.parse(under.missing).body.code, 'MODULE_NOT_LISTED', 'under the limit: the one answer');
+      limited = true;
+      let over;
+      try {
+        over = await each();
+      } finally {
+        limited = false;
+      }
+      const codes = Object.values(over).map((r) => [JSON.parse(r).status, JSON.parse(r).body.code]);
+      assert.deepStrictEqual(codes, codes.map(() => [429, 'RATE_LIMIT_EXCEEDED']), JSON.stringify(over));
+      assert.strictEqual(new Set(Object.values(over)).size, 1, 'byte for byte');
+      assert.deepStrictEqual(invoked, [], 'nothing dispatched');
+    });
 
     it('invoke-action: a device gone between the check and the dispatch answers the same one answer', async () => {
       const late = await call(ROUTES[0], GONE_LATE);
