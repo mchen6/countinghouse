@@ -486,6 +486,30 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
         assert.deepStrictEqual(await heldBack.reread(RR), {});
         assert.deepStrictEqual([...heldBack.list().modules.keys()], ['a']);
       });
+
+      // (A-heldback-win, the reviewer 11-20: ch-local's run directory keeps
+      // the home's ACL, so another account may swap the file in; one that is
+      // not this user's own is refused, never read: the overview loses its
+      // reasons, never shows another's)
+      it('a file another user owns: not used (empty), and reread says so', async function() {
+        if (process.platform === 'win32' || typeof process.getuid !== 'function') this.skip();   // (Windows: the ACL names the owner)
+        fs.writeFileSync(file, doc([{name: 'a', reason: 'credential'}]), {mode: 0o600});
+        fs.chmodSync(file, 0o600);
+        assert.deepStrictEqual(await heldBack.reread(RR), {});
+        assert.deepStrictEqual([...heldBack.list().modules.keys()], ['a']);
+        // (this process as another user: the file, its own, is now another's)
+        const realGetuid = process.getuid;
+        const me = realGetuid();
+        process.getuid = () => me + 1;
+        try {
+          await assert.rejects(heldBack.reread(RR), (e) => failed(e) && /not this user's own/.test(e.message), 'another user\'s file');
+          assert.strictEqual(heldBack.list().modules.size, 0, 'nothing of it used');
+        } finally {
+          process.getuid = realGetuid;
+        }
+        assert.deepStrictEqual(await heldBack.reread(RR), {});
+        assert.deepStrictEqual([...heldBack.list().modules.keys()], ['a']);
+      });
     });
   });
 
