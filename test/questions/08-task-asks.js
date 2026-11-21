@@ -769,6 +769,9 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     let saved;
     let JobControl;
     let serverIdDir = null;
+    let madeBy = null;
+    let stubbed = null;
+    const runnersMade = [];
     before(function() {
       if (process.env.CH_TEST_REDIS_URL == null || process.env.CH_TEST_REDIS_URL === '') this.skip();
       saved = {workerThread: options.workerThread, redisUrl: options.redisUrl};
@@ -781,14 +784,61 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
         require('../../lib/server-id').initSync({moduleDataPath: serverIdDir});
       }
       JobControl = require('../../lib/job-control');
+      // every runner this suite starts (each case's initJobProcess makes a
+      // queue, its events and a worker, replacing the last case's), kept so
+      // after() closes them all (B-q08)
+      madeBy = JobControl.initJobProcess;
+      // (what the cases replace on the shared module, put back in after())
+      stubbed = {authorizeRun: JobControl.authorizeRun, askHooks: JobControl.askHooks, cdifInterface: JobControl.cdifInterface};
+      JobControl.initJobProcess = function(...args) {
+        const before = {queue: this.jobQueue, events: this.queueEvents, worker: this.worker};
+        try {
+          return madeBy.apply(this, args);
+        } finally {
+          // (only what this call made: an early return makes nothing, a
+          // throw part-way may have made some)
+          const now = {queue: this.jobQueue, events: this.queueEvents, worker: this.worker};
+          const fresh = {queue: now.queue !== before.queue ? now.queue : null, events: now.events !== before.events ? now.events : null, worker: now.worker !== before.worker ? now.worker : null};
+          if (fresh.queue != null || fresh.events != null || fresh.worker != null) runnersMade.push(fresh);
+        }
+      };
     });
     after(async () => {
-      if (saved != null) Object.assign(options, saved);
-      // the server id's claim its runner made (B-j1), released
-      if (JobControl != null && JobControl.claim != null) { await JobControl.claim.stop(); JobControl.claim = null; }
-      if (serverIdDir != null) {
-        require('../../lib/server-id').reset();
-        require('../helpers/test-tmp').remove(serverIdDir);
+      // every runner's BullMQ connections (its queue, its events and its
+      // worker), closed and waited for. JobControl.close() is the exit
+      // sequence's: it ends the live runs and closes only the current worker,
+      // unwaited; each case's initJobProcess left the last case's open, so a
+      // run of this file alone (mocha without --exit) never ended (B-q08).
+      // The claim's release, the server id's reset and the options come
+      // after, whatever a close does; the options last, so nothing closing
+      // reads another Redis URL (the medium on B-q08, 1 and 6).
+      try {
+        if (JobControl != null) {
+          if (madeBy != null) JobControl.initJobProcess = madeBy;
+          JobControl.close();
+          const closing = [];
+          for (const r of runnersMade) {
+            if (r.worker != null) closing.push(r.worker.close(true));
+            if (r.queue != null) closing.push(r.queue.close());
+            if (r.events != null) closing.push(r.events.close());
+          }
+          await Promise.all(closing.map((p) => p.catch(() => undefined)));
+        }
+      } finally {
+        runnersMade.length = 0;
+        if (JobControl != null) {
+          JobControl.jobQueue = null;
+          JobControl.queueEvents = null;
+          // (the cases' stubs on the shared module, put back: the medium, 2)
+          if (stubbed != null) Object.assign(JobControl, stubbed);
+          // the server id's claim its runner made (B-j1), released
+          if (JobControl.claim != null) { await JobControl.claim.stop(); JobControl.claim = null; }
+        }
+        if (serverIdDir != null) {
+          require('../../lib/server-id').reset();
+          require('../helpers/test-tmp').remove(serverIdDir);
+        }
+        if (saved != null) Object.assign(options, saved);
       }
     });
 
