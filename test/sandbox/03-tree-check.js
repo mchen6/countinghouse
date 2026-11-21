@@ -99,7 +99,7 @@ describe('sandbox 03: tree checks', () => {
       'lib/t/package.json': '{"name":"t","type":"modul\\u0065"}'});
     const t = checkTree(d);
     assert.deepStrictEqual(t.escapedKeys.sort(), [`${native('lib/p/package.json')}'s "main" value`, `${native('lib/q/package.json')}'s "name" value`, `${native('lib/t/package.json')}'s "type" value`].sort());
-    assert.deepStrictEqual(t.notUtf8, ['lib/r/package.json']);
+    assert.deepStrictEqual(t.notUtf8, [native('lib/r/package.json')]);
     assert.deepStrictEqual(t.duplicateKeys, []);
   });
 

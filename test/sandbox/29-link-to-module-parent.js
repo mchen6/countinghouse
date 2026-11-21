@@ -68,6 +68,11 @@ describe('sandbox 29: a link to the module\'s parent (FB3)', function() {
     assert.strictEqual(r.structuredContent.loaded, true, JSON.stringify(r));
     assert.ok(server.output.includes(`module sandbox: ${NAME} would be refused under enforce: ${refusal(base)}`),
       server.output.slice(-2000));
+    // (FB3 itself -- the loader's JS realpath against the kernel's -- is
+    // POSIX's: on Windows every directory link is refused under enforce
+    // before it, as checked above, and what audit then reports for a
+    // require through y is not FB3's; checked on POSIX only)
+    if (process.platform === 'win32') return;
     const call = await mcpCall(PORT, KEY, r.structuredContent.toolNames[0], {name: 'z'});
     assert.strictEqual(call.isError, false, JSON.stringify(call));
     assert.ok(server.output.includes(`module sandbox: ${NAME} violation require ../../y/outside.js (allowed, audit)`), server.output.slice(-2000));
