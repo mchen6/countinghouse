@@ -291,14 +291,15 @@ to an outside destination; writes to `/app` and to a path declared `r` too.
 A symlink made inside the namespace that points outside it is refused
 `EPERM`, in every mode, as before.
 
-**`audit` is not a boundary.** It holds a module's `fs` and loader traffic
-only. What `enforce` refuses beyond them, the lockdown reports under `audit`
+**`audit` does not confine a module.** It holds a module's `fs` and loader
+traffic only. What `enforce` refuses beyond them, the lockdown reports under `audit`
 and then allows: `child_process` and the other blocked built-ins,
 `worker_threads`, `process.dlopen` and native addons, and `process.binding`.
 Through them a module can start a process or a thread the sandbox does not
 hold, or run native code, and so read the always-denied files and the
 protected paths, or change anything the OS user can. Only `enforce` confines
-a module. The runtime's own default is `--moduleSandbox audit`. ch-local
+a module, and `enforce` too is a sandbox, not a security boundary: a module
+that escapes it runs with the runtime's rights. The runtime's own default is `--moduleSandbox audit`. ch-local
 starts packs under `enforce` by default: there `audit` is a loosening the
 user confirms, which an operator's ceiling can forbid and an own module
 refuses, and on Windows it falls back to `audit` only where `enforce` is
