@@ -115,7 +115,7 @@ function writeAuth(dir) {
     for (const [k, v] of Object.entries(entries)) if (Array.isArray(v.runsModules)) auth[k] = v;
   }
   const file = path.join(dir, 'auth.json');
-  fs.writeFileSync(file, JSON.stringify(auth));
+  fs.writeFileSync(file, JSON.stringify(auth), {mode: 0o600});
   return file;
 }
 

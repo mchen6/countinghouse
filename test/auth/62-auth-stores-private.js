@@ -51,7 +51,7 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     try { new FileAuthProvider({configPath: file}); } catch (e) { err = e; }
     assert.ok(err != null, 'refused');
     assert.strictEqual(err.code, 'AUTH_CONFIG_INVALID');
-    assert.match(err.message, /accessible by group or others \(mode 644\).*chmod 600/s);
+    assert.match(err.message, /accessible by group or others \(mode 644\); it must be 0600, as it holds API keys: chmod 600 /);
     assert.ok(!err.message.includes(KEY), err.message);
   });
 
@@ -59,7 +59,8 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     const real = write('real.json', {[KEY]: {userName: 'u', devices: ['*']}}, 0o600);
     const link = path.join(dir, 'linked.json');
     fs.symlinkSync(real, link);
-    assert.throws(() => new FileAuthProvider({configPath: link}), (e) => e.code === 'AUTH_CONFIG_INVALID' && /symbolic link/.test(e.message));
+    // (no chmod named: a mode never fixes a link)
+    assert.throws(() => new FileAuthProvider({configPath: link}), (e) => e.code === 'AUTH_CONFIG_INVALID' && /symbolic link/.test(e.message) && !/chmod/.test(e.message));
   });
 
   (POSIX ? it : it.skip)('a reload of a file made loose meanwhile is refused, the config kept', (done) => {
@@ -100,13 +101,57 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     const p = new FileAuthProvider({configPath: file});
     const name = p._lookup(KEY).userName;
     assert.ok(!String(name).includes(KEY), `named by its key: ${name}`);
-    assert.strictEqual(name, 'entry #1');
+    // no name at all, as entries() says and the sqlite store answers (never a
+    // made-up one that moves with the entry's place or meets a real name)
+    assert.strictEqual(name, null);
+    p.entries((err, list) => assert.strictEqual(list.find((e) => e.apiKey === KEY).userName, null));
+  });
+
+  // (the review's 1) the --hardened parent checks the file the child reads:
+  // one spelling of the default path
+  it('the default auth.json path is one function\'s, the one the --hardened parent checks', () => {
+    const r = spawnSync(process.execPath, ['-e', `const F = require(${JSON.stringify(path.join(ROOT, 'lib', 'auth', 'file-provider'))});
+      const p = new F({});
+      process.stdout.write(JSON.stringify({used: p.configPath, fn: typeof(F.defaultConfigPath) === 'function' ? F.defaultConfigPath() : null}));`],
+    {cwd: dir, encoding: 'utf8', env: Object.assign({}, process.env, {COUNTINGHOUSE_API_KEY: `env-${KEY}`}), timeout: 20000});
+    const o = JSON.parse(r.stdout);
+    assert.strictEqual(o.fn, path.join(fs.realpathSync(dir), 'auth.json'), r.stdout + r.stderr);
+    assert.strictEqual(o.used, o.fn);
+    assert.match(fs.readFileSync(path.join(ROOT, 'framework.js'), 'utf8'), /file-provider'\)\.prepareForHardened\(options\.authConfigPath \|\| require\('\.\/lib\/auth\/file-provider'\)\.defaultConfigPath\(\)\)/);
+  });
+
+  // (the review's 3) under --hardened on Windows the child can't make a
+  // file (no PowerShell): the parent makes the demo one before the relaunch
+  it('the --hardened parent makes a missing auth.json (the demo key), owner-only, its path said; none beside COUNTINGHOUSE_API_KEY', () => {
+    const run = (file, env) => spawnSync(process.execPath, ['-e', `require(${JSON.stringify(path.join(ROOT, 'lib', 'auth', 'file-provider'))}).prepareForHardened(${JSON.stringify(file)});`],
+      {cwd: dir, encoding: 'utf8', env, timeout: 20000});
+    const bare = Object.assign({}, process.env);
+    delete bare.COUNTINGHOUSE_API_KEY;
+    const file = path.join(dir, 'hardened-demo.json');
+    const r = run(file, bare);
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.ok(fs.existsSync(file), 'made by the parent');
+    const demoKey = Object.keys(JSON.parse(fs.readFileSync(file, 'utf8')))[0];
+    assert.match(demoKey, /^demo-/);
+    assert.ok(!`${r.stdout}${r.stderr}`.includes(demoKey), 'the key is not printed');
+    assert.ok(r.stdout.includes(file), r.stdout);
+    if (POSIX) assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600);
+    const none = path.join(dir, 'hardened-none.json');
+    assert.strictEqual(run(none, Object.assign({}, bare, {COUNTINGHOUSE_API_KEY: `env-${KEY}`})).status, 0);
+    assert.ok(!fs.existsSync(none), 'COUNTINGHOUSE_API_KEY alone is a whole configuration');
+  });
+
+  // (the review's 9) the config another start wrote is checked as any load
+  it('an auth.json another start wrote first is loaded with the same checks (two entries with one id refused)', () => {
+    const p = new FileAuthProvider({configPath: write('race-ok.json', {[KEY]: {userName: 'u', devices: []}}, 0o600)});
+    p.configPath = write('race-dup.json', {[`a-${KEY}`]: {id: 'same', devices: []}, [`b-${KEY}`]: {id: 'same', devices: []}}, 0o600);
+    assert.throws(() => p._loadWritten(), (e) => e.code === 'AUTH_CONFIG_INVALID' && !e.message.includes(KEY));
   });
 
   (POSIX ? it : it.skip)('a server given a loose auth.json does not start: exit 2, the fix said, no key in its output', () => {
     const file = write('server-loose.json', {[KEY]: {userName: 'u', devices: ['*']}}, 0o644);
     const r = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--authConfigPath', file, '--moduleDataPath', path.join(dir, 'data'),
-      '--store', 'local', '--storePath', path.join(dir, 'store'), '--port', '0'], {encoding: 'utf8', timeout: 30000, cwd: dir});
+      '--store', 'local', '--storePath', path.join(dir, 'store'), '--port', String(require('../helpers/test-env').testPort(9833))], {encoding: 'utf8', timeout: 30000, cwd: dir});
     const out = `${r.stdout}${r.stderr}`;
     assert.strictEqual(r.status, 2, out);
     assert.match(out, /chmod 600/);
@@ -126,7 +171,7 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
     try {
       for (const k of [KEY, NAMED, ENV_KEY]) assert.ok(!server.output.includes(k), `a key in the startup output: ${server.output.slice(0, 2000)}`);
       // (the log is JSON: its quotes escaped)
-      assert.match(server.output, /has no userName, so callers see it as \\?"entry #1\\?"/);
+      assert.match(server.output, /entry #1 in .* has no userName, so callers see no user name/);
     } finally {
       stopServer(server);
     }
@@ -183,6 +228,43 @@ describe('auth 62: the sqlite store and its users CLI (B-meter-keys 4r)', functi
     assert.match(r.stderr, /mode 644.*chmod 600/s);
     const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
     assert.throws(() => new SqliteAuthProvider({dbPath: db}), (e) => e.code === 'AUTH_CONFIG_INVALID' && /chmod 600/.test(e.message) && !e.message.includes(KEY));
+  });
+
+  // (the review's 4) the key is its first line: a pipe left open is no hang
+  it('the CLI takes the key at the first line, with stdin left open', async () => {
+    const {spawn} = require('child_process');
+    const child = spawn(process.execPath, [CLI, '--dbPath', path.join(dir, 'open.sqlite3'), 'add-user', 'olive'], {stdio: ['pipe', 'pipe', 'pipe']});
+    child.stdin.write(`${KEY}\n`);
+    const code = await new Promise((resolve) => {
+      const t = setTimeout(() => { child.kill(); resolve('hung'); }, 15000);
+      child.on('exit', (c) => { clearTimeout(t); resolve(c); });
+    });
+    child.stdin.destroy();
+    assert.strictEqual(code, 0);
+  });
+
+  // (the review's 7) a second name (a hard link) is refused, as auth.json's
+  (POSIX ? it : it.skip)('a DB file with a second name is refused by the CLI and the provider', () => {
+    const db = path.join(dir, 'linked.sqlite3');
+    assert.strictEqual(cli(db, ['add-user', 'alice'], `${KEY}\n`).status, 0);
+    fs.linkSync(db, path.join(dir, 'linked-2.sqlite3'));
+    const r = cli(db, ['list']);
+    assert.notStrictEqual(r.status, 0);
+    assert.match(r.stderr, /2 names \(hard links\)/);
+    const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
+    assert.throws(() => new SqliteAuthProvider({dbPath: db}), (e) => e.code === 'AUTH_CONFIG_INVALID' && /hard links/.test(e.message));
+  });
+
+  // (the review's 8) without sqlite3 the start is refused before a file is made
+  it('a provider with no sqlite3 to load leaves no DB file behind', () => {
+    const db = path.join(dir, 'nosqlite.sqlite3');
+    const r = spawnSync(process.execPath, ['-e', `const Module = require('module');
+      const load = Module._load;
+      Module._load = function(request, ...rest) { if (request === 'sqlite3') throw Object.assign(new Error("Cannot find module 'sqlite3'"), {code: 'MODULE_NOT_FOUND'}); return load.call(this, request, ...rest); };
+      const P = require(${JSON.stringify(path.join(ROOT, 'lib', 'auth', 'sqlite-provider'))});
+      try { new P({dbPath: ${JSON.stringify(db)}}); } catch (e) { process.stdout.write('refused'); }`], {encoding: 'utf8', timeout: 20000});
+    assert.match(r.stdout, /refused/, r.stderr);
+    assert.ok(!fs.existsSync(db), 'no DB file left');
   });
 
   (POSIX ? it : it.skip)('a DB file the provider creates is owner-only', async () => {

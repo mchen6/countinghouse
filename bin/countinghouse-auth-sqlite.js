@@ -96,10 +96,22 @@ function readKey(callback) {
     });
     return;
   }
+  // (taken at the first line: a pipe its writer leaves open is no hang)
   let text = '';
+  let taken = false;
+  const take = () => {
+    if (taken) return;
+    taken = true;
+    process.stdin.removeAllListeners('data');
+    process.stdin.destroy();
+    done(text);
+  };
   process.stdin.setEncoding('utf8');
-  process.stdin.on('data', (c) => { if (text.length < 64 * 1024) text += c; });
-  process.stdin.on('end', () => done(text));
+  process.stdin.on('data', (c) => {
+    if (text.length < 64 * 1024) text += c;
+    if (/\r?\n/.test(text) || text.length >= 64 * 1024) take();
+  });
+  process.stdin.on('end', take);
 }
 
 function main() {

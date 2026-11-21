@@ -149,7 +149,7 @@ describe('auth 32: a syntax error at startup is logged without the file\'s conte
     const base = fs.mkdtempSync(path.join(os.homedir(), '.ch-reload-auth-start-'));
     try {
       const file = path.join(base, 'auth.json');
-      fs.writeFileSync(file, `{"${ALICE}": xyz}`);
+      fs.writeFileSync(file, `{"${ALICE}": xyz}`, {mode: 0o600});
       const lib = path.join(ROOT, 'lib');
       const script = `
         require(${JSON.stringify(path.join(lib, 'cli-options'))}).setOptions({workerThread: false});

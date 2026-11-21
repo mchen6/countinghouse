@@ -122,7 +122,7 @@ describe('sandbox 34: the always-denied set', function() {
       it('still EACCES through the symlink after the auth file is rewritten in place (a new inode)', async () => {
         const before = fs.statSync(w.authPath).ino;
         const tmp = path.join(w.base, 'auth.json.new');
-        fs.writeFileSync(tmp, fs.readFileSync(w.authPath));
+        fs.writeFileSync(tmp, fs.readFileSync(w.authPath), {mode: 0o600});
         fs.renameSync(tmp, w.authPath);
         assert.notStrictEqual(fs.statSync(w.authPath).ino, before, 'premise: the rewrite changed the inode');
         assert.deepStrictEqual(await read('/tmp/auth-link'), {content: null, code: 'EACCES'});

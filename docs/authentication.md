@@ -35,11 +35,21 @@ else refuses the start (exit 2), and a `POST /reload-auth` keeps the
 current config, naming the fix, for example:
 
 ```
-/path/to/auth.json is accessible by group or others (mode 644); it must be 0600; it holds API keys, so it is read only as this user's own file, mode 0600: chmod 600 /path/to/auth.json
+/path/to/auth.json is accessible by group or others (mode 644); it must be 0600, as it holds API keys: chmod 600 /path/to/auth.json
 ```
 
 Create it with `install -m 600 /dev/null auth.json` (or `chmod 600
 auth.json` after writing it), and keep it so when you edit it.
+
+On Windows under `--hardened`, the server checks the file's ACL before it
+relaunches itself under Node's permission model, and creates the demo file
+then if there is none. The relaunched server can't read an ACL, so a
+`POST /reload-auth` there is refused with the config kept: restart it to
+apply a change.
+
+An entry with no `userName` has no name to callers: bills and
+`check_balance` show `null`, and the start warns. It is never named by its
+key.
 
 `admin` is optional and defaults to `false`. It is a **separate capability
 from `devices`** — see [Admin keys](#admin-keys) below. A key can have
