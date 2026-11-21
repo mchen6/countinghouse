@@ -192,7 +192,10 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
 
   // In a fresh process: identity.resolve keeps module state (its last
   // refill), so an earlier file's resolve could leave entries unasked.
-  it('identity.resolve: a refill is the provider answering; a cache hit and a refill within the minimum say nothing', () => {
+  // A second miss within the refill minimum waits for its own provider read
+  // (identity.freshRefill: never answered from an earlier read, #518's
+  // medium); the guard still says the outage once, and no recovery.
+  it('identity.resolve: each miss is the provider asked again, after the minimum; the guard says the outage once', () => {
     const script = `
       const auth = require(${JSON.stringify(path.join(LIB, 'auth'))});
       const LOG = require(${JSON.stringify(path.join(LIB, 'logger'))});
@@ -204,10 +207,13 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
       let up = false;
       const p = auth.guarded({entries: (cb) => { entriesCalls++; return up ? cb(null, []) : cb(new Error('entries down')); }});
       const identity = require(${JSON.stringify(path.join(LIB, 'identity'))});
+      // the refill minimum's wait passes at once, its deadline is real (never
+      // a real 5 s wait)
+      identity.stateForTests().setClock({now: () => Date.now(), setTimeout: (fn, ms) => (ms <= 5000 ? setImmediate(fn) : setTimeout(fn, ms))});
       const resolve = () => new Promise((r) => identity.resolve('nobody', p, (err, found) => r({code: err && err.code, found})));
       (async () => {
         const first = await resolve();     // asks the provider: it fails
-        const second = await resolve();    // within the minimum: not asked
+        const second = await resolve();    // within the minimum: waits, then asked again
         process.stdout.write('OUT ' + JSON.stringify({first, second, entriesCalls, warned, logged}) + '\\n');
       })();`;
     const r = spawnSync(process.execPath, ['-e', script], {cwd: path.join(__dirname, '..', '..'), encoding: 'utf8', timeout: 20000});
@@ -215,8 +221,8 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
     assert.ok(line != null, `no output: ${r.stdout} ${r.stderr}`);
     const o = JSON.parse(line.slice(4));
     assert.strictEqual(o.first.code, 'SYSTEM_ERROR_USERDB_NA');
-    assert.deepStrictEqual(o.second, {code: null, found: null}, JSON.stringify(o));
-    assert.strictEqual(o.entriesCalls, 1, 'the provider asked once');
+    assert.strictEqual(o.second.code, 'SYSTEM_ERROR_USERDB_NA', JSON.stringify(o));
+    assert.strictEqual(o.entriesCalls, 2, 'each miss asks the provider');
     assert.deepStrictEqual(o.logged, ['entries down']);
     assert.deepStrictEqual(o.warned, [], 'no recovery said: the provider never answered');
   });
