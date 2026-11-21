@@ -237,6 +237,36 @@ describe('validation 34: what leaves a module handler is the module\'s answer (#
     assert.strictEqual(require('../../lib/store').GLOBAL_LIMIT_WINDOW_MS, 1000);
   });
 
+  // the limiter PR's medium, 4: a limiter that can't answer refuses (fail
+  // closed, CLAUDE.md's invariants), RUNTIME_BUSY -- the runtime's, not the
+  // caller's -- never "not limited"
+  it('a limiter that errors refuses RUNTIME_BUSY: the gate, and invokeDeviceAction\'s per-key and runtime-wide limiters; nothing dispatched', async () => {
+    const gate = require('../../lib/rate-limit-gate');
+    const broken = {rateLimit: (k, cb) => cb(new Error('the limiter failed'))};
+    const got = await new Promise((resolve) => gate.check(broken, 'k', (limited, refusal) => resolve({limited, refusal})));
+    assert.strictEqual(got.limited, true, 'refused, never let through');
+    assert.strictEqual(got.refusal && got.refusal.code, 'RUNTIME_BUSY');
+    const res = {setHeader: () => {}, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; }};
+    gate.guard(broken, {appKey: 'k'}, res, () => { throw new Error('let through'); });
+    await new Promise((r) => setImmediate(r));
+    assert.deepStrictEqual([res.code, res.body.code], [503, 'RUNTIME_BUSY']);
+    const CdifInterface = require('../../lib/countinghouse-interface');
+    const run = (fake) => new Promise((resolve) => {
+      const dispatched = [];
+      fake.deviceManager = {emit: (...a) => dispatched.push(a)};
+      const session = {appKey: 'k', callbackWithoutTimer: (err) => resolve({err, dispatched})};
+      CdifInterface.prototype.invokeDeviceAction.call(fake, 'd', 's', 'a', {input: {}}, session);
+      setTimeout(() => resolve({err: null, dispatched}), 200);
+    });
+    const perKey = await run({rateLimiter: null, rateLimit: (k, cb) => cb(new Error('the limiter failed'))});
+    assert.deepStrictEqual([perKey.err && perKey.err.code, perKey.dispatched.length], ['RUNTIME_BUSY', 0], 'per-key');
+    const global = await run({rateLimiter: (id, cb) => cb(new Error('the limiter failed')), rateLimit: (k, cb) => cb(null, {limited: false})});
+    assert.deepStrictEqual([global.err && global.err.code, global.dispatched.length], ['RUNTIME_BUSY', 0], 'runtime-wide');
+    // (no limiter configured is not a failure: not limited, dispatched)
+    const none = await run({rateLimiter: null, rateLimit: (k, cb) => cb(null, {limited: false})});
+    assert.deepStrictEqual([none.err, none.dispatched.length], [null, 1]);
+  });
+
   it('the local metering provider says its window with a refusal', async () => {
     const Local = require('../../lib/metering/local-provider');
     const p = new Local({meter: true, storePath: TMP.mkdtemp('ch-v34-'), rateLimitMaxPerInterval: 1, rateLimitIntervalMs: 60000});
