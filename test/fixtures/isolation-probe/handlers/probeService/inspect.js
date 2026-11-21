@@ -427,13 +427,15 @@ const STEPS = {
     // inside the root -- for a subpath too, its root manifest, as plain Node
     // answers -- from a file or a directory base; one above it is nothing).
     // The probe checks the module's own spelling, so separators are the
-    // platform's: <V>:\app\node_modules\... in a Windows worker (#195)
-    const tail = (t) => t.split('/').join(path.sep);
+    // platform's: <V>:\app\node_modules\... in a Windows worker (#195) --
+    // exactly the file under the module's own root, never only its tail
+    const depManifest = path.join(ROOT, 'node_modules', 'dep', 'package.json');
     const fpj = M.findPackageJSON;
     const asDir = require('url').pathToFileURL(`${path.dirname(__filename)}/`).href;
     out.push(typeof(fpj) !== 'function' ||
-      (String(fpj('dep', __filename)).endsWith(tail('/node_modules/dep/package.json')) && String(fpj('dep', asDir)).endsWith(tail('/node_modules/dep/package.json')) &&
-       String(fpj('dep/esm/x.mjs', __filename)).endsWith(tail('/node_modules/dep/package.json')) && fpj('sibpkg', __filename) === undefined) ? 'same' : `findPackageJSON(${fpj('dep', asDir)} ${fpj('dep/esm/x.mjs', __filename)})`);
+      (fpj('dep', __filename) === depManifest && fpj('dep', asDir) === depManifest &&
+       fpj('dep/esm/x.mjs', __filename) === depManifest && fpj('sibpkg', __filename) === undefined) ? 'same'
+      : `findPackageJSON(${fpj('dep', __filename)} ${fpj('dep', asDir)} ${fpj('dep/esm/x.mjs', __filename)} ${fpj('sibpkg', __filename)})`);
     // (a '#' target is an exact file, as in Node: none with no extension)
     out.push(direct('#noext') !== 'found' ? 'same' : 'noext');
     // (findPackageJSON of a '#' name, one mapped to a built-in too, is
@@ -462,7 +464,7 @@ const STEPS = {
     // answer in the module's own spelling, its separators the platform's)
     let viaPaths;
     try { viaPaths = require.resolve('dep5', {paths: ['/app/node_modules/dep']}); } catch (e) { viaPaths = `threw ${e.code}`; }
-    out.push(String(viaPaths).endsWith(tail('/node_modules/dep5/index.js')) ? 'same' : `paths(${viaPaths})`);
+    out.push(viaPaths === path.join(ROOT, 'node_modules', 'dep5', 'index.js') ? 'same' : `paths(${viaPaths})`);
     // (and the module's own dependency still loads, by name and by subpath)
     out.push((await tryImport('dep')) === 'found' && (await tryImport('dep/index.js')) === 'found' && tryRequire('dep') === 'found' &&
       tryRequire('filedep') === 'found' ? 'same' : 'ownDep');
