@@ -38,6 +38,11 @@ const STEPS = {
     at('createRequire', () => M.createRequire(fromFile).resolve('../../lib/target'));
     at('requireResolve', () => require.resolve('../../lib/target'));
     at('pathResolve', () => path.resolve(__dirname, '../../lib/target'));
+    const fs = require('fs');
+    at('realpathSync', () => fs.realpathSync(__dirname));
+    at('realpathSyncNative', () => fs.realpathSync.native(__dirname));
+    at('realpathSyncFile', () => fs.realpathSync(__filename));
+    at('realpathSyncSlash', () => fs.realpathSync(__dirname.replace(/\\/g, '/')));
     return JSON.stringify(out);
   },
   'emitWarning assigned': () => swap(process_, 'emitWarning', () => {
