@@ -307,6 +307,48 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
     });
   });
 
+  // B-meter-keys (2): a job's owner is stored by id, so its key must be in
+  // the index first: know() refills on a miss (a user added since, with its
+  // stable id), remembers a key no provider lists for this process, and a
+  // remembered key survives a rebuild
+  describe('know(): a key made known before its id is stored', () => {
+    it('a miss refills from the provider (the stable id); with a provider, a key it doesn\'t list is refused; with none (--debug), remembered across a rebuild', () => {
+      const listed = `k${hex(12)}`;
+      const unlisted = `k${hex(12)}`;
+      const script = `
+        const identity = require(${JSON.stringify(path.join(LIB, 'identity'))});
+        identity.initSync({moduleDataPath: ${JSON.stringify(path.join(os.tmpdir(), 'ch-identity-unused'))}});
+        let entries = [];
+        let asked = 0;
+        const provider = {entries: (cb) => { asked++; cb(null, entries); }};
+        (async () => {
+          entries = [{apiKey: ${JSON.stringify(listed)}, userName: 'late', id: 'late-stable'}];
+          const a = await identity.know(${JSON.stringify(listed)}, () => provider);
+          const again = await identity.know(${JSON.stringify(listed)}, () => provider);
+          const refused = await identity.know(${JSON.stringify(unlisted)}, () => provider).then(() => 'resolved', (e) => e.code);
+          const b = await identity.know(${JSON.stringify(unlisted)}, () => null);
+          await identity.rebuild(provider);
+          const out = {a, stable: identity.idFor({id: 'late-stable'}, 'x'), again, asked, refused,
+            b, bKey: identity.idFor(null, ${JSON.stringify(unlisted)}), bKept: identity.lookup(b) != null && identity.lookup(b).apiKey === ${JSON.stringify(unlisted)}};
+          const failing = {entries: (cb) => cb(new Error('down'))};
+          out.down = await identity.know('k-new-' + Date.now(), () => failing).then(() => 'resolved', () => 'rejected');
+          process.stdout.write('OUT ' + JSON.stringify(out) + '\\n');
+        })();`;
+      const r = spawnSync(process.execPath, ['-e', script], {encoding: 'utf8', timeout: 20000,
+        env: Object.assign({}, process.env, {COUNTINGHOUSE_IDENTITY_SECRET: hex(32)})});
+      const line = (r.stdout || '').split('\n').find((l) => l.startsWith('OUT '));
+      assert.ok(line != null, `no output: ${r.stdout} ${r.stderr}`);
+      const out = JSON.parse(line.slice(4));
+      assert.strictEqual(out.a, out.stable, 'the stable id, from the refill');
+      assert.strictEqual(out.again, out.a);
+      assert.strictEqual(out.asked, 3, 'one refill per new key, then the rebuild');
+      assert.strictEqual(out.refused, 'IDENTITY_NOT_LISTED', 'a provider that authenticated a key it does not list: refused, never a key-based id a later refill would orphan');
+      assert.strictEqual(out.b, out.bKey, 'no provider (--debug): its key-based id');
+      assert.strictEqual(out.bKept, true, 'remembered across the rebuild');
+      assert.strictEqual(out.down, 'rejected', 'a provider that fails: refused, never a key-based id a later refill would orphan');
+    });
+  });
+
   describe('(h) sqlite: a stable id per user', () => {
     let sqlite3 = null;
     try { sqlite3 = require('sqlite3'); } catch (e) { sqlite3 = null; }

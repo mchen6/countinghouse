@@ -41,6 +41,8 @@ async function inSharedMode(fn) {
 }
 
 describe('questions 08: a task\'s question, held on the server (M22)', function() {
+  // (its jobs' owner known to the identity index, as a server's: B-meter-keys (2))
+  require('../helpers/identity-scope').useIdentity(['k']);
   // each case's records are removed even when it fails, so the next one's
   // caps start empty
   const made = new Set();

@@ -195,6 +195,8 @@ describe('auth 59: the limiter (lib/unauth-limit.js)', () => {
 });
 
 describe('auth 59: a lookup holds its place while in flight (beforeLookup)', () => {
+  // (the queued job's owner known to the identity index, as a server's: B-meter-keys (2))
+  require('../helpers/identity-scope').useIdentity(['k-queue']);
   const scope = require('../helpers/options-scope');
   const options = require('../../lib/cli-options');
   let kept = null;
@@ -515,7 +517,10 @@ describe('auth 59: a refusal met under way answers one shape on every route', fu
       const {CountinghouseError} = require(path.join(ROOT, 'lib/countinghouse-error'));
       require.cache[require.resolve(path.join(ROOT, 'lib/user-auth'))] = {id: 'stub', loaded: true,
         exports: (req, res, d, k, s, a, cb, callback) => callback(new CountinghouseError('UNAUTH_RATE_LIMITED'))};
-      require(path.join(ROOT, 'lib/job-control-common')).authorizeOwner({apiKey: 'k', deviceID: 'd', serviceID: 's', actionName: 'a'}, 'j', 5000)
+      // (its owner by id, known to the index: B-meter-keys (2))
+      ${require('../helpers/identity-scope').identityLines(path.resolve(__dirname, '..', '..', 'lib'), ['k'])}
+      const ownerId = require(path.join(ROOT, 'lib/identity')).idForKey('k');
+      require(path.join(ROOT, 'lib/job-control-common')).authorizeOwner({ownerId, deviceID: 'd', serviceID: 's', actionName: 'a'}, 'j', 5000)
         .then(() => console.log('resolved'), (e) => console.log(JSON.stringify({final: e.final})));
     `], {encoding: 'utf8', timeout: 20000});
     assert.strictEqual(job.stdout.trim(), '{"final":false}', job.stderr);

@@ -10,7 +10,8 @@ const {taskHooks, addTaskReceipt} = require('../../lib/usage/task');
 
 const SCENARIO = {name: 'ci_failure_triage', role: 'scenario', module: 'ch-pack-ci-failure-triage', deviceID: 'd1', serviceID: 's', actionName: 'ci_failure_triage'};
 const PLAIN = {name: 'plain_svc_go', role: null, module: 'plain', deviceID: 'd2', serviceID: 's', actionName: 'go'};
-const job = (target, apiKey = 'k1') => ({deviceID: target.deviceID, serviceID: target.serviceID, actionName: target.actionName, input: {}, apiKey});
+// (the owner by its opaque id, as a job records it: never a key)
+const job = (target, owner = 'k1') => ({deviceID: target.deviceID, serviceID: target.serviceID, actionName: target.actionName, input: {}, ownerId: owner == null ? null : `u_${owner}`});
 const built = (err, results) => (err != null
   ? {isError: true, content: [{type: 'text', text: err.message}]}
   : {isError: false, content: [{type: 'text', text: JSON.stringify(results.output)}], structuredContent: results.output});
@@ -23,7 +24,6 @@ describe('task-augmented tools/call: counting and the receipt', () => {
     hooks = taskHooks({
       usage: () => u,
       targetFor: (d) => [SCENARIO, PLAIN].find((x) => x.deviceID === d.deviceID && x.serviceID === d.serviceID && x.actionName === d.actionName) || null,
-      callerOf: (apiKey) => (apiKey == null ? null : `u_${apiKey}`),
       buildResult: built,
       now: () => t
     });
@@ -72,7 +72,7 @@ describe('task-augmented tools/call: counting and the receipt', () => {
   });
 
   it('a job that is not a listed tool is not counted', () => {
-    assert.strictEqual(hooks.start({deviceID: 'nope', serviceID: 's', actionName: 'x', apiKey: 'k1'}), null);
+    assert.strictEqual(hooks.start({deviceID: 'nope', serviceID: 's', actionName: 'x', ownerId: 'u_k1'}), null);
     assert.strictEqual(hooks.start(null), null);
     assert.strictEqual(u.records().length, 0);
   });
@@ -117,7 +117,7 @@ describe('task-augmented tools/call: counting and the receipt', () => {
 
   it('the Out record counts the text tasks/result sends: built with the stamped schema, and RECEIPT_RESERVED for a reserved output', () => {
     const seen = [];
-    const h = taskHooks({usage: () => u, targetFor: () => SCENARIO, callerOf: () => 'u_a', now: () => t,
+    const h = taskHooks({usage: () => u, targetFor: () => SCENARIO, now: () => t,
       buildResult: (err, results, schema) => { seen.push([err && err.code, schema]); return built(err, results); }});
     const schema = {type: 'object'};
     h.complete(job(SCENARIO), {output: {summary: 'x'}}, {extra: h.start(job(SCENARIO))}, schema);
@@ -125,7 +125,7 @@ describe('task-augmented tools/call: counting and the receipt', () => {
     assert.deepStrictEqual(seen, [[null, schema], ['RECEIPT_RESERVED', schema]]);
   });
 
-  it('a job with no owner (a scheduler template, apiKey null) is not counted at all', () => {
+  it('a job with no owner (a scheduler template, ownerId null) is not counted at all', () => {
     assert.strictEqual(hooks.start(job(SCENARIO, null)), null);
     assert.strictEqual(u.records().length, 0);
   });

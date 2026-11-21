@@ -47,7 +47,7 @@ describe('usage 20: the session on usage records and jobs (shared runtime B1, Ta
 
     it('a task run\'s usage call takes its run\'s session (shared mode only)', () => {
       const u = createUsage({usageDir: null, pid: 1, startMs: 1});
-      const hooks = taskHooks({usage: () => u, targetFor: () => ({name: 't', role: 'module', module: 'm'}), callerOf: () => 'c1', buildResult: () => null});
+      const hooks = taskHooks({usage: () => u, targetFor: () => ({name: 't', role: 'module', module: 'm'}), buildResult: () => null});
       const out = (session) => { const s = hooks.start({ownerId: 'c1'}, session); u.recordOut(s.usageCall, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'}); return u.records().find((r) => r.call === s.usageCall); };
       assert.ok(!('session' in out(A)), 'not shared: no field (--stdio\'s records as before)');
       sessions.attach(new (require('events'))());

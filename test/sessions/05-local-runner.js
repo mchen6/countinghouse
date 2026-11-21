@@ -30,6 +30,8 @@ function runnerWith(answer) {
 const ok = (cb) => setImmediate(cb, null, {ok: 1});
 
 describe('sessions 05: a job\'s session through the local runner (B1 Task 3)', function() {
+  // (its jobs' owners known to the identity index, as a server's: B-meter-keys (2))
+  require('../helpers/identity-scope').useIdentity(['k']);
   this.timeout(20000);
   let saved;
   beforeEach(() => {

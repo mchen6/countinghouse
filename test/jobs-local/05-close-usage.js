@@ -22,6 +22,8 @@ describe('jobs-local 05: close() ends a running pass\'s usage call as cancelled 
   let workerThread;
   before(() => { workerThread = options.workerThread; options.workerThread = true; });
   after(() => { options.workerThread = workerThread; });
+  // (its job's owner known to the identity index, as a server's: B-meter-keys (2))
+  require('../helpers/identity-scope').useIdentity(['test-owner-0123456789']);
 
   it('a pass whose call never answers: close() records it cancelled, and a later answer records nothing more', async () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1});
