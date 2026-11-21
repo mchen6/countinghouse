@@ -24,7 +24,14 @@ const survived = (dir) => fs.existsSync(path.join(dir, 'index.js')) && fs.exists
 describe('fs-broker 30: the runtime deletes only directories it made', () => {
   let base = null;
   beforeEach(() => { ownership.resetForTests(); base = fs.realpathSync(mkdtemp('owned-')); });
-  afterEach(() => { if (base) fs.rmSync(base, {recursive: true, force: true}); base = null; });
+  // (the cleanup owns what it removes: a birth probe still running in a
+  // directory under base is awaited first -- master run 44864349085,
+  // ENOTEMPTY on Node 22 -- never slept for)
+  afterEach(async () => {
+    await ownership.probesSettled();
+    if (base) fs.rmSync(base, {recursive: true, force: true});
+    base = null;
+  });
 
   it('ensureDirs records the data and tmp it makes; a /tmp the runtime made is emptied', async () => {
     const d = await moduleData.ensureDirs(path.join(base, 'store'), 'm');
@@ -116,9 +123,22 @@ describe('fs-broker 30: the runtime deletes only directories it made', () => {
     ownership.resetForTests();
     assert.strictEqual(await ownership.birthIsReal(path.join(base, 'no-such-holder'), 'probe-dev'), null, 'a probe that cannot run');
     assert.strictEqual(typeof(await ownership.birthIsReal(d.root, 'probe-dev')), 'boolean', 'not remembered: asked again');
-    // one probe per device at a time: callers share it
+    // one probe per device at a time: callers share it (and the shared
+    // probe is awaited: it runs in d.root, which the cleanup removes)
     ownership.resetForTests();
-    assert.strictEqual(ownership.birthIsReal(d.root, 'shared-dev'), ownership.birthIsReal(d.root, 'shared-dev'));
+    const shared = ownership.birthIsReal(d.root, 'shared-dev');
+    assert.ok(shared === ownership.birthIsReal(d.root, 'shared-dev'));
+    await shared;
+  });
+
+  // a probe in flight is one probesSettled waits for: none is left behind
+  // in the directory it ran in
+  it('probesSettled waits for every birth probe in flight; none is left in its directory', async () => {
+    const d = await moduleData.ensureDirs(path.join(base, 'store'), 'm');
+    ownership.resetForTests();
+    ownership.birthIsReal(d.root, 'unawaited-dev');
+    await ownership.probesSettled();
+    assert.deepStrictEqual(fs.readdirSync(d.root).filter((n) => n.startsWith(`${ownership.MARKER}-probe-`)), []);
   });
 
   // a recorded birth is compared, never dropped (the medium on the high
