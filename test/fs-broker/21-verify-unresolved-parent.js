@@ -205,8 +205,13 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
       await assert.rejects(t.broker.handle('copyFile', ['/data/src-link', '/data/out']), (e) => e.code === 'ENOENT');
       assert.ok(t.reports.includes('link-dangling ENOENT /data/src-link'), t.reports.join(', '));
       fs.symlinkSync('nothing-here', path.join(t.dirs.data, 'lock'));
-      await assert.rejects(t.broker.handle('open', ['/data/lock', 'wx']), (e) => e.code === 'EEXIST');
-      await assert.rejects(t.broker.handle('copyFile', ['/data/plain', '/data/lock', fs.constants.COPYFILE_EXCL]), (e) => e.code === 'EEXIST');
+      // (an exclusive create on a dangling link: EEXIST on POSIX; on Windows
+      // the OS answers ENOENT, as plain Node there does -- refused either
+      // way, and nothing is made where the link leads)
+      const exclusive = (e) => e.code === 'EEXIST' || (process.platform === 'win32' && e.code === 'ENOENT');
+      await assert.rejects(t.broker.handle('open', ['/data/lock', 'wx']), exclusive);
+      await assert.rejects(t.broker.handle('copyFile', ['/data/plain', '/data/lock', fs.constants.COPYFILE_EXCL]), exclusive);
+      assert.ok(!fs.existsSync(path.join(t.dirs.data, 'nothing-here')), 'nothing made where the link leads');
       assert.ok(!t.reports.includes('link-dangling ENOENT /data/lock'), t.reports.join(', '));
       // (O_EXCL without O_CREAT follows a link like any open: refused as one)
       await assert.rejects(t.broker.handle('open', ['/data/lock', fs.constants.O_RDONLY | fs.constants.O_EXCL]), enoent('/data/lock'));
