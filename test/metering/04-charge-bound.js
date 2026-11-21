@@ -144,6 +144,41 @@ describe('metering 04: a hop\'s charge, waited for at most METER_PENDING_MS (B-h
       assert.deepStrictEqual(answers, [[deadline - DEADLINE_MARGIN_MS, true]]);
     });
 
+    // (the reviewer's round 2, b) a getter, read again while it waits: a
+    // tightened deadline (Session.rearm) is kept, before the bound and past
+    // the allowance alike
+    it('a deadline tightened while it waits: answered the margin before the new one', () => {
+      const clock = fakeClock();
+      const {ci} = held();
+      let deadline = clock.now() + 30000;
+      const answers = [];
+      boundedCharge(ci, `${KEY}-tight`, 'tight', 1, (...a) => answers.push([clock.now(), a[2]]), {clock, deadline: () => deadline});
+      const {RECHECK_MS} = cb;
+      // answered within RECHECK_MS of the new latest instant: still at least
+      // DEADLINE_MARGIN_MS - RECHECK_MS before the tightened deadline
+      const inTime = (at, d) => at >= d - DEADLINE_MARGIN_MS && at <= d - DEADLINE_MARGIN_MS + RECHECK_MS;
+      clock.advance(100);
+      deadline = clock.now() + 300;   // tightened before the bound
+      clock.advance(1000);
+      assert.strictEqual(answers.length, 1);
+      assert.ok(answers[0][1] === true && inTime(answers[0][0], deadline), JSON.stringify({answers, deadline}));
+      // past the allowance: tightened during its wait
+      const K = `${KEY}-tight-capped`;
+      const cap = held();
+      for (let i = 0; i < MAX_PENDING_PER_KEY; i++) boundedCharge(cap.ci, K, `p${i}`, 1, () => undefined, {clock});
+      clock.advance(METER_PENDING_MS);
+      let d2 = clock.now() + 30000;
+      const waited = [];
+      boundedCharge(cap.ci, K, 'w', 1, (...a) => waited.push([clock.now(), a[2]]), {clock, deadline: () => d2});
+      clock.advance(METER_PENDING_MS + 1000);
+      assert.deepStrictEqual(waited, [], 'waiting for its own charge');
+      d2 = clock.now() + 1000;        // tightened during the wait
+      clock.advance(2000);
+      assert.strictEqual(waited.length, 1);
+      assert.ok(waited[0][1] === true && inTime(waited[0][0], d2), JSON.stringify({waited, d2}));
+      for (const land of cap.lands) land(null, {charged: 1});
+    });
+
     it('a deadline already within the margin: answered pending at once', () => {
       const clock = fakeClock();
       const {ci} = held();
