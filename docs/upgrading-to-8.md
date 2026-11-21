@@ -390,7 +390,7 @@ Under worker mode, in every `--moduleSandbox` mode unless noted:
   (kept) and `/tmp` (its own, not the host's, and **emptied every time its
   worker starts**). Anything a module left in `/tmp` is gone after a restart.
 - **Writes to `/app` are refused**: `EROFS` under `enforce`, `EACCES` under
-  `audit`.
+  `audit`; under `off` they reach the install directory.
 - **Outside paths must be declared under `enforce`.** Anything outside the
   namespace is `ENOENT` unless the module declares it in
   `countinghouse.permissions.fs` and your `--modulePolicy` approves it.
@@ -691,7 +691,8 @@ says how to write a module for this.
   that scope with `MODULE_NOT_LISTED`. A device no module serves, or one
   outside the key's grants, answers the same: `MODULE_NOT_LISTED`, 404, on
   every route, the single-identity profile included, so the answer never
-  says which modules exist.
+  says which modules exist. (A listed module's device that is still loading
+  answers `DEVICE_NOT_FOUND` on `invoke-action`.)
 
 ## What operators get
 
@@ -700,10 +701,10 @@ says how to write a module for this.
   so 8.0 does not read a 7.x balance. Re-seed each key's balance:
   `COUNTINGHOUSE_SEED_KEY=<key> countinghouse-meter set --store redis
   --balance <n>` (the key from the environment, never an argument). The 7.x records, hashes named
-  by the raw keys in the ledger's database (12 by default), stay until you
-  delete them: once re-seeded, delete every hash there with a `balance`
-  field whose name does not start with `sha256:` (for example, list them
-  with `redis-cli -n 12 --scan`).
+  by the raw keys in Redis db 0 (the ledger's database, in 7.x and 8.0),
+  stay until you delete them: once re-seeded, delete every hash there with a
+  `balance` field whose name does not start with `sha256:` (for example,
+  list them with `redis-cli -n 0 --scan`).
 - **Each runtime's job queue is its own.** Its BullMQ prefix is the
   server's own id (`{chj-<16 hex>}`), random, made at the first start and
   kept beside the data as `.server-id` (in `--moduleDataPath`, or
@@ -750,8 +751,8 @@ says how to write a module for this.
   restart. A file that fails its checks is refused (`AUTH_RELOAD_INVALID`),
   and the configuration in use stays. A file that can't be verified as this
   user's own is applied tighten-only: what tightens is applied, what adds or
-  widens is refused, and the answer is `ok: false`, with a note saying how
-  many changes were applied and refused. The answer never holds a key.
+  widens is refused, and the answer carries a note saying how many changes
+  were applied and refused (`ok: false` when any was refused). The answer never holds a key.
 - **MCP over stdin and stdout:** `--stdio`, started by a desktop MCP client
   through `countinghouse-stdio` (`bin/countinghouse-stdio.js`; not
   `bin/countinghouse`, which pipes the log). The log goes to stderr and no

@@ -315,7 +315,8 @@ emits it, see `lib/couchdb-adapter/init-db.js`).
   rights. A fresh checkout can call every tool immediately, but cannot
   `/load-module`. Add `"admin": true` to it in `auth.json`, then
   `POST /reload-auth` with an admin key or restart, if you want that from
-  the demo key.
+  the demo key. (A reload from a file that can't be verified as yours applies
+  only what tightens and refuses "admin granted": restart then.)
 - **`--debug` bypasses this, along with everything else.** Under `--debug`
   every key resolves to an admin session, which is why the repo's own test
   suite can call these endpoints freely. That is a property of `--debug`, not
@@ -335,7 +336,8 @@ it. With a stable `id`, rotating the key keeps the user's id; without one,
 the id changes with the key.
 
 The secret is 32 random bytes, kept as 64 hex characters in
-`<moduleDataPath>/.identity-secret` (owner-only, generated on first start)
+`<moduleDataPath>/.identity-secret` (`<storePath>/.identity-secret` in
+ch-local's single-identity profile; owner-only, generated on first start)
 or given as `COUNTINGHOUSE_IDENTITY_SECRET` in the same form; both present
 and different refuses the start. Changing the secret changes every id. A
 worker gets neither the secret nor the index of ids.

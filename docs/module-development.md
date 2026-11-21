@@ -918,7 +918,7 @@ namespace, the same in every `--moduleSandbox` mode:
 
 | Path your code uses | What it is | Access |
 |---|---|---|
-| `/app` | your module's install directory | read-only: writes are refused under `enforce` (`EROFS`) and under `audit` (`EACCES`) |
+| `/app` | your module's install directory | read-only under `enforce` (`EROFS`) and `audit` (`EACCES`); under `off` writes reach the install directory |
 | `/data` | your module's private data directory | read-write, counted against your disk limits, kept across restarts |
 | `/tmp` | your module's private temp directory | read-write, counted against your disk limits, **emptied every time your worker starts** |
 | each path you declared in `fs` | the same path on the host | `r` or `rw`, as the operator approved |

@@ -1550,8 +1550,9 @@ and every one is bounded.
   answers "unknown tool". A reload of the auth config ends that window at
   once for the file provider; the sqlite provider has no change signal, so
   for it the 5 s is the bound. The CouchDB provider keeps its own cache of
-  the users it has looked up (at most 1024), which never expires: a change
-  made in CouchDB is seen only after a restart. The cost: a key not in
+  the users it has looked up (at most 4096, the least recently used
+  dropped), which never expires on its own: a change made in CouchDB is seen
+  after `POST /reload-auth`, which empties it, or a restart. The cost: a key not in
   the cache -- never seen, pushed out past the 1024, or after a reload
   cleared every key -- is resolved before its grants are read, so an
   unknown key costs one provider read and a valid key's first call one
@@ -2440,9 +2441,11 @@ these are the checks that predate them and still apply:
     `auth.json`/`COUNTINGHOUSE_API_KEY`) before exposing the server beyond
     localhost.
   - **An internal cross-worker call whose caller identity can't be
-    resolved is refused** (`HOP_IDENTITY_UNRESOLVED`, before anything is
-    charged or run; see `docs/cross-cutting-matrix.md`'s two "Direct peer
-    channel" rows): a call nobody can be charged for does not proceed.
+    resolved is refused** (`HOP_IDENTITY_UNRESOLVED`; see
+    `docs/cross-cutting-matrix.md`'s two "Direct peer channel" rows): nothing
+    is charged and its answer is withheld. On the main-thread-routed path
+    (`--no-directPeerChannels`) the check runs when the target answers, so
+    the target may already have run the action.
 
 ### Hardening with systemd
 
