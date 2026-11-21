@@ -73,6 +73,9 @@ describe('auth 61: no raw API key in the main thread\'s structures (C-meter-keys
     let saved = null;
     let revoked = null;
     let listed = null;
+    // ids whose index answer never comes, and every id asked
+    const hung = new Set();
+    const resolving = [];
     before(() => {
       kept = optionsNow();
       cli.setOptions({workerThread: true, peerChannelAuthRecheckSeconds: 0, peerChannelAuthLookupTimeoutMs: 500});
@@ -85,7 +88,7 @@ describe('auth 61: no raw API key in the main thread\'s structures (C-meter-keys
       require.cache[idPath] = {id: idPath, filename: idPath, loaded: true, exports: Object.assign({}, require('../../lib/identity'), {
         idForKey: (k) => `u_${meterId(k).slice(7, 29)}`,
         lookup: (id) => (listed.has(id) ? {apiKey: listed.get(id), userName: null, isAdmin: false} : null),
-        resolve: (id, provider, cb) => cb(null, listed.has(id) ? {apiKey: listed.get(id), userName: null, isAdmin: false} : null)
+        resolve: (id, provider, cb) => { resolving.push(id); if (!hung.has(id)) cb(null, listed.has(id) ? {apiKey: listed.get(id), userName: null, isAdmin: false} : null); }
       })};
       delete require.cache[brokerPath];
       PeerChannelBroker = require('../../lib/peer-channel-broker');
@@ -114,6 +117,53 @@ describe('auth 61: no raw API key in the main thread\'s structures (C-meter-keys
       revoked.add(KEY);
       b.recheckGrants();
       await until(() => b.channelRegistry['61:62'] === undefined, 'a revoked key closes it');
+    });
+
+    // a re-check left in flight would skip every later pass, and a revoked
+    // key would keep its channel: each is cut off at its bound (on the
+    // broker's clock), closed as not confirmed, and the next pass runs
+    it('a re-check that never answers is cut off at its bound, and the next pass runs', () => {
+      const {caller, callee} = workers(69, 70);
+      const id = `u_${meterId(`${KEY}-hung`).slice(7, 29)}`;
+      listed.set(id, `${KEY}-hung`);
+      hung.add(id);
+      const b = new PeerChannelBroker({deviceMap: {d: callee}});
+      const timers = [];
+      b.setClockForTests({setTimeout: (fn, ms) => { const t = {fn, ms, cleared: false}; timers.push(t); return t; }, clearTimeout: (t) => { if (t != null) t.cleared = true; }});
+      b.grant('d', `${KEY}-hung`, caller, callee, ['svc|act']);
+      b.recheckGrants();
+      assert.strictEqual(b.recheckInFlight, 1, 'in flight');
+      const bound = PeerChannelBroker.RECHECK_INDEX_BOUND_MS + cli.peerChannelAuthLookupTimeoutMs;
+      const watchdog = timers.find((t) => t.ms === bound && !t.cleared);
+      assert.ok(watchdog != null, `a timer at the bound: ${JSON.stringify(timers.map((t) => t.ms))}`);
+      // (meanwhile a pass is skipped, as before)
+      const asked = resolving.length;
+      b.recheckGrants();
+      assert.strictEqual(resolving.length, asked, 'a pass while one is in flight asks nothing');
+      watchdog.fn();
+      assert.strictEqual(b.recheckInFlight, 0, 'cut off');
+      assert.strictEqual(b.channelRegistry['69:70'], undefined, 'closed as not confirmed');
+      // the next pass runs
+      hung.delete(id);
+      b.grant('d', `${KEY}-hung`, caller, callee, ['svc|act']);
+      b.recheckGrants();
+      assert.strictEqual(resolving.length, asked + 1, 'the next pass asked');
+    });
+
+    // closing a channel tells both workers first: a throw after (a held
+    // request's refusal to a worker exiting) leaves no channel open in them,
+    // and never leaves the pass
+    it('a close tells both workers before anything that may throw; nothing throws out of the pass', () => {
+      const told = [];
+      const callee = {workerId: 72, ended: null, unloading: false, sendPeerChannelOpenToChild: () => {}, sendPeerInvalidateToChild: () => told.push('callee')};
+      const caller = {workerId: 71, ended: null, unloading: false, sendPeerChannelGrantToChild: () => {}, sendPeerInvalidateToChild: () => { told.push('caller'); throw new Error('a worker exiting'); }};
+      const b = new PeerChannelBroker({deviceMap: {d: callee}});
+      b.grant('d', `${KEY}-gone-too`, caller, callee, ['svc|act']);
+      b.forgetPair = () => { throw new Error('a held refusal to a worker exiting'); };
+      const entry = b.channelRegistry['71:72'];
+      assert.doesNotThrow(() => b.closeRevoked('71:72', entry, {id: 'u_x', deviceID: 'd'}, {code: 'SYSTEM_ERROR_UNKNOWN_USER'}));
+      assert.deepStrictEqual(told, ['caller', 'callee'], 'both told, the caller\'s throw notwithstanding');
+      assert.strictEqual(b.channelRegistry['71:72'], undefined);
     });
 
     it('an id the index no longer lists closes the channel (fails closed)', async () => {
