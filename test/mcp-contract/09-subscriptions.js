@@ -304,7 +304,9 @@ describe('subscriptions/listen (#231)', () => {
       });
       await new Promise((r) => srv.close(r));
       assert.doesNotMatch(String(res.type), /event-stream/);
-      assert.match(res.body, /rate limit exceeded/);
+      // (every limiter's answer: 429, -32000 with the limit's code; A-rpc429)
+      assert.strictEqual(res.status, 429, res.body);
+      assert.deepStrictEqual([JSON.parse(res.body).error.code, JSON.parse(res.body).error.data['countinghouse/code']], [-32000, 'RATE_LIMIT_EXCEEDED']);
       assert.strictEqual(hub.count(KEY), 0);
     });
 

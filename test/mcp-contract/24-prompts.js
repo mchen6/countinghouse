@@ -374,7 +374,8 @@ describe('mcp-contract 24: prompts (M10)', function() {
   it('prompts/get is rate limited', async () => {
     limited = true;
     const r = await get(KEY_A, 'triage', {run: '1'});
-    assert.match(r.error && r.error.message, /rate limit/);
+    // (every limiter's answer: -32000 with the key's limit code; A-rpc429)
+    assert.deepStrictEqual([r.error && r.error.code, r.error && r.error.data['countinghouse/code']], [-32000, 'RATE_LIMIT_EXCEEDED'], JSON.stringify(r));
   });
 
   for (const modern of [false, true]) {

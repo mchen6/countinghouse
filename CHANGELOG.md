@@ -10,6 +10,21 @@ the auth config.
 
 ## Unreleased
 
+### Changed — one answer for every limit on `/mcp`
+
+A key over its rate limit on `/mcp` (outside `tools/call`) was answered
+`-32603 "rate limit exceeded"` with HTTP 200 and no `Retry-After`. It is now
+answered as the limit on keys that don't resolve already was: the JSON-RPC
+error -32000, the catalogue's message, and `countinghouse/code`, `kind` and
+`retryAfter` in its data. A single request's answer is HTTP 429 with
+`Retry-After`, or 503 when the runtime itself is at its limit
+(`RUNTIME_BUSY`: a module resource read at `--globalRateLimit`, or every
+subscription the runtime may hold open). A legacy batch stays 200, with
+`Retry-After` the longest hint. `subscriptions/listen` over a key's or a
+session's open subscriptions is the new code `TOO_MANY_SUBSCRIPTIONS` (429).
+`tools/call` still answers a limit as a tool error result. A client that read
+a limit by `-32603` or its message reads `countinghouse/code` instead.
+
 ### Added — the server's instructions, and `countinghouse_overview`
 
 A first-run user's agent can now learn what countinghouse is and what is
