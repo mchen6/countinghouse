@@ -2441,12 +2441,12 @@ these are the checks that predate them and still apply:
     that shouldn't ship to production, and replace it (or configure a real
     `auth.json`/`COUNTINGHOUSE_API_KEY`) before exposing the server beyond
     localhost.
-  - **An internal cross-worker call whose caller identity can't be
-    resolved is refused** (`HOP_IDENTITY_UNRESOLVED`; see
-    `docs/cross-cutting-matrix.md`'s two "Direct peer channel" rows): nothing
-    is charged and its answer is withheld. On the main-thread-routed path
-    (`--no-directPeerChannels`) the check runs when the target answers, so
-    the target may already have run the action.
+  - **An internal cross-worker call always has a billing identity.** A hop
+    bills the identity of the call token it runs under, and no token is
+    issued without one (`lib/call-tokens.js`), so no hop runs for free for
+    want of one (see `docs/cross-cutting-matrix.md`'s two "Direct peer
+    channel" rows). A remote call with none is refused
+    (`HOP_IDENTITY_UNRESOLVED`).
 
 ### Hardening with systemd
 
