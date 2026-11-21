@@ -5,8 +5,11 @@ set -euo pipefail
 AUTH=/run/perf/server-auth.json
 redis-server --daemonize yes --bind 127.0.0.1 --dir /home/ch --save '' --appendonly no
 until redis-cli ping >/dev/null 2>&1; do sleep 0.2; done
+# (each key's ledger record is named by its fingerprint, never the key, since
+# B-meter-keys 2026-11-21: funded through the meter CLI, which reads the key
+# from its environment; the run of 2026-11-05 used redis-cli HSET "$k")
 for k in $(node -e 'console.log(Object.keys(require(process.argv[1])).join(" "))' "$AUTH"); do
-  redis-cli HSET "$k" balance 1000000 >/dev/null
+  COUNTINGHOUSE_SEED_KEY="$k" node ./bin/countinghouse-meter.js set --store redis --balance 1000000 >/dev/null
 done
 exec node ./framework.js --workerThread --bindAddr 0.0.0.0 --port 9540 \
   --authProvider file --authConfigPath "$AUTH" --mcpToolCallCost 1 \

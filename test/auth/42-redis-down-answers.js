@@ -27,6 +27,8 @@ const PROXY_PORT = 6391;
 // under run-local), else the shared default as before.
 const REAL_REDIS = (() => { const u = new URL(redisUrlFor()); return {host: u.hostname, port: Number(u.port) || 6379}; })();
 const CALLER     = `m5-caller-${process.pid}`;
+// (the ledger names a key's record by its fingerprint, never the key: B-meter-keys (1))
+const CALLER_LEDGER = require('../../lib/key-fingerprint').meterId(CALLER);
 const TOOL       = 'echo_device_echoservice_echo';
 const ANSWER_MS  = 2000;
 
@@ -66,7 +68,7 @@ async function settledBalance() {
   let stable = 0;
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
-    const b = await redisCmd('hget', CALLER, 'balance');
+    const b = await redisCmd('hget', CALLER_LEDGER, 'balance');
     stable = (b === last) ? stable + 1 : 1;
     last = b;
     if (stable >= 3) return b;
@@ -107,11 +109,11 @@ describe('auth 42: with Redis down a call still answers, and billing resumes whe
     stopServer(server);
     if (proxyUp) await proxy.down();
     if (dir != null) fs.rmSync(dir, {recursive: true, force: true});
-    if (direct != null) { await redisCmd('del', CALLER).catch(() => {}); direct.quit(); }
+    if (direct != null) { await redisCmd('del', CALLER_LEDGER).catch(() => {}); direct.quit(); }
   });
 
   it('bills a call while Redis is up', async () => {
-    await redisCmd('hset', CALLER, 'balance', '100');
+    await redisCmd('hset', CALLER_LEDGER, 'balance', '100');
     const c = await timedCall(10000);
     assert.ok(c != null && c.r != null && c.r.isError !== true, JSON.stringify(c));
     assert.strictEqual(await settledBalance(), '99');

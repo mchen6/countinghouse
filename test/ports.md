@@ -74,6 +74,7 @@ one) as well as the ports it binds.
 | `test/auth/59-unauth-limit.js` | 9822, 9823, 9824, 9825 |
 | `test/auth/60-overview-scope.js` | 9826, 9827 |
 | `test/auth/62-auth-stores-private.js` | 9833 |
+| `test/auth/61-job-owner-never-the-key.js` | 9830, 9831, 9832 |
 | `test/benchmark/test001.js` | 9527 |
 | `test/benchmark/test002.js` | 9527 |
 | `test/composition/02-ctx-call.js` | 9556–9557, 9560 |

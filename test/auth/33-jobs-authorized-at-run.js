@@ -99,7 +99,9 @@ describe('auth 33: a job is authorized when it runs', function() {
       await sleep(200);
     }
     assert.ok(job != null && job.failedReason != null, `the job did not fail: ${JSON.stringify(job && {state: await job.getState()})}`);
-    assert.match(job.failedReason, /^SYSTEM_ERROR_UNKNOWN_USER: /);
+    // (which case: its key is no longer in the auth configuration -- not a
+    // --debug owner lost with its process; B-meter-keys (2))
+    assert.match(job.failedReason, /^SYSTEM_ERROR_UNKNOWN_USER: .*no longer in the auth configuration/);
     assert.ok(!job.failedReason.includes(ALICE), `the key is in the failure: ${job.failedReason}`);
     await sleep(1500);
     assert.strictEqual((await queue.getJob(added.body.id)).attemptsMade, 1, 'retried');

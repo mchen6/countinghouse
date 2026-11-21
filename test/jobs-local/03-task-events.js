@@ -24,7 +24,7 @@ const tid = (c) => `t-${c.repeat(32)}`;
 function runnerWith(answer) {
   const ref = {};
   const runner = createRunner({jobTimeoutMs: 0});
-  runner.authorizeRun = () => Promise.resolve();
+  runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
   let n = 0;
   runner.initJobProcess({recordCall: (k, t, c, cb) => cb && cb(null),
     invokeJobs: (d, s, a, input, jobID, callback) => answer(n++, callback, jobID, ref.runner)});

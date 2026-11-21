@@ -68,10 +68,10 @@ describe('usage 26: every open call is closed at exit, cancelled (B-shutdown-usa
   it('a call whose failure was noted while its record was being written is recorded as that failure, not a cancel', () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1});
     const {taskHooks} = require('../../lib/usage/task');
-    const hooks = taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}), callerOf: () => 'c1',
+    const hooks = taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}),
       buildResult: (err) => (err != null ? {content: [{type: 'text', text: err.message}], isError: true, _meta: {'countinghouse/code': err.code}} : {content: []})});
-    const failing = hooks.start({apiKey: 'k'});
-    const plain = hooks.start({apiKey: 'k'});
+    const failing = hooks.start({ownerId: 'u_c1'});
+    const plain = hooks.start({ownerId: 'u_c1'});
     hooks.failed({extra: failing}, Object.assign(new Error('timed out'), {code: 'JOB_TIMEOUT'}));
     assert.strictEqual(u.closeOpen(hooks.outcomeOf), 2);
     const outs = u.records().filter((r) => r.bytesOut !== undefined);
@@ -91,13 +91,13 @@ describe('usage 26: every open call is closed at exit, cancelled (B-shutdown-usa
     if (err.origin === 'module' && err.kind === 'caller') Object.defineProperty(r, RESULT_KIND, {value: 'caller', enumerable: false});
     return r;
   };
-  const settledHooks = (u) => require('../../lib/usage/task').taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}), callerOf: () => 'c1', buildResult});
+  const settledHooks = (u) => require('../../lib/usage/task').taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}), buildResult});
 
   it('an answered pass still being written is recorded with its answer, not as a cancel; cancel() records it the same', () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1});
     const hooks = settledHooks(u);
-    const a = hooks.start({apiKey: 'k'});
-    const b = hooks.start({apiKey: 'k'});
+    const a = hooks.start({ownerId: 'u_k'});
+    const b = hooks.start({ownerId: 'u_k'});
     hooks.answered({extra: a}, {n: 12345});
     hooks.answered({extra: b}, {n: 1});
     hooks.cancel({}, {extra: b});
@@ -110,8 +110,8 @@ describe('usage 26: every open call is closed at exit, cancelled (B-shutdown-usa
   it('a failed pass still being written: its code, its bytes, and the caller\'s fault only when a module said so', () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1});
     const hooks = settledHooks(u);
-    const byModule = hooks.start({apiKey: 'k'});
-    const notModule = hooks.start({apiKey: 'k'});
+    const byModule = hooks.start({ownerId: 'u_k'});
+    const notModule = hooks.start({ownerId: 'u_k'});
     hooks.failed({extra: byModule}, Object.assign(new Error('bad input'), {code: 'X_BAD_INPUT', kind: 'caller', origin: 'module'}));
     hooks.failed({extra: notModule}, Object.assign(new Error('bad input'), {code: 'X_BAD_INPUT', kind: 'caller'}));
     assert.strictEqual(u.closeOpen(hooks.outcomeOf), 2);
@@ -125,10 +125,10 @@ describe('usage 26: every open call is closed at exit, cancelled (B-shutdown-usa
   // recorded cancelled at a stop, though its tombstone was not yet read
   it('a settled pass whose task this process cancelled is recorded cancelled, with what it sent', () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1});
-    const hooks = require('../../lib/usage/task').taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}), callerOf: () => 'c1', buildResult,
+    const hooks = require('../../lib/usage/task').taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}), buildResult,
       cancelledNow: (jobId) => jobId === 'task-7'});
-    const cancelled = hooks.start({apiKey: 'k'});
-    const kept = hooks.start({apiKey: 'k'});
+    const cancelled = hooks.start({ownerId: 'u_k'});
+    const kept = hooks.start({ownerId: 'u_k'});
     hooks.answered({extra: cancelled, jobId: 'task-7'}, {n: 7});
     hooks.failed({extra: kept, jobId: 'task-8'}, Object.assign(new Error('x'), {code: 'JOB_TIMEOUT'}));
     assert.strictEqual(u.closeOpen(hooks.outcomeOf), 2);
@@ -151,8 +151,8 @@ describe('usage 26: every open call is closed at exit, cancelled (B-shutdown-usa
     const placedBuild = (err, results, placed) => (placed != null && placed.uris.big != null
       ? {content: [{type: 'text', text: 'small'}, {type: 'resource_link', uri: placed.uris.big, name: 'big', size: 5000}]}
       : {content: [{type: 'text', text: JSON.stringify(results)}]});
-    const hooks = require('../../lib/usage/task').taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}), callerOf: () => 'c1', buildResult: placedBuild});
-    const a = hooks.start({apiKey: 'k'});
+    const hooks = require('../../lib/usage/task').taskHooks({usage: () => u, targetFor: () => ({name: 'slow', role: 'tool', module: 'm'}), buildResult: placedBuild});
+    const a = hooks.start({ownerId: 'u_k'});
     hooks.answered({extra: a}, {big: 'x'.repeat(5000)});
     hooks.answered({extra: a}, {big: 'x'.repeat(5000)}, {raw: {}, uris: {big: 'countinghouse://pending'}, error: null, entries: null});
     u.closeOpen(hooks.outcomeOf);

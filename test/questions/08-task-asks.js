@@ -41,6 +41,8 @@ async function inSharedMode(fn) {
 }
 
 describe('questions 08: a task\'s question, held on the server (M22)', function() {
+  // (its jobs' owner known to the identity index, as a server's: B-meter-keys (2))
+  require('../helpers/identity-scope').useIdentity(['k']);
   // each case's records are removed even when it fails, so the next one's
   // caps start empty
   const made = new Set();
@@ -493,7 +495,8 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
           return setTimeout(() => { if (typeof(cancelled) !== 'function' || !cancelled()) callback(new CountinghouseError('ASK_PENDING')); }, 100);
         }};
       let k = 0;
-      api.authorizeRun = () => { k += 1; return authorize != null ? authorize(k) : Promise.resolve(); };
+      // (as the test's authorize answers; let through, the owner's key, as the real check resolves it)
+      api.authorizeRun = (job) => { k += 1; return (authorize != null ? Promise.resolve(authorize(k)) : Promise.resolve()).then(() => require('../helpers/identity-scope').authorizedRun(job)); };
       api.initJobProcess(ci);
       let s = 0;
       api.setStartHook((data, session) => {
@@ -879,7 +882,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
           }
           return setImmediate(callback, null, {output: {done: true}});
         }};
-      JobControl.authorizeRun = () => Promise.resolve();
+      JobControl.authorizeRun = require('../helpers/identity-scope').authorizedRun;
       JobControl.initJobProcess(ci);
       JobControl.setAskHooks({
         before: (data, taskId) => taskAsks.forRun(taskId, {asks: data.asks === true, asking: data.asking != null, owner: 'owner-q', shownAs: 'm'}),
@@ -926,7 +929,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       const started = [];
       const ended = [];
       const completed = [];
-      JobControl.authorizeRun = () => Promise.resolve();
+      JobControl.authorizeRun = require('../helpers/identity-scope').authorizedRun;
       JobControl.initJobProcess(ci);
       JobControl.setStartHook(() => { started.push(started.length + 1); return {usageCall: started.length}; });
       JobControl.setEndHook((data, run, outcome) => ended.push([run.extra.usageCall, outcome]));
@@ -1016,7 +1019,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
           return setImmediate(callback, null, {output: {done: true}});
         }};
       const runner = createRunner({jobTimeoutMs: 0});
-      runner.authorizeRun = () => Promise.resolve();
+      runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
       runner.initJobProcess(ci);
       const settled = [];
       runner.setAskHooks({
@@ -1055,7 +1058,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
           return setImmediate(callback, null, {output: {done: true}});
         }};
       const runner = createRunner({jobTimeoutMs: 0});
-      runner.authorizeRun = () => Promise.resolve();
+      runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
       runner.initJobProcess(ci);
       const started = [];
       const ended = [];
@@ -1092,7 +1095,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
           return setImmediate(callback, null, {output: {done: true}});
         }};
       const runner = createRunner({jobTimeoutMs: 0});
-      runner.authorizeRun = () => Promise.resolve();
+      runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
       runner.initJobProcess(ci);
       const ended = [];
       runner.setStartHook(() => ({usageCall: 1}));
@@ -1125,7 +1128,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
           return setImmediate(callback, new CountinghouseError('ASK_PENDING'));
         }};
       const runner = createRunner({jobTimeoutMs: 0});
-      runner.authorizeRun = () => Promise.resolve();
+      runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
       runner.initJobProcess(ci);
       const started = [];
       const completed = [];
@@ -1157,7 +1160,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
           return setImmediate(callback, new CountinghouseError('ASK_PENDING'));
         }};
       const runner = createRunner({jobTimeoutMs: 0});
-      runner.authorizeRun = () => Promise.resolve();
+      runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
       runner.initJobProcess(ci);
       const ended = [];
       runner.setStartHook(() => ({usageCall: 1}));
@@ -1184,7 +1187,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
           return setImmediate(callback, new CountinghouseError('ASK_PENDING'));
         }};
       const runner = createRunner({jobTimeoutMs: 0});
-      runner.authorizeRun = () => Promise.resolve();
+      runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
       runner.initJobProcess(ci);
       // (the call's record kept as the usage counters keep it: the asked hook
       // closes it as 'asked', as production's does once the question is
@@ -1216,7 +1219,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
           return setImmediate(callback, new CountinghouseError('ASK_PENDING'));
         }};
       const runner = createRunner({jobTimeoutMs: 0});
-      runner.authorizeRun = () => Promise.resolve();
+      runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
       runner.initJobProcess(ci);
       runner.setAskHooks({
         before: (data, taskId) => taskAsks.forRun(taskId, {asks: data.asks === true, asking: data.asking != null, owner: 'owner-e', shownAs: 'm'}),

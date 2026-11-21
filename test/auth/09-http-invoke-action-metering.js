@@ -27,6 +27,8 @@ const url              = `http://127.0.0.1:${PORT}`;
 const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-auth-09-${process.pid}.json`;
 
 const ALICE = `alice-key-09-${process.pid}`;
+// (the ledger names a key's record by its fingerprint, never the key: B-meter-keys (1))
+const ALICE_LEDGER = require('../../lib/key-fingerprint').meterId(ALICE);
 
 const DEVICE_ID  = deviceIDForName('echo-device'); // echo-device-module, deterministic UUID.v5
 const SERVICE_ID = 'urn:countinghouse-com:serviceID:echoService';
@@ -43,6 +45,8 @@ let redisClient = null;
 function balance(cb) {
   request(url).get('/balance').set('X-CH-Key', ALICE).end((err, res) => {
     if (err) return cb(err);
+    // (GET /balance answers the balance, never the key: B-meter-keys (1), C1)
+    if (JSON.stringify(res.body).includes(ALICE) || 'apiKey' in res.body) return cb(new Error(`/balance carried the key: ${JSON.stringify(res.body)}`));
     cb(null, res.body.balance);
   });
 }
@@ -92,7 +96,7 @@ describe('auth 09: HTTP invoke-action is metered, with the same record MCP tools
 
   after((done) => {
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) {}
-    redisClient.del(ALICE, () => {
+    redisClient.del(ALICE_LEDGER, () => {
       redisClient.quit(() => {
         stopAll(done);
       });
@@ -180,7 +184,7 @@ describe('auth 09: HTTP invoke-action is metered, with the same record MCP tools
     const seeded = {};
     seeded[TOOL_ID] = {count: 2};
 
-    redisClient.hmset(ALICE, 'toolPriceRecord', JSON.stringify(seeded), (err) => {
+    redisClient.hmset(ALICE_LEDGER, 'toolPriceRecord', JSON.stringify(seeded), (err) => {
       if (err) return done(err);
 
       balance((err, before) => {
@@ -199,7 +203,7 @@ describe('auth 09: HTTP invoke-action is metered, with the same record MCP tools
                                       `under the same tool identity`));
               }
 
-              redisClient.hmget(ALICE, 'toolPriceRecord', (err, results) => {
+              redisClient.hmget(ALICE_LEDGER, 'toolPriceRecord', (err, results) => {
                 if (err) return done(err);
                 const record = JSON.parse(results[0]);
                 if (record[TOOL_ID] == null || record[TOOL_ID].count !== 0) {

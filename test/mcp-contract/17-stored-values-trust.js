@@ -25,6 +25,8 @@ const until = async (fn, ms = 10000) => {
 };
 
 describe('mcp-contract 17: stored values, in-process (M6)', function() {
+  // (its jobs' owners known to the identity index, as a server's: B-meter-keys (2))
+  require('../helpers/identity-scope').useIdentity([KEY]);
   this.timeout(30000);
   // (the BullMQ runner's queue and the job history are this server's: B-j1)
   require('../helpers/server-id').useServerId();
@@ -175,7 +177,7 @@ describe('mcp-contract 17: stored values, in-process (M6)', function() {
       const {createRunner, INTERNAL} = require('../../lib/job-control-local');
       const jobSessions = require('../../lib/job-sessions');
       const runner = createRunner({jobTimeoutMs: 0});
-      runner.authorizeRun = () => Promise.resolve();
+      runner.authorizeRun = require('../helpers/identity-scope').authorizedRun;
       runner.initJobProcess({recordCall: (k, t, c, cb) => cb && cb(null),
         invokeJobs: (d, s, a, input, jobID, cb) => setImmediate(cb, null, {output: {}})});
       const metas = [];
@@ -195,7 +197,7 @@ describe('mcp-contract 17: stored values, in-process (M6)', function() {
       const jobControl = require('../../lib/job-control');
       const jobSessions = require('../../lib/job-sessions');
       const {INTERNAL} = require('../../lib/job-control-common');
-      jobControl.authorizeRun = () => Promise.resolve();
+      jobControl.authorizeRun = require('../helpers/identity-scope').authorizedRun;
       jobControl.initJobProcess({recordCall: (k, t, c, cb) => cb && cb(null),
         invokeJobs: (d, s, a, input, jobID, cb) => setImmediate(cb, null, {output: {}})});
       const metas = [];

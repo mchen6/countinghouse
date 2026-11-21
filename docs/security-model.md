@@ -220,12 +220,52 @@ runtime names them `/app/...`, and the file broker maps `<V>:\app`,
 above applies on Windows as it does elsewhere. With no free drive letter,
 `--moduleSandbox enforce` refuses to start on Windows, saying so.
 
-**On Windows, a module's declared host paths are not available yet**
-([#204](https://github.com/mchen6/countinghouse/issues/204)): a declared
-root is a host path, which there carries a drive, and the broker takes every
-drive-qualified path as outside the namespace. Under `enforce` such a path is
-refused (ENOENT): it fails closed. The module gets its own `/data` and
-`/tmp`.
+**On Windows, a module's declared host paths are limited**
+([#204](https://github.com/mchen6/countinghouse/issues/204)). A declaration
+is POSIX-absolute (`countinghouse.permissions.fs`, lib/module-permissions.js),
+so on Windows `/srv/x` names that path on the runtime's current drive
+(`C:\srv\x`), and that is the root granted. A path on another drive can't
+be declared. A drive-qualified path a module gives is outside the namespace,
+refused (ENOENT) under `enforce`: it fails closed. The module always has its
+own `/data` and `/tmp`.
+
+**Other Windows limits** (from running every sandbox and file-broker test on
+a Windows runner, each failure given its cause):
+
+- **`--hardened` loads no module in a Windows worker yet.** Every module
+  load there fails with Node's "Access to this API has been restricted",
+  a read the permission model refuses (which read is not pinned yet). It
+  fails closed. ch-local doesn't pass `--hardened`.
+- **The Redis store is untested on Windows.** CI's Windows runners have no
+  Redis, so the tests that use it run on Linux only. On Windows, ch-local
+  runs the local store (`--store local`), which is tested there.
+- **Names Win32 reads specially.** Node's fs gives Windows an absolute path in
+  its namespaced form (`\\?\`) for the calls checked on a Windows runner
+  (open, read, write), where Win32's name rules don't apply: a module's
+  `/data/COM1` or `/data/NUL.txt` is an ordinary file, not a device, and
+  `/data/note.` is a file of its own, not `note`. A name with a `:` in a
+  segment of the module's own `/app`, `/data` or `/tmp` names an NTFS stream
+  (`note:alt`, `note::$DATA`): under `enforce` it answers ENOENT, as if
+  nothing were there, since a stream's bytes escape the disk quota's count
+  at a spawn; `audit` reports it and lets it through. The broker's checks of a protected file at each
+  operation compare a Windows name with its case folded and its `:stream`
+  suffix and trailing dots and spaces stripped (lib/fs-broker/denied.js), or
+  compare the file itself. The namespace's start-time check that a declared
+  root doesn't overlap a protected path compares case-sensitively past the
+  drive letter; a root it misses is still refused at each operation.
+- **A link a module makes inside its roots** is refused on Windows when a
+  segment of its target is one Win32's path rules would read as other than
+  its text: trailing dots or spaces, or a device name. Followed through
+  Node's namespaced paths, a target is taken as written (checked on a
+  Windows runner), so this refusal is a belt.
+- **An exclusive create** (`open` with `wx`, `copyFile` with
+  `COPYFILE_EXCL`) through a link that was dangling when the broker checked
+  it answers EEXIST on Windows before any open, as POSIX's kernel answers it,
+  under `audit` and `enforce` (`off` decides nothing about files). A link a
+  host process puts there after the check is the host race described below.
+- **CI's Windows legs** run the stdio and local-store suites. The sandbox and
+  file-broker suites run on Windows only when the Windows subset workflow is
+  dispatched by hand with them: no pull request or merge runs them there.
 
 **Under `audit` a module changes nothing outside its own area**
 (maintainer's decision, 2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
@@ -829,10 +869,13 @@ file renamed into place under `<storePath>/.lock`, merged by key, so
 several processes may share the store. No file under it holds an API key:
 metering without `--meter` records calls in memory only, and with
 `--meter` `metering.json` keeps each key's balance and free calls under
-the key's fingerprint (a full, domain-separated sha256). The seeding
-command, `countinghouse-meter`, reads the key from
-`COUNTINGHOUSE_SEED_KEY`, never from its arguments, and prints only the
-fingerprint.
+the key's fingerprint (a full, domain-separated sha256). The Redis store's
+ledger does the same: one hash per key, named by that fingerprint, so its
+records hold no key. The seeding
+command, `countinghouse-meter` (`--storePath <dir>` for the local store,
+`--store redis` for Redis's), reads the key from `COUNTINGHOUSE_SEED_KEY`,
+never from its arguments, and prints only the fingerprint. No metering
+answer carries the key: `GET /balance` answers the balance alone.
 
 The store's files are written back every 5 seconds, and at a clean stop. So
 a runtime killed without one (SIGKILL, a power loss) can lose up to the

@@ -923,7 +923,12 @@ in 8.0.0 will not find that data after a downgrade. Copy what you need out of
   without `--hardened` (enforce protects files on Windows without it;
   `--hardened` is the opt-in extra layer), or from an install whose
   dependencies are inside it.
+- On Windows, `--hardened` loads no module in a worker yet: every module
+  load fails with Node's "Access to this API has been restricted" (fails
+  closed; the read it refuses is not pinned yet). Run `--moduleSandbox
+  enforce` without `--hardened` there.
 - On Windows, a module's declared host paths (`countinghouse.permissions.fs`)
-  are not available yet; it gets its own `/data` and `/tmp`
-  ([#204](https://github.com/mchen6/countinghouse/issues/204)). Under
-  `enforce` a declared path is refused, as any path outside the namespace.
+  are limited ([#204](https://github.com/mchen6/countinghouse/issues/204)):
+  a declaration is POSIX-absolute, so `/srv/x` names that path on the
+  runtime's current drive, and a path on another drive can't be declared.
+  The module always has its own `/data` and `/tmp`.

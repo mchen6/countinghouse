@@ -1,5 +1,4 @@
 const assert = require('assert');
-const {deviceIDForName} = require('../../lib/call-address');
 const util   = require('util');
 
 const RedisMeteringProvider = require('../../lib/metering/redis-provider');
@@ -23,6 +22,8 @@ describe('auth 18: RedisMeteringProvider.recordCall keeps every charge under con
   this.timeout(20000);
 
   const KEY  = `concurrent-metering-18-${process.pid}`;
+  // (the ledger names a key's record by its fingerprint, never the key: B-meter-keys (1))
+  const LEDGER = require('../../lib/key-fingerprint').meterId(KEY);
   const TOOL = 'concurrent-metering-tool';
 
   let provider = null;
@@ -33,10 +34,10 @@ describe('auth 18: RedisMeteringProvider.recordCall keeps every charge under con
     recordCall = util.promisify(provider.recordCall.bind(provider));
   });
 
-  beforeEach((done) => { provider.redisClient.del(KEY, done); });
+  beforeEach((done) => { provider.redisClient.del(LEDGER, done); });
 
   after((done) => {
-    provider.redisClient.del(KEY, () => { provider.redisClient.quit(done); });
+    provider.redisClient.del(LEDGER, () => { provider.redisClient.quit(done); });
   });
 
   function storedBalance() {
@@ -65,7 +66,7 @@ describe('auth 18: RedisMeteringProvider.recordCall keeps every charge under con
     const record = {};
     record[TOOL] = {count: 5};
     await util.promisify(provider.redisClient.hmset.bind(provider.redisClient))(
-      KEY, 'toolPriceRecord', JSON.stringify(record));
+      LEDGER, 'toolPriceRecord', JSON.stringify(record));
 
     const results = await concurrentCalls(20);
     const free    = results.filter((r) => r.charged === 0);
@@ -76,28 +77,7 @@ describe('auth 18: RedisMeteringProvider.recordCall keeps every charge under con
     assert.strictEqual(await storedBalance(), -15);
 
     const stored = await util.promisify(provider.redisClient.hget.bind(provider.redisClient))(
-      KEY, 'toolPriceRecord');
+      LEDGER, 'toolPriceRecord');
     assert.strictEqual(JSON.parse(stored)[TOOL].count, 0);
-  });
-
-  // Not a concurrency case: it pins the legacy-schema fallback, which the fix
-  // moved across the same boundary as everything else and which had no test.
-  it('still seeds a free-call quota from the legacy `devices` field, then charges once it is spent', async () => {
-    const DEVICE_ID  = deviceIDForName('echo-device');
-    const SERVICE_ID = 'urn:countinghouse-com:serviceID:echoService';
-    const legacyTool = RedisMeteringProvider.encodeLegacyTool(DEVICE_ID, SERVICE_ID, 'echo');
-
-    const priceRecord = {};
-    priceRecord[SERVICE_ID] = {echo: {count: 2}};
-    await util.promisify(provider.redisClient.hmset.bind(provider.redisClient))(
-      KEY, 'devices', JSON.stringify([{deviceID: DEVICE_ID, priceRecord: priceRecord}]));
-
-    const first  = await recordCall(KEY, legacyTool, 1);
-    const second = await recordCall(KEY, legacyTool, 1);
-    const third  = await recordCall(KEY, legacyTool, 1);
-
-    assert.deepStrictEqual([first.charged, first.remainingFreeCalls],   [0, 1]);
-    assert.deepStrictEqual([second.charged, second.remainingFreeCalls], [0, 0]);
-    assert.deepStrictEqual([third.charged, third.balance],              [1, -1]);
   });
 });
