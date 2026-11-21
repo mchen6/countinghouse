@@ -135,6 +135,49 @@ describe('stdio 51: the authoring tools in the single-identity profile (B-own-ru
     }
   });
 
+  // (the reviewer's high on #499, round 2) package.json swapped, during the
+  // calls, for a link to a home file or a FIFO: what was judged is what was
+  // read, so the home file's values never reach an answer, and the runtime
+  // never stops answering
+  it('a package.json swapped during validation for a link or a FIFO: nothing of the home file in any answer, and the runtime answers', async function() {
+    if (process.platform === 'win32') this.skip();
+    const target = path.join(work, 'LEAKED-MAIN-target.js');
+    fs.writeFileSync(target, '// a file the home json\'s main names');
+    const homeJson = path.join(home, 'home-file.json');
+    fs.writeFileSync(homeJson, JSON.stringify({name: 'LEAKED-HOME-NAME', main: target}));
+    const dir = writeModule(path.join(work, 'swapped'));
+    const pkgFile = path.join(dir, 'package.json');
+    const realText = fs.readFileSync(pkgFile, 'utf8');
+    const aside = path.join(work, 'swapped-aside');
+    fs.mkdirSync(aside, {recursive: true});
+    const swapTo = (kind) => {
+      let flip = false;
+      const t = setInterval(() => {
+        flip = !flip;
+        const next = path.join(aside, `next-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        try {
+          if (!flip) fs.writeFileSync(next, realText);
+          else if (kind === 'link') fs.symlinkSync(homeJson, next);
+          else require('child_process').execFileSync('mkfifo', [next]);
+          fs.renameSync(next, pkgFile);
+        } catch (e) { /* a swap missed: the next one comes */ }
+      }, 1);
+      return () => { clearInterval(t); fs.rmSync(pkgFile, {force: true}); fs.writeFileSync(pkgFile, realText); };
+    };
+    for (const kind of ['link', 'fifo']) {
+      const stop = swapTo(kind);
+      try {
+        for (let i = 0; i < 150; i++) {
+          const r = await call('countinghouse_validate_module', {path: dir});
+          assert.ok(!/LEAKED-/.test(JSON.stringify(r)), `${kind}, call ${i}: ${JSON.stringify(r).slice(0, 400)}`);
+        }
+      } finally {
+        stop();
+      }
+      assert.ok((await io.request({jsonrpc: '2.0', id: id++, method: 'tools/list', params: {}}, 10000)).result != null, `${kind}: the runtime still answers`);
+    }
+  });
+
   // (the reviewer's high on #499, 2) a FIFO never holds the runtime
   it('validate_module never opens a FIFO in the folder', async function() {
     if (process.platform === 'win32') this.skip();
