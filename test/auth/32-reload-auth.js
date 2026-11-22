@@ -24,6 +24,31 @@ const SERVICE   = 'urn:countinghouse-com:serviceID:echoService';
 const invokeAs = (key) => request(URL).post(`/devices/${DEVICE_ID}/invoke-action`).set('X-CH-Key', key)
   .send({serviceID: SERVICE, actionName: 'echo', input: {foo: [{item1: 'x'}], bar: 'y'}});
 const reload = (key) => request(URL).post('/reload-auth').set('X-CH-Key', key).send({});
+// a 2026-07-28 listen as key's, its SSE events kept as they come (A13)
+const http = require('http');
+const listenAs = (key, notifications) => new Promise((resolve, reject) => {
+  const V = '2026-07-28';
+  const data = JSON.stringify({jsonrpc: '2.0', id: 91, method: 'subscriptions/listen', params: {_meta: {'io.modelcontextprotocol/protocolVersion': V, 'io.modelcontextprotocol/clientCapabilities': {}}, notifications}});
+  const req = http.request({host: '127.0.0.1', port: PORT, path: '/mcp', method: 'POST',
+    headers: {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', 'Content-Length': Buffer.byteLength(data),
+      'MCP-Protocol-Version': V, 'Mcp-Method': 'subscriptions/listen', 'X-CH-Key': key}}, (res) => {
+    const out = {req, events: [], raw: ''};
+    res.setEncoding('utf8');
+    res.on('data', (c) => {
+      out.raw += c;
+      let i;
+      while ((i = out.raw.indexOf('\n\n')) >= 0) {
+        const line = out.raw.slice(0, i).split('\n').find((l) => l.startsWith('data: '));
+        out.raw = out.raw.slice(i + 2);
+        if (line != null) out.events.push(JSON.parse(line.slice(6)));
+      }
+    });
+    resolve(out);
+  });
+  req.on('error', reject);
+  req.end(data);
+});
+const until = async (test, ms = 10000) => { const end = Date.now() + ms; while (!test() && Date.now() < end) await new Promise((r) => setTimeout(r, 50)); return test(); };
 const tool = (key) => request(URL).post('/mcp').set('X-CH-Key', key).set('Accept', 'application/json, text/event-stream')
   .send({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'countinghouse_reload_auth', arguments: {}}});
 const noKeys = (body) => {
@@ -70,6 +95,22 @@ describe('auth 32: reloading the auth config without a restart', function() {
     assert.deepStrictEqual(r.body, {ok: true, entries: 2, changed: 1});
     const after = await invokeAs(ALICE);
     assert.strictEqual(after.status, 200, JSON.stringify(after.body));
+  });
+
+  // (the final pass's gateway part, A13) a grant changed by a reload changes
+  // the key's tools/list: its listens are told, as a module's change tells them
+  it('a grant a reload changes sends the key\'s listens tools/list_changed', async () => {
+    write([]);
+    assert.strictEqual((await reload(ADMIN)).status, 200);
+    const s = await listenAs(ALICE, {toolsListChanged: true});
+    try {
+      assert.ok(await until(() => s.events.some((m) => m.method === 'notifications/subscriptions/acknowledged')), JSON.stringify(s.events));
+      write([DEVICE_ID]);
+      assert.strictEqual((await reload(ADMIN)).status, 200);
+      assert.ok(await until(() => s.events.some((m) => m.method === 'notifications/tools/list_changed')), JSON.stringify(s.events));
+    } finally {
+      s.req.destroy();
+    }
   });
 
   it('is admin only', async () => {
