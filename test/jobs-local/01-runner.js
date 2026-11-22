@@ -165,6 +165,21 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     runner.close(); cron.runner.close();
   });
 
+  // (the medium on #531's round, 2) as the Redis runner: 50 of the caller's
+  // a state, so a full state never hides another's; one left out is said
+  it('listJobs: 50 of the caller\'s own a state, a failed one behind 52 completed listed, the cut said', async () => {
+    const {runner} = runnerWith((i, cb) => setImmediate(cb, i === 52 ? new Error('no') : null, {}));
+    for (let i = 0; i < 53; i++) await call(runner, 'addJob', {appKey: 'a'}, {name: `j${i}`}, 'd', 's', 'a', {});
+    const listed = () => new Promise((resolve) => runner.listJobs({appKey: 'a'}, (err, r, more) => resolve({r, more})));
+    assert.ok(await until(async () => (await listed()).r.filter((x) => x.state === 'completed' || x.state === 'failed').length >= 51, 10000), 'the jobs settled');
+    const {r, more} = await listed();
+    assert.deepStrictEqual([r.filter((x) => x.state === 'completed').length, r.filter((x) => x.state === 'failed').length], [50, 1]);
+    assert.deepStrictEqual(more, {truncated: true});
+    const none = await new Promise((resolve) => runner.listJobs({appKey: 'b'}, (err, rows, m) => resolve({rows, m})));
+    assert.deepStrictEqual([none.rows.length, none.m], [0, {truncated: false}]);
+    runner.close();
+  });
+
   it('a job is its owner\'s: another key is answered as for a job never issued, byte for byte; an admin is not refused; listJobs filters', async () => {
     const {runner} = runnerWith((i, cb) => setImmediate(cb, null, {}));
     const {r} = await call(runner, 'addJob', {appKey: 'a'}, {name: 'o'}, 'd', 's', 'a', {});

@@ -40,7 +40,7 @@ describe('jobs-local 09: the Redis runner lists a caller\'s own tasks past other
     assert.deepStrictEqual(Array.isArray(list) ? list.map((x) => x.job.id) : list, ['100', '99', '98']);
   });
 
-  it('at most 50 of the caller\'s own, and a state is read at most 1000 jobs deep', async () => {
+  it('at most 50 of the caller\'s own, and a state is read at most 200 jobs deep', async () => {
     const completed = [];
     for (let i = 0; i < 120; i++) completed.push(job(5000 - i, 'mine-key'));
     const full = Object.assign(Object.create(require('../../lib/job-control')), {jobQueue: queue({completed})});
@@ -53,12 +53,12 @@ describe('jobs-local 09: the Redis runner lists a caller\'s own tasks past other
     const empty = await new Promise((resolve) => none.listJobs({appKey: 'mine-key'}, (err, r) => resolve(err != null ? err.code : r)));
     assert.deepStrictEqual(empty, []);
     const deepest = Math.max(...q.asked.map(([, end]) => end));
-    assert.ok(deepest < 1000, `read to ${deepest}`);
+    assert.ok(deepest < 200, `read to ${deepest}`);
   });
 
   // (the medium on PR 2) one bound on what one list reads, across every
   // state; and a job seen twice (an offset that moved between pages) listed once
-  it('one list reads at most 1000 jobs in all states together, and lists a job once', async () => {
+  it('one list reads at most 200 jobs a state, 1000 in all, and lists a job once', async () => {
     const others = [];
     for (let i = 0; i < 5000; i++) others.push(job(90000 - i, 'theirs-key'));
     const q = queue({waiting: others, active: others, delayed: others, completed: others, failed: others});
@@ -66,6 +66,7 @@ describe('jobs-local 09: the Redis runner lists a caller\'s own tasks past other
     await new Promise((resolve) => jc.listJobs({appKey: 'mine-key'}, () => resolve()));
     const read = q.asked.reduce((n, [start, end]) => n + (end - start + 1), 0);
     assert.ok(read <= 1000, `read ${read}`);
+    assert.ok(q.asked.every(([, end]) => end < 200), JSON.stringify(q.asked.slice(-2)));
     // the same job in two pages (one shifted in between) and two states
     const mine = job(77, 'mine-key');
     const shifting = {asked: [], getJobCountByTypes: () => Promise.resolve(51), getJobs(types, start) { this.asked.push(start); return Promise.resolve(start === 0 ? Array.from({length: 49}, (_, i) => job(500 + i, 'theirs-key')).concat([mine]) : start === 50 ? [mine] : []); }};
@@ -107,5 +108,23 @@ describe('jobs-local 09: the Redis runner lists a caller\'s own tasks past other
     const mine = job(9, 'mine-key');
     const q = {getJobCountByTypes: () => Promise.resolve(60), getJobs: (types, start) => Promise.resolve(types[0] !== 'completed' ? [] : start === 0 ? Array.from({length: 49}, (_, i) => job(800 + i, 'theirs-key')) : start === 50 ? [mine] : [])};
     assert.deepStrictEqual((await list(q)).ids, ['9']);
+  });
+  // (the medium on #531's round, 4) cut only when one of the caller's is
+  // left out: exactly 50 of its own is the whole list
+  it('exactly 50 of the caller\'s own is no cut; 51 is', async () => {
+    const own = (n) => Array.from({length: n}, (_, i) => job(4000 - i, 'mine-key'));
+    assert.deepStrictEqual((await list(queue({failed: own(50).concat([job(1, 'theirs-key')])}))).more, {truncated: false});
+    assert.deepStrictEqual((await list(queue({failed: own(51)}))).more, {truncated: true});
+  });
+  // (the medium on #531's round, 3) a state that changed while it was read
+  // (a count that moved, a page come back short) may have hidden one: said
+  it('a state that changed while it was read is said to be cut', async () => {
+    let counts = 0;
+    const grew = {getJobCountByTypes: (t) => Promise.resolve(t === 'completed' ? (counts++ === 0 ? 60 : 62) : 0),
+      getJobs: (types, start) => Promise.resolve(types[0] !== 'completed' ? [] : Array.from({length: Math.min(50, 60 - start)}, (_, i) => job(900 - start - i, 'theirs-key')))};
+    assert.deepStrictEqual((await list(grew)).more, {truncated: true}, 'the count moved');
+    const short = {getJobCountByTypes: (t) => Promise.resolve(t === 'completed' ? 60 : 0),
+      getJobs: (types, start) => Promise.resolve(types[0] !== 'completed' ? [] : Array.from({length: start === 0 ? 49 : 10}, (_, i) => job(700 - start - i, 'theirs-key')))};
+    assert.deepStrictEqual((await list(short)).more, {truncated: true}, 'a page short');
   });
 });

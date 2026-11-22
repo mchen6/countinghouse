@@ -46,8 +46,8 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
   // success line and exited 0 with nothing written (flush logged and
   // rescheduled, and close cleared the retry).
   it('a balance that could not be written is said, with exit 2, and no success line', () => {
+    // (removed on every path by trees.hooks())
     const storePath = trees.mkdtemp('ch-metering-03-');
-    try {
     // a live holder (this test's process): busy for the whole wait, never stale
     fs.writeFileSync(path.join(storePath, '.lock'), JSON.stringify({pid: process.pid, startMs: 1, at: Date.now()}));
     const run = meter(['set', '--storePath', storePath, '--balance', '50'], {COUNTINGHOUSE_SEED_KEY: KEY});
@@ -56,10 +56,6 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
     assert.ok(!/set balance/.test(run.stdout), run.stdout);
     assert.ok(!run.stderr.includes(KEY), run.stderr);
     assert.ok(!fs.existsSync(path.join(storePath, 'metering.json')), 'nothing written');
-    } finally {
-      // (removed on every path: the medium on PR 2)
-      fs.rmSync(storePath, {recursive: true, force: true});
-    }
   });
 
   it('refuses without COUNTINGHOUSE_SEED_KEY, and never takes the key as an argument', () => {
