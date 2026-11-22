@@ -142,4 +142,41 @@ describe('plan-validator: plan.calls', () => {
     assert.ok(r.problems.some((p) => p.stage === 'validatePlan' && /more than once/.test(p.message)),
       JSON.stringify(r.problems));
   });
+
+  // (the medium on the dry run's naming fix) a scenario's tools are named by
+  // their action alone: two services' same action is one name, a reserved
+  // name is countinghouse's own, and a collision is fixed by the action
+  describe('a scenario\'s plan (role scenario)', () => {
+    const svc = (name, action) => ({name, actions: [{name: action, description: 'does a thing'}]});
+    it('the same action in two services: one name twice, a problem', () => {
+      const r = planValidator.validatePlan({device: 'x', services: [svc('aService', 'run'), svc('bService', 'run')]}, [], {}, {role: 'scenario'});
+      assert.deepStrictEqual(r.toolNames, ['run', 'run']);
+      assert.strictEqual(r.ok, false);
+      assert.ok(r.problems.some((p) => p.message === '"run" is the tool name of two actions in this plan.'), JSON.stringify(r.problems));
+    });
+    it('an action named as one of countinghouse\'s own tools: a problem', () => {
+      const r = planValidator.validatePlan({device: 'x', services: [svc('aService', 'countinghouse_settings')]}, [], {}, {role: 'scenario'});
+      assert.strictEqual(r.ok, false);
+      assert.ok(r.problems.some((p) => p.message === '"countinghouse_settings" is a name countinghouse keeps for its own tools.'), JSON.stringify(r.problems));
+    });
+    it('each mistake said once: an action declared twice is not also a name twice; a reserved name is not also a runtime\'s tool', () => {
+      const twice = planValidator.validatePlan({device: 'x', services: [{name: 's', actions: [{name: 'run', description: 'd'}, {name: 'run', description: 'd'}]}]}, [], {}, {role: 'scenario'});
+      assert.ok(!twice.problems.some((p) => /is the tool name of two actions/.test(p.message)), JSON.stringify(twice.problems));
+      const reserved = planValidator.validatePlan({device: 'x', services: [svc('aService', 'countinghouse_settings')]}, ['countinghouse_settings'], {}, {role: 'scenario'});
+      assert.deepStrictEqual(reserved.problems.map((p) => p.message), ['"countinghouse_settings" is a name countinghouse keeps for its own tools.']);
+    });
+    // (#537's high, L5) a service named twice is said, and never hides a
+    // real collision of its actions with another service's
+    it('a repeated service does not hide its action\'s collision with another service', () => {
+      const r = planValidator.validatePlan({device: 'x', services: [svc('aService', 'run'), svc('bService', 'go'), svc('bService', 'run')]}, [], {}, {role: 'scenario'});
+      assert.ok(r.problems.some((p) => /service short name "bService" is duplicate/.test(p.message)), JSON.stringify(r.problems));
+      assert.ok(r.problems.some((p) => p.message === '"run" is the tool name of two actions in this plan.'), JSON.stringify(r.problems));
+    });
+    it('a collision with a tool on this runtime: rename the action', () => {
+      const r = planValidator.validatePlan({device: 'x', services: [svc('aService', 'countLines')]}, ['countlines'], {}, {role: 'scenario'});
+      const p = r.problems.find((x) => x.message === '"countlines" is already a tool on this runtime.');
+      assert.ok(p != null, JSON.stringify(r.problems));
+      assert.strictEqual(p.fix, 'Rename the action: a scenario\'s tool is named by its action alone.');
+    });
+  });
 });

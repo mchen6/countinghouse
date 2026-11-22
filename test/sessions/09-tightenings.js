@@ -127,9 +127,10 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
   // form and its answer are sessions 10's)
   it('a loosening is judged against the session\'s own value, and in a session whose client could answer for the user it is not asked; nothing changes', async () => {
     await tool.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
-    // back toward the default is a loosening of A's value
-    const e = await refused(tool.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
-    assert.match(e.message, /ch-local settings set maxOutputBytes 4MiB/);
+    // back toward the default, in a locked session: refused, and it names no
+    // terminal command, which would never move A's own value
+    const e = await refused(tool.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
+    assert.ok(/it is locked in this session/.test(e.message) && !/settings set/.test(e.message), e.message);
     assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 2 * MiB);
     // B has no override: above the default is one
     await refused(tool.set('requestTimeout', '60s', 'settings tool', ctx(B)), 'SETTING_CLIENT_NOT_CONFIRMED');
@@ -262,8 +263,9 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     // one line for each kind past the budget; the rest counted at the end
     const past = history().filter((h) => h.session === A && /past this session's 32/.test(String(h.change)));
     assert.strictEqual(past.length, 2, JSON.stringify(past));
-    // a loosening past it stays the terminal's
-    await refused(tool.set('maxOutputBytes', String(at), 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
+    // a loosening past it (above the value for all sessions: up to it, a
+    // session's own lowering is undone in conversation) stays the terminal's
+    await refused(tool.set('maxOutputBytes', String(8 * MiB + 1), 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
     assert.strictEqual(settings.effective(A, 'maxOutputBytes'), at - 5, 'unchanged');
     // another session has its own
     assert.deepStrictEqual(await tool.set('requestTimeout', '20s', 'settings tool', ctx(B)), {name: 'requestTimeout', old: 30000, new: 20000, applies: 'this session'});
