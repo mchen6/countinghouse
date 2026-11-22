@@ -248,15 +248,17 @@ errors by code, and server calls per call.
 
 `tools/list` is recomputed from live device specs on every request, so a
 loaded module's tools appear on the next call. The server also says when a
-client's list changed (a module loaded, unloaded or reloaded, or a reload of
-the auth config that changes the key's grants), where the client can hear it:
+client's list changed (a module loaded, unloaded, reloaded, or turned on or
+off, or a reload of the auth config that changes the key's grants), where
+the client can hear it:
 
 - a 2026-07-28 client opens a `subscriptions/listen` stream with
   `notifications.toolsListChanged`, and gets
   `notifications/tools/list_changed` on it;
 - a 2025-11-25 client of a `--stdio` runtime gets it unasked, once it has
   listed (`capabilities.tools.listChanged`);
-- a 2025-11-25 client over HTTP has no stream to hear it on, and lists again.
+- a 2025-11-25 client over HTTP, or of a shared runtime's session, has no
+  stream to hear it on, and lists again.
 
 The loop does not wait for the notice: `load_module` returns the names it made
 callable, and `call_tool` invokes them.
