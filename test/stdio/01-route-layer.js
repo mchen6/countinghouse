@@ -256,6 +256,28 @@ describe('--stdio route layer', function() {
     await h.served.done;
   });
 
+  // (the final pass's gateway part, A12) a too-long line that ends inside a
+  // chunk which also carries the next requests: refused, and they are
+  // served. The refusal used to empty the whole buffer, the next requests
+  // with it.
+  it('a too-long line that ends mid-chunk is refused, and the requests after it in that chunk are served', async () => {
+    const h = harness({maxLineBytes: 100});
+    const long = JSON.stringify(req(1, 'x', {pad: 'a'.repeat(80)}));
+    h.input.write(long.slice(0, 90));
+    await settle();
+    h.input.write(`${long.slice(90)}\n${JSON.stringify(req(2, 'ping'))}\n${JSON.stringify(req(3, 'ping'))}\n`);
+    const got = await lines(h, 3);
+    assert.deepStrictEqual(got, [{jsonrpc: '2.0', id: null, error: {code: -32600, message: 'invalid JSON-RPC 2.0 request: the line is longer than 100 bytes'}},
+      {jsonrpc: '2.0', id: 2, result: {method: 'ping'}}, {jsonrpc: '2.0', id: 3, result: {method: 'ping'}}]);
+    // and whole in one chunk, between two requests
+    h.input.write(`${JSON.stringify(req(4, 'ping'))}\n${long}\n${JSON.stringify(req(5, 'ping'))}\n`);
+    const all = await lines(h, 6);
+    // (answers in any order: the refusal is written at once, each answer when it comes)
+    assert.deepStrictEqual(all.slice(3).map((r) => (r.id != null ? String(r.id) : 'refused')).sort(), ['4', '5', 'refused']);
+    h.input.end();
+    await h.served.done;
+  });
+
   it('done resolves only after the last answer has been written out', async () => {
     const h = harness();
     let flushed = false;
