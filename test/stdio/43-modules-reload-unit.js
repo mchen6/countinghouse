@@ -506,7 +506,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       assert.ok(log.includes(`loaded ${P}@1.0.0`) && log.includes(`unloaded ${P}`), log.join('; '));
     });
 
-    it('(e) a suspended part is not present: the reload brings it back fresh (its generation moved, so its queued self-unload stands down)', async () => {
+    it('(e) a suspended part is not present: the reload loads it again, as master does', async () => {
       const {mm, dm, log} = runtime({supervised: true});
       await loadBoth(mm, dm, '1.0.0');
       crash(mm, P, 'suspended');
@@ -518,9 +518,9 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       assert.strictEqual(mm.supervisor.status(P).state, 'running');
       assert.ok(mm.modules[P] != null);
       // (the real loadModuleByWorker moves its generation and clears the
-      // suspended record, so givenUp's stillGivenUp is false: not modelled by
-      // this stand-in, whose load writes a running record)
-      void gen;
+      // suspended record, so givenUp's stillGivenUp is false: the stand-in's
+      // load only writes a running record, so that part is not asserted here)
+      assert.ok(Number.isInteger(gen) || gen === undefined);
     });
 
     it('(f) a restarting module no unit holds (loaded outside any) is not present: an addition, as before', async () => {
