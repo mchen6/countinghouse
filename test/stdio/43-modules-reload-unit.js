@@ -471,7 +471,9 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       const wm = mm.modules[name];
       delete mm.modules[name];
       mm.nextGeneration(name);
-      mm.supervisor.records[name] = {state: 'suspended', modulePath: wm.modulePath, version: wm.packageInfo.version};
+      // (given up with a code other than the default, as the real givenUp
+      // keeps it on the record: the code a re-add's rollback must carry)
+      mm.supervisor.records[name] = {state: 'suspended', modulePath: wm.modulePath, version: wm.packageInfo.version, givenUpCode: 'MODULE_SANDBOX_REFUSED'};
       return {record: mm.supervisor.records[name], gen: mm.generations[name]};
     };
     const stillGivenUp = (mm, name, was) => mm.supervisor.isCurrent(name, was.record) && mm.supervisor.status(name) != null &&
@@ -500,7 +502,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       assert.ok(mm.supervisor.isCurrent(P, was.record) && mm.supervisor.status(P).state === 'suspended', 'its suspended record is back');
       assert.ok(mm.generations[P] > was.gen, 'generations only move forward');
       const queued = g.givenUps.find((x) => x.name === P);
-      assert.ok(queued != null && queued.code === 'MODULE_SUSPENDED', `a self-unload queued anew: ${log.join('; ')}`);
+      assert.ok(queued != null && queued.code === 'MODULE_SANDBOX_REFUSED', `a self-unload queued anew, with the code it was given up with: ${log.join('; ')}`);
       assert.ok(queued.record === was.record && queued.gen === mm.generations[P], 'for the restored record, at the current generation');
       assert.strictEqual(mm.packsInPlace.get('@t/ch-pack-s').modules.get(P).version, '1.0.0');
     });
@@ -527,12 +529,43 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
         assert.ok(log.includes(`loaded ${K}@1.0.0`) && log.includes(`unloaded ${K}`), `reached and rolled back: ${log.join('; ')}`);
         assert.strictEqual(credentials.moduleEntry(K), allowance, 'the holder\'s allowance, not the load\'s none');
         assert.ok(mm.supervisor.isCurrent(K, was.record) && mm.supervisor.status(K).state === 'suspended', 'its suspended record is back');
-        assert.ok(g.givenUps.some((x) => x.name === K && x.record === was.record && x.gen === mm.generations[K]), log.join('; '));
+        assert.ok(g.givenUps.some((x) => x.name === K && x.code === 'MODULE_SANDBOX_REFUSED' && x.record === was.record && x.gen === mm.generations[K]), log.join('; '));
         assert.strictEqual(mm.unlisted.has(K), unlisted, 'its listing is its holder\'s');
         assert.deepStrictEqual(visibility.hiddenOf([K]), [], 'not left hidden');
         assert.strictEqual(mm.modules[K], undefined);
       } finally {
         credentials.restore(saved);
+        visibility.resetForTests();
+      }
+    });
+  });
+
+  describe('#397: around a suspended member, the rest', () => {
+    const K = '@t/ch-step-k';
+    it('the real givenUp keeps the code it was given up with on the record, whatever the channel', () => {
+      const mm = Object.assign(Object.create(ModuleManager.prototype), {supervisor: {records: {x: {state: 'suspended'}}}, generations: {}});
+      mm.givenUp('x', 'MODULE_SANDBOX_REFUSED');
+      assert.strictEqual(mm.supervisor.records.x.givenUpCode, 'MODULE_SANDBOX_REFUSED');
+    });
+
+    it('(k) a load that fails before it reaches a suspended part another unit holds: the part is not left hidden, its suspension untouched', async () => {
+      const visibility = require('../../lib/module-visibility');
+      const g = runtime({supervised: true, failVersion: '1.0.0', failName: '@t/ch-pack-z'});
+      const {mm, dm, log} = g;
+      visibility.configure({moduleOf: () => null, isGone: (n) => mm.modules[n] == null && (mm.supervisor == null || mm.supervisor.status(n) == null)});
+      try {
+        await loadBoth(mm, dm, '1.0.0');
+        writeModule(at('@t/ch-pack-z', '1.0.0'), {name: '@t/ch-pack-z', version: '1.0.0', role: 'part', calls: ['ch-step-k/svc.run']});
+        const wm = mm.modules[K];
+        delete mm.modules[K];
+        const record = {state: 'suspended', modulePath: wm.modulePath, version: '1.0.0'};
+        mm.supervisor.records[K] = record;
+        log.length = 0;
+        await assert.rejects(mip.loadPack(mm, {type: 'load', name: '@t/ch-pack-z', dirs: {'@t/ch-pack-z': at('@t/ch-pack-z', '1.0.0'), [K]: at(K, '1.0.0')}}, dm), /no spawn/);
+        assert.ok(!log.includes(`loaded ${K}@1.0.0`), `never reached: ${log.join('; ')}`);
+        assert.deepStrictEqual(visibility.hiddenOf([K]), [], 'not left hidden');
+        assert.ok(mm.supervisor.isCurrent(K, record));
+      } finally {
         visibility.resetForTests();
       }
     });
