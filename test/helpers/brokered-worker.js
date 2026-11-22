@@ -24,10 +24,11 @@ async function runBrokered(script, opts) {
   const ops = {};
   // repo: the worker entry loads the script under a boot grant over it
   // (opts.workerData: more of the worker's own data, as a module worker's -- virtualDrive)
-  const data = Object.assign({}, opts.workerData || {}, {script: script, root: dirs.data, fsBridge: null, extra: opts.extra || {}, repo: fs.realpathSync(REPO)});
+  const data = Object.assign({}, opts.workerData || {}, {script: script, root: dirs.data, fsBridge: null, extra: Object.assign({}, opts.extra || {}, opts.declared ? {base} : {}), repo: fs.realpathSync(REPO)});
   let transferList = [];
   if (usePatch) {
-    const ns = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [], protectedPaths: []});
+    // (opts.declared(base) -> declared roots, made from the run's own base)
+    const ns = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: opts.declared ? opts.declared(base) : [], protectedPaths: []});
     await ns.prepare();
     const scheduler = new FsScheduler({globalCap: 3});
     const broker = new FsBroker({name: 't', mode: opts.mode || 'audit', namespace: ns, cwd: process.cwd(), report: () => {},
