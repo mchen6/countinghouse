@@ -67,10 +67,23 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
   // (once its switch is done) | 'unload' (a restarting one's unload)}: an
   // operator unload (POST /unload-module: a generation of its own, the module
   // off the map) in that window of the module's switch
-  function runtime({failVersion = null, staleDuringDrain = null, failName = '@t/ch-pack-s', unloadDuring = null} = {}) {
+  // supervised: a stand-in supervisor (records by name: state, modulePath,
+  // version), as the real one's recorded/status read them (#397)
+  function runtime({failVersion = null, staleDuringDrain = null, failName = '@t/ch-pack-s', unloadDuring = null, supervised = false} = {}) {
     const log = [];
+    const supervisor = !supervised ? null : {records: {},
+      recorded(n) { const r = this.records[n]; return r == null ? null : {modulePath: r.modulePath, version: r.version}; },
+      status(n) { const r = this.records[n]; return r == null ? null : {state: r.state, lastReason: null, exits: [], nextRestartAt: null}; },
+      isCurrent(n, r) { return this.records[n] === r; }, clear(n) { delete this.records[n]; }};
     const mm = Object.assign(Object.create(ModuleManager.prototype), {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
-      supervisor: null, generations: {}, packsInPlace: null});
+      supervisor, generations: {}, packsInPlace: null});
+    // (what the real one keeps listed of a restarting module: not modelled)
+    if (supervised) mm.keepRetainedForReload = () => {};
+    // (the supervisor's giving up, as it queues a self-unload: recorded)
+    // (the supervisor's giving up, as it queues a self-unload: what the real
+    // givenUp captures for its stillGivenUp, the record and the generation)
+    const givenUps = [];
+    if (supervised) mm.givenUp = (name, code) => { givenUps.push({name, code, record: supervisor.records[name], gen: mm.generations[name]}); log.push(`givenUp ${name} ${code}`); };
     const instance = (name, version, p) => {
       // a worker proxy: the drain reads its queue
       const wm = Object.create(WorkerMessage.prototype);
@@ -86,13 +99,24 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       const switching = how === true;
       // the unload-then-load branch's load (loadOne: options, not true)
       const branchLoad = how != null && how !== true && how.generation != null;
-      if (version === failVersion && name === failName) return setImmediate(() => cb(Object.assign(new Error('no spawn'), {code: 'LOAD_MODULE_FAIL'})));
+      if (version === failVersion && name === failName) {
+        // (as loadModuleByWorker: the record cleared before the spawn that failed)
+        if (supervisor != null) supervisor.clear(name);
+        return setImmediate(() => cb(Object.assign(new Error('no spawn'), {code: 'LOAD_MODULE_FAIL'})));
+      }
       log.push(`held ${name}: ${mm.isHeld(name)}`);
       // (the branch's load: the operator's unload lands before this load puts
       // the module in the map, so it finds nothing to unload)
       if (branchLoad && unloadsIn(name, 'load')) operatorUnload(name);
       const wm = instance(name, version, p);
       mm.modules[name] = wm;
+      // (as the real loadModuleByWorker: a fresh supervisor record and, for a
+      // load that takes no generation, a moved one)
+      if (supervisor != null) {
+        supervisor.records[name] = {state: 'running', modulePath: p, version};
+        if (!switching && !branchLoad) mm.nextGeneration(name);
+      }
+      log.push(`loaded ${name}@${version}`);
       mm.unitLoaded(name);
       if (switching && unloadsIn(name, 'spawn')) operatorUnload(name);
       setImmediate(() => cb(null, wm));
@@ -116,8 +140,12 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       delete mm.modules[name];
       spawn(p, name, version, (err) => cb(err == null && generation != null && mm.generations[name] !== generation ? SUPERSEDED(name) : err), true);
     };
-    mm.unloadModuleExternal = (name, cb) => {
+    mm.unloadModuleExternal = (name, cb, why) => {
+      log.push(`unloaded ${name}`);
       delete mm.modules[name];
+      // (the real one clears the supervisor's record and, outside a reload's
+      // switch, moves the generation: lib/module-manager.js)
+      if (supervisor != null) { supervisor.clear(name); if (why !== 'reload') mm.nextGeneration(name); }
       if (unloadsIn(name, 'unload')) operatorUnload(name);
       cb(null);
     };
@@ -132,7 +160,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
         return 0;
       }}
     };
-    return {mm, dm, log};
+    return {mm, dm, log, givenUps};
   }
   const loadBoth = async (mm, dm, v) => {
     const r = await mip.loadPack(mm, {type: 'load', name: '@t/ch-pack-s', dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', v), '@t/ch-step-p': at('@t/ch-step-p', v), '@t/ch-step-k': at('@t/ch-step-k', '1.0.0')}}, dm);
@@ -428,5 +456,228 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     // nothing of the reload's left serving over the operator's unload (the
     // medium on #442's high round, 1 and 3)
     assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'it stays unloaded');
+  });
+
+  // #397's residual (1): a suspended member a unit holds is loaded again (it
+  // is not present), journalled as re-added: a rollback unloads the fresh
+  // instance, puts its suspended record back and queues a new self-unload
+  // (givenUp, at the current generation, with the code it was given up
+  // with), so ch-local is told; a load of another unit leaves a suspended
+  // shared part's credentials and listing as its holder has them
+  describe('#397: a suspended member a unit holds, re-added', () => {
+    const P = '@t/ch-step-p';
+    const K = '@t/ch-step-k';
+    const suspend = (mm, name) => {
+      const wm = mm.modules[name];
+      delete mm.modules[name];
+      mm.nextGeneration(name);
+      // (given up with a code other than the default, as the real givenUp
+      // keeps it on the record: the code a re-add's rollback must carry)
+      mm.supervisor.records[name] = {state: 'suspended', modulePath: wm.modulePath, version: wm.packageInfo.version, givenUpCode: 'MODULE_SANDBOX_REFUSED'};
+      return {record: mm.supervisor.records[name], gen: mm.generations[name]};
+    };
+    const stillGivenUp = (mm, name, was) => mm.supervisor.isCurrent(name, was.record) && mm.supervisor.status(name) != null &&
+      mm.supervisor.status(name).state === 'suspended' && mm.generations[name] === was.gen;
+    const reload = (mm, dm, sVersion) => mip.reloadPack(mm, {type: 'reload', names: ['@t/ch-pack-s'],
+      dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', sVersion), [P]: at(P, '1.0.0'), [K]: at(K, '1.0.0')}}, dm);
+
+    it('(g) the reload succeeds: it is brought back, so its queued self-unload stands down', async () => {
+      const {mm, dm} = runtime({supervised: true});
+      await loadBoth(mm, dm, '1.0.0');
+      const was = suspend(mm, P);
+      await reload(mm, dm, '2.0.0');
+      assert.ok(mm.modules[P] != null);
+      assert.strictEqual(stillGivenUp(mm, P, was), false);
+    });
+
+    it('(h) the reload fails: the rollback puts its suspension back, so its self-unload still runs and says so', async () => {
+      const g = runtime({supervised: true, failVersion: '2.0.0', failName: '@t/ch-pack-s'});
+      const {mm, dm, log} = g;
+      await loadBoth(mm, dm, '1.0.0');
+      const was = suspend(mm, P);
+      log.length = 0;
+      await assert.rejects(reload(mm, dm, '2.0.0'), /no spawn/);
+      assert.ok(log.includes(`loaded ${P}@1.0.0`) && log.includes(`unloaded ${P}`), log.join('; '));
+      assert.strictEqual(mm.modules[P], undefined, 'the fresh instance is gone');
+      assert.ok(mm.supervisor.isCurrent(P, was.record) && mm.supervisor.status(P).state === 'suspended', 'its suspended record is back');
+      assert.ok(mm.generations[P] > was.gen, 'generations only move forward');
+      const queued = g.givenUps.find((x) => x.name === P);
+      assert.ok(queued != null && queued.code === 'MODULE_SANDBOX_REFUSED', `a self-unload queued anew, with the code it was given up with: ${log.join('; ')}`);
+      assert.ok(queued.record === was.record && queued.gen === mm.generations[P], 'for the restored record, at the current generation');
+      assert.strictEqual(mm.packsInPlace.get('@t/ch-pack-s').modules.get(P).version, '1.0.0');
+    });
+
+    it('(i) another unit\'s load that fails after the shared part: its holder\'s credentials and listing kept, its suspension back, its self-unload queued', async () => {
+      const credentials = require('../../lib/remote/credentials');
+      const visibility = require('../../lib/module-visibility');
+      const saved = credentials.snapshot();
+      try {
+        const g = runtime({supervised: true, failVersion: '1.0.0', failName: '@t/ch-step-x'});
+        const {mm, dm, log} = g;
+        // (the real predicate: lib/route-manager.js)
+        visibility.configure({moduleOf: () => null, isGone: (n) => mm.modules[n] == null && (mm.supervisor == null || mm.supervisor.status(n) == null)});
+        await loadBoth(mm, dm, '1.0.0');
+        writeModule(at('@t/ch-step-x', '1.0.0'), {name: '@t/ch-step-x', version: '1.0.0', role: 'part'});
+        writeModule(at('@t/ch-pack-z', '1.0.0'), {name: '@t/ch-pack-z', version: '1.0.0', role: 'part', calls: ['ch-step-k/svc.run', 'ch-step-x/svc.run']});
+        const allowance = new Map([['https://api.example.invalid', new Map([['K', 'COUNTINGHOUSE_CREDENTIAL_1']])]]);
+        credentials.setModule(K, allowance);
+        const unlisted = mm.unlisted.has(K);
+        const was = suspend(mm, K);
+        log.length = 0;
+        await assert.rejects(mip.loadPack(mm, {type: 'load', name: '@t/ch-pack-z',
+          dirs: {'@t/ch-pack-z': at('@t/ch-pack-z', '1.0.0'), [K]: at(K, '1.0.0'), '@t/ch-step-x': at('@t/ch-step-x', '1.0.0')}}, dm), /no spawn/);
+        assert.ok(log.includes(`loaded ${K}@1.0.0`) && log.includes(`unloaded ${K}`), `reached and rolled back: ${log.join('; ')}`);
+        assert.strictEqual(credentials.moduleEntry(K), allowance, 'the holder\'s allowance, not the load\'s none');
+        assert.ok(mm.supervisor.isCurrent(K, was.record) && mm.supervisor.status(K).state === 'suspended', 'its suspended record is back');
+        assert.ok(g.givenUps.some((x) => x.name === K && x.code === 'MODULE_SANDBOX_REFUSED' && x.record === was.record && x.gen === mm.generations[K]), log.join('; '));
+        assert.strictEqual(mm.unlisted.has(K), unlisted, 'its listing is its holder\'s');
+        assert.deepStrictEqual(visibility.hiddenOf([K]), [], 'not left hidden');
+        assert.strictEqual(mm.modules[K], undefined);
+      } finally {
+        credentials.restore(saved);
+        visibility.resetForTests();
+      }
+    });
+  });
+
+  describe('#397: around a suspended member, the rest', () => {
+    const K = '@t/ch-step-k';
+    it('the real givenUp keeps the code it was given up with on the record, whatever the channel', () => {
+      const mm = Object.assign(Object.create(ModuleManager.prototype), {supervisor: {records: {x: {state: 'suspended'}}}, generations: {}});
+      mm.givenUp('x', 'MODULE_SANDBOX_REFUSED');
+      assert.strictEqual(mm.supervisor.records.x.givenUpCode, 'MODULE_SANDBOX_REFUSED');
+    });
+
+    it('(k) a load that fails before it reaches a suspended part another unit holds: the part is not left hidden, its suspension untouched', async () => {
+      const visibility = require('../../lib/module-visibility');
+      const g = runtime({supervised: true, failVersion: '1.0.0', failName: '@t/ch-pack-z'});
+      const {mm, dm, log} = g;
+      visibility.configure({moduleOf: () => null, isGone: (n) => mm.modules[n] == null && (mm.supervisor == null || mm.supervisor.status(n) == null)});
+      try {
+        await loadBoth(mm, dm, '1.0.0');
+        writeModule(at('@t/ch-pack-z', '1.0.0'), {name: '@t/ch-pack-z', version: '1.0.0', role: 'part', calls: ['ch-step-k/svc.run']});
+        const wm = mm.modules[K];
+        delete mm.modules[K];
+        const record = {state: 'suspended', modulePath: wm.modulePath, version: '1.0.0'};
+        mm.supervisor.records[K] = record;
+        log.length = 0;
+        await assert.rejects(mip.loadPack(mm, {type: 'load', name: '@t/ch-pack-z', dirs: {'@t/ch-pack-z': at('@t/ch-pack-z', '1.0.0'), [K]: at(K, '1.0.0')}}, dm), /no spawn/);
+        assert.ok(!log.includes(`loaded ${K}@1.0.0`), `never reached: ${log.join('; ')}`);
+        assert.deepStrictEqual(visibility.hiddenOf([K]), [], 'not left hidden');
+        assert.ok(mm.supervisor.isCurrent(K, record));
+      } finally {
+        visibility.resetForTests();
+      }
+    });
+  });
+
+  // #397: a member out of the module map that is restarting after a crash,
+  // and that a unit's record holds, is present: never loaded again as an
+  // addition, so a rollback never unloads it; one a reload changes is
+  // switched, and switched back. A suspended one is not (the block above).
+  describe('#397: a member restarting that a unit holds is present, not an addition', () => {
+    const P = '@t/ch-step-p';
+    const K = '@t/ch-step-k';
+    const crash = (mm, name, state = 'restarting') => {
+      const wm = mm.modules[name];
+      delete mm.modules[name];
+      mm.supervisor.records[name] = {state, modulePath: wm.modulePath, version: wm.packageInfo.version};
+    };
+    const recordOf = (mm) => mm.packsInPlace.get('@t/ch-pack-s');
+    // a reload at the same part versions whose scenario switch fails
+    const reloadFailing = (mm, dm, partVersion = '1.0.0') => mip.reloadPack(mm, {type: 'reload', names: ['@t/ch-pack-s'],
+      dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', '2.0.0'), [P]: at(P, partVersion), [K]: at(K, '1.0.0')}}, dm);
+
+    it('(a) a restarting part, a reload at its version that fails: the rollback leaves it, its supervisor record and the pack\'s record as they were', async () => {
+      const {mm, dm, log} = runtime({supervised: true, failVersion: '2.0.0', failName: '@t/ch-pack-s'});
+      await loadBoth(mm, dm, '1.0.0');
+      crash(mm, P);
+      log.length = 0;
+      await assert.rejects(reloadFailing(mm, dm), /no spawn/);
+      assert.ok(!log.includes(`loaded ${P}@1.0.0`), `not loaded again: ${log.join('; ')}`);
+      assert.ok(!log.includes(`unloaded ${P}`), `not unloaded: ${log.join('; ')}`);
+      assert.deepStrictEqual(mm.supervisor.status(P).state, 'restarting');
+      assert.strictEqual(recordOf(mm).modules.get(P).version, '1.0.0');
+    });
+
+    it('(b) a restarting part the reload changes: switched, then switched back by the rollback', async () => {
+      const {mm, dm, log} = runtime({supervised: true, failVersion: '2.0.0', failName: '@t/ch-pack-s'});
+      await loadBoth(mm, dm, '1.0.0');
+      crash(mm, P);
+      log.length = 0;
+      await assert.rejects(reloadFailing(mm, dm, '3.0.0'));
+      assert.ok(log.includes(`loaded ${P}@3.0.0`), log.join('; '));
+      assert.ok(mm.modules[P] != null && mm.modules[P].packageInfo.version === '1.0.0', `back at 1.0.0: ${log.join('; ')}`);
+      assert.strictEqual(recordOf(mm).modules.get(P).version, '1.0.0');
+    });
+
+    it('(c) a load that fails after a part another pack holds while it restarts: never loaded or unloaded by it, nor its listing changed', async () => {
+      const {mm, dm, log} = runtime({supervised: true, failVersion: '1.0.0', failName: '@t/ch-step-x'});
+      await loadBoth(mm, dm, '1.0.0');
+      writeModule(at('@t/ch-step-x', '1.0.0'), {name: '@t/ch-step-x', version: '1.0.0', role: 'part'});
+      writeModule(at('@t/ch-pack-z', '1.0.0'), {name: '@t/ch-pack-z', version: '1.0.0', role: 'part', calls: ['ch-step-k/svc.run', 'ch-step-x/svc.run']});
+      crash(mm, K);
+      const unlisted = mm.unlisted.has(K);
+      log.length = 0;
+      await assert.rejects(mip.loadPack(mm, {type: 'load', name: '@t/ch-pack-z',
+        dirs: {'@t/ch-pack-z': at('@t/ch-pack-z', '1.0.0'), [K]: at(K, '1.0.0'), '@t/ch-step-x': at('@t/ch-step-x', '1.0.0')}}, dm), /no spawn/);
+      assert.ok(log.some((l) => l.startsWith('unloaded @t/ch-pack-z')), `the load ran and rolled back: ${log.join('; ')}`);
+      assert.ok(!log.includes(`loaded ${K}@1.0.0`) && !log.includes(`unloaded ${K}`), log.join('; '));
+      assert.strictEqual(mm.supervisor.status(K).state, 'restarting');
+      assert.strictEqual(mm.unlisted.has(K), unlisted, 'its listing is the holding pack\'s');
+    });
+
+    it('(j) a restarting part whose credentials the reload revokes: switched at its version, so its restart never runs with the old allowance', async () => {
+      const credentials = require('../../lib/remote/credentials');
+      const saved = credentials.snapshot();
+      try {
+        const {mm, dm, log} = runtime({supervised: true});
+        await loadBoth(mm, dm, '1.0.0');
+        credentials.setModule(P, new Map([['https://api.example.invalid', new Map([['P', 'COUNTINGHOUSE_CREDENTIAL_1']])]]));
+        crash(mm, P);
+        log.length = 0;
+        await mip.reloadPack(mm, {type: 'reload', names: ['@t/ch-pack-s'],
+          dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', '1.0.0'), [P]: at(P, '1.0.0'), [K]: at(K, '1.0.0')}}, dm);
+        assert.ok(log.includes(`unloaded ${P}`) && log.includes(`loaded ${P}@1.0.0`), `ended and loaded again: ${log.join('; ')}`);
+        assert.strictEqual(credentials.moduleEntry(P), undefined, 'the revoke stands');
+      } finally {
+        credentials.restore(saved);
+      }
+    });
+
+    it('(d) a member neither in the map nor recorded is still an addition, loaded and rolled back', async () => {
+      const {mm, dm, log} = runtime({supervised: true, failVersion: '2.0.0', failName: '@t/ch-pack-s'});
+      await loadBoth(mm, dm, '1.0.0');
+      delete mm.modules[P];
+      mm.supervisor.clear(P);
+      log.length = 0;
+      await assert.rejects(reloadFailing(mm, dm));
+      assert.ok(log.includes(`loaded ${P}@1.0.0`) && log.includes(`unloaded ${P}`), log.join('; '));
+    });
+
+    it('(e) a suspended part is not present: the reload loads it again, as master does', async () => {
+      const {mm, dm, log} = runtime({supervised: true});
+      await loadBoth(mm, dm, '1.0.0');
+      crash(mm, P, 'suspended');
+      const gen = mm.generations[P];
+      log.length = 0;
+      await mip.reloadPack(mm, {type: 'reload', names: ['@t/ch-pack-s'],
+        dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', '2.0.0'), [P]: at(P, '1.0.0'), [K]: at(K, '1.0.0')}}, dm);
+      assert.ok(log.includes(`loaded ${P}@1.0.0`), log.join('; '));
+      assert.strictEqual(mm.supervisor.status(P).state, 'running');
+      assert.ok(mm.modules[P] != null);
+      assert.notStrictEqual(mm.generations[P], gen, 'its load moved the generation, so the self-unload queued before stands down');
+    });
+
+    it('(f) a restarting module no unit holds (loaded outside any) is not present: an addition, as before', async () => {
+      const {mm, dm, log} = runtime({supervised: true});
+      await loadBoth(mm, dm, '1.0.0');
+      writeModule(at('@t/ch-step-q', '1.0.0'), {name: '@t/ch-step-q', version: '1.0.0', role: 'part'});
+      mm.supervisor.records['@t/ch-step-q'] = {state: 'restarting', modulePath: at('@t/ch-step-q', '1.0.0'), version: '1.0.0'};
+      writeModule(at('@t/ch-pack-y', '1.0.0'), {name: '@t/ch-pack-y', version: '1.0.0', role: 'part', calls: ['ch-step-q/svc.run']});
+      log.length = 0;
+      await mip.loadPack(mm, {type: 'load', name: '@t/ch-pack-y', dirs: {'@t/ch-pack-y': at('@t/ch-pack-y', '1.0.0'), '@t/ch-step-q': at('@t/ch-step-q', '1.0.0')}}, dm);
+      assert.ok(log.includes('loaded @t/ch-step-q@1.0.0'), log.join('; '));
+    });
   });
 });
