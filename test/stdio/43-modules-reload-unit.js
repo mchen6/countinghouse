@@ -101,7 +101,12 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       if (branchLoad && unloadsIn(name, 'load')) operatorUnload(name);
       const wm = instance(name, version, p);
       mm.modules[name] = wm;
-      if (supervisor != null) supervisor.records[name] = {state: 'running', modulePath: p, version};
+      // (as the real loadModuleByWorker: a fresh supervisor record and, for a
+      // load that takes no generation, a moved one)
+      if (supervisor != null) {
+        supervisor.records[name] = {state: 'running', modulePath: p, version};
+        if (!switching && !branchLoad) mm.nextGeneration(name);
+      }
       log.push(`loaded ${name}@${version}`);
       mm.unitLoaded(name);
       if (switching && unloadsIn(name, 'spawn')) operatorUnload(name);
@@ -441,6 +446,68 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     // nothing of the reload's left serving over the operator's unload (the
     // medium on #442's high round, 1 and 3)
     assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'it stays unloaded');
+  });
+
+  // #397's residual (1): a suspended member a unit holds is loaded again (it
+  // is not present), journalled as re-added: a rollback unloads the fresh
+  // instance and puts its suspended record and generation back, so its
+  // queued self-unload (givenUp's stillGivenUp: the same record, suspended,
+  // the same generation) still runs and ch-local is told; a load of another
+  // unit leaves a suspended shared part's credentials as its holder has them
+  describe('#397: a suspended member a unit holds, re-added', () => {
+    const P = '@t/ch-step-p';
+    const K = '@t/ch-step-k';
+    const suspend = (mm, name) => {
+      const wm = mm.modules[name];
+      delete mm.modules[name];
+      mm.nextGeneration(name);
+      mm.supervisor.records[name] = {state: 'suspended', modulePath: wm.modulePath, version: wm.packageInfo.version};
+      return {record: mm.supervisor.records[name], gen: mm.generations[name]};
+    };
+    const stillGivenUp = (mm, name, was) => mm.supervisor.isCurrent(name, was.record) && mm.supervisor.status(name) != null &&
+      mm.supervisor.status(name).state === 'suspended' && mm.generations[name] === was.gen;
+    const reload = (mm, dm, sVersion) => mip.reloadPack(mm, {type: 'reload', names: ['@t/ch-pack-s'],
+      dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', sVersion), [P]: at(P, '1.0.0'), [K]: at(K, '1.0.0')}}, dm);
+
+    it('(g) the reload succeeds: it is brought back, so its queued self-unload stands down', async () => {
+      const {mm, dm} = runtime({supervised: true});
+      await loadBoth(mm, dm, '1.0.0');
+      const was = suspend(mm, P);
+      await reload(mm, dm, '2.0.0');
+      assert.ok(mm.modules[P] != null);
+      assert.strictEqual(stillGivenUp(mm, P, was), false);
+    });
+
+    it('(h) the reload fails: the rollback puts its suspension back, so its self-unload still runs and says so', async () => {
+      const {mm, dm, log} = runtime({supervised: true, failVersion: '2.0.0', failName: '@t/ch-pack-s'});
+      await loadBoth(mm, dm, '1.0.0');
+      const was = suspend(mm, P);
+      log.length = 0;
+      await assert.rejects(reload(mm, dm, '2.0.0'));
+      assert.ok(log.includes(`loaded ${P}@1.0.0`) && log.includes(`unloaded ${P}`), log.join('; '));
+      assert.strictEqual(mm.modules[P], undefined, 'the fresh instance is gone');
+      assert.strictEqual(stillGivenUp(mm, P, was), true, 'its record, suspended, and its generation are back');
+      assert.strictEqual(mm.packsInPlace.get('@t/ch-pack-s').modules.get(P).version, '1.0.0');
+    });
+
+    it('(i) another unit\'s load: a suspended shared part keeps its holder\'s credentials, and a failed load puts its suspension back', async () => {
+      const credentials = require('../../lib/remote/credentials');
+      const saved = credentials.snapshot();
+      try {
+        const {mm, dm} = runtime({supervised: true, failVersion: '1.0.0', failName: '@t/ch-pack-z'});
+        await loadBoth(mm, dm, '1.0.0');
+        writeModule(at('@t/ch-pack-z', '1.0.0'), {name: '@t/ch-pack-z', version: '1.0.0', role: 'part', calls: ['ch-step-k/svc.run']});
+        const allowance = new Map([['https://api.example.invalid', new Map([['K', 'COUNTINGHOUSE_CREDENTIAL_1']])]]);
+        credentials.setModule(K, allowance);
+        const was = suspend(mm, K);
+        await assert.rejects(mip.loadPack(mm, {type: 'load', name: '@t/ch-pack-z', dirs: {'@t/ch-pack-z': at('@t/ch-pack-z', '1.0.0'), [K]: at(K, '1.0.0')}}, dm));
+        assert.strictEqual(credentials.moduleEntry(K), allowance, 'the holder\'s allowance, not the load\'s none');
+        assert.strictEqual(stillGivenUp(mm, K, was), true);
+        assert.strictEqual(mm.modules[K], undefined);
+      } finally {
+        credentials.restore(saved);
+      }
+    });
   });
 
   // #397: a member out of the module map that its supervisor still records
