@@ -40,7 +40,7 @@ describe('jobs-local 09: the Redis runner lists a caller\'s own tasks past other
     assert.deepStrictEqual(Array.isArray(list) ? list.map((x) => x.job.id) : list, ['100', '99', '98']);
   });
 
-  it('at most 50 of the caller\'s own, and a state is read at most 2000 jobs deep', async () => {
+  it('at most 50 of the caller\'s own, and a state is read at most 1000 jobs deep', async () => {
     const completed = [];
     for (let i = 0; i < 120; i++) completed.push(job(5000 - i, 'mine-key'));
     const full = Object.assign(Object.create(require('../../lib/job-control')), {jobQueue: queue({completed})});
@@ -53,6 +53,24 @@ describe('jobs-local 09: the Redis runner lists a caller\'s own tasks past other
     const empty = await new Promise((resolve) => none.listJobs({appKey: 'mine-key'}, (err, r) => resolve(err != null ? err.code : r)));
     assert.deepStrictEqual(empty, []);
     const deepest = Math.max(...q.asked.map(([, end]) => end));
-    assert.ok(deepest < 2000, `read to ${deepest}`);
+    assert.ok(deepest < 1000, `read to ${deepest}`);
+  });
+
+  // (the medium on PR 2) one bound on what one list reads, across every
+  // state; and a job seen twice (an offset that moved between pages) listed once
+  it('one list reads at most 1000 jobs in all states together, and lists a job once', async () => {
+    const others = [];
+    for (let i = 0; i < 5000; i++) others.push(job(90000 - i, 'theirs-key'));
+    const q = queue({waiting: others, active: others, delayed: others, completed: others, failed: others});
+    const jc = Object.assign(Object.create(require('../../lib/job-control')), {jobQueue: q});
+    await new Promise((resolve) => jc.listJobs({appKey: 'mine-key'}, () => resolve()));
+    const read = q.asked.reduce((n, [start, end]) => n + (end - start + 1), 0);
+    assert.ok(read <= 1000, `read ${read}`);
+    // the same job in two pages (one shifted in between) and two states
+    const mine = job(77, 'mine-key');
+    const shifting = {asked: [], getJobs(types, start) { this.asked.push(start); return Promise.resolve(start === 0 ? Array.from({length: 49}, (_, i) => job(500 + i, 'theirs-key')).concat([mine]) : start === 50 ? [mine] : []); }};
+    const jd = Object.assign(Object.create(require('../../lib/job-control')), {jobQueue: shifting});
+    const list = await new Promise((resolve) => jd.listJobs({appKey: 'mine-key'}, (err, r) => resolve(r)));
+    assert.deepStrictEqual(list.map((x) => x.job.id), ['77']);
   });
 });

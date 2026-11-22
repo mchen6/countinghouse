@@ -97,6 +97,14 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
         assert.strictEqual(ttl(), 1500);
         Object.assign(o, {store: 'redis'});
         assert.strictEqual(ttl(), null);
+        // (the medium on PR 2) a result kept forever (--jobResultTtl 0) is no
+        // bound either; and a cancel's tombstone still expires under
+        // --jobTimeout 0, after the retention, as it did
+        Object.assign(o, {store: 'local', jobTimeout: 60000, jobResultTtl: 0});
+        assert.strictEqual(ttl(), null, 'kept forever');
+        const tomb = require('../../lib/mcp/gateway').tombstoneTtlMsFor;
+        Object.assign(o, {store: 'local', jobTimeout: 0, jobResultTtl: 3600000});
+        assert.strictEqual(tomb(), 3600000);
       } finally {
         Object.assign(o, kept);
       }
