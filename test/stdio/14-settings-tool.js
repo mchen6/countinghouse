@@ -137,6 +137,11 @@ describe('stdio 14: countinghouse_settings', () => {
     try {
       // (no read awaited first: the tool waits for the list's first read
       // itself -- the medium on this fix, 1)
+      // (and a settings file that cannot be used: its reset command, the same way)
+      fs.writeFileSync(file, '{');
+      const bad = await refused(tool.set('requestTimeout', '20s'), 'SETTINGS_FILE_INVALID');
+      assert.ok(bad.message.includes(`reset it with \`node "${launcher}" settings reset\` in a terminal`), bad.message);
+      fs.rmSync(file);
       for (const [name, value, command] of [['maxOutputBytes', '64MiB', 'maxOutputBytes 64MiB'], ['requestTimeout', '45s', 'requestTimeout 45s'], [EN, 'on', `${EN} on`]]) {
         if (name === EN) await tool.set(EN, 'off');
         const err = await refused(tool.set(name, value), 'SETTING_NEEDS_CONFIRMATION');
