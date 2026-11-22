@@ -1,6 +1,6 @@
 ---
 name: countinghouse-module
-description: Use when writing a new countinghouse module, or when a user asks for a tool to be hosted on a countinghouse runtime. Covers decomposing a requirement into services and actions, the module file layout, and the validate/load/call loop.
+description: "Use when writing a new countinghouse module, or when a user asks for a tool to be hosted on a countinghouse runtime. Covers decomposing a requirement into services and actions, the module file layout, and checking it. On ch-local you never load a module yourself: the user adds it with add-module in their own terminal."
 ---
 
 # Writing a countinghouse module
