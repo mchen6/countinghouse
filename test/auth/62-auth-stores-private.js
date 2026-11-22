@@ -289,7 +289,9 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
   // as it is, never "null": the default file, or CouchDB's database
   it('authStoreName names the store a message points at: the default file, the given one, or CouchDB\'s database', () => {
     const {authStoreName} = require('../../lib/auth/auth-file-defaults');
-    const cwd = '/srv/ch';
+    // (absolute on every OS, as the store's own path.resolve makes it: on
+    // Windows '/srv/ch' gains its drive -- #531's high, L7)
+    const cwd = path.resolve('/srv/ch');
     assert.strictEqual(authStoreName({}, cwd), path.join(cwd, 'auth.json'));
     assert.strictEqual(authStoreName({authProvider: 'sqlite'}, cwd), path.join(cwd, 'auth.sqlite3'));
     assert.strictEqual(authStoreName({authConfigPath: 'k.json'}, cwd), path.join(cwd, 'k.json'));

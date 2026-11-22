@@ -8,7 +8,6 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const {spawnSync} = require('child_process');
 const {LocalMeteringProvider} = require('../../lib/metering');
@@ -24,11 +23,13 @@ function meter(args, env) {
 }
 
 describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function() {
+  // (each test's store from test-tmp, removed when the describe ends, failed or not: #531's high, L7)
+  const trees = require('../helpers/test-tmp').forFile(['ch-metering-03-']);
   // (the busy-lock case waits out the store's 10 s update wait)
   this.timeout(45000);
 
   it('sets the balance of the key in COUNTINGHOUSE_SEED_KEY and prints only its fingerprint', async () => {
-    const storePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-metering-03-'));
+    const storePath = trees.mkdtemp('ch-metering-03-');
     const run = meter(['set', '--storePath', storePath, '--balance', '50'], {COUNTINGHOUSE_SEED_KEY: KEY});
     assert.strictEqual(run.status, 0, run.stderr);
     assert.ok(run.stdout.includes(meterId(KEY)), run.stdout);
@@ -45,7 +46,7 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
   // success line and exited 0 with nothing written (flush logged and
   // rescheduled, and close cleared the retry).
   it('a balance that could not be written is said, with exit 2, and no success line', () => {
-    const storePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-metering-03-'));
+    const storePath = trees.mkdtemp('ch-metering-03-');
     try {
     // a live holder (this test's process): busy for the whole wait, never stale
     fs.writeFileSync(path.join(storePath, '.lock'), JSON.stringify({pid: process.pid, startMs: 1, at: Date.now()}));
@@ -62,7 +63,7 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
   });
 
   it('refuses without COUNTINGHOUSE_SEED_KEY, and never takes the key as an argument', () => {
-    const storePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-metering-03-'));
+    const storePath = trees.mkdtemp('ch-metering-03-');
     const none = meter(['set', '--storePath', storePath, '--balance', '5'], {});
     assert.strictEqual(none.status, 2);
     assert.ok(/COUNTINGHOUSE_SEED_KEY/.test(none.stderr), none.stderr);
@@ -124,10 +125,11 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
   });
 
   it('refuses a balance that is not a finite number, and a missing --storePath', () => {
-    const storePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-metering-03-'));
+    const storePath = trees.mkdtemp('ch-metering-03-');
     assert.strictEqual(meter(['set', '--storePath', storePath, '--balance', 'lots'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
     // (--store local without --storePath; with neither, the store is Redis,
     // the runtime's default, which this test never touches)
     assert.strictEqual(meter(['set', '--store', 'local', '--balance', '5'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
   });
+  trees.hooks();
 });
