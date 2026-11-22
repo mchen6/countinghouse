@@ -235,6 +235,18 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
       assert.strictEqual(options.maxOutputBytes, 4 * MiB);
       assert.ok(JSON.parse(fs.readFileSync(file, 'utf8')).values.maxOutputBytes === 4 * MiB, 'stored');
       assert.strictEqual((await t0.set('maxOutputBytes', '3MiB', 'settings tool', ctx(B))).new, 3 * MiB, 'another session too');
+      // (#526's high, L3) recorded as every session's line, never the asking
+      // session's private one; and a second past the budget is counted with
+      // its latest value, never "asked again"
+      const past = history().filter((h) => /past this session's 32/.test(String(h.change)));
+      assert.deepStrictEqual(past.map((h) => [h.change.split(',')[0], h.asked]), [['all sessions: tightened', 4 * MiB]], JSON.stringify(past));
+      // every session reads it, not only the one that asked
+      const seenByB = (await t0.get(ctx(B))).history.filter((h) => /past this session's 32/.test(String(h.change)));
+      assert.strictEqual(seenByB.length, 1, JSON.stringify(seenByB));
+      await t0.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
+      t0.writeCounts();
+      const counted = history().filter((h) => /past this session's 32/.test(String(h.change)) && h.count != null);
+      assert.deepStrictEqual(counted.map((h) => [h.count, h.latest, /asked again/.test(h.change)]), [[1, 2 * MiB, false]], JSON.stringify(counted));
     });
   });
 
