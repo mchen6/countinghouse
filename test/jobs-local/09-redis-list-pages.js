@@ -21,7 +21,7 @@ describe('jobs-local 09: the Redis runner lists a caller\'s own tasks past other
   // newest first, as getJobs(..., false) answers: {state: [job]} by state
   function queue(byState) {
     const asked = [];
-    return {asked, getJobs(types, start, end) {
+    return {asked, getJobCountByTypes(t) { return Promise.resolve((byState[t] || []).length); }, getJobs(types, start, end) {
       asked.push([start, end]);
       const out = [];
       for (const t of types) out.push(...(byState[t] || []).slice(start, end + 1));
@@ -68,9 +68,44 @@ describe('jobs-local 09: the Redis runner lists a caller\'s own tasks past other
     assert.ok(read <= 1000, `read ${read}`);
     // the same job in two pages (one shifted in between) and two states
     const mine = job(77, 'mine-key');
-    const shifting = {asked: [], getJobs(types, start) { this.asked.push(start); return Promise.resolve(start === 0 ? Array.from({length: 49}, (_, i) => job(500 + i, 'theirs-key')).concat([mine]) : start === 50 ? [mine] : []); }};
+    const shifting = {asked: [], getJobCountByTypes: () => Promise.resolve(51), getJobs(types, start) { this.asked.push(start); return Promise.resolve(start === 0 ? Array.from({length: 49}, (_, i) => job(500 + i, 'theirs-key')).concat([mine]) : start === 50 ? [mine] : []); }};
     const jd = Object.assign(Object.create(require('../../lib/job-control')), {jobQueue: shifting});
     const list = await new Promise((resolve) => jd.listJobs({appKey: 'mine-key'}, (err, r) => resolve(r)));
     assert.deepStrictEqual(list.map((x) => x.job.id), ['77']);
+  });
+
+  // (#531's high, M2) each state its own read bound, master's newest page of
+  // every state the floor: 800 of others' completed tasks never hide the
+  // caller's failed one; LIST_MAX a state, as master; and a list cut short
+  // says so (the third argument), never "no more"
+  const list = (q, key = 'mine-key') => new Promise((resolve) => Object.assign(Object.create(require('../../lib/job-control')), {jobQueue: q})
+    .listJobs({appKey: key}, (err, r, more) => resolve({err, ids: r != null ? r.map((x) => x.job.id) : null, more})));
+  it('a caller\'s failed task behind 800 of others\' completed ones is listed; the cut is said', async () => {
+    const completed = [];
+    for (let i = 0; i < 800; i++) completed.push(job(50000 - i, 'theirs-key'));
+    const got = await list(queue({completed, failed: [job(7, 'mine-key')]}));
+    assert.deepStrictEqual(got.ids, ['7']);
+    assert.deepStrictEqual(got.more, {truncated: true}, 'completed was read only to its bound');
+    const whole = await list(queue({completed: completed.slice(0, 100), failed: [job(7, 'mine-key')]}));
+    assert.deepStrictEqual(whole.more, {truncated: false});
+    // tasks/list says it: _meta's countinghouse/truncated, only when cut
+    const {tasksListResult} = require('../../lib/mcp/gateway');
+    assert.deepStrictEqual(tasksListResult([], {truncated: true}), {tasks: [], _meta: {'countinghouse/truncated': true}});
+    assert.deepStrictEqual(tasksListResult([], {truncated: false}), {tasks: []});
+    assert.deepStrictEqual(tasksListResult([], undefined), {tasks: []}, 'the local runner passes none');
+  });
+  it('the caller\'s own: 50 a state, as master listed them', async () => {
+    const waiting = [];
+    const failed = [];
+    for (let i = 0; i < 60; i++) { waiting.push(job(3000 - i, 'mine-key')); failed.push(job(2000 - i, 'mine-key')); }
+    const got = await list(queue({waiting, failed}));
+    assert.strictEqual(got.ids.length, 100);
+  });
+  // (#531's high, L2) BullMQ drops a job removed mid-read: a short page is
+  // not the state's end, its count is
+  it('a page one short (a job removed mid-read) does not end the state', async () => {
+    const mine = job(9, 'mine-key');
+    const q = {getJobCountByTypes: () => Promise.resolve(60), getJobs: (types, start) => Promise.resolve(types[0] !== 'completed' ? [] : start === 0 ? Array.from({length: 49}, (_, i) => job(800 + i, 'theirs-key')) : start === 50 ? [mine] : [])};
+    assert.deepStrictEqual((await list(q)).ids, ['9']);
   });
 });
