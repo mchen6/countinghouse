@@ -313,8 +313,10 @@ emits it, see `lib/couchdb-adapter/init-db.js`).
 - **The auto-generated demo key is *not* admin.** It gets
   `{"userName": "demo", "devices": ["*"]}` — wildcard device access, no admin
   rights. A fresh checkout can call every tool immediately, but cannot
-  `/load-module`. Add `"admin": true` to it in `auth.json` (and restart —
-  `auth.json` is read once at startup) if you want that from the demo key.
+  `/load-module`. Add `"admin": true` to it in `auth.json`, then
+  `POST /reload-auth` with an admin key or restart, if you want that from
+  the demo key. (A reload from a file that can't be verified as yours applies
+  only what tightens and refuses "admin granted": restart then.)
 - **`--debug` bypasses this, along with everything else.** Under `--debug`
   every key resolves to an admin session, which is why the repo's own test
   suite can call these endpoints freely. That is a property of `--debug`, not
@@ -322,10 +324,28 @@ emits it, see `lib/couchdb-adapter/init-db.js`).
   including hot-loading modules, which is what an admin key is for. See
   [`cli-and-api-reference.md`](cli-and-api-reference.md).
 
+## The opaque user id
+
+Each user gets an opaque id, the same across every module on this server
+and nothing a module can turn back into a key or a name: `u_` and 22
+characters, an HMAC-SHA256 under the server's identity secret. Its source
+is the auth entry's optional `id` field when there is one, else the API key
+(domain-separated, so an `id` equal to another user's key never gives that
+user's id). Per-user module data and repeatable job schedulers are scoped by
+it. With a stable `id`, rotating the key keeps the user's id; without one,
+the id changes with the key.
+
+The secret is 32 random bytes, kept as 64 hex characters in
+`<moduleDataPath>/.identity-secret` (`<storePath>/.identity-secret` in
+ch-local's single-identity profile; owner-only, generated on first start)
+or given as `COUNTINGHOUSE_IDENTITY_SECRET` in the same form; both present
+and different refuses the start. Changing the secret changes every id. A
+worker gets neither the secret nor the index of ids.
+
 ## Rotating a key
 
 A repeatable job's scheduler belongs to the user that created it: its id is
-the job's name scoped to the user's opaque id (8.0.0, previous section).
+the job's name scoped to the user's [opaque id](#the-opaque-user-id) (8.0.0).
 **Give the entry a stable `id` first**: then a rotated key keeps the same
 opaque id, and the schedulers and per-user module data stay the user's.
 Without a stable id, the new key cannot reach the old key's schedulers.

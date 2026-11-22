@@ -1211,7 +1211,7 @@
     ]
   },
   "heldBackFile": {
-    "rule": "exactly {v: 1, modules: [...], launcher?}; at most 256 modules, none named twice; each exactly {name, reason, root?, via?}; name an npm package name not starting with - or ~; reason one of credential, off, ceiling, missing, pin, withdrawn, stopped, restart, changed, sandbox, collision, calls (changed, sandbox and collision are an own module's); root only on calls, one of credential, off, ceiling, missing, pin, withdrawn or not-installed; via exactly when root is, or on collision (the other module's package name): a package name (not starting with - or ~), or for not-installed the callee's declared name (1 to 64 characters, no / or . or control character). The file is a regular file, one name, no link, 0600 (or a private ACL on Windows), this user's own, at most 65536 bytes.",
+    "rule": "exactly {v: 1, modules: [...], launcher?}; at most 256 modules, none named twice; each exactly {name, reason, root?, via?, code?}; name an npm package name not starting with - or ~; reason one of credential, off, ceiling, missing, pin, withdrawn, stopped, restart, changed, sandbox, collision, refused, calls (changed, sandbox, collision and refused are an own module's); code exactly on refused, the runtime's code for its refusal, [A-Z][A-Z0-9_]{0,63}; root only on calls, one of credential, off, ceiling, missing, pin, withdrawn or not-installed; via exactly when root is, or on collision (the other module's package name): a package name (not starting with - or ~), or for not-installed the callee's declared name (1 to 64 characters, no / or . or control character). The file is a regular file, one name, no link, 0600 (or a private ACL on Windows), this user's own, at most 65536 bytes.",
     "accepted": [
       {
         "why": "none held back",
@@ -1277,6 +1277,19 @@
               "name": "my-tool",
               "reason": "collision",
               "via": "ch-pack-other"
+            }
+          ]
+        }
+      },
+      {
+        "why": "an own module this release's runtime refuses, with its code",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "my-tool",
+              "reason": "refused",
+              "code": "MODULE_INVALID"
             }
           ]
         }
@@ -1520,6 +1533,44 @@
             {
               "name": "my-tool",
               "reason": "collision"
+            }
+          ]
+        }
+      },
+      {
+        "why": "refused without its code",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "my-tool",
+              "reason": "refused"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a code on another reason",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "my-tool",
+              "reason": "stopped",
+              "code": "MODULE_INVALID"
+            }
+          ]
+        }
+      },
+      {
+        "why": "a code that is not one",
+        "file": {
+          "v": 1,
+          "modules": [
+            {
+              "name": "my-tool",
+              "reason": "refused",
+              "code": "not a code"
             }
           ]
         }
