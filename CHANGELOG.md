@@ -10,6 +10,8 @@ the auth config.
 
 ## Unreleased
 
+- `countinghouse_usage_report` in a session's own runtime (ch-local's per-session profile) covers that session's calls since its runtime started, not every earlier session's: as on the shared runtime, each session's usage is its own. `countinghouse-usage --usageDir <dir>` still covers every session that writes there.
+
 ### Changed — a module's name maps to one data folder on every system
 
 A module whose name has a part that ends in a dot or a space ("my-tool."), has
