@@ -327,7 +327,7 @@ emits it, see `lib/couchdb-adapter/init-db.js`).
 ## The opaque user id
 
 Each user gets an opaque id, the same across every module on this server
-and nothing a module can turn back into a key or a name: `u_` and 22
+and nothing a module under `enforce` can turn back into a key or a name: `u_` and 22
 characters, an HMAC-SHA256 under the server's identity secret. Its source
 is the auth entry's optional `id` field when there is one, else the API key
 (domain-separated, so an `id` equal to another user's key never gives that
@@ -340,7 +340,9 @@ The secret is 32 random bytes, kept as 64 hex characters in
 ch-local's single-identity profile; owner-only, generated on first start)
 or given as `COUNTINGHOUSE_IDENTITY_SECRET` in the same form; both present
 and different refuses the start. Changing the secret changes every id. A
-worker gets neither the secret nor the index of ids.
+worker is never given the secret or the index of ids; under `enforce` it can't
+read the secret file either (under `audit` it can: see the security model's
+[audit limit](security-model.md#what-the-module-sandbox-adds-and-what-it-does-not-stop)).
 
 ## Rotating a key
 
