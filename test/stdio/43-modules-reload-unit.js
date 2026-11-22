@@ -67,10 +67,18 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
   // (once its switch is done) | 'unload' (a restarting one's unload)}: an
   // operator unload (POST /unload-module: a generation of its own, the module
   // off the map) in that window of the module's switch
-  function runtime({failVersion = null, staleDuringDrain = null, failName = '@t/ch-pack-s', unloadDuring = null} = {}) {
+  // supervised: a stand-in supervisor (records by name: state, modulePath,
+  // version), as the real one's recorded/status read them (#397)
+  function runtime({failVersion = null, staleDuringDrain = null, failName = '@t/ch-pack-s', unloadDuring = null, supervised = false} = {}) {
     const log = [];
+    const supervisor = !supervised ? null : {records: {},
+      recorded(n) { const r = this.records[n]; return r == null ? null : {modulePath: r.modulePath, version: r.version}; },
+      status(n) { const r = this.records[n]; return r == null ? null : {state: r.state, lastReason: null, exits: [], nextRestartAt: null}; },
+      isCurrent: () => true, clear(n) { delete this.records[n]; }};
     const mm = Object.assign(Object.create(ModuleManager.prototype), {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
-      supervisor: null, generations: {}, packsInPlace: null});
+      supervisor, generations: {}, packsInPlace: null});
+    // (what the real one keeps listed of a restarting module: not modelled)
+    if (supervised) mm.keepRetainedForReload = () => {};
     const instance = (name, version, p) => {
       // a worker proxy: the drain reads its queue
       const wm = Object.create(WorkerMessage.prototype);
@@ -93,6 +101,8 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       if (branchLoad && unloadsIn(name, 'load')) operatorUnload(name);
       const wm = instance(name, version, p);
       mm.modules[name] = wm;
+      if (supervisor != null) supervisor.records[name] = {state: 'running', modulePath: p, version};
+      log.push(`loaded ${name}@${version}`);
       mm.unitLoaded(name);
       if (switching && unloadsIn(name, 'spawn')) operatorUnload(name);
       setImmediate(() => cb(null, wm));
@@ -117,7 +127,10 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       spawn(p, name, version, (err) => cb(err == null && generation != null && mm.generations[name] !== generation ? SUPERSEDED(name) : err), true);
     };
     mm.unloadModuleExternal = (name, cb) => {
+      log.push(`unloaded ${name}`);
       delete mm.modules[name];
+      // (the real one clears the supervisor's record: lib/module-manager.js)
+      if (supervisor != null) supervisor.clear(name);
       if (unloadsIn(name, 'unload')) operatorUnload(name);
       cb(null);
     };
@@ -428,5 +441,87 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     // nothing of the reload's left serving over the operator's unload (the
     // medium on #442's high round, 1 and 3)
     assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'it stays unloaded');
+  });
+
+  // #397: a member out of the module map that its supervisor still records
+  // (restarting after a crash, or suspended) is present: never loaded again as
+  // an addition, so a rollback never unloads it; one a reload changes is
+  // switched, and switched back
+  describe('#397: a member restarting or suspended is present, not an addition', () => {
+    const P = '@t/ch-step-p';
+    const K = '@t/ch-step-k';
+    const crash = (mm, name, state = 'restarting') => {
+      const wm = mm.modules[name];
+      delete mm.modules[name];
+      mm.supervisor.records[name] = {state, modulePath: wm.modulePath, version: wm.packageInfo.version};
+    };
+    const recordOf = (mm) => mm.packsInPlace.get('@t/ch-pack-s');
+    // a reload at the same part versions whose scenario switch fails
+    const reloadFailing = (mm, dm, partVersion = '1.0.0') => mip.reloadPack(mm, {type: 'reload', names: ['@t/ch-pack-s'],
+      dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', '2.0.0'), [P]: at(P, partVersion), [K]: at(K, '1.0.0')}}, dm);
+
+    it('(a) a restarting part, a reload at its version that fails: the rollback leaves it, its supervisor record and the pack\'s record as they were', async () => {
+      const {mm, dm, log} = runtime({supervised: true, failVersion: '2.0.0', failName: '@t/ch-pack-s'});
+      await loadBoth(mm, dm, '1.0.0');
+      crash(mm, P);
+      log.length = 0;
+      await assert.rejects(reloadFailing(mm, dm));
+      assert.ok(!log.includes(`loaded ${P}@1.0.0`), `not loaded again: ${log.join('; ')}`);
+      assert.ok(!log.includes(`unloaded ${P}`), `not unloaded: ${log.join('; ')}`);
+      assert.deepStrictEqual(mm.supervisor.status(P).state, 'restarting');
+      assert.strictEqual(recordOf(mm).modules.get(P).version, '1.0.0');
+    });
+
+    it('(b) a restarting part the reload changes: switched, then switched back by the rollback', async () => {
+      const {mm, dm, log} = runtime({supervised: true, failVersion: '2.0.0', failName: '@t/ch-pack-s'});
+      await loadBoth(mm, dm, '1.0.0');
+      crash(mm, P);
+      log.length = 0;
+      await assert.rejects(reloadFailing(mm, dm, '3.0.0'));
+      assert.ok(log.includes(`loaded ${P}@3.0.0`), log.join('; '));
+      assert.ok(mm.modules[P] != null && mm.modules[P].packageInfo.version === '1.0.0', `back at 1.0.0: ${log.join('; ')}`);
+      assert.strictEqual(recordOf(mm).modules.get(P).version, '1.0.0');
+    });
+
+    it('(c) a load whose part another pack holds while it restarts: never loaded or unloaded by the load, nor its listing changed', async () => {
+      const {mm, dm, log} = runtime({supervised: true, failVersion: '1.0.0', failName: '@t/ch-pack-z'});
+      await loadBoth(mm, dm, '1.0.0');
+      writeModule(at('@t/ch-pack-z', '1.0.0'), {name: '@t/ch-pack-z', version: '1.0.0', role: 'part', calls: ['ch-step-k/svc.run']});
+      crash(mm, K);
+      const unlisted = mm.unlisted.has(K);
+      log.length = 0;
+      await assert.rejects(mip.loadPack(mm, {type: 'load', name: '@t/ch-pack-z', dirs: {'@t/ch-pack-z': at('@t/ch-pack-z', '1.0.0'), [K]: at(K, '1.0.0')}}, dm));
+      assert.ok(!log.includes(`loaded ${K}@1.0.0`) && !log.includes(`unloaded ${K}`), log.join('; '));
+      assert.strictEqual(mm.supervisor.status(K).state, 'restarting');
+      assert.strictEqual(mm.unlisted.has(K), unlisted, 'its listing is the holding pack\'s');
+    });
+
+    it('(d) a member neither in the map nor recorded is still an addition, loaded and rolled back', async () => {
+      const {mm, dm, log} = runtime({supervised: true, failVersion: '2.0.0', failName: '@t/ch-pack-s'});
+      await loadBoth(mm, dm, '1.0.0');
+      delete mm.modules[P];
+      mm.supervisor.clear(P);
+      log.length = 0;
+      await assert.rejects(reloadFailing(mm, dm));
+      assert.ok(log.includes(`loaded ${P}@1.0.0`) && log.includes(`unloaded ${P}`), log.join('; '));
+    });
+
+    it('(e) a suspended part at its version: kept, its suspension standing, through a reload and through a rollback', async () => {
+      const ok = runtime({supervised: true});
+      await loadBoth(ok.mm, ok.dm, '1.0.0');
+      crash(ok.mm, P, 'suspended');
+      ok.log.length = 0;
+      await mip.reloadPack(ok.mm, {type: 'reload', names: ['@t/ch-pack-s'],
+        dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', '2.0.0'), [P]: at(P, '1.0.0'), [K]: at(K, '1.0.0')}}, ok.dm);
+      assert.ok(!ok.log.includes(`loaded ${P}@1.0.0`), ok.log.join('; '));
+      assert.strictEqual(ok.mm.supervisor.status(P).state, 'suspended');
+      assert.strictEqual(ok.mm.modules[P], undefined, 'never started again by the reload');
+      const bad = runtime({supervised: true, failVersion: '2.0.0', failName: '@t/ch-pack-s'});
+      await loadBoth(bad.mm, bad.dm, '1.0.0');
+      crash(bad.mm, P, 'suspended');
+      await assert.rejects(reloadFailing(bad.mm, bad.dm));
+      assert.strictEqual(bad.mm.supervisor.status(P).state, 'suspended');
+      assert.strictEqual(bad.mm.modules[P], undefined);
+    });
   });
 });
