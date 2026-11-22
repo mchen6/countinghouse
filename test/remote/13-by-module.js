@@ -119,6 +119,35 @@ describe('remote 13: a version 2 binding, at registration', function() {
     assert.strictEqual(remote.headers.length, before);
   });
 
+  // A refused call's text is answered to the module (answerRemoteMessage), so
+  // it never holds the launcher's path, a file outside the module's root
+  // (CLAUDE.md's sandbox invariant; the medium on the launcher's follow-ups,
+  // 1), and the refusal starts no held-back read a looping module could
+  // repeat (2). Under ch-local the user's line for a missing credential is
+  // the overview's, which goes through the launcher.
+  it('under ch-local with its launcher known, a refused call\'s text, which the module reads, never names its path', async () => {
+    const heldBack = require('../../lib/held-back');
+    const home = fs.realpathSync.native(tmpDirs.mkdtemp('ch-remote-13h-'));
+    fs.mkdirSync(path.join(home, 'bin'));
+    fs.writeFileSync(path.join(home, 'bin', 'ch-local.js'), '// launcher');
+    const launcher = fs.realpathSync.native(path.join(home, 'bin', 'ch-local.js'));
+    // (private as ch-local writes it, Windows' ACL included)
+    require('../helpers/private-auth').writePrivate(path.join(home, 'held-back.json'), JSON.stringify({v: 1, modules: [], launcher}));
+    cli.setOptions({workerThread: false, debug: true, controlChannel: 'ipc', heldBackFile: path.join(home, 'held-back.json'), settingsFile: path.join(home, 'settings.json')});
+    heldBack.resetForTests();
+    try {
+      await heldBack.ready();
+      assert.strictEqual(heldBack.list().launcher, launcher, 'the launcher is known');
+      remoteRegistry.register('remote-copycat', dirs.copycat, {version: '1.0.0'});
+      const err = await remoteRegistry.callRemote('remote-copycat', 'probe', 'echo_text', {}, {billingKey: 'k'}).then(() => null, (e) => e);
+      assert.strictEqual(err.code, 'REMOTE_CREDENTIAL_NOT_ALLOWED');
+      assert.ok(!err.message.includes(home) && !err.message.includes('node "'), err.message);
+      assert.ok(err.message.includes('run `ch-local credentials add remote-copycat` at a terminal'), err.message);
+    } finally {
+      heldBack.resetForTests();
+    }
+  });
+
   // Q1 (a) of the plan's review: a pack's own version 1 file is not used
   // under a version 2 start; a module the start binds uses the start's.
   it('under a version 2 start, a pack\'s version 1 allowance is never used', () => {
