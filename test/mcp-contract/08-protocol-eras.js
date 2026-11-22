@@ -80,6 +80,28 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
       assert.strictEqual(res.result.resultType, undefined);
     });
 
+    // (the final pass's gateway part, A13) a task's ttlMs: the job timeout
+    // and the result's retention under --store local, or null where there is
+    // no bound: Redis keeps a finished job, and --jobTimeout 0 is no timeout.
+    // It said 0 there, a task already expired.
+    it('a task\'s ttlMs is null with no bound (Redis, or --jobTimeout 0), else the timeout plus the retention', () => {
+      const o = require('../../lib/cli-options');
+      const kept = {store: o.store, jobTimeout: o.jobTimeout, jobResultTtl: o.jobResultTtl};
+      const ttl = require('../../lib/mcp/gateway').taskTtlMsFor;
+      try {
+        Object.assign(o, {store: 'local', jobTimeout: 0, jobResultTtl: 0});
+        assert.strictEqual(ttl(), null, 'no timeout');
+        Object.assign(o, {jobResultTtl: 5000});
+        assert.strictEqual(ttl(), null, 'no timeout, a retention');
+        Object.assign(o, {jobTimeout: 1000, jobResultTtl: 500});
+        assert.strictEqual(ttl(), 1500);
+        Object.assign(o, {store: 'redis'});
+        assert.strictEqual(ttl(), null);
+      } finally {
+        Object.assign(o, kept);
+      }
+    });
+
     // (the final pass's gateway part, A11) a version that isn't a legacy one
     // is not echoed: a client that then sent it in MCP-Protocol-Version would
     // be read as modern, and refused
