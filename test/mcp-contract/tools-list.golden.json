@@ -143,7 +143,7 @@
               },
               "tree": {
                 "type": "string",
-                "description": "For a module the user added themselves: the start of its files' hash, as `ch-local add-module` printed it, so the user can tell which version of their code is loaded."
+                "description": "For a module the user added themselves: the start of its files' hash, as `ch-local add-module` printed it: of the copy loaded, or for one not loaded, of the one last added."
               }
             },
             "required": [

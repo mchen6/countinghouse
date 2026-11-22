@@ -618,7 +618,7 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       const by = Object.fromEntries(data.packs.map((x) => [x.name, x]));
       assert.deepStrictEqual([by.p.tree, by.mine.tree, by['mine-down'].tree, by['mine-bare'].tree], [undefined, '0123456789ab', '0123456789ab', undefined]);
       assert.strictEqual(overview.OUTPUT_SCHEMA.properties.packs.items.properties.tree.description,
-        'For a module the user added themselves: the start of its files\' hash, as `ch-local add-module` printed it, so the user can tell which version of their code is loaded.');
+        'For a module the user added themselves: the start of its files\' hash, as `ch-local add-module` printed it: of the copy loaded, or for one not loaded, of the one last added.');
     });
 
     it('an own module is marked own, loaded or not; a pack never is', () => {
