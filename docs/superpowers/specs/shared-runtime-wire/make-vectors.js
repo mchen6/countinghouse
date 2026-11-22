@@ -345,10 +345,10 @@ const out = {
   // bin/ch-local.js path, so it is checked by path, not here: one that is not
   // the home's own, or not safe in a quoted command, is dropped alone.
   heldBackFile: {
-    rule: 'exactly {v: 1, modules: [...], launcher?}; at most 256 modules, none named twice; each exactly {name, reason, root?, via?, code?}; name an npm package name not starting with - or ~; reason one of credential, off, ceiling, missing, pin, withdrawn, stopped, restart, changed, sandbox, collision, refused, calls (changed, sandbox, collision and refused are an own module\'s); code exactly on refused, the runtime\'s code for its refusal, [A-Z][A-Z0-9_]{0,63}; root only on calls, one of credential, off, ceiling, missing, pin, withdrawn or not-installed; via exactly when root is, or on collision (the other module\'s package name): a package name (not starting with - or ~), or for not-installed the callee\'s declared name (1 to 64 characters, no / or . or control character). The file is a regular file, one name, no link, 0600 (or a private ACL on Windows), this user\'s own, at most 65536 bytes.',
+    rule: 'exactly {v: 1, modules: [...], launcher?}; at most 256 modules, none named twice; each exactly {name, reason, root?, via?, code?}; name an npm package name not starting with - or ~; reason one of credential, off, ceiling, missing, pin, withdrawn, stopped, restart, changed, gone, sandbox, collision, refused, calls (changed, gone, sandbox, collision and refused are an own module\'s); code exactly on refused, the runtime\'s code for its refusal, [A-Z][A-Z0-9_]{0,63}; root only on calls, one of credential, off, ceiling, missing, pin, withdrawn or not-installed; via exactly when root is, or on collision (the other module\'s package name): a package name (not starting with - or ~), or for not-installed the callee\'s declared name (1 to 64 characters, no / or . or control character). The file is a regular file, one name, no link, 0600 (or a private ACL on Windows), this user\'s own, at most 65536 bytes.',
     accepted: [
       {why: 'none held back', file: {v: 1, modules: []}},
-      {why: 'each reason', file: {v: 1, modules: ['credential', 'off', 'ceiling', 'missing', 'pin', 'withdrawn', 'stopped', 'restart', 'changed', 'sandbox'].map((reason, i) => ({name: `@countinghouse/ch-m${i}`, reason}))}},
+      {why: 'each reason', file: {v: 1, modules: ['credential', 'off', 'ceiling', 'missing', 'pin', 'withdrawn', 'stopped', 'restart', 'changed', 'sandbox', 'gone'].map((reason, i) => ({name: `@countinghouse/ch-m${i}`, reason}))}},
       {why: 'an own module whose name another module uses: via names it', file: {v: 1, modules: [{name: 'my-tool', reason: 'collision', via: 'ch-pack-other'}]}},
       {why: 'an own module this release\'s runtime refuses, with its code', file: {v: 1, modules: [{name: 'my-tool', reason: 'refused', code: 'MODULE_INVALID'}]}},
       {why: 'a part blocked by a credential', file: {v: 1, modules: [{name: '@countinghouse/ch-pack-example', reason: 'calls', root: 'credential', via: '@countinghouse/ch-access-example'}]}},
@@ -363,7 +363,7 @@ const out = {
       {why: 'a name read as an option', file: {v: 1, modules: [{name: '-x', reason: 'off'}]}},
       {why: 'a name read as a home', file: {v: 1, modules: [{name: '~x', reason: 'off'}]}},
       {why: 'a name twice', file: {v: 1, modules: [{name: 'a', reason: 'off'}, {name: 'a', reason: 'pin'}]}},
-      {why: 'a reason not known', file: {v: 1, modules: [{name: 'a', reason: 'gone'}]}},
+      {why: 'a reason not known', file: {v: 1, modules: [{name: 'a', reason: 'vanished'}]}},
       {why: 'not-installed as a reason', file: {v: 1, modules: [{name: 'a', reason: 'not-installed'}]}},
       {why: 'a root on an entry that is not calls', file: {v: 1, modules: [{name: 'a', reason: 'off', root: 'credential', via: 'b'}]}},
       {why: 'calls as a root', file: {v: 1, modules: [{name: 'a', reason: 'calls', root: 'calls', via: 'b'}]}},
@@ -376,6 +376,7 @@ const out = {
       {why: 'a code on another reason', file: {v: 1, modules: [{name: 'my-tool', reason: 'stopped', code: 'MODULE_INVALID'}]}},
       {why: 'a code that is not one', file: {v: 1, modules: [{name: 'my-tool', reason: 'refused', code: 'not a code'}]}},
       {why: 'an own module\'s reason as a root', file: {v: 1, modules: [{name: 'a', reason: 'calls', root: 'changed', via: 'b'}]}},
+      {why: 'gone as a root (an own module\'s)', file: {v: 1, modules: [{name: 'a', reason: 'calls', root: 'gone', via: 'b'}]}},
       {why: 'via on a reason that takes none', file: {v: 1, modules: [{name: 'a', reason: 'sandbox', via: 'b'}]}},
       {why: 'more than 256 modules', file: {v: 1, modules: Array.from({length: 257}, (_, i) => ({name: `m${i}`, reason: 'off'}))}}
     ]

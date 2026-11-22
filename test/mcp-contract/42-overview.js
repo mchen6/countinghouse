@@ -275,6 +275,22 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
 
     // (the feature audit, F9: an own module the release's runtime refuses
     // to load -- held back with its own line, the runtime's code with it)
+    // (E10, the feature audit) an own module whose copy is gone, said apart
+    // from one whose files changed: ch-local sends `gone` (A-own-gone)
+    it('gone: an own module\'s copy that is gone has its own line, the same add-module command', () => {
+      const h = home();
+      const l = heldBack.parse(doc([{name: 'my-tool', reason: 'gone'}]), h.settings);
+      assert.deepStrictEqual(l.modules.get('my-tool'), {reason: 'gone', root: null, via: null});
+      for (const bad of [[{name: 'x', reason: 'calls', root: 'gone', via: 'p'}], [{name: 'x', reason: 'gone', via: 'p'}], [{name: 'x', reason: 'gone', code: 'MODULE_INVALID'}]]) {
+        assert.throws(() => heldBack.parse(doc(bad), h.settings), Error, JSON.stringify(bad));
+      }
+      const L = '/home/u/.ch/bin/ch-local.js';
+      const [p] = overview.build({version: '1', settingsProfile: true, launcher: L, packs: [pack({name: 'my-tool', module: 'my-tool', loaded: false, held: l.modules.get('my-tool'), own: true, from: '/home/u/my-tool'})]}).packs;
+      assert.deepStrictEqual([p.state, p.next], ['not loaded', overview.FIXED.gone(L, '/home/u/my-tool')]);
+      assert.strictEqual(overview.FIXED.gone(null, '/home/u/my-tool'), 'Not loaded: its copy is gone: run `ch-local add-module "/home/u/my-tool"` again.');
+      assert.strictEqual(overview.FIXED.gone(L, null), 'Not loaded: its copy is gone: run `node "/home/u/.ch/bin/ch-local.js" add-module "<its folder>"` again.');
+    });
+
     it('refused: an own module the runtime refuses, its code named, the status and remove-module commands', () => {
       const h = home();
       const l = heldBack.parse(doc([{name: 'my-tool', reason: 'refused', code: 'MODULE_INVALID'}]), h.settings);
@@ -320,7 +336,7 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
         ['not JSON', '{'], ['another version', JSON.stringify({v: 2, modules: []})],
         ['a name twice', doc([{name: 'a', reason: 'off'}, {name: 'a', reason: 'pin'}])],
         ['not a package name', doc([{name: '../x', reason: 'off'}])],
-        ['a reason not known', doc([{name: 'a', reason: 'gone'}])],
+        ['a reason not known', doc([{name: 'a', reason: 'vanished'}])],
         ['a root without via', doc([{name: 'a', reason: 'calls', root: 'credential'}])],
         ['a root on a non-calls entry', doc([{name: 'a', reason: 'off', root: 'credential', via: 'b'}])],
         ['a field not read', doc([{name: 'a', reason: 'off', key: 'x'}])],
