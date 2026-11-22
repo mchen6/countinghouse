@@ -54,6 +54,13 @@ describe('mcp-contract 44: POST /mcp answers a body that is no request in JSON-R
     }
   });
 
+  // (#531's high, L6) Express routes /MCP to /mcp: the answer is the same
+  it('POST /MCP, as Express routes it, answers in JSON-RPC\'s shape too', async () => {
+    const res = await request(app).post('/MCP').set('Content-Type', 'application/json').set('Accept', 'application/json, text/event-stream').set('X-CH-Key', 'k').send('{bad');
+    assert.strictEqual(res.status, 400, res.text);
+    assert.strictEqual(res.body.error && res.body.error.code, -32700, res.text);
+  });
+
   it('a REST route\'s body error keeps REST\'s shape', async () => {
     const rest = express();
     rest.use(express.json());
