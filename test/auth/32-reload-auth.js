@@ -113,6 +113,24 @@ describe('auth 32: reloading the auth config without a restart', function() {
     }
   });
 
+  // (#531's high, L7) a reload that changes nothing of a key's grants tells
+  // its listens nothing: only the later, real change is told
+  it('a reload that changes no grant of the key sends its listens nothing', async () => {
+    write([]);
+    assert.strictEqual((await reload(ADMIN)).status, 200);
+    const s = await listenAs(ALICE, {toolsListChanged: true});
+    try {
+      assert.ok(await until(() => s.events.some((m) => m.method === 'notifications/subscriptions/acknowledged')), JSON.stringify(s.events));
+      assert.strictEqual((await reload(ADMIN)).status, 200, 'a no-op reload');
+      write([DEVICE_ID]);
+      assert.strictEqual((await reload(ADMIN)).status, 200);
+      assert.ok(await until(() => s.events.some((m) => m.method === 'notifications/tools/list_changed')), JSON.stringify(s.events));
+      assert.strictEqual(s.events.filter((m) => m.method === 'notifications/tools/list_changed').length, 1, JSON.stringify(s.events));
+    } finally {
+      s.req.destroy();
+    }
+  });
+
   it('is admin only', async () => {
     const r = await reload(ALICE);
     assert.notStrictEqual(r.status, 200);
@@ -210,6 +228,41 @@ describe('auth 32: a syntax error at startup is logged without the file\'s conte
       noKeyPieces(lines.join('\n'), 'the startup log');
     } finally {
       fs.rmSync(base, {recursive: true, force: true});
+    }
+  });
+});
+
+// (#531's high, L4) the grants are in force once the provider reloaded: a
+// failed identity rebuild after it still tells the listens
+describe('auth 32: a reload whose identity rebuild fails still tells the listens', () => {
+  const auth = require('../../lib/auth');
+  const identity = require('../../lib/identity');
+  let kept;
+  let keptRebuild;
+  let provider;
+  let keptReload;
+  before(() => {
+    kept = require('../helpers/options-scope').snapshot();
+    keptRebuild = identity.rebuild;
+    provider = auth.getAuthProvider();
+    keptReload = provider.reload;
+  });
+  after(() => {
+    identity.rebuild = keptRebuild;
+    provider.reload = keptReload;
+    require('../helpers/options-scope').restore(kept);
+  });
+  it('the listener runs, and the error is the answer', async () => {
+    provider.reload = (cb) => cb(null, {ok: true, entries: 0, changed: 0});
+    identity.rebuild = () => Promise.reject(Object.assign(new Error('rebuild failed'), {code: 'X'}));
+    let told = 0;
+    const off = auth.onReloaded(() => { told += 1; });
+    try {
+      const err = await new Promise((resolve) => auth.reloadAuth((e) => resolve(e)));
+      assert.ok(err != null && err.message === 'rebuild failed', String(err));
+      assert.strictEqual(told, 1);
+    } finally {
+      off();
     }
   });
 });

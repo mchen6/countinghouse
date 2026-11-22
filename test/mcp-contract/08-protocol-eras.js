@@ -105,6 +105,15 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
         const tomb = require('../../lib/mcp/gateway').tombstoneTtlMsFor;
         Object.assign(o, {store: 'local', jobTimeout: 0, jobResultTtl: 3600000});
         assert.strictEqual(tomb(), 3600000);
+        // (#531's high, L3) and a cancelled task says that ttl, where its
+        // tombstone expires; none where nothing bounds it
+        const view = require('../../lib/mcp/gateway').cancelledTaskView;
+        const T = {createdAt: '2026-11-21T00:00:00.000Z', cancelledAt: '2026-11-21T00:00:01.000Z'};
+        assert.strictEqual(view('t1', T).ttlMs, 3600000);
+        Object.assign(o, {store: 'local', jobTimeout: 0, jobResultTtl: 0});
+        assert.strictEqual(view('t1', T).ttlMs, null);
+        Object.assign(o, {store: 'redis', jobTimeout: 60000, jobResultTtl: 3600000});
+        assert.strictEqual(view('t1', T).ttlMs, null);
       } finally {
         Object.assign(o, kept);
       }
