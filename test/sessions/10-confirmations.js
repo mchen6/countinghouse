@@ -475,8 +475,48 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
         // a form for a loosening of the kind, declined: the kind is locked in A
         const r = await t0.set('requestTimeout', '45s', 'settings tool', ctx(A));
         assert.strictEqual((await t0.confirm('requestTimeout', '45s', {requestState: r.inputRequired.requestState, inputResponses: DECLINE}, ctx(A))).applies, 'declined');
-        await refused(t0.set('requestTimeout', '30s', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+        const held = await refused(t0.set('requestTimeout', '30s', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
+        assert.strictEqual(held.message, 'This session set requestTimeout to 10s itself, and it cannot be raised back in conversation now (it is locked in this session); nothing was changed. A change in a terminal would not move it: it sets the value for all sessions (30s), and this session keeps its own lower value. It ends with this session: restart your client, and its new session runs at 30s.');
         assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+      });
+
+      // (the medium on the undo) the operator's ceiling as for a loosening
+      it('a ceiling that turns conversation off: no undo here, said honestly', async () => {
+        const off = tool({sessionClient: () => ({ok: false, why: 'x'}), ceiling: () => ({state: 'trusted', ceiling: {conversation: false, forbid: []}})});
+        await off.set('requestTimeout', '10s', 'settings tool', at(A));
+        const held = await refused(off.set('requestTimeout', '30s', 'settings tool', at(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
+        assert.match(held.message, /\(the operator's ceiling turns changes in conversation off\)/);
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+      });
+
+      it('a ceiling that forbids the setting in conversation: the undo refused as a loosening is, by the ceiling', async () => {
+        const forbids = tool({sessionClient: () => ({ok: false, why: 'x'}), ceiling: () => ({state: 'trusted', ceiling: {conversation: true, forbid: ['requestTimeout']}})});
+        await forbids.set('requestTimeout', '10s', 'settings tool', at(A));
+        await refused(forbids.set('requestTimeout', '30s', 'settings tool', at(A)), 'SETTING_FORBIDDEN_BY_CEILING');
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+      });
+
+      it('a ceiling below the value for all sessions bounds the undo: back to the ceiling\'s, never above', async () => {
+        const below = {state: 'trusted', ceiling: {conversation: true, forbid: [], requestTimeout: 20000}};
+        settings.configure({ceiling: () => below});
+        const t0 = tool({sessionClient: () => ({ok: false, why: 'x'}), ceiling: () => below});
+        await t0.set('requestTimeout', '10s', 'settings tool', at(A));
+        notices.take(null, A);
+        await refused(t0.set('requestTimeout', '30s', 'settings tool', at(A)), 'SETTING_ABOVE_CEILING');
+        assert.deepStrictEqual(await t0.set('requestTimeout', '20s', 'settings tool', at(A)), {name: 'requestTimeout', old: 10000, new: 20000, applies: 'this session'});
+        assert.deepStrictEqual(notices.take(null, A), ['requestTimeout back to 20s for this session: the value for all sessions (it had been lowered to 10s in this session)']);
+      });
+
+      it('maxOutputBytes, and past the session\'s budget: applied, its own line', async () => {
+        const t0 = noForm();
+        await t0.set('maxOutputBytes', '2MiB', 'settings tool', at(A));
+        notices.take(null, A);
+        assert.deepStrictEqual(await t0.set('maxOutputBytes', '8MiB', 'settings tool', at(A)), {name: 'maxOutputBytes', old: 2 * MiB, new: 8 * MiB, applies: 'this session'});
+        assert.deepStrictEqual(notices.take(null, A), ['maxOutputBytes back to 8MiB for this session: the value for all sessions (it had been lowered to 2MiB in this session)']);
+        for (let i = 0; i < 32; i++) await t0.set('requestTimeout', `${29 - (i % 2)}s`, 'settings tool', at(A));
+        await t0.set('requestTimeout', '10s', 'settings tool', at(A));
+        assert.strictEqual((await t0.set('requestTimeout', '30s', 'settings tool', at(A))).new, 30000);
+        assert.ok(history().some((h) => h.session === A && /its own lowering undone, past this session's 32/.test(String(h.change))), JSON.stringify(history().slice(-3)));
       });
     });
 

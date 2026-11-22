@@ -1177,7 +1177,13 @@ sessions) all of this is each session's own, for the two caps:
 
 - **The change.** A confirmed raise of `maxOutputBytes` or `requestTimeout`
   is that session's override, for its calls only, until the session ends.
-  It is judged against the value the session runs with. The options every
+  It is judged against the value the session runs with. A session's own
+  lowering is undone in conversation without a dialog, up to and never
+  above what a session with no value of its own runs at (the value for all
+  sessions, under the ceiling), which only the user or operator set at a
+  terminal or confirmed. The ceiling's rules still apply to the undo: one
+  that forbids the setting, or turns conversation off, refuses it, and so
+  does a kind locked in the session. The options every
   session shares, and `settings.json`, are not touched; every history line
   names the session, and only that session reads it. A session may also
   turn a module on or off (`enabled.*`) and change a module's settings
