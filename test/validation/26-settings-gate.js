@@ -286,7 +286,8 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
         fs.mkdirSync(path.join(home, 'bin'));
         fs.writeFileSync(path.join(home, 'bin', 'ch-local.js'), '// launcher');
         const launcher = fs.realpathSync.native(path.join(home, 'bin', 'ch-local.js'));
-        fs.writeFileSync(path.join(home, 'held-back.json'), JSON.stringify({v: 1, modules: [], launcher}), {mode: 0o600});
+        // (private as ch-local writes it, Windows' ACL included)
+        require('../helpers/private-auth').writePrivate(path.join(home, 'held-back.json'), JSON.stringify({v: 1, modules: [], launcher}));
         Object.assign(options, {heldBackFile: path.join(home, 'held-back.json'), settingsFile: path.join(home, 'settings.json')});
         heldBack.resetForTests();
         await heldBack.ready();

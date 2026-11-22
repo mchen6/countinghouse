@@ -131,7 +131,10 @@ describe('stdio 14: countinghouse_settings', () => {
     fs.writeFileSync(path.join(home, 'bin', 'ch-local.js'), '// launcher');
     const launcher = fs.realpathSync.native(path.join(home, 'bin', 'ch-local.js'));
     const held = path.join(home, 'held-back.json');
-    fs.writeFileSync(held, JSON.stringify({v: 1, modules: [], launcher}), {mode: 0o600});
+    // (private as ch-local writes it: 0600, or on Windows this user's ACL
+    // alone -- a file a test writes inherits its folder's, which the read
+    // refuses; #536's Windows leg)
+    require('../helpers/private-auth').writePrivate(held, JSON.stringify({v: 1, modules: [], launcher}));
     Object.assign(options, {heldBackFile: held, settingsFile: file});
     heldBack.resetForTests();
     try {
