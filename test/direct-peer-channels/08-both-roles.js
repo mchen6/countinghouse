@@ -86,16 +86,39 @@ describe('direct peer channels 08: a worker is a caller and a callee of one peer
     assert.strictEqual(A.log.filter((e) => e[0] === 'request').length, 1, 'no second channel request: the channel held is used');
   });
 
-  it('an invalidate for a peer ends both of this worker\'s channels to it', () => {
-    const A = state('A2');
-    const c12 = channel();
-    const c21 = channel();
-    A.onPeerChannelGrant({targetDeviceID: 'devB', targetWorkerId: 2, port: c12.port1});
-    A.onPeerChannelOpen({callerWorkerId: 2, targetDeviceID: 'devA', actions: ['svc|act'], port: c21.port2});
-    const caller = A.peerChannels[2];
-    const callee = A.peerCalleeChannels[2];
-    assert.ok(caller != null && callee != null && caller !== callee);
-    A.onPeerInvalidate({workerId: 2});
-    assert.ok(caller.closed === true && callee.closed === true, `caller closed ${caller.closed}, callee closed ${callee.closed}`);
+  // (the high on #526, M2) an invalidate names the role whose channel ends:
+  // a revoked A->B grant ends A's caller channel to B and B's callee channel
+  // from A, never the other direction, which still serves. With no role (a
+  // worker gone: invalidateWorker), both end.
+  it('an invalidate ends the role it names, and both when it names none', () => {
+    const pair = (name) => {
+      const X = state(name);
+      X.onPeerChannelGrant({targetDeviceID: 'devB', targetWorkerId: 2, port: channel().port1});
+      X.onPeerChannelOpen({callerWorkerId: 2, targetDeviceID: 'devA', actions: ['svc|act'], port: channel().port2});
+      const caller = X.peerChannels[2];
+      const callee = X.peerCalleeChannels[2];
+      assert.ok(caller != null && callee != null && caller !== callee);
+      return {X, caller, callee};
+    };
+    const a = pair('A2');
+    a.X.onPeerInvalidate({workerId: 2, role: 'caller'});
+    assert.deepStrictEqual([a.caller.closed === true, a.callee.closed === true], [true, false], 'caller only');
+    const b = pair('A3');
+    b.X.onPeerInvalidate({workerId: 2, role: 'callee'});
+    assert.deepStrictEqual([b.caller.closed === true, b.callee.closed === true], [false, true], 'callee only');
+    const c = pair('A4');
+    c.X.onPeerInvalidate({workerId: 2});
+    assert.deepStrictEqual([c.caller.closed === true, c.callee.closed === true], [true, true], 'both');
+  });
+
+  it('a revoked grant tells the caller to end its caller channel and the callee its callee channel', () => {
+    const PeerChannelBroker = require('../../lib/peer-channel-broker');
+    const sent = [];
+    const callerWM = {workerId: 1, sendPeerInvalidateToChild: (m) => sent.push(['caller', m])};
+    const calleeWM = {workerId: 2, sendPeerInvalidateToChild: (m) => sent.push(['callee', m])};
+    const entry = {callerWM, calleeWM};
+    const broker = {channelRegistry: {'1:2': entry}, forgetPair: () => {}};
+    PeerChannelBroker.prototype.closeRevoked.call(broker, '1:2', entry, {id: 'u_x', deviceID: 'devB'}, Object.assign(new Error('revoked'), {code: 'USER_HAS_NO_DEVICE'}));
+    assert.deepStrictEqual(sent, [['caller', {workerId: 2, role: 'caller'}], ['callee', {workerId: 1, role: 'callee'}]]);
   });
 });
