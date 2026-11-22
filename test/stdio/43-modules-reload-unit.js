@@ -79,6 +79,8 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       supervisor, generations: {}, packsInPlace: null});
     // (what the real one keeps listed of a restarting module: not modelled)
     if (supervised) mm.keepRetainedForReload = () => {};
+    // (the supervisor's giving up, as it queues a self-unload: recorded)
+    if (supervised) mm.givenUp = (name, code) => log.push(`givenUp ${name} ${code}`);
     const instance = (name, version, p) => {
       // a worker proxy: the drain reads its queue
       const wm = Object.create(WorkerMessage.prototype);
@@ -486,7 +488,9 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       await assert.rejects(reload(mm, dm, '2.0.0'));
       assert.ok(log.includes(`loaded ${P}@1.0.0`) && log.includes(`unloaded ${P}`), log.join('; '));
       assert.strictEqual(mm.modules[P], undefined, 'the fresh instance is gone');
-      assert.strictEqual(stillGivenUp(mm, P, was), true, 'its record, suspended, and its generation are back');
+      assert.ok(mm.supervisor.isCurrent(P, was.record) && mm.supervisor.status(P).state === 'suspended', 'its suspended record is back');
+      assert.ok(mm.generations[P] > was.gen, 'generations only move forward');
+      assert.ok(log.includes(`givenUp ${P} MODULE_SUSPENDED`), `a self-unload queued anew: ${log.join('; ')}`);
       assert.strictEqual(mm.packsInPlace.get('@t/ch-pack-s').modules.get(P).version, '1.0.0');
     });
 
@@ -494,7 +498,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       const credentials = require('../../lib/remote/credentials');
       const saved = credentials.snapshot();
       try {
-        const {mm, dm} = runtime({supervised: true, failVersion: '1.0.0', failName: '@t/ch-pack-z'});
+        const {mm, dm, log} = runtime({supervised: true, failVersion: '1.0.0', failName: '@t/ch-pack-z'});
         await loadBoth(mm, dm, '1.0.0');
         writeModule(at('@t/ch-pack-z', '1.0.0'), {name: '@t/ch-pack-z', version: '1.0.0', role: 'part', calls: ['ch-step-k/svc.run']});
         const allowance = new Map([['https://api.example.invalid', new Map([['K', 'COUNTINGHOUSE_CREDENTIAL_1']])]]);
@@ -502,7 +506,10 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
         const was = suspend(mm, K);
         await assert.rejects(mip.loadPack(mm, {type: 'load', name: '@t/ch-pack-z', dirs: {'@t/ch-pack-z': at('@t/ch-pack-z', '1.0.0'), [K]: at(K, '1.0.0')}}, dm));
         assert.strictEqual(credentials.moduleEntry(K), allowance, 'the holder\'s allowance, not the load\'s none');
-        assert.strictEqual(stillGivenUp(mm, K, was), true);
+        assert.ok(mm.supervisor.isCurrent(K, was.record) && mm.supervisor.status(K).state === 'suspended');
+        // (a self-unload runs: the one queued before, its generation untouched
+        // when the load never reached K, or one queued anew after K's rollback)
+        assert.ok(stillGivenUp(mm, K, was) || log.includes(`givenUp ${K} MODULE_SUSPENDED`), log.join('; '));
         assert.strictEqual(mm.modules[K], undefined);
       } finally {
         credentials.restore(saved);
@@ -563,6 +570,24 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       assert.strictEqual(mm.unlisted.has(K), unlisted, 'its listing is the holding pack\'s');
     });
 
+    it('(j) a restarting part whose credentials the reload revokes: switched at its version, so its restart never runs with the old allowance', async () => {
+      const credentials = require('../../lib/remote/credentials');
+      const saved = credentials.snapshot();
+      try {
+        const {mm, dm, log} = runtime({supervised: true});
+        await loadBoth(mm, dm, '1.0.0');
+        credentials.setModule(P, new Map([['https://api.example.invalid', new Map([['P', 'COUNTINGHOUSE_CREDENTIAL_1']])]]));
+        crash(mm, P);
+        log.length = 0;
+        await mip.reloadPack(mm, {type: 'reload', names: ['@t/ch-pack-s'],
+          dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', '1.0.0'), [P]: at(P, '1.0.0'), [K]: at(K, '1.0.0')}}, dm);
+        assert.ok(log.includes(`unloaded ${P}`) && log.includes(`loaded ${P}@1.0.0`), `ended and loaded again: ${log.join('; ')}`);
+        assert.strictEqual(credentials.moduleEntry(P), undefined, 'the revoke stands');
+      } finally {
+        credentials.restore(saved);
+      }
+    });
+
     it('(d) a member neither in the map nor recorded is still an addition, loaded and rolled back', async () => {
       const {mm, dm, log} = runtime({supervised: true, failVersion: '2.0.0', failName: '@t/ch-pack-s'});
       await loadBoth(mm, dm, '1.0.0');
@@ -584,10 +609,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       assert.ok(log.includes(`loaded ${P}@1.0.0`), log.join('; '));
       assert.strictEqual(mm.supervisor.status(P).state, 'running');
       assert.ok(mm.modules[P] != null);
-      // (the real loadModuleByWorker moves its generation and clears the
-      // suspended record, so givenUp's stillGivenUp is false: the stand-in's
-      // load only writes a running record, so that part is not asserted here)
-      assert.ok(Number.isInteger(gen) || gen === undefined);
+      assert.notStrictEqual(mm.generations[P], gen, 'its load moved the generation, so the self-unload queued before stands down');
     });
 
     it('(f) a restarting module no unit holds (loaded outside any) is not present: an addition, as before', async () => {
