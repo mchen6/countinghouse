@@ -285,6 +285,22 @@ describe('auth 62: the auth file is the operator\'s own, owner-only (B-meter-key
 
   // the sqlite store's default is its own file, and the broker protects the
   // file that holds the keys, whichever store it is
+  // (the final pass's gateway part, A13) a load error names the auth store
+  // as it is, never "null": the default file, or CouchDB's database
+  it('authStoreName names the store a message points at: the default file, the given one, or CouchDB\'s database', () => {
+    const {authStoreName} = require('../../lib/auth/auth-file-defaults');
+    // (absolute on every OS, as the store's own path.resolve makes it: on
+    // Windows '/srv/ch' gains its drive -- #531's high, L7)
+    const cwd = path.resolve('/srv/ch');
+    assert.strictEqual(authStoreName({}, cwd), path.join(cwd, 'auth.json'));
+    assert.strictEqual(authStoreName({authProvider: 'sqlite'}, cwd), path.join(cwd, 'auth.sqlite3'));
+    assert.strictEqual(authStoreName({authConfigPath: 'k.json'}, cwd), path.join(cwd, 'k.json'));
+    assert.strictEqual(authStoreName({authProvider: 'couchdb'}, cwd), 'the CouchDB database');
+    // the three composition messages take it, never options.authConfigPath itself
+    const src = require('fs').readFileSync(path.join(__dirname, '../../lib/device-manager.js'), 'utf8');
+    assert.ok(!/\$\{options\.authConfigPath\}/.test(src), 'a message still names options.authConfigPath');
+  });
+
   it('authConfigPathOf names the sqlite store\'s default, and the broker protects and denies it', () => {
     const {authConfigPathOf} = require('../../lib/auth/auth-file-defaults');
     const cwd = path.join(dir, 'cwd');

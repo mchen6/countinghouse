@@ -138,8 +138,8 @@ describe('auth 20: request body limits', function() {
     assert.ok(/application\/json/.test(big.type), big.type);
     assert.strictEqual(JSON.parse(big.text).code, 'REQUEST_TOO_LARGE', big.text);
     assert.ok(!/\bat \S+ \(/.test(big.text) && !/node_modules/.test(big.text), `a stack: ${big.text}`);
-    const bad = await new Promise((resolve, reject) => {
-      const req = require('http').request({host: '127.0.0.1', port: testPort(9661), path: '/mcp', method: 'POST',
+    const bad = (route) => new Promise((resolve, reject) => {
+      const req = require('http').request({host: '127.0.0.1', port: testPort(9661), path: route, method: 'POST',
         headers: {'Content-Type': 'application/json'}}, (res) => {
         let text = '';
         res.on('data', (c) => { text += c; });
@@ -148,8 +148,15 @@ describe('auth 20: request body limits', function() {
       req.on('error', reject);
       req.end('{"not json');
     });
-    assert.strictEqual(bad.status, 400, bad.text);
-    assert.ok(!/node_modules|\bat \S+ \(/.test(bad.text), `a stack: ${bad.text}`);
-    assert.strictEqual(JSON.parse(bad.text).code, 'REQUEST_INVALID');
+    // (#531's high, M1) /mcp answers JSON-RPC's Parse error; a REST route REST's shape
+    const mcp = await bad('/mcp');
+    assert.strictEqual(mcp.status, 400, mcp.text);
+    assert.ok(!/node_modules|\bat \S+ \(/.test(mcp.text), `a stack: ${mcp.text}`);
+    const answer = JSON.parse(mcp.text);
+    assert.deepStrictEqual([answer.jsonrpc, answer.id, answer.error && answer.error.code], ['2.0', null, -32700], mcp.text);
+    const rest = await bad('/devices/x/invoke-action');
+    assert.strictEqual(rest.status, 400, rest.text);
+    assert.ok(!/node_modules|\bat \S+ \(/.test(rest.text), `a stack: ${rest.text}`);
+    assert.strictEqual(JSON.parse(rest.text).code, 'REQUEST_INVALID');
   });
 });

@@ -80,6 +80,54 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
       assert.strictEqual(res.result.resultType, undefined);
     });
 
+    // (the final pass's gateway part, A13) a task's ttlMs: the job timeout
+    // and the result's retention under --store local, or null where there is
+    // no bound: Redis keeps a finished job, and --jobTimeout 0 is no timeout.
+    // It said 0 there, a task already expired.
+    it('a task\'s ttlMs is null with no bound (Redis, or --jobTimeout 0), else the timeout plus the retention', () => {
+      const o = require('../../lib/cli-options');
+      const kept = {store: o.store, jobTimeout: o.jobTimeout, jobResultTtl: o.jobResultTtl};
+      const ttl = require('../../lib/mcp/gateway').taskTtlMsFor;
+      try {
+        Object.assign(o, {store: 'local', jobTimeout: 0, jobResultTtl: 0});
+        assert.strictEqual(ttl(), null, 'no timeout');
+        Object.assign(o, {jobResultTtl: 5000});
+        assert.strictEqual(ttl(), null, 'no timeout, a retention');
+        Object.assign(o, {jobTimeout: 1000, jobResultTtl: 500});
+        assert.strictEqual(ttl(), 1500);
+        Object.assign(o, {store: 'redis'});
+        assert.strictEqual(ttl(), null);
+        // (the medium on PR 2) a result kept forever (--jobResultTtl 0) is no
+        // bound either; and a cancel's tombstone still expires under
+        // --jobTimeout 0, after the retention, as it did
+        Object.assign(o, {store: 'local', jobTimeout: 60000, jobResultTtl: 0});
+        assert.strictEqual(ttl(), null, 'kept forever');
+        const tomb = require('../../lib/mcp/gateway').tombstoneTtlMsFor;
+        Object.assign(o, {store: 'local', jobTimeout: 0, jobResultTtl: 3600000});
+        assert.strictEqual(tomb(), 3600000);
+        // (#531's high, L3; its medium, 1 and 5) a cancelled task says the
+        // ttl its tombstone was stored with, from createdAt as MCP measures
+        // it (the tombstone's runs from the cancel); none where nothing bounds it
+        const view = require('../../lib/mcp/gateway').cancelledTaskView;
+        const T = {createdAt: '2026-11-21T00:00:00.000Z', cancelledAt: '2026-11-21T00:00:01.000Z'};
+        assert.strictEqual(view('t1', {...T, ttlMs: 3600000}).ttlMs, 3601000);
+        assert.strictEqual(view('t1', {...T, ttlMs: null}).ttlMs, null);
+        assert.strictEqual(view('t1', T).ttlMs, null, 'a record that names none');
+      } finally {
+        Object.assign(o, kept);
+      }
+    });
+
+    // (the final pass's gateway part, A11) a version that isn't a legacy one
+    // is not echoed: a client that then sent it in MCP-Protocol-Version would
+    // be read as modern, and refused
+    it('initialize echoes only a legacy version: any other is answered with the server\'s legacy one', async() => {
+      for (const [asked, answered] of [['2025-03-26', '2025-03-26'], ['2026-07-28', '2025-11-25'], ['2099-01-01', '2025-11-25'], ['bogus', '2025-11-25']]) {
+        const {res} = await viaGateway({jsonrpc: '2.0', id: 9, method: 'initialize', params: {protocolVersion: asked, capabilities: {}, clientInfo: {name: 'c', version: '0'}}});
+        assert.strictEqual(res.result.protocolVersion, answered, asked);
+      }
+    });
+
     it('a modern unknown method: -32601, and HTTP would answer it 404', async() => {
       // roots/list is a client's method: no server here serves it (resources/list is, since M6)
       const {res, info} = await viaGateway(modern('roots/list', {}, 8));
@@ -263,5 +311,30 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
       const res = await post({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 1}}, {'MCP-Protocol-Version': V});
       assert.strictEqual(res.status, 202);
     });
+  });
+});
+
+// (the medium on #531's round, 1) a tombstone records the ttl it was stored
+// with: given, the default hour, or none for a lasting one with none given
+describe('mcp-contract 08: a cancel\'s tombstone records its ttl', () => {
+  const store = require('../../lib/store');
+  const tombstones = require('../../lib/task-tombstones');
+  let saved;
+  const kv = new Map();
+  const px = new Map();
+  before(() => {
+    saved = store.getStore;
+    const fakeKv = {set: (key, value, ...rest) => { kv.set(key, value); px.set(key, rest[0] === 'PX' ? rest[1] : null); rest[rest.length - 1](null); }};
+    store.getStore = () => ({kv: fakeKv});
+  });
+  after(() => { store.getStore = saved; });
+  it('given, the default hour, or none', async () => {
+    const at = {owner: 'u_x', createdAt: '2026-11-21T00:00:00.000Z'};
+    await tombstones.put('ta', at, 5000);
+    await tombstones.put('tb', at, null);
+    await tombstones.put('tc', at, null, {lasting: true});
+    const rec = (id) => JSON.parse(kv.get(`${tombstones.PREFIX}${id}`)).ttlMs;
+    assert.deepStrictEqual([rec('ta'), rec('tb'), rec('tc')], [5000, tombstones.DEFAULT_TTL_MS, null]);
+    assert.deepStrictEqual([px.get(`${tombstones.PREFIX}ta`), px.get(`${tombstones.PREFIX}tb`), px.get(`${tombstones.PREFIX}tc`)], [5000, tombstones.DEFAULT_TTL_MS, null], 'as stored');
   });
 });

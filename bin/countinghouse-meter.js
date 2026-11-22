@@ -69,12 +69,22 @@ const id = meterId(key);
 
 if (store === 'local') {
   const {openJsonFile} = require('../lib/store/json-file');
-  const file = openJsonFile(path.join(path.resolve(argv.storePath), 'metering.json'));
-  const current = file.data[id];
-  file.set(id, {balance: balance,
-    toolPriceRecord: (current != null && current.toolPriceRecord != null) ? current.toolPriceRecord : {}});
-  file.close();
-  process.stdout.write(`set balance ${balance} for ${id}\n`);
+  // (a directory it can't make or a file it can't read: said, exit 2, never
+  // a stack trace naming the operator's path -- the medium on PR 2)
+  let file;
+  try { file = openJsonFile(path.join(path.resolve(argv.storePath), 'metering.json')); } catch (err) { fail(`the balance could not be written (${err.code || 'error'})`); }
+  // Read and written under the store's lock, its answer waited for: a write
+  // that fails (a lock that stayed busy, a directory it can't write) is said
+  // and exits 2, never a success line over nothing written. set() and close()
+  // logged a failed flush and rescheduled it, and close cleared the retry
+  // (the final pass's gateway part, A8). Its free-call counts kept.
+  file.update(id, (current) => ({balance: balance,
+    toolPriceRecord: (current != null && current.toolPriceRecord != null) ? current.toolPriceRecord : {}}), (err) => {
+    file.close();
+    // (the error's code only: a path can name the operator's directories)
+    if (err) fail(`the balance could not be written (${err.code || 'error'})`);
+    process.stdout.write(`set balance ${balance} for ${id}\n`);
+  });
 } else {
   // (db 0, the ledger's, as lib/store.js's metering opens it; one field of
   // the hash set, its free-call counts kept)

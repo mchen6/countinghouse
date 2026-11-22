@@ -33,6 +33,35 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
     assert.strictEqual(settings.limitsOf(B), null);
   });
 
+  // (the final pass's gateway part, A4) a session that lowers its own
+  // confirmed raise to a value still above the default keeps it: it landed
+  // on the default, while the tool said the value asked for
+  it('lowering a confirmed raise to a value still above the default keeps that value, and its mark', () => {
+    loosen(A, 'maxOutputBytes', 64 * MiB);
+    assert.deepStrictEqual(settings.set(A, 'maxOutputBytes', 32 * MiB), {old: 64 * MiB, new: 32 * MiB});
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 32 * MiB);
+    assert.strictEqual(settings.isLoosening(A, 'maxOutputBytes', 32 * MiB), false);
+    // (#531's high, L7) the mark stored: still a loosening, over the default it was confirmed over
+    assert.deepStrictEqual(settings.overridesOf(A), [{name: 'maxOutputBytes', value: 32 * MiB, loosening: true, over: 8 * MiB, version: null}]);
+    // to the default or below: an ordinary tightening, unmarked
+    assert.deepStrictEqual(settings.set(A, 'maxOutputBytes', 4 * MiB), {old: 32 * MiB, new: 4 * MiB});
+    assert.deepStrictEqual(settings.overridesOf(A), [{name: 'maxOutputBytes', value: 4 * MiB, loosening: false, over: null, version: null}]);
+    assert.strictEqual(settings.isLoosening(A, 'maxOutputBytes', 16 * MiB), true, 'raising again is a loosening, to be confirmed');
+  });
+
+  // (#531's high, L7) under a ceiling: the lowered value keeps its mark, and
+  // the ceiling still bounds what is in force
+  it('lowering a confirmed raise under a ceiling keeps the mark; the ceiling bounds it', () => {
+    loosen(A, 'maxOutputBytes', 64 * MiB);
+    ceiling = {state: 'trusted', ceiling: {maxOutputBytes: 24 * MiB}};
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 24 * MiB);
+    // (above the ceiling's 24 is above what is in force: a loosening, confirmed)
+    assert.throws(() => settings.set(A, 'maxOutputBytes', 32 * MiB), /needs \{loosening: true, over\}/);
+    assert.deepStrictEqual(settings.set(A, 'maxOutputBytes', 20 * MiB), {old: 24 * MiB, new: 20 * MiB});
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 20 * MiB);
+    assert.deepStrictEqual(settings.overridesOf(A).map((e) => [e.value, e.loosening, e.over]), [[20 * MiB, true, 8 * MiB]]);
+  });
+
   it('a looser value needs its mark ({loosening, over}); a tightening needs none', () => {
     assert.throws(() => settings.set(A, 'maxOutputBytes', 16 * MiB), /needs \{loosening: true, over\}/);
     assert.throws(() => settings.set(A, 'maxOutputBytes', 16 * MiB, {loosening: true}), /names the default it was confirmed over/);

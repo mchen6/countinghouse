@@ -163,6 +163,23 @@ function run(parsed, command, key) {
     if (err) { console.error(err.message); process.exit(1); }
     return cb((row != null && row.userName != null) ? `user ${row.userName}` : 'an unknown user');
   });
+  // a command about a user's grants or the user itself: refused for a key with
+  // no user, as set-admin refuses it, before anything is written (an "ok:"
+  // over nothing, and a grant no user holds, before: the final pass's
+  // gateway part, A13)
+  // (held: a key with no user but grants or bindings left -- revoke and
+  // remove-user may still clean those up; refused only when it holds
+  // nothing: the medium on PR 2)
+  const userOf = (apiKey, cb, {held = false} = {}) => db.get('SELECT userName FROM users WHERE apiKey = ?', [apiKey], (err, row) => {
+    if (err) { console.error(err.message); process.exit(1); }
+    if (row != null) return cb(row.userName != null ? `user ${row.userName}` : 'an unnamed user');
+    const refuse = () => { console.error('no such user (add-user first)'); process.exit(1); };
+    if (!held) return refuse();
+    return db.get('SELECT (SELECT COUNT(*) FROM user_devices WHERE apiKey = ?) + (SELECT COUNT(*) FROM module_identities WHERE apiKey = ?) AS n', [apiKey, apiKey], (errN, n) => {
+      if (errN) { console.error(errN.message); process.exit(1); }
+      return (n != null && n.n > 0) ? cb('a key with no user') : refuse();
+    });
+  });
   db.serialize(() => {
     db.run('CREATE TABLE IF NOT EXISTS users (apiKey TEXT PRIMARY KEY, userName TEXT, admin INTEGER DEFAULT 0)');
     db.run('CREATE TABLE IF NOT EXISTS user_devices (apiKey TEXT NOT NULL, deviceID TEXT NOT NULL, PRIMARY KEY (apiKey, deviceID))');
@@ -192,7 +209,7 @@ function run(parsed, command, key) {
       }
       case 'remove-user': {
         const apiKey = key;
-        named(apiKey, (who) => {
+        userOf(apiKey, (who) => {
           // grants, then module bindings (a removed key runs no module), then
           // the user; the ok line once all three are gone
           db.run('DELETE FROM user_devices WHERE apiKey = ?', [apiKey], (err) => {
@@ -206,23 +223,25 @@ function run(parsed, command, key) {
               });
             });
           });
-        });
+        }, {held: true});
         break;
       }
       case 'grant': {
         const apiKey = key, deviceID = parsed.args[1];
-        db.run('INSERT OR IGNORE INTO user_devices (apiKey, deviceID) VALUES (?, ?)', [apiKey, deviceID], (err) => {
+        userOf(apiKey, (who) => db.run('INSERT OR IGNORE INTO user_devices (apiKey, deviceID) VALUES (?, ?)', [apiKey, deviceID], (err) => {
           if (err) { console.error(err.message); process.exit(1); }
-          named(apiKey, (who) => { console.log(`ok: granted ${who} -> ${deviceID}`); db.close(); });
-        });
+          console.log(`ok: granted ${who} -> ${deviceID}`);
+          db.close();
+        }));
         break;
       }
       case 'revoke': {
         const apiKey = key, deviceID = parsed.args[1];
-        db.run('DELETE FROM user_devices WHERE apiKey = ? AND deviceID = ?', [apiKey, deviceID], (err) => {
+        userOf(apiKey, (who) => db.run('DELETE FROM user_devices WHERE apiKey = ? AND deviceID = ?', [apiKey, deviceID], (err) => {
           if (err) { console.error(err.message); process.exit(1); }
-          named(apiKey, (who) => { console.log(`ok: revoked ${who} -> ${deviceID}`); db.close(); });
-        });
+          console.log(`ok: revoked ${who} -> ${deviceID}`);
+          db.close();
+        }), {held: true});
         break;
       }
       case 'set-admin': {

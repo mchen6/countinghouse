@@ -57,6 +57,27 @@ describe('session-transport 05: a session\'s listens (#249 review)', () => {
     assert.strictEqual(ls.duplicate(registry.add('b'), {id: 7}), false, 'another session\'s');
   });
 
+  // (the final pass's gateway part, A13) a listen that ends itself (its
+  // tasks done, its key revoked) releases its id: one opened again with that
+  // id is no duplicate. A release that isn't the stream's own entry any more
+  // drops nothing.
+  it('a listen that ends itself releases its id, so the id may be opened again', () => {
+    const registry = fakeRegistry();
+    const ls = createSessionListens({registry, closeSession: () => {}});
+    const s = registry.add('a');
+    const first = ls.streamFor(s, {id: 7});
+    first.onClose(() => {});
+    assert.strictEqual(ls.duplicate(s, {id: 7}), true);
+    first.release();
+    assert.strictEqual(ls.duplicate(s, {id: 7}), false);
+    assert.strictEqual(ls.count('a'), 0);
+    // reopened: the old stream's release no longer touches the new one
+    const second = ls.streamFor(s, {id: 7});
+    second.onClose(() => {});
+    first.release();
+    assert.strictEqual(ls.duplicate(s, {id: 7}), true);
+  });
+
   it('a cancel closes that listen; a detach closes every listen of that session only', () => {
     const registry = fakeRegistry();
     const closed = [];
