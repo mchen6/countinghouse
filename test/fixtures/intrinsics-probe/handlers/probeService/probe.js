@@ -227,7 +227,7 @@ const CHANGES = {
   // `this`
   'Object.prototype getters (runtime fields read)': () => {
     const keys = ['inputBytes', 'jobID', 'wantsProgress', 'httpHeaders', 'billingPending', 'ctx', 'billingKey', 'caller', 'usageCall',
-      '_ctxServiceClients', '_verdictWaiters', '_composition', 'peerChannels', 'peerDeviceWorkerMap', 'pendingPeerInvokes', 'limits', 'mainChecked'];
+      '_ctxServiceClients', '_verdictWaiters', '_composition', 'peerChannels', 'peerCalleeChannels', 'peerDeviceWorkerMap', 'pendingPeerInvokes', 'limits', 'mainChecked'];
     const undo = keys.map((key) => getter(Object.prototype, key, function() {
       if (holdsToken(this) || looksRuntime(this)) tokensSeen++;
       return undefined;

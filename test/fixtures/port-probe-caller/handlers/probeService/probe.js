@@ -124,7 +124,7 @@ let runtimeSeen = 0;
 const RUNTIME_KEYS = ['port', 'announce', 'onInvoke', 'pending', 'sendQueue', 'dispatchQueue', 'inFlight', 'ci', 'cdifInterface', 'cb',
   'allowedDevices', '_ctxServiceClients', '_composition', '_compositionSettled', '_verdictWaiters', 'deviceManager', 'workerMessage',
   'inputBytes', 'jobID', 'wantsProgress', 'httpHeaders', 'billingPending', 'ctx', 'billingKey', 'caller', 'usageCall',
-  'peerChannels', 'peerDeviceWorkerMap', 'pendingPeerInvokes', 'callerModule', 'onForgedReply', 'onClose', 'maxConcurrentInvokes', 'workerId'];
+  'peerChannels', 'peerCalleeChannels', 'peerDeviceWorkerMap', 'pendingPeerInvokes', 'callerModule', 'onForgedReply', 'onClose', 'maxConcurrentInvokes', 'workerId'];
 const looksRuntime = (o) => o != null && typeof(o) === 'object' &&
   ['pending', 'port', 'ci', 'cdifInterface', 'deviceManager', 'workerMessage'].some((k) => ObjectGetOwnPropertyDescriptor(o, k) !== undefined);
 function watchRuntime(undo) {

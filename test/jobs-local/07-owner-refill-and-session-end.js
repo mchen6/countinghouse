@@ -76,6 +76,115 @@ describe('jobs-local 07: the owner refill a run waits for, and a session ending 
     assert.deepStrictEqual(out, {state: 'completed', reason: null, billed: ['owner-m1'], askedAgain: true}, JSON.stringify(out));
   });
 
+  // (the final pass's gateway part, A2) a key rotated under a stable id on a
+  // provider with no change signal (sqlite, CouchDB: no reload ran): the index
+  // still holds the old key, which auth no longer knows. One refill finds the
+  // new key, and the run goes on under it -- never "owner removed", which
+  // fails the job for good and deletes a scheduler.
+  it('A2: a key rotated under a stable id is found by a refill when the old one is refused, and the run is billed to the new key', () => {
+    const out = child(`
+      provider.list = [{apiKey: 'owner-old', userName: 'o', id: 'stable-o'}];
+      await identity.freshRefill(provider);
+      const added = await add({appKey: 'owner-old'}, {name: 'n', delay: 500});
+      if (added.err) return {addErr: added.err.code || added.err.message};
+      // rotated in the provider, the index not rebuilt; auth now refuses the old key
+      provider.list = [{apiKey: 'owner-new', userName: 'o', id: 'stable-o'}];
+      require.cache[authPath].exports = (a, b, deviceID, appKey, serviceID, actionName, localCB, cb) =>
+        setImmediate(() => cb(appKey === 'owner-old' ? Object.assign(new Error('unknown'), {code: 'SYSTEM_ERROR_UNKNOWN_USER'}) : null, {}));
+      const readsBefore = provider.reads;
+      const t0 = Date.now();
+      let rec = null;
+      while (Date.now() - t0 < 20000) {
+        rec = await stateOf(added.r.id);
+        if (rec != null && (rec.state === 'completed' || rec.state === 'failed')) break;
+        await sleep(50);
+      }
+      return {state: rec && rec.state, reason: rec && rec.job ? rec.job.failedReason || null : null, billed, askedAgain: provider.reads > readsBefore};`);
+    assert.deepStrictEqual(out, {state: 'completed', reason: null, billed: ['owner-new'], askedAgain: true}, JSON.stringify(out));
+  });
+
+  // (A2, at the door) after such a rotation the new key used to get a
+  // key-derived id until any rebuild, so the user's own jobs read
+  // JOB_NOT_FOUND. A key the provider accepts but the index doesn't hold is
+  // made known (identity.know) before user-auth answers: it is indexed under
+  // its stable id. A key the provider refuses is still refused.
+  it('A2: the rotated key, once authenticated, is its user: the stable id, so it reads, lists and cancels the user\'s own job; a key the provider refuses is still refused', () => {
+    const out = child(`
+      provider.list = [{apiKey: 'owner-old', userName: 'o', id: 'stable-o'}];
+      provider.authenticate = function(appKey, deviceID, serviceID, actionName, cb) {
+        const e = this.list.find((x) => x.apiKey === appKey);
+        setImmediate(() => cb(null, e != null ? {ok: true, userName: e.userName, isAdmin: false} : {ok: false}));
+      };
+      await identity.freshRefill(provider);
+      const stableId = identity.idForKey('owner-old');
+      const added = await add({appKey: 'owner-old'}, {name: 'n', delay: 60000});
+      if (added.err) return {addErr: added.err.code || added.err.message};
+      // rotated in the provider, the index not rebuilt
+      provider.list = [{apiKey: 'owner-new', userName: 'o', id: 'stable-o'}];
+      delete require.cache[authPath];
+      const userAuth = require(authPath);
+      const auth = (key) => new Promise((resolve) => userAuth(null, null, 'dev', key, null, null, () => {}, (err) => resolve(err == null ? 'ok' : err.code)));
+      const asNew = await auth('owner-new');
+      const idNew = identity.idForKey('owner-new');
+      const own = await new Promise((resolve) => runner.getJob({appKey: 'owner-new'}, added.r.id, (e, rec) => resolve(e != null ? e.code : (rec != null ? 'found' : null))));
+      const listed = await new Promise((resolve) => runner.listJobs({appKey: 'owner-new'}, (e, list) => resolve(e != null ? e.code : (list || []).some((j) => j.job != null && String(j.job.id) === String(added.r.id)))));
+      const cancelled = await new Promise((resolve) => runner.removeJob({appKey: 'owner-new'}, 'n', added.r.id, false, (e) => resolve(e != null ? e.code : 'removed')));
+      const stranger = await auth('nobody-listed');
+      return {asNew, sameId: idNew === stableId, own, listed, cancelled, stranger};`);
+    assert.deepStrictEqual(out, {asNew: 'ok', sameId: true, own: 'found', listed: true, cancelled: 'removed', stranger: 'SYSTEM_ERROR_UNKNOWN_USER'}, JSON.stringify(out));
+  });
+
+  // (the medium on A2's door, and #526's high, L1/L4) a key the provider
+  // authenticates but its listing doesn't show yet gets no key-derived id at
+  // the door, and nothing is remembered for it, and asking again before the
+  // index changes doesn't wait again. A slow listing holds a request only
+  // until the door's timer (injected here) fires, and the refill still lands:
+  // the key then has its stable id.
+  it('A2\'s door: a lagging key is not remembered and not waited for twice; a slow listing holds the request until the door\'s timer, the refill landing after', () => {
+    const out = child(`
+      provider.list = [{apiKey: 'owner-x', userName: 'x', id: 'stable-x'}];
+      provider.authenticate = function(appKey, deviceID, serviceID, actionName, cb) { setImmediate(() => cb(null, {ok: true, userName: 'u', isAdmin: false})); };
+      await identity.freshRefill(provider);
+      delete require.cache[authPath];
+      const userAuth = require(authPath);
+      // the door's timer: fired by the test, never by the wall clock
+      const pending = [];
+      let clockNow = 0;
+      userAuth.setDoorClockForTests({setTimeout: (fn) => { pending.push(fn); return pending.length; }, clearTimeout: () => {}, now: () => clockNow});
+      const auth = (key) => new Promise((resolve) => userAuth(null, null, 'dev', key, null, null, () => {}, (err) => resolve(err == null ? 'ok' : err.code)));
+      // authenticated, not (yet) listed: answered once the refill says so, nothing remembered
+      const readsBefore = provider.reads;
+      const lagging = await auth('lagging-key');
+      const laggingAsked = provider.reads > readsBefore;
+      const laggingIndexed = identity.isIndexed('lagging-key');
+      // asked again, the index unchanged: no second wait, no second read
+      const readsAgain = provider.reads;
+      const again = await auth('lagging-key');
+      const askedAgain = provider.reads > readsAgain;
+      // 30 s later, the index unchanged: the listing is asked again (the
+      // medium on #526's round, 1)
+      clockNow = 31000;
+      const readsLater = provider.reads;
+      await auth('lagging-key');
+      const askedLater = provider.reads > readsLater;
+      // a listing that takes 2 s: the request is answered when the door's timer fires
+      provider.delayMs = 2000;
+      provider.list = provider.list.concat([{apiKey: 'slow-key', userName: 's', id: 'stable-s'}]);
+      let slow = null;
+      const slowDone = auth('slow-key').then((r) => { slow = r; });
+      for (const t1 = Date.now(); pending.length === 0 && Date.now() - t1 < 10000;) await sleep(5);
+      if (pending.length === 0) return {timerNeverArmed: true};
+      const beforeTimer = slow;
+      pending.shift()();
+      await slowDone;
+      // the refill lands afterwards: the key is indexed under its stable id
+      const t0 = Date.now();
+      while (!identity.isIndexed('slow-key') && Date.now() - t0 < 10000) await sleep(20);
+      return {lagging, laggingAsked, laggingIndexed, again, askedAgain, askedLater, beforeTimer, slow,
+        slowStable: identity.idForKey('slow-key') === identity.idFor({id: 'stable-s'}, 'slow-key')};`);
+    assert.deepStrictEqual(out, {lagging: 'ok', laggingAsked: true, laggingIndexed: false, again: 'ok', askedAgain: false, askedLater: true, beforeTimer: null, slow: 'ok', slowStable: true}, JSON.stringify(out));
+  });
+
   // the medium on the round: an owned repeating job whose key does not come
   // back from authorizeRun is refused for good AND its scheduler stops
   it('an owned scheduler whose authorization brings back no key stops, as a final refusal\'s does', () => {

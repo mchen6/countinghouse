@@ -254,3 +254,4 @@ one) as well as the ports it binds.
 | `test/validation/19-output-not-json.js` | 9576 |
 | `test/validation/20-output-not-json-hop.js` | 9577 |
 | `test/validation/20-output-not-json-hop.js` | 9578 |
+| `test/validation/35-rate-limit-options.js` | 9829 (a start that exits 2 before it listens) |
