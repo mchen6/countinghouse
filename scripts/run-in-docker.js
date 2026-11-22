@@ -5,7 +5,7 @@
 // shared Redis, another session's ports or another container's
 // (docs/testing.md).
 //
-//   node scripts/run-in-docker.js [--node 22|24] [<test file> ...]
+//   node scripts/run-in-docker.js [--node 22|24|26] [<test file> ...]
 //
 // With files, each is run by mocha with --exit; with none, CI's suite by
 // scripts/run-tests.js --ci. The image is built, or reused from the build
@@ -24,11 +24,11 @@ const path = require('path');
 const {spawn, spawnSync} = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
-const NODE = {'22': '22.16.0', '24': '24'};
+const NODE = {'22': '22.16.0', '24': '24', '26': '26'};
 
 function usage(message) {
   if (message != null) process.stderr.write(`run-in-docker: ${message}\n`);
-  process.stderr.write('usage: node scripts/run-in-docker.js [--node 22|24] [<test file> ...]\n');
+  process.stderr.write('usage: node scripts/run-in-docker.js [--node 22|24|26] [<test file> ...]\n');
   return 2;
 }
 
