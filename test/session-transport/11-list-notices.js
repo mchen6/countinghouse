@@ -9,6 +9,7 @@
 const assert = require('assert');
 const {EventEmitter} = require('events');
 const {createSessionListNotices} = require('../../lib/session-transport/session-list-notices');
+const gateway = require('../../lib/mcp/gateway');
 
 const LIST_CHANGED = {jsonrpc: '2.0', method: 'notifications/tools/list_changed'};
 const MODERN = {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {}};
@@ -141,6 +142,41 @@ describe('session-transport 11: list_changed to a shared runtime\'s legacy sessi
       w.notices.arrived(s, message);
       await w.change();
       assert.deepStrictEqual(s.sent, [LIST_CHANGED]);
+    });
+  }
+
+  for (const [name, message] of [
+    ['id null', {jsonrpc: '2.0', id: null, method: 'tools/list', params: {_meta: MODERN}}],
+    ['no jsonrpc', {id: 83, method: 'tools/list', params: {_meta: MODERN}}],
+    ['the wrong jsonrpc', {jsonrpc: '1.0', id: 84, method: 'tools/list', params: {_meta: MODERN}}],
+    ['notifications/initialized with an id', {jsonrpc: '2.0', id: 85, method: 'notifications/initialized', params: {_meta: MODERN}}]
+  ]) {
+    it(`a modern-looking request with ${name}, which the gateway does not serve, leaves it followed`, async() => {
+      const answer = await new Promise((resolve) => gateway.handle(message, null, null, (err, res) => resolve(res)));
+      assert.ok(answer == null || answer.error != null, `the gateway does not serve it: ${JSON.stringify(answer)}`);
+      const w = world();
+      const s = w.session('s1');
+      w.legacy(s);
+      w.notices.arrived(s, message);
+      await w.change();
+      assert.deepStrictEqual(s.sent, [LIST_CHANGED]);
+    });
+  }
+
+  for (const [name, message] of [
+    ['id null', {jsonrpc: '2.0', id: null, method: 'tools/list'}],
+    ['no jsonrpc', {id: 86, method: 'tools/list'}]
+  ]) {
+    it(`a tools/list with ${name}, which the gateway does not serve, does not count as listing`, async() => {
+      const w = world();
+      const s = w.session('s1');
+      const witness = w.session('witness');
+      w.init(s);
+      w.notices.arrived(s, message);
+      w.legacy(witness);
+      await w.change();
+      assert.strictEqual(witness.sent.length, 1, 'the round ran');
+      assert.deepStrictEqual(s.sent, []);
     });
   }
 
