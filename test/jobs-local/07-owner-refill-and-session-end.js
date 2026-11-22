@@ -134,6 +134,29 @@ describe('jobs-local 07: the owner refill a run waits for, and a session ending 
     assert.deepStrictEqual(out, {asNew: 'ok', sameId: true, own: 'found', listed: true, cancelled: 'removed', stranger: 'SYSTEM_ERROR_UNKNOWN_USER'}, JSON.stringify(out));
   });
 
+  // (the medium on A2's door) a key the provider authenticates but its
+  // listing doesn't show yet gets no key-derived id at the door, and nothing
+  // is remembered for it; and a slow listing holds a request at most the
+  // door's bound, the refill still landing for the next one
+  it('A2\'s door: a key the listing lags on is not remembered; a slow listing holds the request at most its bound', () => {
+    const out = child(`
+      provider.list = [{apiKey: 'owner-x', userName: 'x', id: 'stable-x'}];
+      provider.authenticate = function(appKey, deviceID, serviceID, actionName, cb) { setImmediate(() => cb(null, {ok: true, userName: 'u', isAdmin: false})); };
+      await identity.freshRefill(provider);
+      delete require.cache[authPath];
+      const userAuth = require(authPath);
+      const auth = (key) => new Promise((resolve) => { const t0 = Date.now(); userAuth(null, null, 'dev', key, null, null, () => {}, (err) => resolve({code: err == null ? 'ok' : err.code, ms: Date.now() - t0})); });
+      // authenticated, not (yet) listed: answered, nothing remembered
+      const lagging = await auth('lagging-key');
+      const laggingIndexed = identity.stateForTests().byKeyHas ? identity.stateForTests().byKeyHas('lagging-key') : identity.isIndexed('lagging-key');
+      // a listing that takes 5 s: the request goes on within the door's bound
+      provider.delayMs = 5000;
+      provider.list = provider.list.concat([{apiKey: 'slow-key', userName: 's', id: 'stable-s'}]);
+      const slow = await auth('slow-key');
+      return {lagging: lagging.code, laggingIndexed, slow: slow.code, slowWithinBound: slow.ms < 4000};`);
+    assert.deepStrictEqual(out, {lagging: 'ok', laggingIndexed: false, slow: 'ok', slowWithinBound: true}, JSON.stringify(out));
+  });
+
   // the medium on the round: an owned repeating job whose key does not come
   // back from authorizeRun is refused for good AND its scheduler stops
   it('an owned scheduler whose authorization brings back no key stops, as a final refusal\'s does', () => {

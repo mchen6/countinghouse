@@ -7,7 +7,7 @@
 const assert = require('assert');
 const path = require('path');
 const {spawnSync} = require('child_process');
-const {testPort} = require('../helpers/test-env');
+const {testPort, redisUrlFor} = require('../helpers/test-env');
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -22,7 +22,9 @@ function parsed(argv) {
 }
 
 function start(args) {
-  return spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', String(testPort(9829))].concat(args),
+  // (the test's own Redis, never the default: on a red run, old code, a bad
+  // value let the server start -- the medium on this PR, 7)
+  return spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', String(testPort(9829)), '--redisUrl', redisUrlFor()].concat(args),
     {cwd: ROOT, encoding: 'utf8', timeout: 30000});
 }
 
