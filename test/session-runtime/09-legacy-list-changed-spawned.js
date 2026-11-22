@@ -153,5 +153,38 @@ describe('session-runtime 09: a 2025-11-25 session of a shared runtime hears its
     legacy.c.end();
   });
 
+  it('a session with an open 2026-07-28 listen that re-sends it is told only on that listen, even after an initialize', async() => {
+    const SUB = 'io.modelcontextprotocol/subscriptionId';
+    const packs = path.join(home, 'packs');
+    r = runtime(home, packs);
+    const end = Date.now() + 30000;
+    while (!(fs.existsSync(path.join(r.run, 'secret')) && fs.existsSync(r.socket)) && Date.now() < end) await tick(100);
+    await tick(300);
+    const secret = handshake.parseSecret(fs.readFileSync(path.join(r.run, 'secret'), 'utf8'));
+    const a = await shim.session(r.socket, secret);
+    const rd = reader(a.c);
+    const id = seqs++;
+    const listen = () => JSON.stringify({jsonrpc: '2.0', id, method: 'subscriptions/listen', params: {_meta: MODERN, notifications: {toolsListChanged: true}}});
+    shim.message(a.c, {seq: id}, listen());
+    await until(() => rd.notes.some((n) => n.method === 'notifications/subscriptions/acknowledged' && n.params._meta[SUB] === id));
+    await ask(a.c, rd, 'initialize', {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'test', version: '1'}});
+    await ask(a.c, rd, 'tools/list');
+    const again = seqs++;
+    shim.message(a.c, {seq: again}, listen());
+    await until(() => rd.answers.has(again));
+    assert.strictEqual(rd.answers.get(again).error.code, -32600, JSON.stringify(rd.answers.get(again)));
+    const two = scenario(path.join(packs, 'ch-pack-two', '1.0.0', 'node_modules', 'ch-pack-two'), 'ch-pack-two');
+    const loaded = await r.control({type: 'load', name: 'ch-pack-two', dirs: dirsOf(two)});
+    assert.strictEqual(loaded.ok, true, `${JSON.stringify(loaded)}\n${r.err.slice(-1500)}`);
+    const onListen = () => rd.notes.filter((n) => n.method === 'notifications/tools/list_changed' && n.params != null && n.params._meta != null && n.params._meta[SUB] === id).length;
+    await until(() => onListen() >= 1);
+    assert.ok(onListen() >= 1, `its listen is told: ${JSON.stringify(rd.notes)}`);
+    // anything else written to it arrives before this answer
+    await ask(a.c, rd, 'tools/list', {_meta: MODERN});
+    const plain = rd.notes.filter((n) => n.method === 'notifications/tools/list_changed' && !(n.params != null && n.params._meta != null && n.params._meta[SUB] != null));
+    assert.deepStrictEqual(plain, [], 'no plain notice to a session speaking 2026-07-28');
+    a.c.end();
+  });
+
   tmp.hooks();
 });
