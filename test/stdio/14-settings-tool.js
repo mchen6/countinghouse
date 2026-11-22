@@ -144,6 +144,11 @@ describe('stdio 14: countinghouse_settings', () => {
       fs.writeFileSync(file, '{');
       const bad = await refused(tool.set('requestTimeout', '20s'), 'SETTINGS_FILE_INVALID');
       assert.ok(bad.message.includes(`reset it with \`node "${launcher}" settings reset\` in a terminal`), bad.message);
+      // (a module's load keeps the file's problem alone: no command, no path
+      // outside the module's root -- the medium on the follow-ups, 3)
+      const state = require('../../lib/module-settings').stateFor('m', {name: 'm', version: '1.0.0', countinghouse: {settings: {r: {type: 'string'}}}}, {operator: false, net: []});
+      assert.ok(state.refusedWhy != null && state.refusedWhy.includes('it is not JSON'), JSON.stringify(state.refusedWhy));
+      assert.ok(!state.refusedWhy.includes(home) && !/settings reset/.test(state.refusedWhy), state.refusedWhy);
       fs.rmSync(file);
       for (const [name, value, command] of [['maxOutputBytes', '64MiB', 'maxOutputBytes 64MiB'], ['requestTimeout', '45s', 'requestTimeout 45s'], [EN, 'on', `${EN} on`]]) {
         if (name === EN) await tool.set(EN, 'off');

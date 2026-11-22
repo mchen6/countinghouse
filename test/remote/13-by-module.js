@@ -119,11 +119,13 @@ describe('remote 13: a version 2 binding, at registration', function() {
     assert.strictEqual(remote.headers.length, before);
   });
 
-  // (the dry run: ch-local is on no PATH) under ch-local, the refusal of a
-  // call names the command through the home's launcher; built when the call
-  // is refused, after the held-back list is read, never the bare form kept
-  // from the registration (which may come before that read)
-  it('under ch-local with its launcher known, a refused call names the command through it', async () => {
+  // A refused call's text is answered to the module (answerRemoteMessage), so
+  // it never holds the launcher's path, a file outside the module's root
+  // (CLAUDE.md's sandbox invariant; the medium on the launcher's follow-ups,
+  // 1), and the refusal starts no held-back read a looping module could
+  // repeat (2). Under ch-local the user's line for a missing credential is
+  // the overview's, which goes through the launcher.
+  it('under ch-local with its launcher known, a refused call\'s text, which the module reads, never names its path', async () => {
     const heldBack = require('../../lib/held-back');
     const home = fs.realpathSync.native(tmpDirs.mkdtemp('ch-remote-13h-'));
     fs.mkdirSync(path.join(home, 'bin'));
@@ -134,10 +136,13 @@ describe('remote 13: a version 2 binding, at registration', function() {
     cli.setOptions({workerThread: false, debug: true, controlChannel: 'ipc', heldBackFile: path.join(home, 'held-back.json'), settingsFile: path.join(home, 'settings.json')});
     heldBack.resetForTests();
     try {
+      await heldBack.ready();
+      assert.strictEqual(heldBack.list().launcher, launcher, 'the launcher is known');
       remoteRegistry.register('remote-copycat', dirs.copycat, {version: '1.0.0'});
       const err = await remoteRegistry.callRemote('remote-copycat', 'probe', 'echo_text', {}, {billingKey: 'k'}).then(() => null, (e) => e);
       assert.strictEqual(err.code, 'REMOTE_CREDENTIAL_NOT_ALLOWED');
-      assert.ok(err.message.includes(`run \`node "${launcher}" credentials add remote-copycat\` at a terminal`), err.message);
+      assert.ok(!err.message.includes(home) && !err.message.includes('node "'), err.message);
+      assert.ok(err.message.includes('run `ch-local credentials add remote-copycat` at a terminal'), err.message);
     } finally {
       heldBack.resetForTests();
     }
