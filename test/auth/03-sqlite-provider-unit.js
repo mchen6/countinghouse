@@ -269,6 +269,21 @@ const tmp = require('../helpers/test-tmp').forFile(['countinghouse-test-auth-03-
       assert.strictEqual(await lookup('composite-demo'), null);
     });
 
+    // (the final pass's gateway part, A13) grant, revoke and remove-user on a
+    // key with no user: refused, as set-admin refuses it, and nothing written
+    // -- it printed "ok:" (and grant wrote a grant no user holds)
+    it('grant, revoke and remove-user refuse a key that has no user, and write nothing', async () => {
+      const NOBODY = `nobody-key-${process.pid}`;
+      for (const args of [['grant', NOBODY, 'some-device'], ['revoke', NOBODY, 'some-device'], ['remove-user', NOBODY]]) {
+        const r = cli(args);
+        assert.strictEqual(r.status, 1, `${args[0]}: ${r.status} ${r.stdout}`);
+        assert.ok(!/^ok:/m.test(r.stdout), `${args[0]}: ${r.stdout}`);
+        assert.match(r.stderr, /no such user \(add-user first\)/, args[0]);
+      }
+      const devices = await new Promise((resolve, reject) => makeProvider().listDevices(NOBODY, (err, r) => (err ? reject(err) : resolve(r.devices))));
+      assert.deepStrictEqual(devices, [], 'no grant written for a key with no user');
+    });
+
     // R2-1 Task 5's review of #153 (item 7)
     it('refuses an empty module name', () => {
       assert.strictEqual(cli(['add-user', KEY, 'bound-identity']).status, 0);
