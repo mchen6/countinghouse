@@ -334,13 +334,16 @@ Before rotating such a key, remove its repeatable jobs
 and recreate them with the new one, or have an admin remove them afterwards
 by their full scheduler id (`<id>:<name>`, as bullmq lists it) in place of
 the name. A job is
-authorized each time it runs. With a stable `id`, a run whose key the
-configuration no longer holds makes the runtime read the provider's entries
-once more, and the run goes on under the new key, so the schedulers stay
-(no `POST /reload-auth` is needed, even on sqlite or CouchDB). The new key
-also reaches the user's jobs from its first request: a key the provider
-accepts but the runtime hasn't indexed yet is read in under its stable `id`
-before the request goes on. Without a stable `id`, once the old key is gone
+authorized each time it runs. With a stable `id`, the schedulers stay the
+user's through a rotation. On the file provider the rotation takes effect at
+`POST /reload-auth`, which reads the new key in under the same `id`. On
+sqlite no reload is needed: a run whose key the database no longer holds
+makes the runtime read the entries once more, and the run goes on under the
+new key. CouchDB keeps the users it looked up cached until a reload or a
+restart, so there the old key keeps working until then. A request with a key
+the provider accepts but the runtime hasn't read in yet waits briefly (at
+most 1.5 s) for that read, so it reaches the user's jobs; one that can't wait
+so long goes on under an id of its own until the read lands. Without a stable `id`, once the old key is gone
 from the config (after `POST /reload-auth`, for the file and CouchDB
 providers), its schedulers' next runs are refused `SYSTEM_ERROR_UNKNOWN_USER`
 and the schedulers removed, and its queued jobs fail the same way; recreate
