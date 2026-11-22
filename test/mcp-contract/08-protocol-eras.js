@@ -80,6 +80,16 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
       assert.strictEqual(res.result.resultType, undefined);
     });
 
+    // (the final pass's gateway part, A11) a version that isn't a legacy one
+    // is not echoed: a client that then sent it in MCP-Protocol-Version would
+    // be read as modern, and refused
+    it('initialize echoes only a legacy version: any other is answered with the server\'s legacy one', async() => {
+      for (const [asked, answered] of [['2025-03-26', '2025-03-26'], ['2026-07-28', '2025-11-25'], ['2099-01-01', '2025-11-25'], ['bogus', '2025-11-25']]) {
+        const {res} = await viaGateway({jsonrpc: '2.0', id: 9, method: 'initialize', params: {protocolVersion: asked, capabilities: {}, clientInfo: {name: 'c', version: '0'}}});
+        assert.strictEqual(res.result.protocolVersion, answered, asked);
+      }
+    });
+
     it('a modern unknown method: -32601, and HTTP would answer it 404', async() => {
       // roots/list is a client's method: no server here serves it (resources/list is, since M6)
       const {res, info} = await viaGateway(modern('roots/list', {}, 8));
