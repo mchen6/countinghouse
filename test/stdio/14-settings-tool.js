@@ -38,7 +38,7 @@ describe('stdio 14: countinghouse_settings', () => {
     return err;
   };
 
-  before(() => { saved = {locale: options.locale, requestTimeout: options.requestTimeout, maxOutputBytes: options.maxOutputBytes}; });
+  before(() => { saved = {requestTimeout: options.requestTimeout, maxOutputBytes: options.maxOutputBytes}; });
   after(() => Object.assign(options, saved));
   beforeEach(() => {
     home = tmpDirs.mkdtemp('ch-settings-');
@@ -53,7 +53,7 @@ describe('stdio 14: countinghouse_settings', () => {
     // the runtime on its defaults at each case's start, whatever the case
     // before (or a file run before this one, #285) left: a cap's value is
     // what the runtime runs with
-    Object.assign(options, {locale: 'en-US', maxOutputBytes: 16 * MiB, requestTimeout: 30000});
+    Object.assign(options, {maxOutputBytes: 16 * MiB, requestTimeout: 30000});
   });
 
   it('get, with no file: every setting at its default, with its bounds, whether it guards, and when it applies', async () => {
@@ -65,21 +65,22 @@ describe('stdio 14: countinghouse_settings', () => {
     assert.deepStrictEqual(byName.moduleSandbox.bounds, {enum: ['enforce', 'audit']});
     assert.strictEqual(byName.moduleSandbox.default, 'enforce');
     assert.strictEqual(byName.moduleSandbox.applies, 'next start');
-    assert.strictEqual(byName.locale.guarding, false);
+    assert.strictEqual(byName.upgradeCheck.guarding, false);
+    assert.strictEqual(byName.locale, undefined, 'no language setting');
     assert.deepStrictEqual(got.history, []);
   });
 
   it('every allowlisted setting is set within its bounds, stored as ch-local stores it, the history line first', async () => {
     assert.deepStrictEqual(await tool.set('maxOutputBytes', '4MiB'), {name: 'maxOutputBytes', old: 16 * MiB, new: 4 * MiB, applies: 'now'});
     assert.deepStrictEqual(await tool.set('requestTimeout', '20s'), {name: 'requestTimeout', old: 30000, new: 20000, applies: 'now'});
-    await tool.set('locale', 'zh');
-    await tool.set('locale', 'en');
+    await tool.set('upgradeCheck', 'never');
+    await tool.set('upgradeCheck', 'daily');
     // the current value again: a no-op, neither written nor recorded
     await tool.set('moduleSandbox', 'enforce');
     await tool.set('autoUpgrade', 'off');
     await tool.set('upgradeCheck', 'weekly');
     assert.deepStrictEqual(core(await tool.set(EN, 'off')), {name: EN, old: 'on', new: 'off', applies: 'now'});
-    assert.deepStrictEqual(stored(), {maxOutputBytes: 4 * MiB, requestTimeout: 20000, locale: 'en', upgradeCheck: 'weekly', [EN]: false});
+    assert.deepStrictEqual(stored(), {maxOutputBytes: 4 * MiB, requestTimeout: 20000, upgradeCheck: 'weekly', [EN]: false});
     const h = history();
     assert.strictEqual(h.length, 6);
     assert.deepStrictEqual((({by, setting, old, new: n}) => ({by, setting, old, new: n}))(h[0]), {by: 'settings tool', setting: 'maxOutputBytes', old: 16 * MiB, new: 4 * MiB});
@@ -87,12 +88,22 @@ describe('stdio 14: countinghouse_settings', () => {
     assert.strictEqual((await tool.get()).history.length, 6);
   });
 
+  // (the language setting is gone: a file an earlier ch-local wrote with it
+  // is read as any file holding a key this runtime does not know)
+  it('a settings file still holding `locale` works: the key ignored, and kept', async () => {
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {locale: 'en'}}));
+    assert.ok(!(await tool.get()).settings.some((e) => e.name === 'locale'));
+    await tool.set('requestTimeout', '20s');
+    assert.deepStrictEqual(stored(), {locale: 'en', requestTimeout: 20000});
+  });
+
   it('a value out of bounds: SETTING_OUT_OF_BOUNDS, with the bounds; nothing changed', async () => {
     const en = await refused(tool.set('maxOutputBytes', '1KiB'), 'SETTING_OUT_OF_BOUNDS');
     assert.match(en.message, /The value 1KiB for maxOutputBytes is outside the allowed range \(1048576 to 268435456\); nothing was changed/);
     const word = await refused(tool.set('requestTimeout', 'soon'), 'SETTING_OUT_OF_BOUNDS');
     assert.match(word.message, /The value soon for requestTimeout is outside the allowed range \(5000 to 120000\); nothing was changed/);
-    await refused(tool.set('locale', 'fr'), 'SETTING_OUT_OF_BOUNDS');
+    await refused(tool.set('upgradeCheck', 'hourly'), 'SETTING_OUT_OF_BOUNDS');
+    await refused(tool.set('locale', 'en'), 'SETTING_UNKNOWN');
     assert.ok(!fs.existsSync(file));
   });
 
@@ -192,7 +203,7 @@ describe('stdio 14: countinghouse_settings', () => {
     assert.deepStrictEqual(history().map((h) => [h.setting, h.change, h.old, h.new]), loosenings.map(([name]) => [name, 'refused, terminal only', undefined, undefined]));
     // asked again: one entry per kind, the count written before the next change
     for (let i = 0; i < 3; i++) await refused(tool.set('autoUpgrade', 'on'), 'SETTING_LOOSENS_A_GUARD');
-    await tool.set('locale', 'zh');
+    await tool.set('upgradeCheck', 'never');
     assert.deepStrictEqual(history().filter((h) => h.setting === 'autoUpgrade').map((h) => [h.change, h.count]), [['refused, terminal only', undefined], ['refused, terminal only, asked again', 3]]);
     // off is never a value
     await refused(tool.set('moduleSandbox', 'off'), 'SETTING_OUT_OF_BOUNDS');
@@ -202,7 +213,7 @@ describe('stdio 14: countinghouse_settings', () => {
     await tool.set('requestTimeout', '20s');
     const before = history().length;
     for (let i = 0; i < 5; i++) assert.deepStrictEqual(await tool.set('requestTimeout', '20s'), {name: 'requestTimeout', old: 20000, new: 20000, applies: 'now'});
-    await tool.set('locale', 'en');
+    await tool.set('upgradeCheck', 'daily');
     assert.strictEqual(history().length, before);
   });
 
@@ -215,10 +226,10 @@ describe('stdio 14: countinghouse_settings', () => {
     for (const p of ['a', 'b', 'made-up']) await refused(fresh().set(`enabled.${p}`, 'on'), 'SETTING_NEEDS_CONFIRMATION');
     assert.deepStrictEqual(asked().map((h) => [h.setting, h.change, h.asked]), [['maxOutputBytes', 'not confirmed (not on the tested-client list)', 64 * MiB], ['enabled.a', 'not confirmed (not on the tested-client list)', true]]);
     assert.ok(asked().every((h) => h.old === undefined && h.new === undefined), 'a request is never written as a change made');
-    await fresh().set('locale', 'zh');
+    await fresh().set('upgradeCheck', 'never');
     assert.deepStrictEqual(asked().map((h) => [h.setting, h.change, h.count]), [
       ['maxOutputBytes', 'not confirmed (not on the tested-client list)', undefined], ['enabled.a', 'not confirmed (not on the tested-client list)', undefined],
-      ['maxOutputBytes', 'not confirmed (not on the tested-client list), asked again', 3], ['enabled', 'not confirmed (not on the tested-client list), asked again', 2], ['locale', undefined, undefined]]);
+      ['maxOutputBytes', 'not confirmed (not on the tested-client list), asked again', 3], ['enabled', 'not confirmed (not on the tested-client list), asked again', 2], ['upgradeCheck', undefined, undefined]]);
   });
 
   // the runtime as it started: its options, recorded when it starts serving
@@ -555,29 +566,29 @@ describe('stdio 14: countinghouse_settings', () => {
 
   it('a change the history cannot record is not made: SETTING_NOT_RECORDED', async () => {
     fs.mkdirSync(path.join(home, 'history.jsonl'));
-    await refused(tool.set('locale', 'zh'), 'SETTING_NOT_RECORDED');
+    await refused(tool.set('upgradeCheck', 'never'), 'SETTING_NOT_RECORDED');
     assert.ok(!fs.existsSync(file));
   });
 
   it('the settings lock: a fresh one, even empty, makes it wait then refuse SETTINGS_BUSY; a stale one is cleared', async () => {
     const lock = path.join(home, 'settings.lock');
     fs.writeFileSync(lock, '');
-    await refused(tool.set('locale', 'zh'), 'SETTINGS_BUSY');
+    await refused(tool.set('upgradeCheck', 'never'), 'SETTINGS_BUSY');
     assert.ok(fs.existsSync(lock));
     const old = new Date(Date.now() - 60000);
     fs.utimesSync(lock, old, old);
-    await tool.set('locale', 'zh');
+    await tool.set('upgradeCheck', 'never');
     assert.ok(!fs.existsSync(lock), 'released');
   });
 
   it('a settings file not valid is never changed: SETTINGS_FILE_INVALID; a name it does not know is ignored', async () => {
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 1}}));
-    const err = await refused(tool.set('locale', 'zh'), 'SETTINGS_FILE_INVALID');
+    const err = await refused(tool.set('upgradeCheck', 'never'), 'SETTINGS_FILE_INVALID');
     assert.match(err.message, /maxOutputBytes = 1, which is not allowed.*ch-local settings reset/);
     await refused(tool.get(), 'SETTINGS_FILE_INVALID');
-    fs.writeFileSync(file, JSON.stringify({version: 1, values: {fromTheFuture: 1, locale: 'zh'}}));
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {fromTheFuture: 1, upgradeCheck: 'never'}}));
     await tool.set('maxOutputBytes', '1MiB');
-    assert.deepStrictEqual(stored(), {fromTheFuture: 1, locale: 'zh', maxOutputBytes: MiB}, 'kept for the reader that knows it');
+    assert.deepStrictEqual(stored(), {fromTheFuture: 1, upgradeCheck: 'never', maxOutputBytes: MiB}, 'kept for the reader that knows it');
   });
 
   it('control set applies in the runtime\'s unit: requestTimeout in seconds; a call already running keeps its timer', () => {
@@ -592,9 +603,7 @@ describe('stdio 14: countinghouse_settings', () => {
     clearTimeout(running.timeout);
     assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 4 * MiB}), {ok: true});
     assert.strictEqual(options.maxOutputBytes, 4 * MiB);
-    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'locale', value: 'zh-CN'}), {ok: true});
-    assert.strictEqual(options.locale, 'zh-CN');
-    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'locale', value: 'zh'}), {ok: false, code: 'SETTING_OUT_OF_BOUNDS'}, 'the runtime\'s unit: en-US or zh-CN');
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'locale', value: 'en-US'}), {ok: false, code: 'CONTROL_UNKNOWN_SETTING'}, 'no language setting');
     assert.deepStrictEqual(settingsTool.applyControlSet({name: 'moduleSandbox', value: 'audit'}), {ok: false, code: 'CONTROL_NOT_LIVE'});
     assert.deepStrictEqual(settingsTool.applyControlSet({name: EN, value: false}), {ok: false, code: 'CONTROL_NOT_LIVE'}, 'a module is turned off by its enabled.<module> in the file');
     assert.deepStrictEqual(settingsTool.applyControlSet({name: 'pack.ci-failure-triage', value: false}), {ok: false, code: 'CONTROL_UNKNOWN_SETTING'}, 'no setting is a pack\'s (M5b)');
@@ -616,11 +625,11 @@ describe('stdio 14: countinghouse_settings', () => {
 
   it('an earlier {autoUpgrade} that is not a boolean makes the file unusable: never dropped by the next write', async () => {
     fs.writeFileSync(file, JSON.stringify({autoUpgrade: 'yes'}));
-    await refused(tool.set('locale', 'zh'), 'SETTINGS_FILE_INVALID');
+    await refused(tool.set('upgradeCheck', 'never'), 'SETTINGS_FILE_INVALID');
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {autoUpgrade: 'yes'});
     fs.writeFileSync(file, JSON.stringify({autoUpgrade: true}));
-    await tool.set('locale', 'zh');
-    assert.deepStrictEqual(stored(), {autoUpgrade: true, locale: 'zh'});
+    await tool.set('upgradeCheck', 'never');
+    assert.deepStrictEqual(stored(), {autoUpgrade: true, upgradeCheck: 'never'});
   });
 
   it('a home it cannot write to: SETTINGS_FILE_INVALID naming what failed; the history shows no change', async function() {
@@ -628,7 +637,7 @@ describe('stdio 14: countinghouse_settings', () => {
     fs.writeFileSync(path.join(home, 'history.jsonl'), '');
     fs.chmodSync(home, 0o555);
     try {
-      const err = await refused(tool.set('locale', 'zh'), 'SETTINGS_FILE_INVALID');
+      const err = await refused(tool.set('upgradeCheck', 'never'), 'SETTINGS_FILE_INVALID');
       assert.match(err.message, /its lock cannot be created \(EACCES\)/);
     } finally {
       fs.chmodSync(home, 0o755);
@@ -639,7 +648,7 @@ describe('stdio 14: countinghouse_settings', () => {
 
   it('get reads only the history\'s tail, the last 50, and never shows ch-local\'s host or pid', async () => {
     const lines = [];
-    for (let n = 0; n < 2000; n++) lines.push(JSON.stringify({at: `t${n}`, host: 'box', pid: 7, by: 'cli', setting: 'locale', old: 'en', new: 'zh', pad: 'x'.repeat(40)}));
+    for (let n = 0; n < 2000; n++) lines.push(JSON.stringify({at: `t${n}`, host: 'box', pid: 7, by: 'cli', setting: 'upgradeCheck', old: 'daily', new: 'never', pad: 'x'.repeat(40)}));
     fs.writeFileSync(path.join(home, 'history.jsonl'), `${lines.join('\n')}\n`);
     assert.ok(fs.statSync(path.join(home, 'history.jsonl')).size > 64 * 1024, 'premise: larger than the tail read');
     const {history: h} = await tool.get();
@@ -654,26 +663,25 @@ describe('stdio 14: countinghouse_settings', () => {
     const said = [];
     const was = LOG.I;
     LOG.I = (line) => said.push(line);
-    try { await tool.set('locale', 'zh'); } finally { LOG.I = was; }
-    assert.deepStrictEqual(said, ['countinghouse_settings: locale changed from "en" to "zh" by settings tool']);
+    try { await tool.set('upgradeCheck', 'never'); } finally { LOG.I = was; }
+    assert.deepStrictEqual(said, ['countinghouse_settings: upgradeCheck changed from "daily" to "never" by settings tool']);
   });
 
   it('a live set reaches every running module worker, only its fields; a worker takes only those, each of its own type', () => {
     options.requestTimeout = 30000;
     options.maxOutputBytes = 8 * MiB;
-    options.locale = 'en-US';
     settingsTool.resetForTests();
     settingsTool.applyControlSet({name: 'requestTimeout', value: 20});
     const sent = [];
     settingsTool.broadcastLiveOptions({a: {sendMessageToWorker: (m) => sent.push(m)}, b: {sendMessageToWorker: (m) => sent.push(m)}, gone: null});
-    assert.deepStrictEqual(sent, [0, 1].map(() => ({command: 'live-options', options: {maxOutputBytes: 8 * MiB, requestTimeout: 20000, locale: 'en-US'}})));
+    assert.deepStrictEqual(sent, [0, 1].map(() => ({command: 'live-options', options: {maxOutputBytes: 8 * MiB, requestTimeout: 20000}})));
     // a worker started after the tighten holds 20 s; a loosening back to 30 s reaches it
-    const worker = {requestTimeout: 20000, maxOutputBytes: 8 * MiB, locale: 'en-US', moduleSandbox: 'enforce'};
+    const worker = {requestTimeout: 20000, maxOutputBytes: 8 * MiB, moduleSandbox: 'enforce'};
     settingsTool.applyControlSet({name: 'requestTimeout', value: 30});
     settingsTool.applyLiveOptions(worker, settingsTool.liveOptions());
     assert.strictEqual(worker.requestTimeout, 30000);
-    settingsTool.applyLiveOptions(worker, {moduleSandbox: 'audit', requestTimeout: 'soon', locale: 'fr', maxOutputBytes: -1});
-    assert.deepStrictEqual(worker, {requestTimeout: 30000, maxOutputBytes: 8 * MiB, locale: 'en-US', moduleSandbox: 'enforce'});
+    settingsTool.applyLiveOptions(worker, {moduleSandbox: 'audit', requestTimeout: 'soon', maxOutputBytes: -1});
+    assert.deepStrictEqual(worker, {requestTimeout: 30000, maxOutputBytes: 8 * MiB, moduleSandbox: 'enforce'});
   });
 
   it('a live set reaches a worker in the same unit as the main thread\'s, from a worker started with setResolvedOptions (#112 with #183)', () => {

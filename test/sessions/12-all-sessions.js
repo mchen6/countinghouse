@@ -70,8 +70,8 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
   };
   const reset = () => { sessions.resetForTests(); settings.resetForTests(); jobSessions.resetForTests(); notices.resetForTests(); settingsTool.resetForTests(); confirm.resetForTests(); };
   beforeEach(() => {
-    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout, locale: options.locale};
-    Object.assign(options, {maxOutputBytes: 16 * MiB, requestTimeout: 30000, locale: 'en-US'});
+    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout};
+    Object.assign(options, {maxOutputBytes: 16 * MiB, requestTimeout: 30000});
     reset();
     settings.configure({ceiling: () => ({state: 'none'})});
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s12-'));
@@ -467,7 +467,7 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
       fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 16 * MiB}}));
       const before = fs.readFileSync(file);
       // (a module's on/off is every session's, whatever the scope: sessions 37)
-      for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['locale', 'zh'], ['autoUpgrade', 'off'], ['upgradeCheck', 'never']]) {
+      for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['autoUpgrade', 'off'], ['upgradeCheck', 'never']]) {
         const e = await refused(tool().set(name, value, 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
         assert.match(e.message, /ch-local settings set/);
       }

@@ -65,9 +65,9 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
   };
   const reset = () => { sessions.resetForTests(); settings.resetForTests(); jobSessions.resetForTests(); notices.resetForTests(); settingsTool.resetForTests(); require('../../lib/settings-confirm').resetForTests(); };
   beforeEach(() => {
-    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout, locale: options.locale};
+    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout};
     // the defaults every session shares, whatever the options' own are
-    Object.assign(options, {maxOutputBytes: 8 * MiB, requestTimeout: 30000, locale: 'en-US'});
+    Object.assign(options, {maxOutputBytes: 8 * MiB, requestTimeout: 30000});
     reset();
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s09-'));
     file = path.join(home, 'settings.json');
@@ -163,7 +163,7 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci': true}}));
     const before = fs.readFileSync(file);
     // (a stored pack.* is no setting since M5b; a module's on/off is every session's: sessions 37)
-    for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['autoUpgrade', 'on'], ['upgradeCheck', 'weekly'], ['locale', 'zh']]) {
+    for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['autoUpgrade', 'on'], ['upgradeCheck', 'weekly']]) {
       const e = await refused(tool.set(name, value, 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
       assert.match(e.message, /ch-local settings set/, `${name} ${value}`);
     }

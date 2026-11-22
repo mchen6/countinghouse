@@ -50,8 +50,8 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s20-'));
     file = path.join(dir, 'settings.json');
-    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout, locale: options.locale};
-    Object.assign(options, {maxOutputBytes: 16 * MiB, requestTimeout: 30000, locale: 'en-US'});
+    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout};
+    Object.assign(options, {maxOutputBytes: 16 * MiB, requestTimeout: 30000});
     applied = [];
     confirmModule.resetForTests();
     settingsTool.resetForTests();
@@ -275,8 +275,8 @@ describe('stdio 20b: the review of Tasks 1-3 (part 3 P2)', () => {
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s20b-'));
     file = path.join(dir, 'settings.json');
-    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout, locale: options.locale};
-    Object.assign(options, {maxOutputBytes: 16 * MiB2, requestTimeout: 30000, locale: 'en-US'});
+    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout};
+    Object.assign(options, {maxOutputBytes: 16 * MiB2, requestTimeout: 30000});
     applied = [];
     confirmModule.resetForTests();
     settingsTool.resetForTests();

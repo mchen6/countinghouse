@@ -409,8 +409,8 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
     };
     const reset = () => { sessions.resetForTests(); settings.resetForTests(); jobSessions.resetForTests(); notices.resetForTests(); settingsTool.resetForTests(); };
     beforeEach(() => {
-      saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout, locale: options.locale};
-      Object.assign(options, {maxOutputBytes: 8 * MiB, requestTimeout: 30000, locale: 'en-US'});
+      saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout};
+      Object.assign(options, {maxOutputBytes: 8 * MiB, requestTimeout: 30000});
       reset();
       settings.configure({ceiling: () => ({state: 'none'})});
       home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s10-'));

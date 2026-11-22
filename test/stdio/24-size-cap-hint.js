@@ -20,7 +20,7 @@ describe('stdio 24: a size cap\'s error says how to raise it', function() {
   const callLimits = require('../../lib/call-limits');
   const {CountinghouseError} = require('../../lib/countinghouse-error');
   let saved;
-  beforeEach(() => { saved = {settingsTool: options.settingsTool, locale: options.locale}; });
+  beforeEach(() => { saved = {settingsTool: options.settingsTool}; });
   afterEach(() => Object.assign(options, saved));
 
   it('with the settings tool: the tool\'s call and the terminal command, at the size needed in MiB', () => {
