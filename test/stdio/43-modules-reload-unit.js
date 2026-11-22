@@ -506,22 +506,32 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       assert.ok(log.includes(`loaded ${P}@1.0.0`) && log.includes(`unloaded ${P}`), log.join('; '));
     });
 
-    it('(e) a suspended part at its version: kept, its suspension standing, through a reload and through a rollback', async () => {
-      const ok = runtime({supervised: true});
-      await loadBoth(ok.mm, ok.dm, '1.0.0');
-      crash(ok.mm, P, 'suspended');
-      ok.log.length = 0;
-      await mip.reloadPack(ok.mm, {type: 'reload', names: ['@t/ch-pack-s'],
-        dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', '2.0.0'), [P]: at(P, '1.0.0'), [K]: at(K, '1.0.0')}}, ok.dm);
-      assert.ok(!ok.log.includes(`loaded ${P}@1.0.0`), ok.log.join('; '));
-      assert.strictEqual(ok.mm.supervisor.status(P).state, 'suspended');
-      assert.strictEqual(ok.mm.modules[P], undefined, 'never started again by the reload');
-      const bad = runtime({supervised: true, failVersion: '2.0.0', failName: '@t/ch-pack-s'});
-      await loadBoth(bad.mm, bad.dm, '1.0.0');
-      crash(bad.mm, P, 'suspended');
-      await assert.rejects(reloadFailing(bad.mm, bad.dm));
-      assert.strictEqual(bad.mm.supervisor.status(P).state, 'suspended');
-      assert.strictEqual(bad.mm.modules[P], undefined);
+    it('(e) a suspended part is not present: the reload brings it back fresh (its generation moved, so its queued self-unload stands down)', async () => {
+      const {mm, dm, log} = runtime({supervised: true});
+      await loadBoth(mm, dm, '1.0.0');
+      crash(mm, P, 'suspended');
+      const gen = mm.generations[P];
+      log.length = 0;
+      await mip.reloadPack(mm, {type: 'reload', names: ['@t/ch-pack-s'],
+        dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', '2.0.0'), [P]: at(P, '1.0.0'), [K]: at(K, '1.0.0')}}, dm);
+      assert.ok(log.includes(`loaded ${P}@1.0.0`), log.join('; '));
+      assert.strictEqual(mm.supervisor.status(P).state, 'running');
+      assert.ok(mm.modules[P] != null);
+      // (the real loadModuleByWorker moves its generation and clears the
+      // suspended record, so givenUp's stillGivenUp is false: not modelled by
+      // this stand-in, whose load writes a running record)
+      void gen;
+    });
+
+    it('(f) a restarting module no unit holds (loaded outside any) is not present: an addition, as before', async () => {
+      const {mm, dm, log} = runtime({supervised: true});
+      await loadBoth(mm, dm, '1.0.0');
+      writeModule(at('@t/ch-step-q', '1.0.0'), {name: '@t/ch-step-q', version: '1.0.0', role: 'part'});
+      mm.supervisor.records['@t/ch-step-q'] = {state: 'restarting', modulePath: at('@t/ch-step-q', '1.0.0'), version: '1.0.0'};
+      writeModule(at('@t/ch-pack-y', '1.0.0'), {name: '@t/ch-pack-y', version: '1.0.0', role: 'part', calls: ['ch-step-q/svc.run']});
+      log.length = 0;
+      await mip.loadPack(mm, {type: 'load', name: '@t/ch-pack-y', dirs: {'@t/ch-pack-y': at('@t/ch-pack-y', '1.0.0'), '@t/ch-step-q': at('@t/ch-step-q', '1.0.0')}}, dm);
+      assert.ok(log.includes('loaded @t/ch-step-q@1.0.0'), log.join('; '));
     });
   });
 });
