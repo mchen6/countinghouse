@@ -507,6 +507,25 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
         assert.deepStrictEqual(notices.take(null, A), ['requestTimeout back to 20s for this session: the value for all sessions (it had been lowered to 10s in this session)']);
       });
 
+      it('a part-way undo the store refuses: its own value back, said as not made', async () => {
+        const t0 = noForm();
+        await t0.set('requestTimeout', '10s', 'settings tool', at(A));
+        const realSet = settings.set;
+        let once = true;
+        settings.set = (...a) => {
+          if (once) { once = false; throw Object.assign(new Error('the store refused it'), {code: 'SETTING_OUT_OF_BOUNDS'}); }
+          return realSet(...a);
+        };
+        try {
+          await refused(t0.set('requestTimeout', '20s', 'settings tool', at(A)), 'SETTING_OUT_OF_BOUNDS');
+        } finally {
+          settings.set = realSet;
+        }
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000, 'never left at the value for all sessions');
+        const last = history().pop();
+        assert.deepStrictEqual([last.setting, last.change, last.problem], ['requestTimeout', 'not made', 'SETTING_OUT_OF_BOUNDS']);
+      });
+
       it('maxOutputBytes, and past the session\'s budget: applied, its own line', async () => {
         const t0 = noForm();
         await t0.set('maxOutputBytes', '2MiB', 'settings tool', at(A));
