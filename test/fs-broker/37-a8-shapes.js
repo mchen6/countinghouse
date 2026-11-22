@@ -18,13 +18,26 @@ const INSTALL = path.join(__dirname, '..', '..');
 
 async function setup(mode) {
   const base = tmp.mkdtemp('broker-a8-');
-  const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp')};
+  const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp'), outside: path.join(base, 'outside')};
   Object.values(dirs).forEach((d) => fs.mkdirSync(d));
   const namespace = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [], protectedPaths: []});
   await namespace.prepare();
-  const broker = new FsBroker({name: 'm', mode, namespace, cwd: '/', report: () => {}});
-  return {base, dirs, broker, done: () => broker.closeAll()};
+  // (what the broker reports, collected: an escape it judges is seen)
+  const reports = [];
+  const broker = new FsBroker({name: 'm', mode, namespace, cwd: '/', report: (rule, target) => reports.push(`${rule} ${target}`)});
+  return {base, dirs, broker, reports, done: () => broker.closeAll()};
 }
+// what an answer is: a directory, a link, a file, or the error's code; the
+// broker's and Node's own on the host, compared (Node's differs by platform)
+const kindOf = (st) => {
+  const m = Number(st.fields != null ? st.fields.mode : st.mode) & 0o170000;
+  return m === 0o040000 ? 'dir' : m === 0o120000 ? 'link' : 'file';
+};
+const nodeSays = (fn) => { try { return kindOf(fn()); } catch (e) { return e.code; } };
+const brokerSays = async (t, op, p) => { try { return kindOf(await t.broker.handle(op, [p, {}])); } catch (e) { return e.code; } };
+const linkOrSkip = (ctx, target, at, type) => {
+  try { fs.symlinkSync(target, at, type); return true; } catch (e) { if (e.code === 'EPERM') { ctx.skip(); return false; } throw e; }
+};
 
 describe('fs-broker 37: A8\'s rest (the final pass, functional)', function() {
   this.timeout(60000);
@@ -40,32 +53,76 @@ describe('fs-broker 37: A8\'s rest (the final pass, functional)', function() {
         assert.strictEqual(typeof lst.fields.mode, 'bigint');
         const plain = await t.broker.handle('stat', ['/', {}]);
         assert.strictEqual(typeof plain.fields.mode, 'number');
+        // (under enforce the ancestor is the namespace's own: no host's
+        // inode -- audit answers the host's, as master did)
+        if (mode === 'enforce') assert.strictEqual(st.fields.ino, 0n);
       } finally { await t.done(); }
     });
 
-    it(`${mode}: lstat of a link with a trailing separator is the directory it leads to`, async function() {
+    it(`${mode}: lstat with a trailing separator answers as Node's does (POSIX: the directory a link there leads to)`, async function() {
       const t = await setup(mode);
       try {
         fs.mkdirSync(path.join(t.dirs.data, 'dir'));
-        try {
-          fs.symlinkSync(path.join(t.dirs.data, 'dir'), path.join(t.dirs.data, 'link'), 'dir');
-        } catch (e) {
-          if (e.code === 'EPERM') return this.skip();
-          throw e;
-        }
-        const isLink = (st) => (Number(st.fields.mode) & 0o170000) === 0o120000;
-        const isDir = (st) => (Number(st.fields.mode) & 0o170000) === 0o040000;
-        assert.ok(isLink(await t.broker.handle('lstat', ['/data/link', {}])), 'as named: the link');
-        assert.ok(isDir(await t.broker.handle('lstat', ['/data/link/', {}])), 'with the separator: the directory');
-        assert.ok(fs.lstatSync(`${path.join(t.dirs.data, 'link')}${path.sep}`).isDirectory(), 'as Node answers');
-        // (a file, or a link to one, with the separator: ENOTDIR, as Node's, said as lstat's)
+        if (!linkOrSkip(this, path.join(t.dirs.data, 'dir'), path.join(t.dirs.data, 'link'), 'dir')) return;
         fs.writeFileSync(path.join(t.dirs.data, 'f'), 'x');
         fs.symlinkSync(path.join(t.dirs.data, 'f'), path.join(t.dirs.data, 'flink'));
-        for (const p of ['/data/f/', '/data/flink/']) {
-          await assert.rejects(t.broker.handle('lstat', [p, {}]), (e) => e.code === 'ENOTDIR' && e.syscall === 'lstat', p);
+        const host = (n) => `${path.join(t.dirs.data, n)}${path.sep}`;
+        assert.strictEqual(await brokerSays(t, 'lstat', '/data/link'), 'link', 'as named: the link');
+        for (const n of ['link', 'f', 'flink', 'missing']) {
+          assert.strictEqual(await brokerSays(t, 'lstat', `/data/${n}/`), nodeSays(() => fs.lstatSync(host(n))), `${n}/ as Node answers`);
         }
-        assert.throws(() => fs.lstatSync(`${path.join(t.dirs.data, 'flink')}${path.sep}`), (e) => e.code === 'ENOTDIR');
-        await assert.rejects(t.broker.handle('lstat', ['/data/missing/', {}]), (e) => e.code === 'ENOENT' && e.syscall === 'lstat');
+        if (!WIN) {
+          // (POSIX: the separator asks for the directory a link leads to; a
+          // file, or a link to one, is ENOTDIR, said as lstat's)
+          assert.strictEqual(await brokerSays(t, 'lstat', '/data/link/'), 'dir');
+          for (const p of ['/data/f/', '/data/flink/', '/data/missing/']) {
+            await assert.rejects(t.broker.handle('lstat', [p, {}]), (e) => /^(ENOTDIR|ENOENT)$/.test(e.code) && e.syscall === 'lstat', p);
+          }
+          // (the separator as the path's own, after a file URL is a path: a
+          // fragment is not part of it, a query is not either)
+          assert.strictEqual(await brokerSays(t, 'lstat', 'file:///data/link#/'), 'link', 'a fragment: the link');
+          assert.strictEqual(await brokerSays(t, 'lstat', 'file:///data/link/?x'), 'dir', 'a query after the separator: the directory');
+        }
+      } finally { await t.done(); }
+    });
+
+    it(`${mode}: lstat with a separator of a link leading out of its root is judged where it leads (POSIX, where it is followed)`, async function() {
+      if (WIN) return this.skip();
+      const t = await setup(mode);
+      try {
+        fs.writeFileSync(path.join(t.dirs.outside, 'file'), 'x');
+        if (!linkOrSkip(this, t.dirs.outside, path.join(t.dirs.data, 'out'), 'dir')) return;
+        fs.symlinkSync(path.join(t.dirs.outside, 'file'), path.join(t.dirs.data, 'outf'));
+        if (mode === 'enforce') {
+          for (const p of ['/data/out/', '/data/outf/']) await assert.rejects(t.broker.handle('lstat', [p, {}]), (e) => e.code === 'ENOENT', p);
+        } else {
+          const st = await t.broker.handle('lstat', ['/data/out/', {}]);
+          assert.strictEqual(Number(st.fields.mode) & 0o170000, 0o040000, 'out/: the directory it leads to');
+          await assert.rejects(t.broker.handle('lstat', ['/data/outf/', {}]), (e) => e.code === 'ENOTDIR');
+        }
+        assert.ok(t.reports.includes('escape /data/out'), t.reports.join('\n'));
+        assert.ok(t.reports.includes('escape /data/outf'), t.reports.join('\n'));
+      } finally { await t.done(); }
+    });
+
+    it(`${mode}: stat with a trailing separator answers as Node's does (POSIX: a file is ENOTDIR)`, async () => {
+      const t = await setup(mode);
+      try {
+        fs.writeFileSync(path.join(t.dirs.data, 'f'), 'x');
+        fs.mkdirSync(path.join(t.dirs.data, 'd'));
+        for (const n of ['f', 'd']) {
+          assert.strictEqual(await brokerSays(t, 'stat', `/data/${n}/`), nodeSays(() => fs.statSync(`${path.join(t.dirs.data, n)}${path.sep}`)), `${n}/ as Node answers`);
+        }
+        if (!WIN) await assert.rejects(t.broker.handle('stat', ['/data/f/', {}]), (e) => e.code === 'ENOTDIR' && e.syscall === 'stat');
+      } finally { await t.done(); }
+    });
+
+    it(`${mode}: readlink and statfs of an ancestor answer as Node's do for a directory`, async () => {
+      const t = await setup(mode);
+      try {
+        await assert.rejects(t.broker.handle('readlink', ['/', {}]), (e) => e.code === 'EINVAL' && e.syscall === 'readlink');
+        const sf = await t.broker.handle('statfs', ['/', {}]);
+        assert.strictEqual(typeof sf.bsize, 'number');
       } finally { await t.done(); }
     });
   }
@@ -73,7 +130,7 @@ describe('fs-broker 37: A8\'s rest (the final pass, functional)', function() {
   // (the stores below are made in the install itself: removed after, even
   // on failure)
   const stores = [];
-  after(() => { for (const p of stores) fs.rmSync(p, {recursive: true, force: true}); });
+  after(() => { for (const p of stores) tmp.remove(p); });
   const spawnIn = async (mode, name) => {
     const {createForWorker} = require('../../lib/fs-broker');
     const base = tmp.mkdtemp('broker-a8-');
