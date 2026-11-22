@@ -45,9 +45,10 @@ describe('usage 28: the report of a session\'s own runtime covers its own proces
     fs.mkdirSync(at, {recursive: true});
     fs.writeFileSync(path.join(at, '1-1.jsonl'), `${JSON.stringify({t: new Date(Date.now() - 60000).toISOString(), call: 1, scenario: 'earlier-pack', tool: 'earlier_tool', bytesOut: 4, linesOut: 1, ms: 2, outcome: 'ok', caller: CALLER})}\n`);
   };
-  const report = async (extra) => {
+  const report = async (extra, before = async () => {}) => {
     io = start(extra);
     await open();
+    await before();
     const r = await io.request({jsonrpc: '2.0', id: 3, method: 'tools/call', params: {name: 'countinghouse_usage_report', arguments: {since: 'all'}}}, 60000);
     assert.ok(r.result != null && r.result.isError !== true, `${JSON.stringify(r).slice(0, 600)}; ${withoutRedisNoise(io.err)}`);
     return r.result.structuredContent;
@@ -59,10 +60,17 @@ describe('usage 28: the report of a session\'s own runtime covers its own proces
     assert.strictEqual(out.totals.calls, 1, JSON.stringify(out).slice(0, 800));
   });
 
-  it('ch-local\'s profile: the earlier process\'s call is left out', async () => {
-    const settings = ['--settingsFile', path.join(home, 'settings.json')];
+  it('ch-local\'s profile: the earlier process\'s call is left out, this process\'s own counted', async () => {
+    const settings = ['--settingsFile', path.join(home, 'settings.json'), '--loadModule', path.join(__dirname, '..', 'fixtures', 'usage-scenario')];
     earlier();
-    const out = await report(settings);
-    assert.strictEqual(out.totals.calls, 0, JSON.stringify(out).slice(0, 800));
+    // (this process's own call: the final pass, L5 -- the scope leaves out
+    // the earlier process, never this one)
+    const own = async () => {
+      const called = await io.request({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'usage_probe', arguments: {}}}, 60000);
+      assert.ok(called.result != null && called.result.isError !== true, `${JSON.stringify(called).slice(0, 600)}; ${withoutRedisNoise(io.err)}`);
+    };
+    const out = await report(settings, own);
+    assert.strictEqual(out.totals.calls, 1, JSON.stringify(out).slice(0, 800));
+    assert.ok(JSON.stringify(out.groups).includes('usage_probe') && !JSON.stringify(out.groups).includes('earlier_tool'), JSON.stringify(out.groups));
   });
 });

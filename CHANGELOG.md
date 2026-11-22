@@ -51,12 +51,14 @@ In the single-identity profile with `--settingsFile` (`ch-local start`), the loc
   - it also reports what `ch-local add-module` will refuse: a module that isn't a scenario, and npm dependencies or `node_modules`.
 - **`countinghouse_load_module`** never loads here. It answers `OWN_MODULE_NEEDS_TERMINAL`, naming the command the user runs in their own terminal (`ch-local add-module "<folder>"`). Adding a module is the user's own act.
 
-The overview lists the user's own modules, from `ch-local`'s `own.json`, after the packs, each marked `own: true`. The held-back file takes three own-module reasons:
+The overview lists the user's own modules, from `ch-local`'s `own.json`, after the packs, each marked `own: true`, with `tree`: the start of its files' hash as `ch-local add-module` printed it (of the copy loaded, or for one not loaded, of the one last added). The held-back file takes five own-module reasons:
 - `changed`: its files changed since the user added it;
+- `gone`: its copy is not there at all;
 - `sandbox`: the sandbox is not enforced;
-- `collision`: another module uses its name, named in `via`.
+- `collision`: another module uses its name, named in `via`;
+- `refused`: this release's runtime refuses to load it, with its `code`.
 
-Each has its own `next` line. The rest of own-module hosting (add-module, loading the confirmed copy, credentials) is `ch-local`'s.
+Each has its own `next` line, and `changed`, `gone` and `refused` are given only to an own module. The rest of own-module hosting (add-module, loading the confirmed copy, credentials) is `ch-local`'s.
 
 ### Added — the server's instructions, and `countinghouse_overview`
 

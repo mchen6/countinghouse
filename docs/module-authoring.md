@@ -244,16 +244,23 @@ read, without the tool, every byte the tool read. Below it come one row
 per day with activity (at most 366) and a profile: call and server-call time,
 errors by code, and server calls per call.
 
-## Why `tools/list` does not update by itself
+## When `tools/list` changes
 
-The server is already correct — `tools/list` is recomputed from live device
-specs on every request, so a loaded module appears on the next call. What is
-missing is the `notifications/tools/list_changed` push, and sending one would
-require a server→client channel that stateless Streamable HTTP does not have.
-Advertising the capability without being able to deliver it would be a lie in
-`capabilities`.
+`tools/list` is recomputed from live device specs on every request, so a
+loaded module's tools appear on the next call. The server also says when a
+client's list changed (a module loaded, unloaded, reloaded, or turned on or
+off, or a reload of the auth config that changes the key's grants), where
+the client can hear it:
 
-So the loop routes around it: `load_module` returns the names it made
+- a 2026-07-28 client opens a `subscriptions/listen` stream with
+  `notifications.toolsListChanged`, and gets
+  `notifications/tools/list_changed` on it;
+- a 2025-11-25 client of a `--stdio` runtime gets it unasked, once it has
+  listed (`capabilities.tools.listChanged`);
+- a 2025-11-25 client over HTTP, or of a shared runtime's session, has no
+  stream to hear it on, and lists again.
+
+The loop does not wait for the notice: `load_module` returns the names it made
 callable, and `call_tool` invokes them.
 
 ## Security boundary
