@@ -1,5 +1,5 @@
 'use strict';
-// B-firstrun (the first-run design, (a); Matt's approval 11-20, business's
+// B-firstrun (the first-run design, (a); the maintainer's approval 11-20, business's
 // claim check): the server's instructions are one fixed English paragraph,
 // the runtime's own text -- nothing a module supplies -- the same for every
 // caller, sent on initialize and on server/discover (cached public). This

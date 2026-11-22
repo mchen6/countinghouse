@@ -616,7 +616,7 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
     });
   });
 
-  // (Matt's (d), the own-modules design §2.7) the last update check the
+  // (the maintainer's (d), the own-modules design §2.7) the last update check the
   // user asked for, as ch-local left it in the home -- the overview never
   // contacts the network
   describe('the last update check (settings-tool upgradeAvailable)', () => {

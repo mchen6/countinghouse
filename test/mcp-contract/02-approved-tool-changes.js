@@ -43,7 +43,7 @@ const APPROVED_ADDITIONS = {
   // Local-mode spec §5 (LM1 part C, step 3): the usage report, listed to
   // every key in every mode, beside countinghouse_check_balance.
   'countinghouse_usage_report': 'the usage report built-in, local-mode spec §5',
-  // The first-run design (b), Matt's approval 2026-11-20 (B-firstrun): what
+  // The first-run design (b), the maintainer's approval 2026-11-20 (B-firstrun): what
   // is installed and what is missing, listed to every caller.
   'countinghouse_overview': 'the overview built-in, the first-run design (b)'
 };
