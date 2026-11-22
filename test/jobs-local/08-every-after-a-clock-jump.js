@@ -16,6 +16,17 @@ const LIB = path.join(__dirname, '..', '..', 'lib');
 describe('jobs-local 08: an `every` scheduler after the wall clock jumps ahead (A10)', function() {
   this.timeout(60000);
 
+  // (#526's high, L4) the rule itself, with no clock: the next run is
+  // `every` after this one, or, when the clock has passed that, `every` after
+  // now -- one catch-up run, then a whole period
+  it('nextSlot: on time, the next slot; after a jump, a whole period after now', () => {
+    const {nextSlotFor: nextSlot} = require('../../lib/job-control-local');
+    assert.strictEqual(nextSlot(1000, 1000, 1500), 2000, 'on time');
+    assert.strictEqual(nextSlot(1000, 1000, 2000), 2000, 'exactly due');
+    assert.strictEqual(nextSlot(1000, 1000, 61000), 62000, 'a minute late: now plus the period');
+    assert.strictEqual(nextSlot(0, 60000, 119990), 179990, 'never a grid slot just behind the catch-up');
+  });
+
   it('a minute\'s jump on a 1 s scheduler is one catch-up run, never a burst of the missed slots', () => {
     const script = `
       const options = require(${JSON.stringify(path.join(LIB, 'cli-options'))});
@@ -33,19 +44,20 @@ describe('jobs-local 08: an `every` scheduler after the wall clock jumps ahead (
         await until(() => runs >= 1, 5000);
         const before = runs;
         skew = 60 * 1000;
-        // the first run after the jump, then what else ran within a quarter of
-        // the period (a burst of the missed slots runs within milliseconds)
+        // the first run after the jump, then what else ran in the next turns
+        // of the loop (a burst of the missed slots ran there at once)
         const caughtUp = await until(() => runs > before, 5000);
-        const at = runs;
-        await new Promise((r) => setTimeout(r, 250));
+        // (the burst ran every missed slot's timer at once: by the next turns
+        // of the loop, never a whole period later)
+        for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
         runner.close();
-        process.stdout.write('OUT ' + JSON.stringify({caughtUp, afterJump: at - before, withinQuarter: runs - at}) + '\\n');
+        process.stdout.write('OUT ' + JSON.stringify({caughtUp, afterJump: runs - before}) + '\\n');
         process.exit(0);
       });`;
     const r = spawnSync(process.execPath, ['-e', script], {cwd: path.join(__dirname, '..', '..'), encoding: 'utf8', timeout: 40000});
     const line = (r.stdout || '').split('\n').find((l) => l.startsWith('OUT '));
     assert.ok(line != null, `no output: ${r.stdout} ${r.stderr}`);
     const out = JSON.parse(line.slice(4));
-    assert.deepStrictEqual(out, {caughtUp: true, afterJump: 1, withinQuarter: 0}, JSON.stringify(out));
+    assert.deepStrictEqual(out, {caughtUp: true, afterJump: 1}, JSON.stringify(out));
   });
 });

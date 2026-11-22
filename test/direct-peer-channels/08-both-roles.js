@@ -81,8 +81,10 @@ describe('direct peer channels 08: a worker is a caller and a callee of one peer
     // A calls B again, over the channel it already holds: announced as a caller's
     const before = A.log.filter((e) => e[0] === 'announce').length;
     call(A, 'devB', 'A->B #2');
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // (the announce, waited for on itself, bounded: #526's high, L4)
+    for (const t0 = Date.now(); A.log.filter((e) => e[0] === 'announce').length <= before && Date.now() - t0 < 5000;) await new Promise((resolve) => setImmediate(resolve));
     assert.strictEqual(A.log.filter((e) => e[0] === 'announce').length, before + 1, JSON.stringify(A.log));
+    assert.ok(!results.some((r) => r.startsWith('A->B #2: ') && r !== 'A->B #2: ok'), JSON.stringify(results));
     assert.strictEqual(A.log.filter((e) => e[0] === 'request').length, 1, 'no second channel request: the channel held is used');
   });
 
@@ -109,6 +111,18 @@ describe('direct peer channels 08: a worker is a caller and a callee of one peer
     const c = pair('A4');
     c.X.onPeerInvalidate({workerId: 2});
     assert.deepStrictEqual([c.caller.closed === true, c.callee.closed === true], [true, true], 'both');
+  });
+
+  // (the medium on #526, 6; #526's high, L4) a callee channel the main
+  // thread re-brokers ends the one it replaces
+  it('a re-brokered callee channel ends the one it replaces', () => {
+    const A = state('A5');
+    A.onPeerChannelOpen({callerWorkerId: 2, targetDeviceID: 'devA', actions: ['svc|act'], port: channel().port2});
+    const first = A.peerCalleeChannels[2];
+    A.onPeerChannelOpen({callerWorkerId: 2, targetDeviceID: 'devA', actions: ['svc|act'], port: channel().port2});
+    const second = A.peerCalleeChannels[2];
+    assert.ok(first != null && second != null && first !== second);
+    assert.deepStrictEqual([first.closed === true, second.closed === true], [true, false]);
   });
 
   it('a revoked grant tells the caller to end its caller channel and the callee its callee channel', () => {
