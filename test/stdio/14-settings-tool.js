@@ -120,6 +120,34 @@ describe('stdio 14: countinghouse_settings', () => {
     assert.deepStrictEqual(asked, ['maxOutputBytes', 'requestTimeout', EN]);
   });
 
+  // (the dry run, walk step 9) ch-local is on no PATH: with the home's
+  // launcher in the held-back file, the command a refusal names is
+  // `node "<launcher>" settings set ...`, as countinghouse_load_module's and
+  // the overview's are; without one, the bare form as before
+  it('with ch-local\'s launcher known, a refusal names the command through it', async () => {
+    const heldBack = require('../../lib/held-back');
+    const kept = {heldBackFile: options.heldBackFile, settingsFile: options.settingsFile};
+    fs.mkdirSync(path.join(home, 'bin'));
+    fs.writeFileSync(path.join(home, 'bin', 'ch-local.js'), '// launcher');
+    const launcher = fs.realpathSync.native(path.join(home, 'bin', 'ch-local.js'));
+    const held = path.join(home, 'held-back.json');
+    fs.writeFileSync(held, JSON.stringify({v: 1, modules: [], launcher}), {mode: 0o600});
+    Object.assign(options, {heldBackFile: held, settingsFile: file});
+    heldBack.resetForTests();
+    try {
+      assert.strictEqual((await heldBack.ready()).launcher, launcher, 'the launcher taken');
+      const L = `node "${launcher}"`.replace(/[./@"\\]/g, '\\$&');
+      for (const [name, value, command] of [['maxOutputBytes', '64MiB', 'maxOutputBytes 64MiB'], ['requestTimeout', '45s', 'requestTimeout 45s'], [EN, 'on', `${EN} on`]]) {
+        if (name === EN) await tool.set(EN, 'off');
+        const err = await refused(tool.set(name, value), 'SETTING_NEEDS_CONFIRMATION');
+        assert.match(err.message, new RegExp(`run \`${L} settings set ${command.replace(/[./@]/g, '\\$&')}\` in a terminal yourself`), err.message);
+      }
+    } finally {
+      Object.assign(options, kept);
+      heldBack.resetForTests();
+    }
+  });
+
   it('the sandbox and automatic upgrades are loosened from a terminal only: SETTING_LOOSENS_A_GUARD, naming the command', async () => {
     const loosenings = [['autoUpgrade', 'on'], ['moduleSandbox', 'audit']];
     for (const [name, value] of loosenings) {
