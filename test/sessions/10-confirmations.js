@@ -425,47 +425,82 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
     });
     afterEach(() => { Object.assign(options, saved); reset(); fs.rmSync(home, {recursive: true, force: true}); });
 
-    // (the dry run, walk step 9) a session's own lower value is never moved
-    // by a terminal change: what is in force is the lower of it and the
-    // value for all sessions. With no form, the refusal never names a
-    // terminal command that would change nothing: it says what holds the
-    // value, and that a new session (the client restarted) runs at the
-    // value for all sessions
-    it('no form: raising back a session\'s own lower value names no terminal command; a session with none still gets it', async () => {
-      // (a client no form is shown to: not on the tested-client list)
-      const t0 = tool({sessionClient: () => ({ok: false, why: 'not on the tested-client list'})});
-      const noForms = (id) => ({shared: true, session: id, clientInfo: CLIENT, capabilities: {}});
-      await t0.set('requestTimeout', '10s', 'settings tool', noForms(A));
-      assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
-      for (const asked of ['30s', '20s']) {
-        const err = await refused(t0.set('requestTimeout', asked, 'settings tool', noForms(A)), 'SETTING_SESSION_OWN_VALUE');
-        assert.strictEqual(err.message, 'This session set requestTimeout to 10s itself, and that holds it there; nothing was changed. A change in a terminal would not move it: it sets the value for all sessions (30s), and this session stays at its own lower value. It ends with this session: restart your client, and its new session runs at 30s.');
-        assert.ok(!/settings set/.test(err.message), err.message);
-      }
-      assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000, 'unchanged');
-      const other = await refused(t0.set('requestTimeout', '45s', 'settings tool', noForms(B)), 'SETTING_NEEDS_CONFIRMATION');
-      assert.match(other.message, /run `ch-local settings set requestTimeout 45s` in a terminal yourself/);
+    // (the dry run, walk step 15a: a session that had lowered requestTimeout
+    // to 10 s could not raise it back, and its composite tool timed out) a
+    // session raises its own lowered value back in conversation, with no
+    // form, up to and never above the value a session with no value of its
+    // own runs at (the value for all sessions, under the ceiling). Above it,
+    // a confirmed loosening as before; a kind locked in the session stays
+    // locked; only the asking session changes; each undo is said and written
+    describe('a session\'s own lowering, undone in conversation', () => {
+      const noForm = () => tool({sessionClient: () => ({ok: false, why: 'not on the tested-client list'})});
+      const at = (id) => ({shared: true, session: id, clientInfo: CLIENT, capabilities: {}});
+
+      it('back to the value for all sessions: applied with no form, said and written; the other session untouched', async () => {
+        const t0 = noForm();
+        await t0.set('requestTimeout', '10s', 'settings tool', at(A));
+        await t0.set('requestTimeout', '20s', 'settings tool', at(B));
+        notices.take(null, A);
+        const done = await t0.set('requestTimeout', '30s', 'settings tool', at(A));
+        assert.deepStrictEqual(done, {name: 'requestTimeout', old: 10000, new: 30000, applies: 'this session'});
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 30000);
+        assert.deepStrictEqual(settings.overridesOf(A), [], 'its own value gone: it runs at the value for all sessions');
+        assert.strictEqual(settings.effective(B, 'requestTimeout'), 20000, 'the other session untouched');
+        assert.strictEqual(options.requestTimeout, 30000, 'the value for all sessions untouched');
+        assert.ok(!fs.existsSync(file), 'settings.json never written');
+        assert.deepStrictEqual(notices.take(null, A), ['requestTimeout back to 30s for this session: the value for all sessions (it had been lowered to 10s in this session)']);
+        const line = history().pop();
+        assert.deepStrictEqual((({at: t, ...rest}) => rest)(line), {by: 'settings tool', setting: 'requestTimeout', old: 10000, new: 30000, change: 'this session: its own lowering undone', session: A});
+      });
+
+      it('part of the way back: applied, still its own value', async () => {
+        const t0 = noForm();
+        await t0.set('requestTimeout', '10s', 'settings tool', at(A));
+        notices.take(null, A);
+        assert.deepStrictEqual(await t0.set('requestTimeout', '20s', 'settings tool', at(A)), {name: 'requestTimeout', old: 10000, new: 20000, applies: 'this session'});
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 20000);
+        assert.deepStrictEqual(notices.take(null, A), ['requestTimeout raised to 20s for this session, toward the value for all sessions (30s); it had been lowered to 10s in this session']);
+      });
+
+      it('above the value for all sessions: a loosening, confirmed as before; nothing changed', async () => {
+        const t0 = noForm();
+        await t0.set('requestTimeout', '10s', 'settings tool', at(A));
+        await refused(t0.set('requestTimeout', '45s', 'settings tool', at(A)), 'SETTING_NEEDS_CONFIRMATION');
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+      });
+
+      it('a kind locked in the session stays locked: no undo in conversation', async () => {
+        const t0 = tool();
+        await t0.set('requestTimeout', '10s', 'settings tool', ctx(A));
+        // a form for a loosening of the kind, declined: the kind is locked in A
+        const r = await t0.set('requestTimeout', '45s', 'settings tool', ctx(A));
+        assert.strictEqual((await t0.confirm('requestTimeout', '45s', {requestState: r.inputRequired.requestState, inputResponses: DECLINE}, ctx(A))).applies, 'declined');
+        await refused(t0.set('requestTimeout', '30s', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+      });
     });
 
-    it('A, at 2 MiB, asks for 4 MiB: a form that says "this session"; accepted, A runs at 4 MiB and nothing else changes', async () => {
+    // (up to 8 MiB, the value for all sessions, its own lowering is undone with
+    // no form: the case below, 'a session\'s own lowering, undone')
+    it('A, at 2 MiB, asks for 12 MiB (above the value for all sessions): a form that says "this session"; accepted, A runs at 12 MiB and nothing else changes', async () => {
       const t0 = tool();
       await t0.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
       const before = {live: settingsTool.liveOptions()};
-      const r = await t0.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A));
+      const r = await t0.set('maxOutputBytes', '12MiB', 'settings tool', ctx(A));
       const form = r.inputRequired.inputRequests.approve;
-      assert.strictEqual(form.params.message, 'Allow countinghouse tools to return up to 4MiB per call in this session (now 2MiB)? This applies to this session only, until it ends.');
+      assert.strictEqual(form.params.message, 'Allow countinghouse tools to return up to 12MiB per call in this session (now 2MiB)? This applies to this session only, until it ends.');
       assert.deepStrictEqual(form.params.requestedSchema, {type: 'object', properties: {approve: {type: 'boolean', title: 'Approve'}}, required: ['approve']});
       assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 2 * MiB, 'nothing yet');
-      const done = await t0.confirm('maxOutputBytes', '4MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A));
-      assert.deepStrictEqual(done, {name: 'maxOutputBytes', old: 2 * MiB, new: 4 * MiB, applies: 'this session'});
-      assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 4 * MiB);
+      const done = await t0.confirm('maxOutputBytes', '12MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A));
+      assert.deepStrictEqual(done, {name: 'maxOutputBytes', old: 2 * MiB, new: 12 * MiB, applies: 'this session'});
+      assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 12 * MiB);
       assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 8 * MiB);
       assert.strictEqual(settings.limitsOf(B), null);
       assert.strictEqual(options.maxOutputBytes, 8 * MiB, 'the shared option');
       assert.deepStrictEqual(settingsTool.liveOptions(), before.live);
       assert.ok(!fs.existsSync(file), 'settings.json never written');
       const line = history().pop();
-      assert.deepStrictEqual((({at, ...rest}) => rest)(line), {by: 'settings tool', setting: 'maxOutputBytes', old: 2 * MiB, new: 4 * MiB, change: 'this session',
+      assert.deepStrictEqual((({at, ...rest}) => rest)(line), {by: 'settings tool', setting: 'maxOutputBytes', old: 2 * MiB, new: 12 * MiB, change: 'this session',
         confirmed: 'elicitation (claude-code 2.1.323)', session: A});
     });
 

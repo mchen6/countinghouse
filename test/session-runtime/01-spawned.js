@@ -157,18 +157,21 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.deepStrictEqual(others.result.structuredContent.history, []);
     assert.strictEqual(await b.c.json('C', 300), null);
     assert.deepStrictEqual((await call({action: 'get'})).result.structuredContent.history.map((h) => [h.setting, h.new, h.change]), [['requestTimeout', 20000, 'this session']]);
-    // a loosening of a cap (of the session's own value too) is its user's to
-    // confirm (Task 5, below): this client is not one a form is shown in.
-    // Up from the session's own lower value, a terminal change would move
-    // nothing (it sets the value for all sessions), so none is named: the
-    // session's end clears it (the dry run, walk step 9)
-    for (const value of ['60s', '25s']) {
-      const r2 = await call({action: 'set', name: 'requestTimeout', value});
-      assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
-      assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_SESSION_OWN_VALUE', JSON.stringify(r2));
-      assert.ok(/This session set requestTimeout to 20s itself/.test(r2.result.content[0].text) && /restart your client/.test(r2.result.content[0].text)
-        && !/settings set/.test(r2.result.content[0].text), r2.result.content[0].text);
-    }
+    // a loosening of a cap above the value for all sessions is its user's to
+    // confirm (Task 5, below): this client is not one a form is shown in,
+    // so it is told the terminal command
+    const above = await call({action: 'set', name: 'requestTimeout', value: '60s'});
+    assert.strictEqual(above.result.isError, true, JSON.stringify(above));
+    assert.strictEqual(above.result._meta['countinghouse/code'], 'SETTING_NEEDS_CONFIRMATION', JSON.stringify(above));
+    assert.match(above.result.content[0].text, /ch-local settings set requestTimeout/);
+    // its own lowering, part of the way back up (to 25 s of 30 s), is undone
+    // in conversation with no form (the dry run, walk step 15a); then lowered
+    // to 20 s again, as the rest of this case expects
+    const back = await call({action: 'set', name: 'requestTimeout', value: '25s'});
+    assert.ok(back.result.isError !== true, JSON.stringify(back));
+    assert.deepStrictEqual(back.result.structuredContent, {name: 'requestTimeout', old: 20000, new: 25000, applies: 'this session'});
+    const again = await call({action: 'set', name: 'requestTimeout', value: '20s'});
+    assert.ok(again.result.isError !== true, JSON.stringify(again));
     // a retry that names no form of this session's confirms nothing, a
     // value that tightens included
     for (const value of ['60s', '10s']) {
