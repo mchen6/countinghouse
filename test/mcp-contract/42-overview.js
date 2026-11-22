@@ -589,8 +589,9 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
     it('installedOwn: each own module and the folder it was added from; none, or one that cannot be read, said apart', () => {
       const dir = tmp.mkdtemp('ch-mcp-42-');
       assert.strictEqual(settingsTool.installedOwn(dir), null, 'no own.json');
-      ownJson(dir, {'my-b': entry('/home/u/b'), 'my-a': entry('relative/a'), 'Not A Package': entry('/x')});
-      assert.deepStrictEqual(settingsTool.installedOwn(dir), [{name: 'my-a', from: null}, {name: 'my-b', from: '/home/u/b'}]);
+      // (E10) with its tree, the files' hash ch-local recorded, or null for one not 64 lowercase hex
+      ownJson(dir, {'my-b': entry('/home/u/b'), 'my-a': entry('relative/a'), 'Not A Package': entry('/x'), 'my-c': {...entry('/home/u/c'), tree: 'A'.repeat(64)}});
+      assert.deepStrictEqual(settingsTool.installedOwn(dir), [{name: 'my-a', from: null, tree: 'a'.repeat(64)}, {name: 'my-b', from: '/home/u/b', tree: 'a'.repeat(64)}, {name: 'my-c', from: '/home/u/c', tree: null}]);
       fs.writeFileSync(path.join(dir, 'own.json'), '{');
       assert.strictEqual(settingsTool.installedOwn(dir), settingsTool.UNREADABLE);
       fs.writeFileSync(path.join(dir, 'own.json'), JSON.stringify({v: 2, modules: {}}));
@@ -601,6 +602,18 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       const data = overview.build({version: '1', settingsProfile: true, packs: [pack()], ownUnreadable: true});
       assert.strictEqual(data.notice, overview.FIXED.ownUnreadable(null));
       assert.strictEqual(overview.FIXED.ownUnreadable(null), 'The list of your own modules could not be read: run `ch-local status` in your own terminal.');
+    });
+
+    // (E10, the feature audit) which version of the user's code: its tree's
+    // first 12 hex, as `ch-local add-module` prints it; never on a pack
+    it('an own module carries its hash, as add-module printed it; a pack never does', () => {
+      const T = '0123456789abcdef'.repeat(4);
+      const data = overview.build({version: '1', settingsProfile: true, packs: [pack({name: 'p', module: 'p', tree: T}), pack({name: 'mine', module: 'mine', own: true, tree: T}),
+        pack({name: 'mine-down', module: 'mine-down', own: true, loaded: false, held: {reason: 'gone'}, from: '/home/u/mine', tree: T}), pack({name: 'mine-bare', module: 'mine-bare', own: true, tree: null})]});
+      const by = Object.fromEntries(data.packs.map((x) => [x.name, x]));
+      assert.deepStrictEqual([by.p.tree, by.mine.tree, by['mine-down'].tree, by['mine-bare'].tree], [undefined, '0123456789ab', '0123456789ab', undefined]);
+      assert.strictEqual(overview.OUTPUT_SCHEMA.properties.packs.items.properties.tree.description,
+        'For a module the user added themselves: the start of its files\' hash, as `ch-local add-module` printed it, so the user can tell which version of their code is loaded.');
     });
 
     it('an own module is marked own, loaded or not; a pack never is', () => {

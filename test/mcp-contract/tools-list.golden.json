@@ -140,6 +140,10 @@
               "own": {
                 "type": "boolean",
                 "description": "True for a module the user added themselves (ch-local add-module): their own code, unpinned, not a pack's."
+              },
+              "tree": {
+                "type": "string",
+                "description": "For a module the user added themselves: the start of its files' hash, as `ch-local add-module` printed it, so the user can tell which version of their code is loaded."
               }
             },
             "required": [
