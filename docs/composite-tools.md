@@ -119,31 +119,28 @@ see [In-composition metering](#in-composition-metering).
 `composite-demo` exposes one tool, `compositeService/run`, that:
 
 1. Takes `{text: string}`.
-2. Calls `transform-demo`'s `uppercase` action on `text`, via a
-   `ServiceClient` created at module-init time
+2. Calls `transform-demo`'s `uppercase` action on `text` by name, with
+   `ctx.call('transform-demo/transformService.uppercase', ...)`
    (`pre-installed-packages/composite-demo/handlers/compositeService/run.js`).
 3. Feeds the uppercased result into `echo-device-module`'s `echo` action,
-   via a second `ServiceClient`, to demonstrate a second independent hop.
+   with a second `ctx.call`, to demonstrate a second independent hop.
 4. Returns `{finalText, bill}`, where `bill` is an array with one entry per
    inner hop.
 
-Both inner calls are ordinary cross-worker invocations, through whichever
-path `ServiceClient.invoke()` is currently configured to use. By default
-(since 7.1.0) the calls go directly worker-to-worker over a
-`MessageChannel`, bypassing the main thread entirely — see
-[`direct-peer-channels.md`](direct-peer-channels.md) for how that path
-works. With `--no-directPeerChannels` they take the main-thread-routed path
+Both inner calls are ordinary cross-worker invocations. By default (since
+7.1.0) the request and its reply go directly worker-to-worker over a
+`MessageChannel`, but each call's token is checked on the main thread before
+the target serves it (about 1 ms a call), so the main thread still decides
+who may call what -- see [`direct-peer-channels.md`](direct-peer-channels.md)
+for how that path works. With `--no-directPeerChannels` they take the main-thread-routed path
 instead: composite-demo's worker sends an `invokeforeignaction`-style
 message to the main thread, which routes it to the target module's worker
-and relays the reply back. Either way, composite-demo's own code is unchanged:
-which path is taken is entirely `ServiceClient`'s concern, transparent to
-the module calling it.
+and relays the reply back. Either way, composite-demo's own code is unchanged: which path is taken is
+the runtime's concern, transparent to the module calling it.
 
-Target modules are addressed by their deterministic `deviceID`
-(`UUID.v5` of a fixed namespace and the target module's `api.json`
-`friendlyName`), computed offline and hardcoded in its handler file, the same
-pattern used by `echo-device-client-module`. No runtime discovery is
-needed to call a known module.
+Target modules are addressed by name, `<package>/<service>.<action>`, as
+package.json's `countinghouse.calls` declares them; the runtime resolves
+each to its device. The module holds no device ID.
 
 ## Running it
 
@@ -158,7 +155,7 @@ below for the full list and a one-liner that grants all of them.
 
 ```sh
 node -e "var c=JSON.parse(require('fs').readFileSync('auth.json'));
-  c['composite-demo-internal']={userName:'composite-demo-identity',devices:['*']};
+  c['composite-demo-internal']={userName:'composite-demo-identity',devices:['*'],runsModules:['composite-demo']};
   require('fs').writeFileSync('auth.json', JSON.stringify(c, null, 2));"
 ```
 

@@ -171,6 +171,7 @@ default list (`require`, `node`, `node-addons`, `module-sync`). A plain
 | Writes outside the module's own area (outside the namespace, `/app`, `r` paths) | pass through | refused (`EACCES`), recorded | refused |
 | Disk quota | not counted | logged | enforced |
 | Lockdown, resource limits, clean environment | no | yes | yes |
+| Processes, threads and native code (`child_process`, `worker_threads`, `process.dlopen`, `process.binding`) | allowed | allowed, reported | refused |
 
 Under `off` and `audit`, Node's resolver internals and their host paths
 are module code's to see, as before: `Module._findPath` and
@@ -278,8 +279,8 @@ auth config) are still refused by file identity. Don't place symbolic
 links to files outside a module's folder in its writable folders. The fix
 comes in 1.1.
 
-**Under `audit` a module changes nothing outside its own area**
-(maintainer's decision, 2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
+**Under `audit` a module changes nothing outside its own area through
+`fs`** (maintainer's decision, 2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
 declared `rw`. Every write-class operation aimed anywhere else is refused
 `EACCES` and recorded as a denial: an open for writing, a create or truncate,
 `writeFile`, `appendFile`, `mkdir`, `rmdir`, `rm`, `unlink`, `rename` or
@@ -290,11 +291,27 @@ to an outside destination; writes to `/app` and to a path declared `r` too.
 A symlink made inside the namespace that points outside it is refused
 `EPERM`, in every mode, as before.
 
+**`audit` does not confine a module.** It holds a module's `fs` and loader
+traffic only. What `enforce` refuses beyond them, the lockdown reports under `audit`
+and then allows: `child_process` and the other blocked built-ins,
+`worker_threads`, `process.dlopen` and native addons, and `process.binding`.
+Through them a module can start a process or a thread the sandbox does not
+hold, or run native code, and so read the always-denied files and the
+protected paths, or change anything the OS user can. Only `enforce` confines
+a module, and `enforce` too is a sandbox, not a security boundary: a module
+that escapes it runs with the runtime's rights. The runtime's own default is `--moduleSandbox audit`. ch-local
+starts packs under `enforce` by default: there `audit` is a loosening the
+user confirms, which an operator's ceiling can forbid and an own module
+refuses, and on Windows it falls back to `audit` only where `enforce` is
+not available.
+
 **Only `enforce` hides files.** Under `audit` and `off` reads outside a
 module's namespace pass through to the host, except the always-denied set
 and the protected paths above: under `audit` a module can read any other
 file the OS user can -- the operator's project directory, the current
-directory, `~/.npmrc`, `~/.ssh` -- and each read is logged. So don't run
+directory, `~/.npmrc`, `~/.ssh` -- and each read is logged (the first 100
+distinct reports per worker start; then one line says the rest were
+suppressed). So don't run
 untrusted packs under `audit` on a machine that holds secrets: use
 `enforce`. In `audit` every check runs, a violation is logged once per
 (module, rule, target), and a read goes ahead. In
@@ -544,8 +561,10 @@ name to get its policy entry and data. `__filename`, `__dirname`,
 frames, `process.cwd()` (`/app`) and `os.tmpdir()` (`/tmp`) are virtual, and
 so are paths in results and errors. Frames of the runtime's own files in a
 stack module code can read can still name the install directory (being
-fixed). Ancestors of a root (`/`, `/var`) answer as
-read-only directories that list only the way to the root. A declared path
+fixed). Under `enforce`, ancestors of a root (`/`, `/var`) answer as
+read-only directories that list only the way to the root; under `audit` and
+`off` they are the host's (`readdir('/')` lists the host's root), except
+one in a protected path, which is refused under `audit`. A declared path
 can never cover countinghouse's own directories (the install directory,
 `--modulePath`, `--moduleDataPath`, the auth and device-config paths, the
 policy file, the `--remoteCredentials` file) or an ancestor of one: such a declaration is refused in every
@@ -586,8 +605,9 @@ store, the auth and device configuration, the policy file, the
 ch-local's home (the
 directory of `--settingsFile`: its settings, the daemon's session secret
 under `run/`, the launcher, the pack records) is refused to a module's reads
-and writes under `audit` and `enforce` (`EACCES`, recorded), however it is
-named: directly, through `..`, a symlink or a hard link to the settings
+and writes through `fs` and the loader under `audit` and `enforce`
+(`EACCES`, recorded; under `audit`, not to a process or thread the module
+starts, above), however it is named: directly, through `..`, a symlink or a hard link to the settings
 files. The policy file and the `--remoteCredentials` file are refused by
 their paths, not by identity as the settings files and the auth
 configuration are: a hard link to one of them, under a name outside these
@@ -630,11 +650,15 @@ has a name outside its `/data` and `/tmp`, does not start until the operator
 removes it (the log names the entries). The disk quota (`diskMb`, `diskEntries`, one pool for
 `/data` and `/tmp`) answers `ENOSPC` under `enforce`.
 
-The main thread is protected in every mode: the thread pool is raised to 16
-unless the operator set `UV_THREADPOOL_SIZE`, brokered operations in flight
-are capped globally and scheduled round-robin across workers, each worker
-has a queue of 4096 (`EMFILE` past it) and at most 256 descriptors, and a
-transfer is at most 16 MB, with `readFile` served in chunks. A brokered call
+The main thread's file work is bounded in every mode: the thread pool is
+raised to 16 unless the operator set `UV_THREADPOOL_SIZE` (the runtime sets
+the variable as it starts; on Windows libuv may not see that, so set it in
+the environment there), brokered operations in flight are capped globally
+and scheduled round-robin across workers, each worker has a queue of 4096
+calls (`EMFILE` past it) and at most 256 descriptors, and a transfer is at
+most 16 MB, with `readFile` served in chunks. Calls waiting on a lock are
+not counted in that queue, and there is no budget on the bytes queued (a
+fix in 1.1). A brokered call
 that takes over 30 s answers `ETIMEDOUT`.
 
 **3. The bounded loader** (`lib/fs-broker/identity.js`). Node's loader reads
@@ -713,7 +737,11 @@ through the whole tree, resolves inside the module's directory), must not
 contain native code (`.node`, `binding.gyp`, `"gypfile": true`), and must
 have valid permissions; install scripts are warned about. In `enforce` a
 failing module is refused with `MODULE_SANDBOX_REFUSED`; in `audit` the
-failures are logged and the module loads. This is a structural check of
+failures are logged and the module loads. `enforce` also refuses a module
+whose directory holds a link to a directory, a link that does not resolve
+or a `package.json` that is a link, and one with a `package.json` whose
+`"main"` leads outside the module's directory or names the directory itself
+([module development](module-development.md)); `audit` reports them. This is a structural check of
 what is on disk at load time, not a review of what the code does.
 
 **6. Resource limits, restart and suspend.** `heapMb` (V8 `resourceLimits`,
@@ -732,7 +760,9 @@ decodes anything: over `--maxOutputBytes` plus 64 KiB (16 MiB plus 64 KiB on
 the file bridge) it is refused in the worker (`MESSAGE_TOO_LARGE`, or
 `EINVAL` for a file call), and under audit and enforce the lockdown pins the
 worker's ports, so module code that patches `MessagePort.prototype` is never
-handed one. A message that is not an envelope, or one over the cap, is a
+handed one. Under `audit`, though, `require('worker_threads')` is allowed
+(and reported), and it hands module code `parentPort` and the file bridge's
+ports in `workerData`: what follows holds under `enforce`. A message that is not an envelope, or one over the cap, is a
 tampered worker's: the main thread ends the worker (a bridge call is
 answered `EINVAL` and reported, and the worker is ended too). Module code
 gets no port by any other route either: the runtime's port callbacks run in
@@ -760,7 +790,11 @@ next start (and an uninstall) wait for them. This bounds memory, blocking,
 disk use and crash loops. It does not bound CPU use that yields to the event
 loop, or network traffic.
 
-A module's stdout and stderr are bounded the same way. Under audit and
+A module's stdout and stderr are bounded the same way. Unless the runtime
+runs with `--debug`, a module's worker makes every `console` method do
+nothing and drops `fs.writeSync` to descriptors 1 and 2, in every mode,
+before module code loads: what reaches the log is what a module writes with
+`process.stdout.write` and `process.stderr.write`. Under audit and
 enforce the lockdown gives module code runtime-owned streams for
 `process.stdout`, `process.stderr` and `process.stdin` (fixed getters),
 points `console` and `process._rawDebug` at them, and Node's own stdio
@@ -860,7 +894,8 @@ files with the runtime stopped.
 **7. `--hardened`.** Re-launches the server under Node's permission model
 (`--permission`) with read access to the install directory, `--modulePath`,
 `--moduleDataPath` and the configured config files, and write access to
-`--modulePath`, `--moduleDataPath` (and the SQLite auth directory). This
+`--modulePath`, `--moduleDataPath`, `--storePath` under `--store local` (read
+too), and the SQLite auth directory. This
 applies to the whole process, **main thread included**, so it limits what
 any module can reach on the host even under `audit`, but cannot separate a
 module from countinghouse's own data in the directories the process may
@@ -968,8 +1003,8 @@ per process, and again when the file changes.
   entry.
 - `{"confirm": true}` and `{"conversation": false}` are rules for a change
   in conversation. They bind once the settings tool changes module settings
-  (its `module.*` names; until then no conversation can change one): the
-  first needs the user's confirmation, the second allows the terminal only.
+  (its `module.*` names): the first needs the user's confirmation, the
+  second allows the terminal only.
   `"conversation": false` directly under `moduleSettings` makes every module
   setting terminal-only.
 
@@ -1096,8 +1131,11 @@ A dialog is shown only when all of these hold:
   three dialogs.
 
 The dialog has one checkbox and no default. Its text is built from the
-change alone, naming the current value (and a module's version, from
-ch-local's `modules.json`); no text from the model appears in it. The model's arguments
+change, naming the current value (and a module's version, from ch-local's
+`modules.json`). For a runtime setting no text from the model appears in
+it. A module setting's dialog quotes the old value and the value asked for,
+which is the model's, each cut to 200 characters, and the module's own
+title for the setting, labelled as the module's own words. The model's arguments
 cannot carry the answer: `requestState` and the user's answer are read only
 from the request's own parameters. `requestState` carries only a random
 nonce and an HMAC, under a key held in memory for this start, binding the
@@ -1141,8 +1179,11 @@ sessions) all of this is each session's own, for the two caps:
   is that session's override, for its calls only, until the session ends.
   It is judged against the value the session runs with. The options every
   session shares, and `settings.json`, are not touched; every history line
-  names the session, and only that session reads it. Every other setting,
-  a pack included, is changed from a terminal.
+  names the session, and only that session reads it. A session may also
+  turn a module on or off (`enabled.*`) and change a module's settings
+  (`module.*`), under the same rules as a single-user runtime: those are
+  written to `settings.json` and apply to every session of the user. Every
+  other setting is changed from a terminal.
 - **The dialog.** Each session has its own pending change, nonce, decline
   locks and three dialogs. The key is one for the runtime and the session's
   id, which comes from its connection and not from the request, is in the
@@ -1213,8 +1254,8 @@ too: its own lower value for that setting goes, and it is told; another
 session's own tighter value stays. What is written without a dialog never
 raises what the file yields (a runtime started above it by a flag, or a
 tighter value stored for the next start): such a value holds for every
-session until the runtime restarts. Every other setting stays the
-terminal's.
+session until the runtime restarts. Besides `enabled.*` and `module.*`
+(above), every other setting stays the terminal's.
 
 **Across a runtime restart.** The runtime keeps nothing of a session on
 disk. After every change it tells ch-local's daemon the session's whole
@@ -1427,8 +1468,7 @@ notice never tells a caller about a module it cannot reach. A
 `resources/updated` notice goes only to the subscriptions of the key whose
 call succeeded: a module that keeps data per caller would otherwise tell one
 tenant when another was active. Each subscription's URIs are resolved in its
-own view (a pack a session doesn't list resolves nothing for it), and on a
-shared runtime a per-session module's change reaches only the calling
+own view (its key and session), and on a shared runtime a per-session module's change reaches only the calling
 session. A URI the caller can't read is left out of what is agreed, so a
 listen can't be used to learn that another tenant's resource exists. A call
 is announced where it is recorded, on the main thread, by every entry path;
@@ -1455,8 +1495,8 @@ tenant's task exists. A change is announced by its id alone. Every
 `notifications/tasks` is built by that same lookup again when it is sent,
 with the caller's key resolved again, and it is the task exactly as
 `tasks/get` would answer it. A task the caller can no longer read (its job
-gone, its session ended, its key revoked or no longer an admin's) is dropped
-silently. A working task's notices are coalesced to at most one a second
+gone, its session ended, or no longer an admin's) is dropped silently. A
+listen whose key no longer resolves (revoked) ends, with an error. A working task's notices are coalesced to at most one a second
 per listener and task, a flood of changes costs one lookup at a time, and a
 closed listen frees its timers.
 
@@ -1509,8 +1549,11 @@ and every one is bounded.
   every call, so within those 5 s a revoked grant's tool gets the auth
   refusal (which tells it from a name never registered), and a new grant's
   answers "unknown tool". A reload of the auth config ends that window at
-  once for the file provider; the sqlite and CouchDB providers have no
-  change signal, so for them the 5 s is the bound. The cost: a key not in
+  once for the file provider; the sqlite provider has no change signal, so
+  for it the 5 s is the bound. The CouchDB provider keeps its own cache of
+  the users it has looked up (at most 4096, the least recently used
+  dropped), which never expires on its own: a change made in CouchDB is seen
+  after `POST /reload-auth`, which empties it, or a restart. The cost: a key not in
   the cache -- never seen, pushed out past the 1024, or after a reload
   cleared every key -- is resolved before its grants are read, so an
   unknown key costs one provider read and a valid key's first call one
@@ -1791,7 +1834,7 @@ and the short list of what the in-process sandbox cannot give.
   others may read, or whose ACL can't be checked, applies only what
   tightens. CouchDB is a remote store, and its access control is
   its operator's; the CouchDB provider keeps a cache of looked-up users in
-  memory, keyed by the raw key until it is keyed by meterId. In memory, the
+  memory, keyed by the key's meterId, never the key. In memory, the
   main thread holds raw keys for as long as it needs them:
   - for the process's life: the loaded auth config, the identity index (to
     re-check and bill a queued job's owner), `COUNTINGHOUSE_API_KEY`, and the
@@ -1904,8 +1947,10 @@ and the short list of what the in-process sandbox cannot give.
   (#170, #186, #190).** Every worker-to-main message is sent as bounded,
   transferred bytes, the main thread reads its length before decoding, and a
   worker whose message is not an envelope or is over the cap is ended; the
-  module's console output and its worker's log are capped. Under audit and
-  enforce module code is never handed a port to the main thread. What
+  module's console output and its worker's log are capped. Under `enforce`
+  module code is never handed a port to the main thread; under `audit`,
+  `require('worker_threads')` hands it `parentPort` and the file bridge's
+  ports. What
   remains: Node decodes a posted message on receipt, so a worker that did
   hold a port could have every message it queued decoded, even after it is
   ended; under `off` the bound is cooperative only.
@@ -2195,10 +2240,11 @@ HTTP request's disconnect changes nothing.
   The outer call is billed only if its handler returned a success, as
   always: a handler that ran to its end after the cancel is billed, and one
   stopped by a refused hop is not. Its usage record is written once, with
-  outcome `cancelled`. The client's slot is freed at the cancel, but the
-  process waits for a cancelled call still running, up to the request
-  timeout, before it exits or reports a drain done, so a shutdown never
-  loses that bill. A task-augmented call cancelled before its task's id
+  outcome `cancelled`. The client's slot is freed at the cancel. A stdio
+  server's exit at the end of its input, and a session's drain, wait for a
+  cancelled call still running, up to the request timeout, so they never
+  lose that bill; `SIGTERM` and `/shutdown` exit at once, and may lose
+  the bill of a cancelled call still running then. A task-augmented call cancelled before its task's id
   was sent has its job removed if it hasn't started; one a worker has
   already started runs to its end and is billed, its result unread.
 
@@ -2386,23 +2432,21 @@ these are the checks that predate them and still apply:
     the main thread, with no such window.
     See [`direct-peer-channels.md`](direct-peer-channels.md) and D3 in
     [`design-decisions.md`](design-decisions.md#direct-peer-channels-five-decisions-d1d5).
-  - **`FileAuthProvider`'s zero-config first run generates and prints a
-    wildcard-access demo key** if no `auth.json` exists yet, specifically
+  - **`FileAuthProvider`'s zero-config first run generates a
+    wildcard-access demo key** if no `auth.json` exists yet, writes it
+    owner-only and prints the file's path, never the key, specifically
     so a fresh checkout is immediately usable. This is meant for local
     development and evaluation, not left running in a real deployment —
     treat an auto-generated `demo-*` key the same as any other credential
     that shouldn't ship to production, and replace it (or configure a real
     `auth.json`/`COUNTINGHOUSE_API_KEY`) before exposing the server beyond
     localhost.
-  - **An internal cross-worker call whose caller identity can't be
-    resolved is metered for free rather than denied** (see
-    `docs/cross-cutting-matrix.md`'s two "Direct peer channel" rows) — this
-    is a `MeteringProvider`-side gap (billing, not authorization: the call
-    itself still only succeeds if the resolvable identity, when there is
-    one, is separately authorized), found and documented, not fixed, since
-    the correct behavior (deny vs. bill a fallback identity vs. the
-    current silent skip) is a real design decision, not implied by
-    anything already decided.
+  - **An internal cross-worker call always has a billing identity.** A hop
+    bills the identity of the call token it runs under, and no token is
+    issued without one (`lib/call-tokens.js`), so no hop runs for free for
+    want of one (see `docs/cross-cutting-matrix.md`'s two "Direct peer
+    channel" rows). A remote call with none is refused
+    (`HOP_IDENTITY_UNRESOLVED`).
 
 ### Hardening with systemd
 
