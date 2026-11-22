@@ -33,6 +33,19 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
     assert.strictEqual(settings.limitsOf(B), null);
   });
 
+  // (the final pass's gateway part, A4) a session that lowers its own
+  // confirmed raise to a value still above the default keeps it: it landed
+  // on the default, while the tool said the value asked for
+  it('lowering a confirmed raise to a value still above the default keeps that value, and its mark', () => {
+    loosen(A, 'maxOutputBytes', 64 * MiB);
+    assert.deepStrictEqual(settings.set(A, 'maxOutputBytes', 32 * MiB), {old: 64 * MiB, new: 32 * MiB});
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 32 * MiB);
+    assert.strictEqual(settings.isLoosening(A, 'maxOutputBytes', 32 * MiB), false);
+    // to the default or below: an ordinary tightening, unmarked
+    assert.deepStrictEqual(settings.set(A, 'maxOutputBytes', 4 * MiB), {old: 32 * MiB, new: 4 * MiB});
+    assert.strictEqual(settings.isLoosening(A, 'maxOutputBytes', 16 * MiB), true, 'raising again is a loosening, to be confirmed');
+  });
+
   it('a looser value needs its mark ({loosening, over}); a tightening needs none', () => {
     assert.throws(() => settings.set(A, 'maxOutputBytes', 16 * MiB), /needs \{loosening: true, over\}/);
     assert.throws(() => settings.set(A, 'maxOutputBytes', 16 * MiB, {loosening: true}), /names the default it was confirmed over/);
