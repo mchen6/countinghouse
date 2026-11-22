@@ -225,3 +225,40 @@ describe('stdio 51: the authoring tools in the single-identity profile (B-own-ru
 
   tmp.hooks();
 });
+
+// (the dry run, walk steps 12-14) validate_plan's tool names are the ones
+// tools/list gives: an own module is a scenario, whose tool is its action's
+// name alone (lib/mcp/tool-name.js toolNameFor). It said
+// csv_line_count_csvservice_countlines for what is listed as countlines.
+describe('stdio 51: validate_plan names a tool as tools/list lists it', function() {
+  this.timeout(120000);
+  let io = null;
+  let id = 10;
+  after(async () => { if (io != null) await io.stop(); });
+  it('a scenario\'s plan: the action\'s name alone, and a collision with that name', async () => {
+    const home = fs.realpathSync.native(tmp.mkdtemp('ch-stdio-51-'));
+    const work = fs.realpathSync.native(tmp.mkdtemp('ch-stdio-51-'));
+    const dir = path.join(work, 'csv-line-count');
+    fs.mkdirSync(path.join(dir, 'handlers', 'csvService'), {recursive: true});
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name: 'csv-line-count', version: '1.0.0', license: 'Apache-2.0', countinghouse: {role: 'scenario'}}));
+    fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: 'csv-line-count', manufacturer: 'me', modelDescription: 'counts',
+      serviceList: {[SVC('csvService')]: {actionList: [{name: 'countLines', description: 'counts the lines of a CSV text', input: {schema: '/csvService/countLines/input'}, output: {schema: '/csvService/countLines/output'}}]}}}}));
+    fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
+      csvService: {countLines: {input: {type: 'object'}, output: {type: 'object'}}}}));
+    fs.writeFileSync(path.join(dir, 'handlers', 'csvService', 'countLines.js'), 'module.exports = async () => ({output: {lines: 0}});\n');
+    io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
+      '--moduleDataPath', path.join(home, 'module_data'), '--settingsFile', path.join(home, 'settings.json'), '--loadModule', dir]);
+    assert.ok((await io.request({...INITIALIZE, id: 1}, 30000)).result != null);
+    io.notify({jsonrpc: '2.0', method: 'notifications/initialized'});
+    const listed = (await io.request({jsonrpc: '2.0', id: id++, method: 'tools/list', params: {}}, 60000)).result.tools.map((t) => t.name);
+    const mine = listed.filter((n) => !n.startsWith('countinghouse_'));
+    assert.deepStrictEqual(mine, ['countlines'], `${JSON.stringify(listed)} ${withoutRedisNoise(io.err).slice(-600)}`);
+    const plan = {device: 'csv-line-count', services: [{name: 'csvService', actions: [{name: 'countLines', description: 'counts the lines of a CSV text'}]}]};
+    const r = (await io.request({jsonrpc: '2.0', id: id++, method: 'tools/call', params: {name: 'countinghouse_validate_plan', arguments: plan}}, 60000)).result;
+    assert.ok(r != null && r.structuredContent != null, JSON.stringify(r));
+    assert.deepStrictEqual(r.structuredContent.toolNames, mine, 'the name tools/list gives');
+    assert.ok(r.structuredContent.problems.some((p) => p.message === '"countlines" is already a tool on this runtime.'), JSON.stringify(r.structuredContent.problems));
+  });
+
+  tmp.hooks();
+});
