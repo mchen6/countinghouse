@@ -135,13 +135,14 @@ describe('stdio 14: countinghouse_settings', () => {
     Object.assign(options, {heldBackFile: held, settingsFile: file});
     heldBack.resetForTests();
     try {
-      assert.strictEqual((await heldBack.ready()).launcher, launcher, 'the launcher taken');
-      const L = `node "${launcher}"`.replace(/[./@"\\]/g, '\\$&');
+      // (no read awaited first: the tool waits for the list's first read
+      // itself -- the medium on this fix, 1)
       for (const [name, value, command] of [['maxOutputBytes', '64MiB', 'maxOutputBytes 64MiB'], ['requestTimeout', '45s', 'requestTimeout 45s'], [EN, 'on', `${EN} on`]]) {
         if (name === EN) await tool.set(EN, 'off');
         const err = await refused(tool.set(name, value), 'SETTING_NEEDS_CONFIRMATION');
-        assert.match(err.message, new RegExp(`run \`${L} settings set ${command.replace(/[./@]/g, '\\$&')}\` in a terminal yourself`), err.message);
+        assert.ok(err.message.includes(`run \`node "${launcher}" settings set ${command}\` in a terminal yourself`), err.message);
       }
+      assert.strictEqual(heldBack.list().launcher, launcher, 'the launcher taken');
     } finally {
       Object.assign(options, kept);
       heldBack.resetForTests();

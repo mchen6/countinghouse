@@ -274,6 +274,32 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.ok(gate.requiredRefusal(dm, dm.idOf('m'), true) != null);
     });
 
+    // (the dry run, walk step 9: ch-local is on no PATH) with ch-local's
+    // launcher known, the command the hint names goes through it
+    it('with ch-local\'s launcher known, the hint\'s command goes through it', async () => {
+      const fs = require('fs');
+      const path = require('path');
+      const heldBack = require('../../lib/held-back');
+      const home = require('../helpers/test-tmp').mkdtemp('ch-validation-26-');
+      const kept = {heldBackFile: options.heldBackFile, settingsFile: options.settingsFile};
+      try {
+        fs.mkdirSync(path.join(home, 'bin'));
+        fs.writeFileSync(path.join(home, 'bin', 'ch-local.js'), '// launcher');
+        const launcher = fs.realpathSync.native(path.join(home, 'bin', 'ch-local.js'));
+        fs.writeFileSync(path.join(home, 'held-back.json'), JSON.stringify({v: 1, modules: [], launcher}), {mode: 0o600});
+        Object.assign(options, {heldBackFile: path.join(home, 'held-back.json'), settingsFile: path.join(home, 'settings.json')});
+        heldBack.resetForTests();
+        await heldBack.ready();
+        const dm = dmWith({'m': {state: stateWith({r: {type: 'string', required: true}})}});
+        const err = gate.requiredRefusal(dm, dm.idOf('m'), true);
+        assert.ok(err.message.includes(`run \`node "${launcher}" settings set m.r\``), err.message);
+      } finally {
+        Object.assign(options, kept);
+        heldBack.resetForTests();
+        require('../helpers/test-tmp').remove(home);
+      }
+    });
+
     it('on a server outside ch-local, the operator\'s file is named, never ch-local', () => {
       options.singleIdentity = false;
       try {
