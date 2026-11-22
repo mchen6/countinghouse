@@ -64,5 +64,12 @@ describe('stdio 15: countinghouse_settings, spawned', function() {
     // the change made, then the refused loosening as asked (part 3, section 5), never as a change
     assert.deepStrictEqual(history.map((h) => [h.by, h.setting, h.new, h.asked, h.change]), [
       ['settings tool', 'requestTimeout', 20000, undefined, undefined], ['settings tool', 'autoUpgrade', undefined, true, 'refused, terminal only']]);
+    // (#538: what a refused module load points at) a client's first read of
+    // a settings file that cannot be used answers how to fix it
+    fs.writeFileSync(file, '{');
+    const unusable = await call(6, {action: 'get'});
+    assert.strictEqual(unusable.result.isError, true, JSON.stringify(unusable));
+    assert.strictEqual(unusable.result._meta['countinghouse/code'], 'SETTINGS_FILE_INVALID');
+    assert.match(unusable.result.content[0].text, /it is not JSON.*reset it with `ch-local settings reset` in a terminal/);
   });
 });

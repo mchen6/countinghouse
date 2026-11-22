@@ -144,11 +144,31 @@ describe('stdio 14: countinghouse_settings', () => {
       fs.writeFileSync(file, '{');
       const bad = await refused(tool.set('requestTimeout', '20s'), 'SETTINGS_FILE_INVALID');
       assert.ok(bad.message.includes(`reset it with \`node "${launcher}" settings reset\` in a terminal`), bad.message);
+      // (the action a client calls first answers it too: what the load's
+      // refusal below points at -- #538, business's read)
+      const read = await refused(tool.get(), 'SETTINGS_FILE_INVALID');
+      assert.ok(read.message.includes(`reset it with \`node "${launcher}" settings reset\` in a terminal`), read.message);
       // (a module's load keeps the file's problem alone: no command, no path
       // outside the module's root -- the medium on the follow-ups, 3)
-      const state = require('../../lib/module-settings').stateFor('m', {name: 'm', version: '1.0.0', countinghouse: {settings: {r: {type: 'string'}}}}, {operator: false, net: []});
-      assert.ok(state.refusedWhy != null && state.refusedWhy.includes('it is not JSON'), JSON.stringify(state.refusedWhy));
-      assert.ok(!state.refusedWhy.includes(home) && !/settings reset/.test(state.refusedWhy), state.refusedWhy);
+      const ms = require('../../lib/module-settings');
+      const M = {name: 'm', version: '1.0.0', countinghouse: {settings: {r: {type: 'string'}}}};
+      const keptSingle = options.singleIdentity;
+      try {
+        options.singleIdentity = true;
+        const state = ms.stateFor('m', M, {operator: false, net: []});
+        assert.strictEqual(state.refusedWhy, 'it is not JSON');
+        assert.strictEqual(state.refused.message, 'Module load failed: m: the settings file cannot be used (it is not JSON). The countinghouse_settings tool says how the user can fix it.');
+        assert.ok(!state.refused.message.includes(home) && !/settings reset/.test(state.refused.message), state.refused.message);
+        // (where the tool is not listed, the sentence about it is not said)
+        options.singleIdentity = false;
+        assert.strictEqual(ms.stateFor('m', M, {operator: false, net: []}).refused.message, 'Module load failed: m: the settings file cannot be used (it is not JSON).');
+        // (another reason, under the same prefix)
+        options.singleIdentity = true;
+        assert.strictEqual(ms.stateFor('m', M, {operator: false, net: [], raw: {}, ceiling: {state: 'untrusted', problem: 'x'}}).refused.message,
+          'Module load failed: m: its settings: the operator\'s ceiling cannot be trusted (x)');
+      } finally {
+        options.singleIdentity = keptSingle;
+      }
       fs.rmSync(file);
       for (const [name, value, command] of [['maxOutputBytes', '64MiB', 'maxOutputBytes 64MiB'], ['requestTimeout', '45s', 'requestTimeout 45s'], [EN, 'on', `${EN} on`]]) {
         if (name === EN) await tool.set(EN, 'off');
