@@ -75,8 +75,8 @@ describe('fs-broker 37: A8\'s rest (the final pass, functional)', function() {
           // (POSIX: the separator asks for the directory a link leads to; a
           // file, or a link to one, is ENOTDIR, said as lstat's)
           assert.strictEqual(await brokerSays(t, 'lstat', '/data/link/'), 'dir');
-          for (const p of ['/data/f/', '/data/flink/', '/data/missing/']) {
-            await assert.rejects(t.broker.handle('lstat', [p, {}]), (e) => /^(ENOTDIR|ENOENT)$/.test(e.code) && e.syscall === 'lstat', p);
+          for (const [p, code] of [['/data/f/', 'ENOTDIR'], ['/data/flink/', 'ENOTDIR'], ['/data/missing/', 'ENOENT']]) {
+            await assert.rejects(t.broker.handle('lstat', [p, {}]), (e) => e.code === code && e.syscall === 'lstat', p);
           }
           // (the separator as the path's own, after a file URL is a path: a
           // fragment is not part of it, a query is not either)
@@ -122,7 +122,10 @@ describe('fs-broker 37: A8\'s rest (the final pass, functional)', function() {
       try {
         await assert.rejects(t.broker.handle('readlink', ['/', {}]), (e) => e.code === 'EINVAL' && e.syscall === 'readlink');
         const sf = await t.broker.handle('statfs', ['/', {}]);
-        assert.strictEqual(typeof sf.bsize, 'number');
+        // (under enforce, the filesystem its /data is on; audit answers the
+        // host's own /)
+        const want = fs.statfsSync(mode === 'enforce' ? t.dirs.data : '/');
+        assert.deepStrictEqual([sf.type, sf.bsize, sf.blocks], [want.type, want.bsize, want.blocks]);
       } finally { await t.done(); }
     });
   }
