@@ -118,6 +118,13 @@ if (options.moduleLoadTimeoutInvalid != null) {
     (typeof(badLoad) === 'boolean' || badLoad === '' ? 'no value' : JSON.stringify(String(badLoad))) + ')');
   process.exit(2);
 }
+// --apiKeyRateLimit, --globalRateLimit: a positive integer each (A6)
+if (options.rateLimitInvalid != null) {
+  const v = options.rateLimitInvalid.value;
+  console.error('--' + options.rateLimitInvalid.name + ' must be a positive integer, calls a second (got ' +
+    (v === true ? 'no value' : JSON.stringify(String(v))) + ')');
+  process.exit(2);
+}
 // RC1-min: a module cannot choose where a credential goes; the operator's
 // file does. One that cannot be read as {origin: [variable]} stops the start.
 if (options.remoteLimitInvalid != null) {

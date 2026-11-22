@@ -246,15 +246,25 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     assert.deepStrictEqual(frames[A], [['forget']]);
   });
 
-  it('a session writes at most 32 changes to the history every session reads; past that its changes are the terminal\'s', async () => {
+  // (the final pass's gateway part, A5: a tightening is never refused, the
+  // budget included; past it the session's tightenings are one line and a
+  // count, so the shared tail stays bounded)
+  it('a session writes at most 32 changes to the history every session reads; past that a tightening still applies, as one line and a count', async () => {
     // one history, read by its 64 KiB tail: a session stepping a cap down
     // call after call must not push the others' lines out of it
     for (let i = 0; i < 32; i++) await tool.set('maxOutputBytes', String(8 * MiB - 1 - i), 'settings tool', ctx(A));
     const at = settings.effective(A, 'maxOutputBytes');
-    await refused(tool.set('maxOutputBytes', String(at - 1), 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
-    await refused(tool.set('requestTimeout', '20s', 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
-    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), at, 'unchanged');
+    for (let i = 1; i <= 5; i++) assert.strictEqual((await tool.set('maxOutputBytes', String(at - i), 'settings tool', ctx(A))).new, at - i);
+    assert.strictEqual((await tool.set('requestTimeout', '20s', 'settings tool', ctx(A))).new, 20000);
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), at - 5, 'tightened');
+    assert.strictEqual(settings.effective(A, 'requestTimeout'), 20000, 'tightened');
     assert.strictEqual(history().filter((h) => h.session === A && h.change === 'this session').length, 32);
+    // one line for each kind past the budget; the rest counted at the end
+    const past = history().filter((h) => h.session === A && /past this session's 32/.test(String(h.change)));
+    assert.strictEqual(past.length, 2, JSON.stringify(past));
+    // a loosening past it stays the terminal's
+    await refused(tool.set('maxOutputBytes', String(at), 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), at - 5, 'unchanged');
     // another session has its own
     assert.deepStrictEqual(await tool.set('requestTimeout', '20s', 'settings tool', ctx(B)), {name: 'requestTimeout', old: 30000, new: 20000, applies: 'this session'});
   });
@@ -321,9 +331,12 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
         assert.deepStrictEqual((await tool.get(ctx(C))).history.map((h) => [h.by, h.setting, h.new]), [['replay', 'maxOutputBytes', 2 * MiB], ['replay', 'requestTimeout', 15000]]);
         assert.deepStrictEqual((await tool.get(ctx(A))).history, []);
         assert.deepStrictEqual(noticed, [], 'it asked for them itself');
-        // its lines count toward what a session may write (the 32): 2 here, 30 more, no further
+        // its lines count toward what a session may write (the 32): 2 here, 30
+        // more, then a tightening still applies, as one past-budget line (A5)
         for (let i = 0; i < 30; i++) await tool.set('maxOutputBytes', String(2 * MiB - 1 - i), 'settings tool', ctx(C));
-        await refused(tool.set('maxOutputBytes', String(MiB), 'settings tool', ctx(C)), 'SETTING_TERMINAL_ONLY_SHARED');
+        const before = history().length;
+        assert.strictEqual((await tool.set('maxOutputBytes', String(MiB), 'settings tool', ctx(C))).new, MiB);
+        assert.deepStrictEqual(history().slice(before).map((h) => [h.session, h.setting, /past this session's 32/.test(String(h.change))]), [[C, 'maxOutputBytes', true]]);
         // a replay that applies nothing records nothing
         const lines = history().length;
         openSession('d'.repeat(32)).emit('replay', [{maxOutputBytes: 64 * MiB}, {locale: 'zh'}]);

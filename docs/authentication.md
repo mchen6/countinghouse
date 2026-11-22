@@ -327,7 +327,7 @@ emits it, see `lib/couchdb-adapter/init-db.js`).
 ## The opaque user id
 
 Each user gets an opaque id, the same across every module on this server
-and nothing a module can turn back into a key or a name: `u_` and 22
+and nothing a module under `enforce` can turn back into a key or a name: `u_` and 22
 characters, an HMAC-SHA256 under the server's identity secret. Its source
 is the auth entry's optional `id` field when there is one, else the API key
 (domain-separated, so an `id` equal to another user's key never gives that
@@ -340,7 +340,9 @@ The secret is 32 random bytes, kept as 64 hex characters in
 ch-local's single-identity profile; owner-only, generated on first start)
 or given as `COUNTINGHOUSE_IDENTITY_SECRET` in the same form; both present
 and different refuses the start. Changing the secret changes every id. A
-worker gets neither the secret nor the index of ids.
+worker is never given the secret or the index of ids; under `enforce` it can't
+read the secret file either (under `audit` it can: see the security model's
+[audit limit](security-model.md#what-the-module-sandbox-adds-and-what-it-does-not-stop)).
 
 ## Rotating a key
 
@@ -354,11 +356,22 @@ Before rotating such a key, remove its repeatable jobs
 and recreate them with the new one, or have an admin remove them afterwards
 by their full scheduler id (`<id>:<name>`, as bullmq lists it) in place of
 the name. A job is
-authorized each time it runs, so once the old key is gone from the config
-(after `POST /reload-auth`, for the file and CouchDB providers), its
-schedulers' next runs are refused `SYSTEM_ERROR_UNKNOWN_USER` and the
-schedulers removed, and its queued jobs fail the same way; recreate what is
-still wanted with the new key.
+authorized each time it runs. With a stable `id`, the schedulers stay the
+user's through a rotation. On the file provider the rotation takes effect at
+`POST /reload-auth`, which reads the new key in under the same `id`. On
+sqlite no reload is needed: a run whose key the database no longer holds
+makes the runtime read the entries once more, and the run goes on under the
+new key. CouchDB keeps the users it looked up cached until a reload or a
+restart, so there the old key keeps working until then. A request with a key
+the provider accepts but the runtime hasn't read in yet waits briefly (at
+most 1.5 s) for that read, so it reaches the user's jobs; one that can't wait
+so long goes on under an id of its own until the read lands. A key the
+provider's listing doesn't show is not waited for again for 30 s, or until a
+reload or another read changes the index. Without a stable `id`, once the old key is gone
+from the config (after `POST /reload-auth`, for the file and CouchDB
+providers), its schedulers' next runs are refused `SYSTEM_ERROR_UNKNOWN_USER`
+and the schedulers removed, and its queued jobs fail the same way; recreate
+what is still wanted with the new key.
 
 ## Choosing a backend
 
