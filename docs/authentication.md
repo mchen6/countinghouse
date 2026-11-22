@@ -313,8 +313,10 @@ emits it, see `lib/couchdb-adapter/init-db.js`).
 - **The auto-generated demo key is *not* admin.** It gets
   `{"userName": "demo", "devices": ["*"]}` — wildcard device access, no admin
   rights. A fresh checkout can call every tool immediately, but cannot
-  `/load-module`. Add `"admin": true` to it in `auth.json` (and restart —
-  `auth.json` is read once at startup) if you want that from the demo key.
+  `/load-module`. Add `"admin": true` to it in `auth.json`, then
+  `POST /reload-auth` with an admin key or restart, if you want that from
+  the demo key. (A reload from a file that can't be verified as yours applies
+  only what tightens and refuses "admin granted": restart then.)
 - **`--debug` bypasses this, along with everything else.** Under `--debug`
   every key resolves to an admin session, which is why the repo's own test
   suite can call these endpoints freely. That is a property of `--debug`, not
@@ -322,10 +324,28 @@ emits it, see `lib/couchdb-adapter/init-db.js`).
   including hot-loading modules, which is what an admin key is for. See
   [`cli-and-api-reference.md`](cli-and-api-reference.md).
 
+## The opaque user id
+
+Each user gets an opaque id, the same across every module on this server
+and nothing a module can turn back into a key or a name: `u_` and 22
+characters, an HMAC-SHA256 under the server's identity secret. Its source
+is the auth entry's optional `id` field when there is one, else the API key
+(domain-separated, so an `id` equal to another user's key never gives that
+user's id). Per-user module data and repeatable job schedulers are scoped by
+it. With a stable `id`, rotating the key keeps the user's id; without one,
+the id changes with the key.
+
+The secret is 32 random bytes, kept as 64 hex characters in
+`<moduleDataPath>/.identity-secret` (`<storePath>/.identity-secret` in
+ch-local's single-identity profile; owner-only, generated on first start)
+or given as `COUNTINGHOUSE_IDENTITY_SECRET` in the same form; both present
+and different refuses the start. Changing the secret changes every id. A
+worker gets neither the secret nor the index of ids.
+
 ## Rotating a key
 
 A repeatable job's scheduler belongs to the user that created it: its id is
-the job's name scoped to the user's opaque id (8.0.0, previous section).
+the job's name scoped to the user's [opaque id](#the-opaque-user-id) (8.0.0).
 **Give the entry a stable `id` first**: then a rotated key keeps the same
 opaque id, and the schedulers and per-user module data stay the user's.
 Without a stable id, the new key cannot reach the old key's schedulers.
@@ -334,13 +354,18 @@ Before rotating such a key, remove its repeatable jobs
 and recreate them with the new one, or have an admin remove them afterwards
 by their full scheduler id (`<id>:<name>`, as bullmq lists it) in place of
 the name. A job is
-authorized each time it runs. With a stable `id`, a run whose key the
-configuration no longer holds makes the runtime read the provider's entries
-once more, and the run goes on under the new key, so the schedulers stay
-(no `POST /reload-auth` is needed, even on sqlite or CouchDB). The new key
-also reaches the user's jobs from its first request: a key the provider
-accepts but the runtime hasn't indexed yet is read in under its stable `id`
-before the request goes on. Without a stable `id`, once the old key is gone
+authorized each time it runs. With a stable `id`, the schedulers stay the
+user's through a rotation. On the file provider the rotation takes effect at
+`POST /reload-auth`, which reads the new key in under the same `id`. On
+sqlite no reload is needed: a run whose key the database no longer holds
+makes the runtime read the entries once more, and the run goes on under the
+new key. CouchDB keeps the users it looked up cached until a reload or a
+restart, so there the old key keeps working until then. A request with a key
+the provider accepts but the runtime hasn't read in yet waits briefly (at
+most 1.5 s) for that read, so it reaches the user's jobs; one that can't wait
+so long goes on under an id of its own until the read lands. A key the
+provider's listing doesn't show is not waited for again for 30 s, or until a
+reload or another read changes the index. Without a stable `id`, once the old key is gone
 from the config (after `POST /reload-auth`, for the file and CouchDB
 providers), its schedulers' next runs are refused `SYSTEM_ERROR_UNKNOWN_USER`
 and the schedulers removed, and its queued jobs fail the same way; recreate

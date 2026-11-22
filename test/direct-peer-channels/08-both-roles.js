@@ -81,21 +81,58 @@ describe('direct peer channels 08: a worker is a caller and a callee of one peer
     // A calls B again, over the channel it already holds: announced as a caller's
     const before = A.log.filter((e) => e[0] === 'announce').length;
     call(A, 'devB', 'A->B #2');
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // (the announce, waited for on itself, bounded: #526's high, L4)
+    for (const t0 = Date.now(); A.log.filter((e) => e[0] === 'announce').length <= before && Date.now() - t0 < 5000;) await new Promise((resolve) => setImmediate(resolve));
     assert.strictEqual(A.log.filter((e) => e[0] === 'announce').length, before + 1, JSON.stringify(A.log));
+    assert.ok(!results.some((r) => r.startsWith('A->B #2: ') && r !== 'A->B #2: ok'), JSON.stringify(results));
     assert.strictEqual(A.log.filter((e) => e[0] === 'request').length, 1, 'no second channel request: the channel held is used');
   });
 
-  it('an invalidate for a peer ends both of this worker\'s channels to it', () => {
-    const A = state('A2');
-    const c12 = channel();
-    const c21 = channel();
-    A.onPeerChannelGrant({targetDeviceID: 'devB', targetWorkerId: 2, port: c12.port1});
-    A.onPeerChannelOpen({callerWorkerId: 2, targetDeviceID: 'devA', actions: ['svc|act'], port: c21.port2});
-    const caller = A.peerChannels[2];
-    const callee = A.peerCalleeChannels[2];
-    assert.ok(caller != null && callee != null && caller !== callee);
-    A.onPeerInvalidate({workerId: 2});
-    assert.ok(caller.closed === true && callee.closed === true, `caller closed ${caller.closed}, callee closed ${callee.closed}`);
+  // (the high on #526, M2) an invalidate names the role whose channel ends:
+  // a revoked A->B grant ends A's caller channel to B and B's callee channel
+  // from A, never the other direction, which still serves. With no role (a
+  // worker gone: invalidateWorker), both end.
+  it('an invalidate ends the role it names, and both when it names none', () => {
+    const pair = (name) => {
+      const X = state(name);
+      X.onPeerChannelGrant({targetDeviceID: 'devB', targetWorkerId: 2, port: channel().port1});
+      X.onPeerChannelOpen({callerWorkerId: 2, targetDeviceID: 'devA', actions: ['svc|act'], port: channel().port2});
+      const caller = X.peerChannels[2];
+      const callee = X.peerCalleeChannels[2];
+      assert.ok(caller != null && callee != null && caller !== callee);
+      return {X, caller, callee};
+    };
+    const a = pair('A2');
+    a.X.onPeerInvalidate({workerId: 2, role: 'caller'});
+    assert.deepStrictEqual([a.caller.closed === true, a.callee.closed === true], [true, false], 'caller only');
+    const b = pair('A3');
+    b.X.onPeerInvalidate({workerId: 2, role: 'callee'});
+    assert.deepStrictEqual([b.caller.closed === true, b.callee.closed === true], [false, true], 'callee only');
+    const c = pair('A4');
+    c.X.onPeerInvalidate({workerId: 2});
+    assert.deepStrictEqual([c.caller.closed === true, c.callee.closed === true], [true, true], 'both');
+  });
+
+  // (the medium on #526, 6; #526's high, L4) a callee channel the main
+  // thread re-brokers ends the one it replaces
+  it('a re-brokered callee channel ends the one it replaces', () => {
+    const A = state('A5');
+    A.onPeerChannelOpen({callerWorkerId: 2, targetDeviceID: 'devA', actions: ['svc|act'], port: channel().port2});
+    const first = A.peerCalleeChannels[2];
+    A.onPeerChannelOpen({callerWorkerId: 2, targetDeviceID: 'devA', actions: ['svc|act'], port: channel().port2});
+    const second = A.peerCalleeChannels[2];
+    assert.ok(first != null && second != null && first !== second);
+    assert.deepStrictEqual([first.closed === true, second.closed === true], [true, false]);
+  });
+
+  it('a revoked grant tells the caller to end its caller channel and the callee its callee channel', () => {
+    const PeerChannelBroker = require('../../lib/peer-channel-broker');
+    const sent = [];
+    const callerWM = {workerId: 1, sendPeerInvalidateToChild: (m) => sent.push(['caller', m])};
+    const calleeWM = {workerId: 2, sendPeerInvalidateToChild: (m) => sent.push(['callee', m])};
+    const entry = {callerWM, calleeWM};
+    const broker = {channelRegistry: {'1:2': entry}, forgetPair: () => {}};
+    PeerChannelBroker.prototype.closeRevoked.call(broker, '1:2', entry, {id: 'u_x', deviceID: 'devB'}, Object.assign(new Error('revoked'), {code: 'USER_HAS_NO_DEVICE'}));
+    assert.deepStrictEqual(sent, [['caller', {workerId: 2, role: 'caller'}], ['callee', {workerId: 1, role: 'callee'}]]);
   });
 });

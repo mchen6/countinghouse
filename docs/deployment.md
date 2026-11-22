@@ -97,8 +97,8 @@ for the full list.
   NetworkPolicy in Kubernetes.
 - **The auth config as a secret,** mounted read-only. With the file provider
   (the default), the file must exist: if it's missing, the provider tries to
-  write a demo key to that path, which fails on a read-only mount and logs an
-  error.
+  write a demo key to that path, which fails on a read-only mount, and the
+  start stops with exit 2 (`AUTH_CONFIG_INVALID`, naming the path).
 - **Behind an ingress.** countinghouse binds `127.0.0.1` unless `--bindAddr`
   is given. A loopback bind inside a container is reachable only from the
   same network namespace (a proxy sidecar in the same Kubernetes pod). With

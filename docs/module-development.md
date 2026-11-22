@@ -571,14 +571,18 @@ validator workers, which all modules share:
   item), else `TOO_MANY_BINARY_VALUES`. Another media type is still sent as
   its base64 string for now. `ctx.call` and HTTP `invoke-action` always get
   the base64 string itself.
-- what you write to stdout and stderr (and `console`) reaches the
-  operator's log line by line, prefixed with your module's name: each line
+- what you write with `process.stdout.write` and `process.stderr.write`
+  reaches the operator's log line by line, prefixed with your module's name: each line
   cut at 8 KiB, control characters other than tab removed (and the line
   separators and bidi controls), and under audit and enforce at most
   256 KiB a minute per stream of what is written, each line counted with
-  its prefix and newline; past that it is dropped and counted. The streams
-  are the runtime's: assigning `process.stdout` throws (`TypeError`) in
-  strict mode. Use the log for diagnostics, not for data.
+  its prefix and newline; past that it is dropped and counted. `console`
+  and `fs.writeSync(1, ...)` or `fs.writeSync(2, ...)` reach it only when the
+  runtime runs with `--debug`: otherwise your worker's `console` methods do
+  nothing and those writes are dropped. (`ctx.log(entry)` goes to the
+  device log in the runtime's store, not to this log.) The streams are the
+  runtime's: assigning `process.stdout` throws (`TypeError`) in strict mode.
+  Use the log for diagnostics, not for data.
 
 Keep patterns simple, schemas small, and outputs modest: return a reference
 (a path in your data namespace) to anything large. A `schema.json` that is plainly unsafe is refused at load
@@ -914,7 +918,7 @@ namespace, the same in every `--moduleSandbox` mode:
 
 | Path your code uses | What it is | Access |
 |---|---|---|
-| `/app` | your module's install directory | read-only under `enforce`; writes are logged under `audit` |
+| `/app` | your module's install directory | read-only under `enforce` (`EROFS`) and `audit` (`EACCES`); under `off` writes reach the install directory |
 | `/data` | your module's private data directory | read-write, counted against your disk limits, kept across restarts |
 | `/tmp` | your module's private temp directory | read-write, counted against your disk limits, **emptied every time your worker starts** |
 | each path you declared in `fs` | the same path on the host | `r` or `rw`, as the operator approved |
@@ -936,8 +940,11 @@ restarting and reloading never delete them; an operator's
 `POST /uninstall-module` does, unless told to keep them.
 
 **Anything else, declare.** A path outside your namespace is answered
-`ENOENT` under `enforce` (and logged on the host); under `audit` and `off` it
-reaches the host and is logged. Declare each outside path in `fs` (see
+`ENOENT` under `enforce` (and logged on the host). Under `audit` a read of
+it reaches the host and is logged, but a write is refused (`EACCES`), and so
+is every access to a protected path (countinghouse's own files and
+directories, ch-local's home; see the [security model](security-model.md));
+under `off` it reaches the host. Declare each outside path in `fs` (see
 [Declaring permissions](#declaring-permissions)) and the operator approves
 it.
 
@@ -967,7 +974,9 @@ fallbacks such as `fs-extra`'s `move` work.
   [the benchmarks](benchmarks/sandbox-part2.md)).
 - Descriptors your code gets from `fs.open` are numbers from `0x10000000`
   up, not small integers. `fs.writeSync(1, ...)` and `fs.writeSync(2, ...)`
-  still go to your module's console (`pino` and `sonic-boom` work).
+  go to your module's console when the runtime runs with `--debug`, and are
+  dropped otherwise (`pino` and `sonic-boom` work either way, without
+  output); `process.stdout.write` reaches the log in both.
 - `fs.watch`, `fs.watchFile` and `fs.promises.watch` are not available
   (`ERR_FEATURE_UNAVAILABLE_ON_PLATFORM`).
 - HTTP/2 `respondWithFile` is not available: read the file with `fs` and

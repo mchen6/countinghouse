@@ -352,7 +352,9 @@ you have to do. What the sandbox does and does not protect is in
   reads them. A spec that still carries one loads and validates, and
   `countinghouse-validate` warns about it; `bin/countinghouse-migrate-spec.js`
   removes both. Limit callers with `--apiKeyRateLimit` (per key) and
-  `--globalRateLimit` (all calls); jobs are bounded by the add-job limits on
+  `--globalRateLimit` (the runtime's direct calls: a task-augmented call and
+  an `add-job` count against the per-key limit when they are made, not
+  against this one); jobs are bounded by the add-job limits on
   `repeat.every`, `repeat.limit` and `attempts`.
 
 Under worker mode, in every `--moduleSandbox` mode unless noted:
@@ -387,13 +389,14 @@ Under worker mode, in every `--moduleSandbox` mode unless noted:
 - **`/data` and `/tmp` are private.** Each module writes under `/data`
   (kept) and `/tmp` (its own, not the host's, and **emptied every time its
   worker starts**). Anything a module left in `/tmp` is gone after a restart.
-- **Writes to `/app` are refused under `enforce`** (`EROFS`), logged under
-  `audit`.
+- **Writes to `/app` are refused**: `EROFS` under `enforce`, `EACCES` under
+  `audit`; under `off` they reach the install directory.
 - **Outside paths must be declared under `enforce`.** Anything outside the
   namespace is `ENOENT` unless the module declares it in
   `countinghouse.permissions.fs` and your `--modulePolicy` approves it.
-  Under `audit` such access works and is logged, so run in `audit` first and
-  read the log.
+  Under `audit` a read of such a path works and is logged, so run in `audit`
+  first and read the log; a write outside the module's own area, and every
+  access to a protected path, is refused (`EACCES`) under `audit` too.
 - **A disk quota** on `/data` and `/tmp` together: `diskMb` (default ceiling
   1024) and `diskEntries` (default ceiling 100 000). Past it, writes are
   `ENOSPC` under `enforce`; under `audit` crossings of 75 % and 100 % are
@@ -631,17 +634,22 @@ says how to write a module for this.
 
 ## What HTTP API clients will notice
 
-- **No `topic` in an error body.** It is `{code, message, fault?}`, with
-  `kind` and `origin` beside them. Match on `code`.
+- **No `topic` in an error body.** It is `{code, message, kind, fault?}`.
+  Match on `code`.
+- **The HTTP status comes from the error catalogue.** Each code has its
+  own: a caller's error is a 4xx, a rate limit 429 and a busy runtime 503
+  (the last two with `Retry-After` when the limiter says when to retry).
+  Match on `code`, not on the status.
 - The request-body limits, `application/json` for JSON, and the browser
   origin check are in [Before you upgrade](#before-you-upgrade).
 - **Breaking: an action whose declared schemas make it unusable is refused
   here too.** A tool whose input schema, or output schema as advertised,
   holds a hidden character where nothing can be left out (an enum or const
   member, a property name, a required entry, a pattern...) is not listed
-  and not callable over MCP. `invoke-action` and `add-job` now refuse it as
-  well, with `MODULE_NOT_LISTED`, a task already queued for it ends
-  with that code instead of running, `get-spec` leaves it out of the
+  and not callable over MCP. `invoke-action` now refuses it as well, with
+  `ACTION_NOT_FOUND`, as an action that isn't there; `add-job` accepts it,
+  and the job's run fails with `ACTION_NOT_FOUND` instead of running, as
+  does a task already queued for it; `get-spec` leaves it out of the
   spec it answers, and `schema` refuses its input and output schemas.
   Every action is decided, a tool or not (a resource or completion
   action, or one with no description, is refused over these routes too,
@@ -657,12 +665,11 @@ says how to write a module for this.
   left out. `/`, a service or an action answers a container of only those
   schemas, at their places (no `$defs`, no `$ref`). Any other path
   (`/$defs/...`, another keyword of the document, a part that was left
-  out, a character of a string) answers `POINTER_DEREF_ERROR`, as a path
+  out, a character of a string) answers `SCHEMA_PATH_NOT_FOUND`, as a path
   that names nothing does.
 - **Breaking: `get-spec` and `schema` answer only a module the caller's
-  `tools/list` could show.** A module outside the key's grants (as before,
-  `USER_HAS_NO_DEVICE`), a part that is loaded only because another module
-  calls it, a module that is not a scenario under the single-identity
+  `tools/list` could show.** A module outside the key's grants, a part that
+  is loaded only because another module calls it, a module that is not a scenario under the single-identity
   profile, or one that is going on or off at that moment is refused whole
   with `MODULE_NOT_LISTED`. Within a listed module every usable action is
   answered, a tool or not, as above. An output declared with any type is
@@ -681,11 +688,23 @@ says how to write a module for this.
   `/device-list` lists only the modules the caller's `tools/list` could
   show, each spec as `get-spec` answers it (no unusable action, the text
   cleaned); with `--debug` too. `package-info` refuses a module outside
-  that scope with `MODULE_NOT_LISTED`. A device no module serves is still
-  `DEVICE_NOT_FOUND` on every route, the single-identity profile included.
+  that scope with `MODULE_NOT_LISTED`. A device no module serves, or one
+  outside the key's grants, answers the same: `MODULE_NOT_LISTED`, 404, on
+  every route, the single-identity profile included, so the answer never
+  says which modules exist. (A listed module's device that is still loading
+  answers `DEVICE_NOT_FOUND` on `invoke-action`.)
 
 ## What operators get
 
+- **The Redis balance ledger is named by fingerprint (#516).** Each key's
+  record is a hash named `sha256:<hex>` of the key, never the key itself,
+  so 8.0 does not read a 7.x balance. Re-seed each key's balance:
+  `COUNTINGHOUSE_SEED_KEY=<key> countinghouse-meter set --store redis
+  --balance <n>` (the key from the environment, never an argument). The 7.x records, hashes named
+  by the raw keys in Redis db 0 (the ledger's database, in 7.x and 8.0),
+  stay until you delete them: once re-seeded, delete every hash there with a
+  `balance` field whose name does not start with `sha256:` (for example,
+  list them with `redis-cli -n 0 --scan`).
 - **Each runtime's job queue is its own.** Its BullMQ prefix is the
   server's own id (`{chj-<16 hex>}`), random, made at the first start and
   kept beside the data as `.server-id` (in `--moduleDataPath`, or
@@ -729,9 +748,11 @@ says how to write a module for this.
   `--allow-addons` either ([reference](cli-and-api-reference.md)).
 - **`POST /reload-auth`** (admin key), and the authoring tool
   `countinghouse_reload_auth`, re-read the auth configuration without a
-  restart. The file provider swaps a new file in only if it passes its
-  checks (otherwise `AUTH_RELOAD_INVALID`, and the configuration in use
-  stays); the answer never holds a key.
+  restart. A file that fails its checks is refused (`AUTH_RELOAD_INVALID`),
+  and the configuration in use stays. A file that can't be verified as this
+  user's own is applied tighten-only: what tightens is applied, what adds or
+  widens is refused, and the answer carries a note saying how many changes
+  were applied and refused (`ok: false` when any was refused). The answer never holds a key.
 - **MCP over stdin and stdout:** `--stdio`, started by a desktop MCP client
   through `countinghouse-stdio` (`bin/countinghouse-stdio.js`; not
   `bin/countinghouse`, which pipes the log). The log goes to stderr and no
@@ -770,9 +791,11 @@ says how to write a module for this.
 - **For ch-local's single-identity runtime:**
   - **`--settingsFile <path>`** (the user's `settings.json`) lists the
     built-in **`countinghouse_settings`**. An agent reads the settings and
-    tightens them within bounds, and never loosens a guarding one: that's
-    `SETTING_LOOSENS_A_GUARD`, and the user loosens with the `ch-local`
-    command instead. It works only in the single-identity profile:
+    tightens them within bounds. Raising a cap or a timeout, or turning a
+    pack on, needs the user's own confirmation
+    (`SETTING_NEEDS_CONFIRMATION`, which names the terminal command); the
+    sandbox and automatic upgrades are loosened only from a terminal
+    (`SETTING_LOOSENS_A_GUARD`). It works only in the single-identity profile:
     anywhere else, a hosted server or a start with `--authConfigPath` or
     `--authProvider`, the start stops with exit 2.
   - **`--controlChannel ipc`** is the channel `ch-local start` uses while
@@ -814,8 +837,11 @@ says how to write a module for this.
   the entries.
 - **Under `enforce`, modules cannot read** `auth.json`, other modules' code
   and data, or anything else outside their namespace through `fs` or the
-  loader, by the routes the design knows of. Under `audit` you get a log of
-  what they would have been refused. The remaining gaps (network access
+  loader, by the routes the design knows of. Under `audit` the protected
+  files (`auth.json`, other modules' code and data) and writes outside a
+  module's own area are refused as well, and other reads go ahead and are
+  logged; `audit` does not stop a module that starts a process, a thread or
+  native code ([security model](security-model.md)). The remaining gaps (network access
   until parts 3 and 4, host processes racing the checks, module code
   reaching countinghouse's objects) are listed in
   [`security-model.md`](security-model.md#what-this-explicitly-does-not-provide-accepted-gaps-and-limits).
