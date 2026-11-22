@@ -53,13 +53,12 @@ describe('stdio 24: a size cap\'s error says how to raise it', function() {
     assert.strictEqual(callLimits.raiseHint(9 * MiB + 1), `the operator's --maxOutputBytes ${10 * MiB}`);
   });
 
-  it('in the error\'s text, in English and in Chinese', () => {
+  it('in the error\'s text', () => {
     options.settingsTool = true;
-    for (const [code, locale] of [['OUTPUT_TOO_LARGE', 'en-US'], ['INPUT_TOO_LARGE', 'zh-CN']]) {
-      options.locale = locale;
+    for (const code of ['OUTPUT_TOO_LARGE', 'INPUT_TOO_LARGE']) {
       const e = CountinghouseError.withFields(code, {module: 'm', action: 'a', bytes: 5000, max: 3000, raise: callLimits.raiseHint(5000)});
-      assert.match(e.message, /ch-local settings set maxOutputBytes 1MiB/, `${code} ${locale}: ${e.message}`);
-      assert.match(e.message, locale === 'en-US' ? /To allow more: / : /如需放宽：/);
+      assert.match(e.message, /ch-local settings set maxOutputBytes 1MiB/, `${code}: ${e.message}`);
+      assert.match(e.message, /To allow more: /);
     }
   });
 

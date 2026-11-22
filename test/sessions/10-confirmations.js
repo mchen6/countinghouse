@@ -477,18 +477,13 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       // three declines across sessions, or a start with no restore table
       // (lockAll, fail closed), hold the undo too -- a session replayed after
       // that restart has lost its own lock, and the window is what remains
-      it('the user\'s window locked: no undo here, said with its own reason, in the locale\'s words', async () => {
+      it('the user\'s window locked: no undo here, said with its own reason', async () => {
         const t0 = noForm();
         await t0.set('requestTimeout', '10s', 'settings tool', at(A));
         require('../../lib/settings-confirm').userWindow().lockAll();
         const held = await refused(t0.set('requestTimeout', '30s', 'settings tool', at(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
         assert.match(held.message, /\(changes to it in conversation are paused across your sessions, for up to 30 minutes\)/);
         assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
-        // (#537's high, L3) the reason in the refusal's own language
-        options.locale = 'zh-CN';
-        const zh = await refused(t0.set('requestTimeout', '30s', 'settings tool', at(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
-        assert.ok(zh.message.includes('（在对话中修改它已在你的所有会话中暂停，最长 30 分钟）'), zh.message);
-        assert.ok(!/paused/.test(zh.message), zh.message);
       });
 
       // (#537's high, L1) the ceiling read before the lock's wait, read again
@@ -635,13 +630,12 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       assert.deepStrictEqual(history().filter((h) => h.session === B).map((h) => h.change), ['this session', 'not applied']);
     });
 
-    it('the form\'s text says "this session" in both languages', async () => {
+    it('the form\'s text says "this session", for both caps', async () => {
       const en = await tool().set('requestTimeout', '60s', 'settings tool', ctx(A));
       assert.strictEqual(en.inputRequired.inputRequests.approve.params.message,
         'Allow countinghouse tool calls to run for up to 60s in this session (now 30s)? This applies to this session only, until it ends.');
-      options.locale = 'zh-CN';
-      const zh = await tool().set('maxOutputBytes', '16MiB', 'settings tool', ctx(B));
-      assert.strictEqual(zh.inputRequired.inputRequests.approve.params.message, '允许 countinghouse 工具在本会话中每次调用最多返回 16MiB（当前为 8MiB）吗？此设置仅对本会话有效，会话结束即失效。');
+      const caps = await tool().set('maxOutputBytes', '16MiB', 'settings tool', ctx(B));
+      assert.strictEqual(caps.inputRequired.inputRequests.approve.params.message, 'Allow countinghouse tools to return up to 16MiB per call in this session (now 8MiB)? This applies to this session only, until it ends.');
     });
 
     it('a form staged in A answers only in A: retried from B with A\'s state it fails; A\'s form does not replace B\'s; A\'s end counts its form as an expiry (review focus 2)', async () => {

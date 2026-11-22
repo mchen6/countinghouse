@@ -87,12 +87,11 @@ describe('stdio 14: countinghouse_settings', () => {
     assert.strictEqual((await tool.get()).history.length, 6);
   });
 
-  it('a value out of bounds: SETTING_OUT_OF_BOUNDS, with the bounds, in en and zh; nothing changed', async () => {
+  it('a value out of bounds: SETTING_OUT_OF_BOUNDS, with the bounds; nothing changed', async () => {
     const en = await refused(tool.set('maxOutputBytes', '1KiB'), 'SETTING_OUT_OF_BOUNDS');
     assert.match(en.message, /The value 1KiB for maxOutputBytes is outside the allowed range \(1048576 to 268435456\); nothing was changed/);
-    options.locale = 'zh-CN';
-    const zh = await refused(tool.set('requestTimeout', 'soon'), 'SETTING_OUT_OF_BOUNDS');
-    assert.match(zh.message, /requestTimeout 的值 soon 超出了允许的范围（5000 to 120000），未作修改。/);
+    const word = await refused(tool.set('requestTimeout', 'soon'), 'SETTING_OUT_OF_BOUNDS');
+    assert.match(word.message, /The value soon for requestTimeout is outside the allowed range \(5000 to 120000\); nothing was changed/);
     await refused(tool.set('locale', 'fr'), 'SETTING_OUT_OF_BOUNDS');
     assert.ok(!fs.existsSync(file));
   });

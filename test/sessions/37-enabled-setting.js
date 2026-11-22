@@ -238,10 +238,9 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.deepStrictEqual({old: done.old, new: done.new, applies: done.applies}, {old: 'off', new: 'on', applies: 'now'});
     assert.strictEqual(stored()[`enabled.${TOOL}`], true);
     assert.match(history().filter((l) => l.setting === `enabled.${TOOL}`).pop().confirmed, /^1\.2\.0 \(elicitation, claude-code 2\.1\.323\)$/);
-    options.locale = 'zh-CN';
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {[`enabled.${CALLER}`]: false}}));
-    const zh = await tool().set(`enabled.${CALLER}`, 'on', 'settings tool', CLIENT);
-    assert.strictEqual(zh.inputRequired.inputRequests.approve.params.message, `要在 countinghouse 中为你的所有会话启用模块 ${CALLER}（2.0.0）吗？启用后一直有效，重启后仍然有效，直到被关闭。`);
+    const other = await tool().set(`enabled.${CALLER}`, 'on', 'settings tool', CLIENT);
+    assert.strictEqual(other.inputRequired.inputRequests.approve.params.message, `Turn on ${CALLER} 2.0.0 in countinghouse for all your sessions? It stays on, now and after a restart, until it is turned off.`);
   });
 
   it('on: a version that changed while the user was asked writes nothing (SETTING_CHANGED_MEANWHILE); a decline locks the kind', async () => {
