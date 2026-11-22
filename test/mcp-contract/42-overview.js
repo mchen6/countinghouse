@@ -263,18 +263,21 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       }
       const L = '/home/u/.ch/bin/ch-local.js';
       const by = Object.fromEntries(overview.build({version: '1', settingsProfile: true, launcher: L, packs: [
-        pack({name: 'my-a', module: 'my-a', loaded: false, held: l.modules.get('my-a'), from: '/home/u/my-a'}),
+        pack({name: 'my-a', module: 'my-a', loaded: false, held: l.modules.get('my-a'), from: '/home/u/my-a', own: true}),
         pack({name: 'my-b', module: 'my-b', loaded: false, held: l.modules.get('my-b')}),
         pack({name: 'my-c', module: 'my-c', loaded: false, held: l.modules.get('my-c')})]}).packs.map((p) => [p.name, p]));
       assert.strictEqual(by['my-a'].next, overview.FIXED.changed(L, '/home/u/my-a'));
+      // (the medium on E10, 4) a pack so marked is told the status line, never add-module
+      for (const reason of ['changed', 'gone']) {
+        const [q] = overview.build({version: '1', settingsProfile: true, launcher: L, packs: [pack({name: 'p', module: 'ch-pack-a', loaded: false, held: {reason, root: null, via: null}})]}).packs;
+        assert.strictEqual(q.next, overview.FIXED.notLoaded(L), reason);
+      }
       assert.strictEqual(by['my-b'].next, overview.FIXED.sandbox(L));
       assert.strictEqual(by['my-c'].next, overview.FIXED.collision('ch-pack-other'));
       // a folder no shell would read plainly is never put in a command
       assert.strictEqual(overview.FIXED.changed(null, '/home/u/x$(y)'), 'Not loaded: its files changed since you added it: run `ch-local add-module "<its folder>"` again.');
     });
 
-    // (the feature audit, F9: an own module the release's runtime refuses
-    // to load -- held back with its own line, the runtime's code with it)
     // (E10, the feature audit) an own module whose copy is gone, said apart
     // from one whose files changed: ch-local sends `gone` (A-own-gone)
     it('gone: an own module\'s copy that is gone has its own line, the same add-module command', () => {
@@ -291,6 +294,8 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.strictEqual(overview.FIXED.gone(L, null), 'Not loaded: its copy is gone: run `node "/home/u/.ch/bin/ch-local.js" add-module "<its folder>"` again.');
     });
 
+    // (the feature audit, F9: an own module the release's runtime refuses
+    // to load -- held back with its own line, the runtime's code with it)
     it('refused: an own module the runtime refuses, its code named, the status and remove-module commands', () => {
       const h = home();
       const l = heldBack.parse(doc([{name: 'my-tool', reason: 'refused', code: 'MODULE_INVALID'}]), h.settings);
@@ -638,6 +643,19 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
           deviceMap: {'d-mine': {moduleName: 'my-tool', packageInfo: {name: 'my-tool', countinghouse: {role: 'scenario'}}}}, moduleOfDevice: (id) => (id === 'd-mine' ? 'my-tool' : null)};
         const got = require('../../lib/mcp/gateway').overviewFor({deviceManager: dm}, null, [{name: 'mine_run', target: {deviceID: 'd-mine'}}], [], {isAdmin: false});
         assert.deepStrictEqual(got.packs.map((x) => [x.name, x.state, x.own, x.tools]), [['my-gone', 'not loaded', true, []], ['my-tool', 'ready', true, ['mine_run']]]);
+        // (the medium on E10, 1) a loaded one's hash is the copy it was
+        // loaded from (ch-local's <own>/<name>/<tree>), never own.json's
+        // newer one after a re-add; one not loaded, own.json's (last added)
+        const A = 'a'.repeat(64);
+        const B = 'b'.repeat(64);
+        ownJson(home, {'my-tool': {...entry('/home/u/my-tool'), tree: B}, 'my-gone': {...entry('/home/u/my-gone'), tree: B}});
+        dm.moduleManager = {modules: {'my-tool': {modulePath: path.join(home, 'own', 'my-tool', A)}}};
+        const again = require('../../lib/mcp/gateway').overviewFor({deviceManager: dm}, null, [{name: 'mine_run', target: {deviceID: 'd-mine'}}], [], {isAdmin: false});
+        assert.deepStrictEqual(again.packs.map((x) => [x.name, x.tree]), [['my-gone', 'bbbbbbbbbbbb'], ['my-tool', 'aaaaaaaaaaaa']]);
+        // (a loaded one whose path names no tree: no hash, never own.json's)
+        dm.moduleManager = {modules: {'my-tool': {modulePath: '/home/u/my-tool'}}};
+        const bare = require('../../lib/mcp/gateway').overviewFor({deviceManager: dm}, null, [{name: 'mine_run', target: {deviceID: 'd-mine'}}], [], {isAdmin: false});
+        assert.strictEqual(bare.packs.find((x) => x.name === 'my-tool').tree, undefined);
       } finally {
         Object.assign(options, kept);
         heldBack.resetForTests();
