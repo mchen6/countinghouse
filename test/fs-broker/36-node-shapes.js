@@ -26,6 +26,8 @@ const tmp = require('../helpers/test-tmp').forFile(['broker-shapes-']);
 
 const SCRIPT = path.join(__dirname, 'scripts', 'node-shapes.js');
 const WIN = process.platform === 'win32';
+// (Node 26 refuses rmdir's recursive, true or false: what this Node does)
+const RMDIR_REFUSES = (() => { try { fs.rmdirSync('', {recursive: false}); } catch (e) { return e.code === 'ERR_INVALID_ARG_VALUE' && /recursive/.test(e.message); } return false; })();
 
 async function setup(mode, {guarded = true, quota = null} = {}) {
   const base = tmp.mkdtemp('broker-shapes-');
@@ -59,9 +61,9 @@ describe('fs-broker 36: Node\'s own answers, through the broker (the final pass,
       const node = Object.fromEntries(real.r);
       assert.deepStrictEqual(node['appendFile with a falsy flag'], ['one\ntwo\nthree\nfour\n', 'x']);
       assert.deepStrictEqual(node['copyFile onto itself'], ['hello', 'hello']);
-      assert.deepStrictEqual(node['rmdir recursive'], [false, false, false]);
-      assert.strictEqual(node['rmdir recursive, missing'], 'throws ENOENT');
-      assert.strictEqual(node['rmdir recursive, a file'], WIN ? 'throws ENOENT' : 'throws ENOTDIR');
+      assert.deepStrictEqual(node['rmdir recursive'], RMDIR_REFUSES ? 'throws ERR_INVALID_ARG_VALUE' : [false, false, false]);
+      assert.strictEqual(node['rmdir recursive, missing'], RMDIR_REFUSES ? 'throws ERR_INVALID_ARG_VALUE' : 'throws ENOENT');
+      assert.strictEqual(node['rmdir recursive, a file'], RMDIR_REFUSES ? 'throws ERR_INVALID_ARG_VALUE' : WIN ? 'throws ENOENT' : 'throws ENOTDIR');
       assert.deepStrictEqual(node['cp into a missing parent'], ['hello', 'hello']);
       assert.strictEqual(node['statSync throwIfNoEntry, ENOTDIR'], undefined);
       assert.deepStrictEqual(node['mkdtemp(dir + sep)'], [true, true, true, true]);
