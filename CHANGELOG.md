@@ -10,7 +10,7 @@ the auth config.
 
 ## Unreleased
 
-- A shared runtime's 2025-11-25 session now hears `notifications/tools/list_changed`, as a `--stdio` client does: declared on its `initialize`, and sent once it has listed, whenever the tool set changes (it may leave that session's list the same, which costs one re-list). Claude Code lands on 2025-11-25 when its 3 s `server/discover` probe times out, which is every session that cold-starts the shared runtime; such a session never heard a tool added or removed.
+- A shared runtime's 2025-11-25 session now hears `notifications/tools/list_changed`, as a `--stdio` client does: declared on its `initialize`, and sent once it has listed, whenever the tool set changes (it may leave that session's list the same, which costs one re-list). Claude Code (2.1.330) falls back to 2025-11-25 when its 3 s `server/discover` probe times out, as it did in every cold start of the shared runtime we measured; such a session never heard a tool added or removed.
 - `countinghouse_usage_report` in a session's own runtime (ch-local's per-session profile) covers that session's calls since its runtime started, not every earlier session's: as on the shared runtime, each session's usage is its own. `countinghouse-usage --usageDir <dir>` still covers every session that writes there.
 
 ### Changed — a module's name maps to one data folder on every system
