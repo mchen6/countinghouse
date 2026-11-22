@@ -75,6 +75,9 @@ async function ask(c, rd, method, params = {}) {
   return rd.answers.get(seq);
 }
 const changes = (rd) => rd.notes.filter((n) => n.method === 'notifications/tools/list_changed').length;
+// told at least once more than `than`: a load can send more than one notice,
+// so exact counts are the unit test's (session-transport 11)
+const grew = async(rd, than) => { await until(() => changes(rd) > than); assert.ok(changes(rd) > than, `told: ${JSON.stringify(rd.notes)}`); };
 const until = async(ok, ms = 15000) => { const by = Date.now() + ms; while (!ok() && Date.now() < by) await tick(100); };
 
 describe('session-runtime 09: a 2025-11-25 session of a shared runtime hears its tools change', function() {
@@ -89,7 +92,7 @@ describe('session-runtime 09: a 2025-11-25 session of a shared runtime hears its
     r = null;
   });
 
-  it('declares tools.listChanged on initialize; one list_changed for a load and one for an unload; a modern session told nothing unasked', async() => {
+  it('declares tools.listChanged on initialize; told of a load and of an unload, in the plain frame; a modern session told nothing unasked', async() => {
     const packs = path.join(home, 'packs');
     r = runtime(home, packs);
     const end = Date.now() + 30000;
@@ -109,18 +112,20 @@ describe('session-runtime 09: a 2025-11-25 session of a shared runtime hears its
     await ask(modern.c, rm, 'tools/list', {_meta: MODERN});
 
     const two = scenario(path.join(packs, 'ch-pack-two', '1.0.0', 'node_modules', 'ch-pack-two'), 'ch-pack-two');
+    const beforeLoad = changes(rl);
     const loaded = await r.control({type: 'load', name: 'ch-pack-two', dirs: dirsOf(two)});
     assert.strictEqual(loaded.ok, true, `${JSON.stringify(loaded)}\n${r.err.slice(-1500)}`);
-    await until(() => changes(rl) >= 1);
-    assert.strictEqual(changes(rl), 1, JSON.stringify(rl.notes));
-    assert.ok(!('params' in rl.notes.find((n) => n.method === 'notifications/tools/list_changed')), 'a plain notification, with no subscription id');
+    await grew(rl, beforeLoad);
     assert.ok((await names()).some((n) => /two_hello/.test(n)), 'the new tool is listed');
 
+    const beforeUnload = changes(rl);
     const gone = await r.control({type: 'unload', name: 'ch-pack-two'});
     assert.strictEqual(gone.ok, true, `${JSON.stringify(gone)}\n${r.err.slice(-1500)}`);
-    await until(() => changes(rl) >= 2);
-    assert.strictEqual(changes(rl), 2, JSON.stringify(rl.notes));
+    await grew(rl, beforeUnload);
     assert.ok(!(await names()).some((n) => /two_hello/.test(n)), 'the tool is gone');
+    for (const n of rl.notes.filter((x) => x.method === 'notifications/tools/list_changed')) {
+      assert.deepStrictEqual(n, {jsonrpc: '2.0', method: 'notifications/tools/list_changed'}, 'the plain frame, with no subscription id');
+    }
     // anything written to the modern session arrives before this answer
     await ask(modern.c, rm, 'tools/list', {_meta: MODERN});
     assert.strictEqual(changes(rm), 0, 'a 2026-07-28 session with no listen is told nothing unasked');
@@ -128,7 +133,7 @@ describe('session-runtime 09: a 2025-11-25 session of a shared runtime hears its
     modern.c.end();
   });
 
-  it('an initialize and a tools/list written together, as the shim replays them: the list counts because initialize is answered as it is read, so a later change gives one notice', async() => {
+  it('Claude Code\'s probe, then an initialize and a tools/list written together as the shim forwards them: the list counts because initialize is answered as it is read, and the probe does not end the following', async() => {
     const packs = path.join(home, 'packs');
     r = runtime(home, packs);
     const end = Date.now() + 30000;
@@ -137,19 +142,23 @@ describe('session-runtime 09: a 2025-11-25 session of a shared runtime hears its
     const secret = handshake.parseSecret(fs.readFileSync(path.join(r.run, 'secret'), 'utf8'));
     const legacy = await shim.session(r.socket, secret);
     const rl = reader(legacy.c);
-    // written together, with no wait for the initialize's answer (shim/src/relay.rs)
+    // written together, with no wait for the initialize's answer (shim/src/relay.rs),
+    // behind the probe it held through the cold start
+    const probe = seqs++;
     const init = seqs++;
     const list = seqs++;
+    shim.message(legacy.c, {seq: probe}, JSON.stringify({jsonrpc: '2.0', id: 'server-discover-probe-1', method: 'server/discover', params: {_meta: MODERN}}));
     shim.message(legacy.c, {seq: init}, JSON.stringify({jsonrpc: '2.0', id: init, method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'test', version: '1'}}}));
     shim.message(legacy.c, null, JSON.stringify({jsonrpc: '2.0', method: 'notifications/initialized'}));
     shim.message(legacy.c, {seq: list}, JSON.stringify({jsonrpc: '2.0', id: list, method: 'tools/list', params: {}}));
-    await until(() => rl.answers.has(init) && rl.answers.has(list));
+    await until(() => rl.answers.has(probe) && rl.answers.has(init) && rl.answers.has(list));
+    assert.ok(rl.answers.get(probe).result != null, 'the probe was served');
     assert.ok(rl.answers.get(init).result != null && rl.answers.get(list).result != null, 'both answered');
     const two = scenario(path.join(packs, 'ch-pack-two', '1.0.0', 'node_modules', 'ch-pack-two'), 'ch-pack-two');
+    const before = changes(rl);
     const loaded = await r.control({type: 'load', name: 'ch-pack-two', dirs: dirsOf(two)});
     assert.strictEqual(loaded.ok, true, `${JSON.stringify(loaded)}\n${r.err.slice(-1500)}`);
-    await until(() => changes(rl) >= 1);
-    assert.strictEqual(changes(rl), 1, JSON.stringify(rl.notes));
+    await grew(rl, before);
     legacy.c.end();
   });
 

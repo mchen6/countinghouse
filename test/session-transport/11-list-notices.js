@@ -8,6 +8,7 @@
 // 2026-07-28 is told nothing unasked.
 const assert = require('assert');
 const {EventEmitter} = require('events');
+const {mock} = require('node:test');
 const {createSessionListNotices} = require('../../lib/session-transport/session-list-notices');
 const gateway = require('../../lib/mcp/gateway');
 
@@ -59,13 +60,23 @@ describe('session-transport 11: list_changed to a shared runtime\'s legacy sessi
     assert.deepStrictEqual(s.sent, [LIST_CHANGED, LIST_CHANGED], 'each settled change is told');
   });
 
-  it('a burst makes one notice', async() => {
-    const w = world({settleMs: 20});
-    const s = w.session('s1');
-    w.legacy(s);
-    for (let i = 0; i < 3; i++) { w.notices.changed(); await pause(); }
-    await w.settled();
-    assert.deepStrictEqual(s.sent, [LIST_CHANGED]);
+  it('a burst makes one notice, once it has settled', () => {
+    mock.timers.enable({apis: ['setTimeout']});
+    try {
+      let clock = 0;
+      const advance = (ms) => { clock += ms; mock.timers.tick(ms); };
+      const w = world({settleMs: 20, maxWaitMs: 1000, now: () => clock});
+      const s = w.session('s1');
+      w.legacy(s);
+      for (let i = 0; i < 3; i++) { w.notices.changed(); advance(10); }
+      assert.deepStrictEqual(s.sent, [], 'still settling');
+      advance(20);
+      assert.deepStrictEqual(s.sent, [LIST_CHANGED]);
+      advance(2000);
+      assert.deepStrictEqual(s.sent, [LIST_CHANGED], 'and only one');
+    } finally {
+      mock.timers.reset();
+    }
   });
 
   it('changes that never settle are told at the maximum wait', async() => {
@@ -180,10 +191,10 @@ describe('session-transport 11: list_changed to a shared runtime\'s legacy sessi
     });
   }
 
-  it('a discover before its initialize (Claude Code\'s cold start) leaves it followed', async() => {
+  it('Claude Code\'s probe, a well-formed server/discover before its initialize, leaves it followed', async() => {
     const w = world();
     const s = w.session('s1');
-    w.notices.arrived(s, {jsonrpc: '2.0', id: 1, method: 'server/discover'});
+    w.notices.arrived(s, {jsonrpc: '2.0', id: 'server-discover-probe-1', method: 'server/discover', params: {_meta: MODERN}});
     w.legacy(s);
     await w.change();
     assert.deepStrictEqual(s.sent, [LIST_CHANGED]);
