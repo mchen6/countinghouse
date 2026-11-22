@@ -158,13 +158,16 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.strictEqual(await b.c.json('C', 300), null);
     assert.deepStrictEqual((await call({action: 'get'})).result.structuredContent.history.map((h) => [h.setting, h.new, h.change]), [['requestTimeout', 20000, 'this session']]);
     // a loosening of a cap (of the session's own value too) is its user's to
-    // confirm (Task 5, below): this client is not one a form is shown in,
-    // so it is told the terminal command
+    // confirm (Task 5, below): this client is not one a form is shown in.
+    // Up from the session's own lower value, a terminal change would move
+    // nothing (it sets the value for all sessions), so none is named: the
+    // session's end clears it (the dry run, walk step 9)
     for (const value of ['60s', '25s']) {
       const r2 = await call({action: 'set', name: 'requestTimeout', value});
       assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
-      assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_NEEDS_CONFIRMATION', JSON.stringify(r2));
-      assert.match(r2.result.content[0].text, /ch-local settings set requestTimeout/);
+      assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_SESSION_OWN_VALUE', JSON.stringify(r2));
+      assert.ok(/This session set requestTimeout to 20s itself/.test(r2.result.content[0].text) && /restart your client/.test(r2.result.content[0].text)
+        && !/settings set/.test(r2.result.content[0].text), r2.result.content[0].text);
     }
     // a retry that names no form of this session's confirms nothing, a
     // value that tightens included

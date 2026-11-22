@@ -425,6 +425,28 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
     });
     afterEach(() => { Object.assign(options, saved); reset(); fs.rmSync(home, {recursive: true, force: true}); });
 
+    // (the dry run, walk step 9) a session's own lower value is never moved
+    // by a terminal change: what is in force is the lower of it and the
+    // value for all sessions. With no form, the refusal never names a
+    // terminal command that would change nothing: it says what holds the
+    // value, and that a new session (the client restarted) runs at the
+    // value for all sessions
+    it('no form: raising back a session\'s own lower value names no terminal command; a session with none still gets it', async () => {
+      // (a client no form is shown to: not on the tested-client list)
+      const t0 = tool({sessionClient: () => ({ok: false, why: 'not on the tested-client list'})});
+      const noForms = (id) => ({shared: true, session: id, clientInfo: CLIENT, capabilities: {}});
+      await t0.set('requestTimeout', '10s', 'settings tool', noForms(A));
+      assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+      for (const asked of ['30s', '20s']) {
+        const err = await refused(t0.set('requestTimeout', asked, 'settings tool', noForms(A)), 'SETTING_SESSION_OWN_VALUE');
+        assert.strictEqual(err.message, 'This session set requestTimeout to 10s itself, and that holds it there; nothing was changed. A change in a terminal would not move it: it sets the value for all sessions (30s), and this session stays at its own lower value. It ends with this session: restart your client, and its new session runs at 30s.');
+        assert.ok(!/settings set/.test(err.message), err.message);
+      }
+      assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000, 'unchanged');
+      const other = await refused(t0.set('requestTimeout', '45s', 'settings tool', noForms(B)), 'SETTING_NEEDS_CONFIRMATION');
+      assert.match(other.message, /run `ch-local settings set requestTimeout 45s` in a terminal yourself/);
+    });
+
     it('A, at 2 MiB, asks for 4 MiB: a form that says "this session"; accepted, A runs at 4 MiB and nothing else changes', async () => {
       const t0 = tool();
       await t0.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
