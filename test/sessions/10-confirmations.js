@@ -441,6 +441,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
         await t0.set('requestTimeout', '10s', 'settings tool', at(A));
         await t0.set('requestTimeout', '20s', 'settings tool', at(B));
         notices.take(null, A);
+        notices.take(null, B);
         const done = await t0.set('requestTimeout', '30s', 'settings tool', at(A));
         assert.deepStrictEqual(done, {name: 'requestTimeout', old: 10000, new: 30000, applies: 'this session'});
         assert.strictEqual(settings.effective(A, 'requestTimeout'), 30000);
@@ -449,6 +450,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
         assert.strictEqual(options.requestTimeout, 30000, 'the value for all sessions untouched');
         assert.ok(!fs.existsSync(file), 'settings.json never written');
         assert.deepStrictEqual(notices.take(null, A), ['requestTimeout back to 30s for this session: the value for all sessions (it had been lowered to 10s in this session)']);
+        assert.deepStrictEqual(notices.take(null, B), [], 'told to the asking session alone');
         const line = history().pop();
         assert.deepStrictEqual((({at: t, ...rest}) => rest)(line), {by: 'settings tool', setting: 'requestTimeout', old: 10000, new: 30000, change: 'this session: its own lowering undone', session: A});
       });
@@ -466,6 +468,48 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
         const t0 = noForm();
         await t0.set('requestTimeout', '10s', 'settings tool', at(A));
         await refused(t0.set('requestTimeout', '45s', 'settings tool', at(A)), 'SETTING_NEEDS_CONFIRMATION');
+        // (one millisecond past the bound is past it: #537's high, L6)
+        await refused(t0.set('requestTimeout', '30001', 'settings tool', at(A)), 'SETTING_NEEDS_CONFIRMATION');
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+      });
+
+      // (#537's high, M1) the user's window, as the loosening path reads it:
+      // three declines across sessions, or a start with no restore table
+      // (lockAll, fail closed), hold the undo too -- a session replayed after
+      // that restart has lost its own lock, and the window is what remains
+      it('the user\'s window locked: no undo here, said with its own reason, in the locale\'s words', async () => {
+        const t0 = noForm();
+        await t0.set('requestTimeout', '10s', 'settings tool', at(A));
+        require('../../lib/settings-confirm').userWindow().lockAll();
+        const held = await refused(t0.set('requestTimeout', '30s', 'settings tool', at(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
+        assert.match(held.message, /\(changes to it in conversation are paused across your sessions, for up to 30 minutes\)/);
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+        // (#537's high, L3) the reason in the refusal's own language
+        options.locale = 'zh-CN';
+        const zh = await refused(t0.set('requestTimeout', '30s', 'settings tool', at(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
+        assert.ok(zh.message.includes('（在对话中修改它已在你的所有会话中暂停，最长 30 分钟）'), zh.message);
+        assert.ok(!/paused/.test(zh.message), zh.message);
+      });
+
+      // (#537's high, L1) the ceiling read before the lock's wait, read again
+      // under it: one the operator changed meanwhile applies nothing
+      it('a ceiling changed during the lock\'s wait: nothing applied, said', async () => {
+        let reads = 0;
+        const t0 = tool({sessionClient: () => ({ok: false, why: 'x'}), ceiling: (o) => {
+          if (o != null && o.cacheOnly === true) { reads += 1; return reads === 1 ? {state: 'trusted', ceiling: {conversation: false, forbid: []}} : {state: 'none'}; }
+          return {state: 'none'};
+        }});
+        await t0.set('requestTimeout', '10s', 'settings tool', at(A));
+        reads = 0;
+        await refused(t0.set('requestTimeout', '30s', 'settings tool', at(A)), 'SETTING_CEILING_CHANGED_MEANWHILE');
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+        assert.deepStrictEqual((({setting, asked, change}) => [setting, asked, change])(history().pop()), ['requestTimeout', 30000, 'not applied (ceiling changed meanwhile)']);
+      });
+
+      it('a ceiling that cannot be trusted: the undo refused, as a loosening is', async () => {
+        const t0 = tool({sessionClient: () => ({ok: false, why: 'x'}), ceiling: () => ({state: 'untrusted', file: 'ceiling.json', problem: 'x'})});
+        await t0.set('requestTimeout', '10s', 'settings tool', at(A));
+        await refused(t0.set('requestTimeout', '30s', 'settings tool', at(A)), 'SETTING_CEILING_UNTRUSTED');
         assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
       });
 
@@ -532,10 +576,23 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
         notices.take(null, A);
         assert.deepStrictEqual(await t0.set('maxOutputBytes', '8MiB', 'settings tool', at(A)), {name: 'maxOutputBytes', old: 2 * MiB, new: 8 * MiB, applies: 'this session'});
         assert.deepStrictEqual(notices.take(null, A), ['maxOutputBytes back to 8MiB for this session: the value for all sessions (it had been lowered to 2MiB in this session)']);
-        for (let i = 0; i < 32; i++) await t0.set('requestTimeout', `${29 - (i % 2)}s`, 'settings tool', at(A));
+        // (the budget spent exactly, by tightenings alone: 2 changes above, 30 here)
+        for (let i = 0; i < 30; i++) await t0.set('requestTimeout', String(29000 - i), 'settings tool', at(A));
         await t0.set('requestTimeout', '10s', 'settings tool', at(A));
+        notices.take(null, A);
         assert.strictEqual((await t0.set('requestTimeout', '30s', 'settings tool', at(A))).new, 30000);
-        assert.ok(history().some((h) => h.session === A && /its own lowering undone, past this session's 32/.test(String(h.change))), JSON.stringify(history().slice(-3)));
+        // (#537's high, L6; L2) said every time, written as applied (`new`,
+        // never `asked`), and the next one counted
+        assert.deepStrictEqual(notices.take(null, A), ['requestTimeout back to 30s for this session: the value for all sessions (it had been lowered to 10s in this session)']);
+        const past = () => history().filter((h) => h.session === A && /its own lowering undone, past this session's 32/.test(String(h.change)));
+        assert.deepStrictEqual(past().map((h) => [h.new, h.asked]), [[30000, undefined]], JSON.stringify(history().slice(-3)));
+        await t0.set('requestTimeout', '10s', 'settings tool', at(A));
+        notices.take(null, A);
+        assert.strictEqual((await t0.set('requestTimeout', '20s', 'settings tool', at(A))).new, 20000);
+        assert.strictEqual(notices.take(null, A).length, 1, 'said again');
+        t0.writeCounts();
+        const counted = past().filter((h) => h.count != null);
+        assert.deepStrictEqual(counted.map((h) => [h.count, h.latest]), [[1, 20000]], JSON.stringify(past()));
       });
     });
 

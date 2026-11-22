@@ -165,6 +165,13 @@ describe('plan-validator: plan.calls', () => {
       const reserved = planValidator.validatePlan({device: 'x', services: [svc('aService', 'countinghouse_settings')]}, ['countinghouse_settings'], {}, {role: 'scenario'});
       assert.deepStrictEqual(reserved.problems.map((p) => p.message), ['"countinghouse_settings" is a name countinghouse keeps for its own tools.']);
     });
+    // (#537's high, L5) a service named twice is said, and never hides a
+    // real collision of its actions with another service's
+    it('a repeated service does not hide its action\'s collision with another service', () => {
+      const r = planValidator.validatePlan({device: 'x', services: [svc('aService', 'run'), svc('bService', 'go'), svc('bService', 'run')]}, [], {}, {role: 'scenario'});
+      assert.ok(r.problems.some((p) => /service short name "bService" is duplicate/.test(p.message)), JSON.stringify(r.problems));
+      assert.ok(r.problems.some((p) => p.message === '"run" is the tool name of two actions in this plan.'), JSON.stringify(r.problems));
+    });
     it('a collision with a tool on this runtime: rename the action', () => {
       const r = planValidator.validatePlan({device: 'x', services: [svc('aService', 'countLines')]}, ['countlines'], {}, {role: 'scenario'});
       const p = r.problems.find((x) => x.message === '"countlines" is already a tool on this runtime.');

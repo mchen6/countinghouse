@@ -257,7 +257,12 @@ describe('stdio 51: validate_plan names a tool as tools/list lists it', function
     const r = (await io.request({jsonrpc: '2.0', id: id++, method: 'tools/call', params: {name: 'countinghouse_validate_plan', arguments: plan}}, 60000)).result;
     assert.ok(r != null && r.structuredContent != null, JSON.stringify(r));
     assert.deepStrictEqual(r.structuredContent.toolNames, mine, 'the name tools/list gives');
-    assert.ok(r.structuredContent.problems.some((p) => p.message === '"countlines" is already a tool on this runtime.'), JSON.stringify(r.structuredContent.problems));
+    // (#537's high, L5) the plan of the module already loaded is checked
+    // again without colliding with itself; another device's plan does collide
+    assert.deepStrictEqual(r.structuredContent.problems, [], JSON.stringify(r.structuredContent.problems));
+    assert.strictEqual(r.structuredContent.ok, true);
+    const other = (await io.request({jsonrpc: '2.0', id: id++, method: 'tools/call', params: {name: 'countinghouse_validate_plan', arguments: {...plan, device: 'another-tool'}}}, 60000)).result;
+    assert.ok(other.structuredContent.problems.some((p) => p.message === '"countlines" is already a tool on this runtime.'), JSON.stringify(other.structuredContent.problems));
   });
 
   tmp.hooks();
