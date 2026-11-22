@@ -149,7 +149,8 @@ describe('jobs-local 07: the owner refill a run waits for, and a session ending 
       const userAuth = require(authPath);
       // the door's timer: fired by the test, never by the wall clock
       const pending = [];
-      userAuth.setDoorClockForTests({setTimeout: (fn) => { pending.push(fn); return pending.length; }, clearTimeout: () => {}});
+      let clockNow = 0;
+      userAuth.setDoorClockForTests({setTimeout: (fn) => { pending.push(fn); return pending.length; }, clearTimeout: () => {}, now: () => clockNow});
       const auth = (key) => new Promise((resolve) => userAuth(null, null, 'dev', key, null, null, () => {}, (err) => resolve(err == null ? 'ok' : err.code)));
       // authenticated, not (yet) listed: answered once the refill says so, nothing remembered
       const readsBefore = provider.reads;
@@ -160,21 +161,28 @@ describe('jobs-local 07: the owner refill a run waits for, and a session ending 
       const readsAgain = provider.reads;
       const again = await auth('lagging-key');
       const askedAgain = provider.reads > readsAgain;
+      // 30 s later, the index unchanged: the listing is asked again (the
+      // medium on #526's round, 1)
+      clockNow = 31000;
+      const readsLater = provider.reads;
+      await auth('lagging-key');
+      const askedLater = provider.reads > readsLater;
       // a listing that takes 2 s: the request is answered when the door's timer fires
       provider.delayMs = 2000;
       provider.list = provider.list.concat([{apiKey: 'slow-key', userName: 's', id: 'stable-s'}]);
       let slow = null;
       const slowDone = auth('slow-key').then((r) => { slow = r; });
-      while (pending.length === 0) await sleep(5);
+      for (const t1 = Date.now(); pending.length === 0 && Date.now() - t1 < 10000;) await sleep(5);
+      if (pending.length === 0) return {timerNeverArmed: true};
       const beforeTimer = slow;
       pending.shift()();
       await slowDone;
       // the refill lands afterwards: the key is indexed under its stable id
       const t0 = Date.now();
       while (!identity.isIndexed('slow-key') && Date.now() - t0 < 10000) await sleep(20);
-      return {lagging, laggingAsked, laggingIndexed, again, askedAgain, beforeTimer, slow,
+      return {lagging, laggingAsked, laggingIndexed, again, askedAgain, askedLater, beforeTimer, slow,
         slowStable: identity.idForKey('slow-key') === identity.idFor({id: 'stable-s'}, 'slow-key')};`);
-    assert.deepStrictEqual(out, {lagging: 'ok', laggingAsked: true, laggingIndexed: false, again: 'ok', askedAgain: false, beforeTimer: null, slow: 'ok', slowStable: true}, JSON.stringify(out));
+    assert.deepStrictEqual(out, {lagging: 'ok', laggingAsked: true, laggingIndexed: false, again: 'ok', askedAgain: false, askedLater: true, beforeTimer: null, slow: 'ok', slowStable: true}, JSON.stringify(out));
   });
 
   // the medium on the round: an owned repeating job whose key does not come

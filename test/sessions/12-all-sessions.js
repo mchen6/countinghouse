@@ -239,7 +239,8 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
       // session's private one; and a second past the budget is counted with
       // its latest value, never "asked again"
       const past = history().filter((h) => /past this session's 32/.test(String(h.change)));
-      assert.deepStrictEqual(past.map((h) => [h.change.split(',')[0], h.asked]), [['all sessions: tightened', 4 * MiB]], JSON.stringify(past));
+      // (applied: said as `new`, never `asked`, which says a change not made)
+      assert.deepStrictEqual(past.map((h) => [h.change.split(',')[0], h.new, h.asked]), [['all sessions: tightened', 4 * MiB, undefined]], JSON.stringify(past));
       // every session reads it, not only the one that asked
       const seenByB = (await t0.get(ctx(B))).history.filter((h) => /past this session's 32/.test(String(h.change)));
       assert.strictEqual(seenByB.length, 1, JSON.stringify(seenByB));

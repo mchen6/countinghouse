@@ -343,7 +343,9 @@ new key. CouchDB keeps the users it looked up cached until a reload or a
 restart, so there the old key keeps working until then. A request with a key
 the provider accepts but the runtime hasn't read in yet waits briefly (at
 most 1.5 s) for that read, so it reaches the user's jobs; one that can't wait
-so long goes on under an id of its own until the read lands. Without a stable `id`, once the old key is gone
+so long goes on under an id of its own until the read lands. A key the
+provider's listing doesn't show is not waited for again for 30 s, or until a
+reload or another read changes the index. Without a stable `id`, once the old key is gone
 from the config (after `POST /reload-auth`, for the file and CouchDB
 providers), its schedulers' next runs are refused `SYSTEM_ERROR_UNKNOWN_USER`
 and the schedulers removed, and its queued jobs fail the same way; recreate
