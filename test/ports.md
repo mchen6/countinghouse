@@ -251,7 +251,7 @@ one) as well as the ports it binds.
 | `test/usage/24-caller-kind.js` | 9800, 9801, 9802 |
 | `test/usage/27-shutdown-records.js` | 9820, 9821 |
 | `test/validation/02-stray-output-rejected.js` | 9575 |
-| `test/validation/35-rate-limit-options.js` | 9829 (a start that exits 2 before it listens) |
 | `test/validation/19-output-not-json.js` | 9576 |
 | `test/validation/20-output-not-json-hop.js` | 9577 |
 | `test/validation/20-output-not-json-hop.js` | 9578 |
+| `test/validation/35-rate-limit-options.js` | 9829 (a start that exits 2 before it listens) |
