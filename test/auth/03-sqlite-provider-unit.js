@@ -282,6 +282,14 @@ const tmp = require('../helpers/test-tmp').forFile(['countinghouse-test-auth-03-
       }
       const devices = await new Promise((resolve, reject) => makeProvider().listDevices(NOBODY, (err, r) => (err ? reject(err) : resolve(r.devices))));
       assert.deepStrictEqual(devices, [], 'no grant written for a key with no user');
+      // (the medium on PR 2) a grant left by a key with no user (its users
+      // row removed by hand) can still be revoked
+      const ORPHAN = `orphan-key-${process.pid}`;
+      const sqlite3 = require('sqlite3');
+      await new Promise((resolve, reject) => { const db = new sqlite3.Database(dbPath); db.run('INSERT INTO user_devices (apiKey, deviceID) VALUES (?, ?)', [ORPHAN, 'left-device'], (e) => db.close(() => (e ? reject(e) : resolve()))); });
+      const revoked = cli(['revoke', ORPHAN, 'left-device']);
+      assert.strictEqual(revoked.status, 0, revoked.stderr);
+      assert.match(revoked.stdout, /ok: revoked a key with no user -> left-device/);
     });
 
     // R2-1 Task 5's review of #153 (item 7)

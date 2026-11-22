@@ -167,10 +167,18 @@ function run(parsed, command, key) {
   // no user, as set-admin refuses it, before anything is written (an "ok:"
   // over nothing, and a grant no user holds, before: the final pass's
   // gateway part, A13)
-  const userOf = (apiKey, cb) => db.get('SELECT userName FROM users WHERE apiKey = ?', [apiKey], (err, row) => {
+  // (held: a key with no user but grants or bindings left -- revoke and
+  // remove-user may still clean those up; refused only when it holds
+  // nothing: the medium on PR 2)
+  const userOf = (apiKey, cb, {held = false} = {}) => db.get('SELECT userName FROM users WHERE apiKey = ?', [apiKey], (err, row) => {
     if (err) { console.error(err.message); process.exit(1); }
-    if (row == null) { console.error('no such user (add-user first)'); process.exit(1); }
-    return cb(row.userName != null ? `user ${row.userName}` : 'an unnamed user');
+    if (row != null) return cb(row.userName != null ? `user ${row.userName}` : 'an unnamed user');
+    const refuse = () => { console.error('no such user (add-user first)'); process.exit(1); };
+    if (!held) return refuse();
+    return db.get('SELECT (SELECT COUNT(*) FROM user_devices WHERE apiKey = ?) + (SELECT COUNT(*) FROM module_identities WHERE apiKey = ?) AS n', [apiKey, apiKey], (errN, n) => {
+      if (errN) { console.error(errN.message); process.exit(1); }
+      return (n != null && n.n > 0) ? cb('a key with no user') : refuse();
+    });
   });
   db.serialize(() => {
     db.run('CREATE TABLE IF NOT EXISTS users (apiKey TEXT PRIMARY KEY, userName TEXT, admin INTEGER DEFAULT 0)');
@@ -215,7 +223,7 @@ function run(parsed, command, key) {
               });
             });
           });
-        });
+        }, {held: true});
         break;
       }
       case 'grant': {
@@ -233,7 +241,7 @@ function run(parsed, command, key) {
           if (err) { console.error(err.message); process.exit(1); }
           console.log(`ok: revoked ${who} -> ${deviceID}`);
           db.close();
-        }));
+        }), {held: true});
         break;
       }
       case 'set-admin': {

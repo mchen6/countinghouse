@@ -42,6 +42,16 @@ describe('mcp-contract 44: POST /mcp answers a body that is no request in JSON-R
     assert.strictEqual(res.status, 400, `${res.status} ${res.text}`);
     assert.deepStrictEqual([res.body.jsonrpc, res.body.id, res.body.error && res.body.error.code], ['2.0', null, -32700], res.text);
     assert.strictEqual(res.body.code, undefined, 'never REST\'s shape');
+    assert.ok(res.headers['mcp-protocol-version'] != null, 'the protocol header, as the route sets it');
+  });
+
+  // (the medium on PR 2) JSON that is no request: Invalid Request, not Parse error
+  it('a body that is JSON but no object or array is Invalid Request, -32600', async () => {
+    for (const raw of ['123', '"x"']) {
+      const res = await post(raw);
+      assert.strictEqual(res.status, 400, `${raw}: ${res.text}`);
+      assert.strictEqual(res.body.error && res.body.error.code, -32600, `${raw}: ${res.text}`);
+    }
   });
 
   it('a REST route\'s body error keeps REST\'s shape', async () => {
