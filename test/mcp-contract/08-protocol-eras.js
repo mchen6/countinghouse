@@ -232,6 +232,12 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
       assert.strictEqual(res.body.result._meta['io.modelcontextprotocol/serverInfo'].name, 'countinghouse');
     });
 
+    it('a legacy initialize over HTTP declares no tools.listChanged: it has no stream to hear it on', async() => {
+      const res = await post({jsonrpc: '2.0', id: 30, method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'eras-test', version: '0'}}});
+      assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+      assert.deepStrictEqual(res.body.result.capabilities.tools, {});
+    });
+
     it('a modern request without MCP-Protocol-Version: 400, -32020', async() => {
       const res = await post(modern('server/discover'), {'Mcp-Method': 'server/discover'});
       assert.strictEqual(res.status, 400);

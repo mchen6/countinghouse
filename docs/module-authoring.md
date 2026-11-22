@@ -255,10 +255,11 @@ the client can hear it:
 - a 2026-07-28 client opens a `subscriptions/listen` stream with
   `notifications.toolsListChanged`, and gets
   `notifications/tools/list_changed` on it;
-- a 2025-11-25 client of a `--stdio` runtime gets it unasked, once it has
-  listed (`capabilities.tools.listChanged`);
-- a 2025-11-25 client over HTTP, or of a shared runtime's session, has no
-  stream to hear it on, and lists again.
+- a 2025-11-25 client of a `--stdio` runtime, or of a shared runtime's
+  session, gets it unasked, once it has listed
+  (`capabilities.tools.listChanged`); a session is told of any change to the
+  tool set, which may leave its own list the same;
+- a 2025-11-25 client over HTTP has no stream to hear it on, and lists again.
 
 The loop does not wait for the notice: `load_module` returns the names it made
 callable, and `call_tool` invokes them.

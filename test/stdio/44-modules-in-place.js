@@ -104,14 +104,29 @@ describe('stdio 44: modules loaded and unloaded in place, the module form (M4 Ta
     const both = await load('@t/ch-tool-both', []);
     assert.strictEqual(both.ok, true, JSON.stringify(both));
     assert.deepStrictEqual(await listed(), ['t_both'], 'listed once loaded for itself');
+    const told = () => io.lines.filter((l) => l.includes('notifications/tools/list_changed')).length;
+    const toldMore = async(than) => {
+      const by = Date.now() + 10000;
+      while (told() <= than && Date.now() < by) await new Promise((r) => setTimeout(r, 25));
+      return told() > than;
+    };
+    // (this load's own notice is out before it is read, so what is counted
+    // below is only the listing's change)
+    const beforeThree = told();
     const three = await load('@t/ch-pack-three', ['@t/ch-tool-both']);
     assert.strictEqual(three.ok, true, JSON.stringify(three));
+    assert.ok(await toldMore(beforeThree), 'told of the load');
     assert.deepStrictEqual(await listed(), ['t_both', 't_three']);
+    const beforeUnload = told();
     assert.strictEqual((await io.control({type: 'unload', name: '@t/ch-tool-both'})).ok, true);
+    // no device came or went, but its tool left the list: the client is told
+    assert.ok(await toldMore(beforeUnload), 'told when a module stays loaded as a part and leaves the list');
     // still held by ch-pack-three, as a part now: unlisted, and its caller still answers
     assert.deepStrictEqual(await listed(), ['t_three']);
     assert.deepStrictEqual(toolOutput((await call('t_three')).result), {via: 'both'});
+    const beforeLoad = told();
     assert.strictEqual((await load('@t/ch-tool-both', [])).ok, true, 'loaded for itself again: listed again');
+    assert.ok(await toldMore(beforeLoad), 'told when a part already loaded joins the list');
     assert.deepStrictEqual(await listed(), ['t_both', 't_three']);
   });
 });
