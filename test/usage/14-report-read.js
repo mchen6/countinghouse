@@ -142,3 +142,46 @@ describe('the usage report\'s read path', () => {
     assert.match(KEPT_OUT_METHOD, /rounded per tool call/);
   });
 });
+
+// (H7/K5, the feature audit) a per-session runtime's report covers its own
+// process only: an earlier process's file in the same usage directory (an
+// earlier session's runtime) is not read. Without it -- the CLI, an HTTP
+// host, the shared runtime -- every process's records are, as before.
+describe('the usage report of one process (thisProcess)', () => {
+  let dir = null;
+  afterEach(() => { if (dir != null) fs.rmSync(dir, {recursive: true, force: true}); dir = null; });
+  const twoProcesses = () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-usage-proc-'));
+    fs.mkdirSync(path.join(d, '2026-11-14'), {recursive: true});
+    fs.writeFileSync(path.join(d, '2026-11-14', '7-1.jsonl'), `${JSON.stringify(result('2026-11-14T10:00:00.000Z', 'u_a', 1))}\n`);
+    fs.writeFileSync(path.join(d, '2026-11-14', '8-2.jsonl'), `${JSON.stringify(result('2026-11-14T11:00:00.000Z', 'u_a', 2))}\n${JSON.stringify(result('2026-11-14T11:30:00.000Z', 'u_a', 3))}\n`);
+    return d;
+  };
+  it('writing to the directory it reads: only its own file', async () => {
+    dir = twoProcesses();
+    const me = {process: '8-2', writesTo: dir, records: () => []};
+    const mine = await usageReport({since: 'all'}, {...PLAIN, thisProcess: true}, {usage: me, usageDir: dir, now: () => NOW});
+    assert.strictEqual(mine.totals.calls, 2);
+    const every = await usageReport({since: 'all'}, PLAIN, {usage: me, usageDir: dir, now: () => NOW});
+    assert.strictEqual(every.totals.calls, 3, 'without it, every process');
+  });
+  it('recording in memory: only its memory, no file', async () => {
+    dir = twoProcesses();
+    const me = {process: '9-3', writesTo: null, records: () => [result('2026-11-14T11:45:00.000Z', 'u_a', 4)]};
+    const mine = await usageReport({since: 'all'}, {...PLAIN, thisProcess: true}, {usage: me, usageDir: dir, now: () => NOW});
+    assert.strictEqual(mine.totals.calls, 1);
+    const every = await usageReport({since: 'all'}, PLAIN, {usage: me, usageDir: dir, now: () => NOW});
+    assert.strictEqual(every.totals.calls, 4);
+  });
+});
+
+// (H7/K5) whose report: the gateway's choice, by runtime
+describe('the usage report\'s scope, by runtime (H7/K5)', () => {
+  it('shared: the asking session; per-session (single identity): this process; an HTTP host: the caller across processes', () => {
+    const {usageReportScope} = require('../../lib/mcp/gateway');
+    const S = 's'.repeat(32);
+    assert.deepStrictEqual(usageReportScope({shared: true, sessionId: S, singleIdentity: true}), {session: S, thisProcess: false});
+    assert.deepStrictEqual(usageReportScope({shared: false, sessionId: undefined, singleIdentity: true}), {session: undefined, thisProcess: true});
+    assert.deepStrictEqual(usageReportScope({shared: false, sessionId: undefined, singleIdentity: false}), {session: undefined, thisProcess: false});
+  });
+});
