@@ -17,7 +17,7 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
 // balance alone, and distinguishing exactly that (one recordCall per hop,
 // not more) is the whole point of this test.
 //
-// Uses echo-device-client-module (服务名称/API名称), not composite-demo:
+// Uses echo-device-client-module (x/API), not composite-demo:
 // that action calls echo-device-module *without* the calling module doing
 // any explicit CHUtil.recordUsage of its own, which is exactly what D5 is
 // meant to cover (a module that doesn't meter itself still gets billed).
@@ -110,7 +110,7 @@ describe('direct-peer-channels 04: automatic metering on the direct path (D5)', 
   function invoke(cb) {
     request(url).post(`/devices/${ECHO_DEVICE_CLIENT_ID}/invoke-action`)
     .set('X-CH-Key', 'aabbcc')
-    .send({serviceID: 'urn:example-com:serviceID:服务名称', actionName: 'API名称', input: {}})
+    .send({serviceID: 'urn:example-com:serviceID:x', actionName: 'API', input: {}})
     .end((err, res) => {
       if (err) return cb(err);
       return cb(null, res.body);

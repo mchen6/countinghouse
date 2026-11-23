@@ -14,19 +14,19 @@
       }
     ],
     "serviceList": {
-      "urn:example-com:serviceID:服务名称": {
+      "urn:example-com:serviceID:x": {
         "actionList": [
           {
-            "name": "API名称",
+            "name": "API",
             "description": "Demonstrates cross-module invocation: creates a ServiceClient pointed at the echo-device module and calls its echo action with a fixed sample payload, returning whatever echo returns.",
             "input": {
-              "schema": "/服务名称/API名称/input"
+              "schema": "/x/API/input"
             },
             "output": {
-              "schema": "/服务名称/API名称/output"
+              "schema": "/x/API/output"
             },
             "fault": {
-              "schema": "/fault/服务名称/API名称/fault"
+              "schema": "/fault/x/API/fault"
             }
           }
         ]

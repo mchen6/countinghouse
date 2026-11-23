@@ -30,7 +30,7 @@ const noop = () => {};
 describe('handler-map: short name resolution', () => {
   it('takes the segment after :serviceID:, including non-ASCII names', () => {
     assert.strictEqual(handlerMap.shortNameOf(GREET), 'greetService');
-    assert.strictEqual(handlerMap.shortNameOf('urn:example-com:serviceID:服务名称'), '服务名称');
+    assert.strictEqual(handlerMap.shortNameOf('urn:example-com:serviceID:\u670d\u52a1\u540d\u79f0'), '\u670d\u52a1\u540d\u79f0');
   });
 
   it('returns null for a URN with no :serviceID: segment', () => {

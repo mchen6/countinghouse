@@ -23,7 +23,7 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
   it('completes a cross-worker call end to end', (done) => {
     request(url).post(`/devices/${ECHO_DEVICE_CLIENT_ID}/invoke-action`)
     .set('X-CH-Key', 'aabbcc')
-    .send({serviceID: 'urn:example-com:serviceID:服务名称', actionName: 'API名称', input: {}})
+    .send({serviceID: 'urn:example-com:serviceID:x', actionName: 'API', input: {}})
     .expect('Content-Type', /[json | text]/)
     .expect(200, (err, res) => {
       if (err) return done(new Error(`direct-peer-channels 01 fail: ${err.message}`));
@@ -52,7 +52,7 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
 
       request(url).post(`/devices/${ECHO_DEVICE_CLIENT_ID}/invoke-action`)
       .set('X-CH-Key', 'aabbcc')
-      .send({serviceID: 'urn:example-com:serviceID:服务名称', actionName: 'API名称', input: {}})
+      .send({serviceID: 'urn:example-com:serviceID:x', actionName: 'API', input: {}})
       .expect(200, (err, res) => {
         if (err) { failed = new Error(`direct-peer-channels 01 fail: ${err.message}`); return next(); }
         if (res.body.output == null) { failed = new Error('direct-peer-channels 01 fail: no output in response on repeat call'); return next(); }

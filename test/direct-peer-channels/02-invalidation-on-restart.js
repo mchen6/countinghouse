@@ -9,11 +9,11 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
 // target module while a call is outstanding -> the caller gets a clear
 // error and the next call succeeds against the new instance).
 //
-// Uses errTestService/testErrorInfo (not 服务名称/API名称, used by
+// Uses errTestService/testErrorInfo (not x/API, used by
 // 01-echo-roundtrip.js) specifically because its handler
 // (echo-device-client-module/errTestService-testErrorInfo.js) correctly
 // propagates errors from the underlying ServiceClient.invoke call --
-// 服务名称/API名称's handler discards its callback's `err` entirely
+// x/API's handler discards its callback's `err` entirely
 // (`function(err, data) { return callback(null, data); }`), which would
 // mask the very PEER_GONE/DEVICE_NOT_FOUND codes this test needs to see.
 // testErrorInfo's target action on echo-device-module is *itself*
