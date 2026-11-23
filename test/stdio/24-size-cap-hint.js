@@ -3,7 +3,7 @@
 // decision-coverage audit, 2026-11-15): with the settings tool served
 // (ch-local's --settingsFile), the countinghouse_settings call and the
 // terminal command, with the size needed in whole MiB; on a server without
-// it, the operator's --maxOutputBytes. Language-neutral, in every locale.
+// it, the operator's --maxOutputBytes.
 // The worker learns which from its options (settingsTool), never the
 // settings file's path.
 const assert = require('assert');
