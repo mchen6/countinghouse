@@ -511,8 +511,8 @@ Device modules that reference `CdifUtil`, `CdifDevice`, or `CdifError` by name
   available via `--locale zh-CN`. The default flipped to `en-US` afterward
   (commit `c95384b`); `error-info.en-US.json` has since reached full parity
   with `error-info.zh-CN.json` (same key set, currently 118 each).
-  (A later release removed it after all: the runtime is in English only, and
-  `--locale` is gone. See the CHANGELOG.)
+  (A later release removed it: the runtime is in English only, and passing
+  `--locale` has no effect. See the CHANGELOG.)
 
 ## mcpforge -> countinghouse
 
