@@ -285,15 +285,7 @@ In `lib/error-info.en-US.json`, add before the closing `}` (keep the previous la
   "MODULE_PATH_OUTSIDE_ROOT": "With --hardened, every module must live under --modulePath -- move the module there or load it from there"
 ```
 
-In `lib/error-info.zh-CN.json`, add the same keys:
-
-```json
-  "MODULE_SANDBOX_REFUSED": "模块被模块沙箱拒绝（enforce 模式）-- 请对其运行 countinghouse-validate，修复列出的问题（权限声明语法、模块目录之外的依赖、原生代码），然后重新加载",
-  "MODULE_RESTARTING": "模块的 worker 已停止（资源限制或崩溃），正在重启 -- 请在给出的时间之后重试；原因见服务器日志",
-  "MODULE_SUSPENDED": "模块因 worker 反复退出已被暂停 -- 需要运维人员排除原因（见服务器日志）后用 POST /restart-module 重启",
-  "RATE_LIMITED": "该模块发往主线程的消息过多 -- 请降低频率，或请运维人员调高 --moduleMessageRate",
-  "MODULE_PATH_OUTSIDE_ROOT": "使用 --hardened 时，所有模块都必须位于 --modulePath 之下 -- 请把模块移到那里或从那里加载"
-```
+(This plan also added these keys, translated, to `lib/error-info.zh-CN.json`. The product has since become English-only.)
 
 - [ ] **Step 6: Run the test to verify it passes**
 

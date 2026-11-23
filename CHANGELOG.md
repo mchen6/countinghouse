@@ -10,6 +10,7 @@ the auth config.
 
 ## Unreleased
 
+- The runtime, its shipped packages and its docs are in English only. `--locale` and the `locale` setting are removed: with one language they selected nothing. A settings file that still holds `locale` keeps working, the key ignored. `echo-device-client-module`'s service and action are now `x` and `API`; its tool name is unchanged.
 - A shared runtime's 2025-11-25 session now hears `notifications/tools/list_changed`, as a `--stdio` client does: declared on its `initialize`, and sent once it has listed, whenever the tool set changes (it may leave that session's list the same, which costs one re-list). Claude Code (2.1.330) falls back to 2025-11-25 when its 3 s `server/discover` probe times out. A slow cold start of the shared runtime does that; a fast one doesn't. A session on 2025-11-25 never heard a tool added or removed.
 - `countinghouse_usage_report` in a session's own runtime (ch-local's per-session profile) covers that session's calls since its runtime started, not every earlier session's: as on the shared runtime, each session's usage is its own. `countinghouse-usage --usageDir <dir>` still covers every session that writes there.
 

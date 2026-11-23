@@ -24,10 +24,7 @@ PR B depends on PR A's channel. Each PR is its own branch, reviewed separately.
 
 ## Global Constraints
 
-- English only. The zh texts are the reviewer's, verbatim:
-  - `SETTING_UNKNOWN`: 没有名为 {name} 的设置；可以修改的设置见 get 的结果。
-  - `SETTING_OUT_OF_BOUNDS`: {name} 的值 {value} 超出了允许的范围（{bounds}），未作修改。
-  - `SETTING_LOOSENS_A_GUARD`: 把 {name} 改为 {value} 会放宽一项防护设置，这个工具不能这样改，设置未作修改。用户可以在终端里用 ch-local 命令自己修改，或通过需要用户亲自确认的方式修改。
+- English only. (The Chinese texts this plan listed were removed when the product became English-only.)
 - No secret in any file, log, notice or history entry. A credential appears only by its variable's name.
 - Tests never declare a real remote origin and make no live network call. The registry for automatic upgrades is a local stand-in.
 - countinghouse:

@@ -590,11 +590,8 @@ names the modules that go with it (section 5.3).
   conversation may ask for. The form (kind `enabled`) is the runtime's
   sentence:
 
-  > en: Turn on {module} {version} in countinghouse for all your sessions? It
+  > Turn on {module} {version} in countinghouse for all your sessions? It
   > stays on, now and after a restart, until it is turned off.
-  >
-  > zh: 要在 countinghouse 中为你的所有会话启用模块 {module}（{version}）吗？
-  > 启用后一直有效，重启后仍然有效，直到被关闭。
 
   After a yes the tool writes `enabled.<module>: true` under the lock, with
   the version confirmed in the history line. If the installed version is no
@@ -2012,16 +2009,15 @@ whole, names a module and a command, and never names a path or a value.
 | A short name that two installed modules share | any command | "more than one installed module is named `<short>`: `<full names>`; give the full name" |
 | A home from before this design | start, add-pack, remove-pack, status | section 10 |
 
-Error catalogue texts that change (`lib/error-catalogue.js:275-295`; the zh
-texts are drafts for the reviewer):
+Error catalogue texts that change (`lib/error-catalogue.js:275-295`):
 
-| Code | en | zh |
-|---|---|---|
-| `MODULE_NOT_LISTED` | This tool is not available to this caller here (#447: true for every reason a listing leaves a module out) | 此工具在此处对该调用方不可用 |
-| `PART_MISSING` | A module this one calls is not installed or not available, so it was not loaded | 此模块调用的某个模块未安装或不可用，因此未加载 |
-| `TOOL_NAME_TAKEN` | A module's tool name is already taken by another tool, so the module was not loaded | 该模块的工具名已被其他工具占用，因此未加载该模块 |
-| `PROMPT_NAME_TAKEN` | A module's prompt name is already taken by another prompt, so the module was not loaded | 该模块的提示名已被其他提示占用，因此未加载该模块 |
-| `REMOTE_CREDENTIAL_NOT_ALLOWED` | section 6.5's two sentences | 同上，另拟 |
+| Code | en |
+|---|---|
+| `MODULE_NOT_LISTED` | This tool is not available to this caller here (#447: true for every reason a listing leaves a module out) |
+| `PART_MISSING` | A module this one calls is not installed or not available, so it was not loaded |
+| `TOOL_NAME_TAKEN` | A module's tool name is already taken by another tool, so the module was not loaded |
+| `PROMPT_NAME_TAKEN` | A module's prompt name is already taken by another prompt, so the module was not loaded |
+| `REMOTE_CREDENTIAL_NOT_ALLOWED` | section 6.5's two sentences |
 
 New codes: `SETTINGS_DECLARATION_INVALID`, `SETTING_REQUIRED` (from the
 2026-11-17 design). `CONTROL_PACK_UNCERTAIN` and `CONTROL_PACK_NOT_ALLOWED`

@@ -7,8 +7,7 @@ const {testPort} = require('../helpers/test-env');
 const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/direct-peer-channels-design.md section 5, step 3's required test:
-// "无权模块请求 brokering 被拒" (an unauthorized module's brokering request is
-// rejected).
+// an unauthorized module's brokering request is rejected.
 //
 // Unlike 01-echo-roundtrip.js/02-invalidation-on-restart.js (loaded into
 // test8.js's shared server), this needs its own dedicated server: testing

@@ -6,7 +6,7 @@ const {testPort, redisFlag} = require('./helpers/test-env');
 const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/direct-peer-channels-design.md section 5's step-by-step acceptance
-// requires "全量测试在 flag 开/关两态下均绿" -- test1.js/test2.js already cover
+// requires the full suite green with the flag on and off -- test1.js/test2.js already cover
 // the flag OFF (default) state; this file re-runs the exact same test/unit
 // suite with --directPeerChannels added, so every existing assertion (not
 // just the peer-channel-specific ones in test/direct-peer-channels/) is

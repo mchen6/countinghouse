@@ -5,8 +5,8 @@ const {testPort} = require('../helpers/test-env');
 const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/direct-peer-channels-design.md section 5, step 1's required unit
-// test: "两 worker 直连 echo 往返" (two workers, direct-connect, echo round
-// trip). Uses echo-device-client-module's action, which internally
+// test: two workers, direct-connect, echo round
+// trip. Uses echo-device-client-module's action, which internally
 // constructs a ServiceClient and calls echo-device-module's echo action --
 // exactly the isRemoteThread path lib/service-client.js now branches on
 // options.directPeerChannels for. This file is only loaded by test8.js,
@@ -32,7 +32,7 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
     });
   });
 
-  // D1's port-reuse claim ("端口按 worker 对复用") isn't observable from the
+  // D1's port-reuse claim (one port per worker pair) isn't observable from the
   // outside without instrumenting the broker itself, so this doesn't assert
   // "no new MessageChannel was created" directly -- it asserts the
   // behavior that reuse is *for*: repeated calls keep succeeding with the
