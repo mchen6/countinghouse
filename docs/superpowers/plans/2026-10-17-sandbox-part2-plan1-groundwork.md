@@ -477,7 +477,7 @@ Run: `npx mocha --exit test/module-loading/13-name-mismatch.js`
 Expected: FAIL — the mismatched load succeeds (`loaded: true`), so `code` is undefined; the registry case logs no `MODULE_NAME_MISMATCH`; the omitted-name case loads with `name` undefined.
 
 - [ ] **Step 3: Implement**
-  - Error text, `lib/error-info.en-US.json` (after `MODULE_PATH_OUTSIDE_ROOT`): `"MODULE_NAME_MISMATCH": "The load request names a module differently from its package.json -- load it under its package.json name"`; `lib/error-info.zh-CN.json`: `"MODULE_NAME_MISMATCH": "加载请求中的模块名与其 package.json 中的名称不一致 -- 请使用 package.json 中的名称加载"`.
+  - Error text, `lib/error-info.en-US.json` (after `MODULE_PATH_OUTSIDE_ROOT`): `"MODULE_NAME_MISMATCH": "The load request names a module differently from its package.json -- load it under its package.json name"`.
   - `lib/module-manager.js`, next to `outsideHardenedRoot`:
     ```js
     // 8.0.0: a load must use the module's own package.json name. The policy

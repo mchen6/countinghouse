@@ -4,7 +4,6 @@
 // message only (no topic since step 1 (d2)), and has a name, a real stack,
 // and kind/retryable/httpStatus/mcpCode from the catalogue. No server.
 const assert  = require('assert');
-const options = require('../../lib/cli-options');
 const errors  = require('../../lib/countinghouse-error');
 
 describe('validation 03: CountinghouseError (logger-design §5.1)', () => {
@@ -74,15 +73,5 @@ describe('validation 03: CountinghouseError (logger-design §5.1)', () => {
     assert.strictEqual(e.message, 'Device not found');
     assert.strictEqual(CountinghouseError.create('DEVICE_NOT_FOUND', {message: 'no such device'}).message, 'no such device');
     assert.strictEqual(e.origin, 'runtime');
-  });
-
-  it('falls back to en-US, not zh-CN, when the locale has no catalogue text', () => {
-    const saved = options.locale;
-    try {
-      options.locale = 'xx-XX';
-      assert.strictEqual(new CountinghouseError('DEVICE_NOT_FOUND').message, 'Device not found');
-      options.locale = 'zh-CN';
-      assert.notStrictEqual(new CountinghouseError('DEVICE_NOT_FOUND').message, 'Device not found');
-    } finally { options.locale = saved; }
   });
 });

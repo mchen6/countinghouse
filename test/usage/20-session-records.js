@@ -24,8 +24,8 @@ describe('usage 20: the session on usage records and jobs (shared runtime B1, Ta
     const ca = u.beginCall({scenario: null, module: 'm', tool: 't', caller: 'c1', session: A});
     const cb = u.beginCall({scenario: null, module: 'm', tool: 't', caller: 'c1', session: B});
     const cn = u.beginCall({scenario: null, module: 'm', tool: 't', caller: 'c1'});
-    u.recordIn(ca, {server: 's', tool: 'x', bytes: 1, lines: 1, ms: 1, outcome: 'ok', credential: null});
-    for (const c of [ca, cb, cn]) u.recordOut(c, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+    u.recordIn(ca, {server: 's', tool: 'x', bytes: 1, ms: 1, outcome: 'ok', credential: null});
+    for (const c of [ca, cb, cn]) u.recordOut(c, {tool: 't', bytes: 1, ms: 1, outcome: 'ok'});
     const recs = u.records();
     assert.deepStrictEqual(recs.filter((r) => r.call === ca).map((r) => r.session), [A, A], 'its In and Out');
     assert.deepStrictEqual(recs.filter((r) => r.call === cb).map((r) => r.session), [B]);
@@ -36,7 +36,7 @@ describe('usage 20: the session on usage records and jobs (shared runtime B1, Ta
   });
 
   it('the reader reads a record with the field and one without, as before', () => {
-    const base = {t: '2026-11-15T00:00:00.000Z', call: 1, pack: null, tool: 't', bytesOut: 1, linesOut: 1, ms: 1, outcome: 'ok', caller: 'c1'};
+    const base = {t: '2026-11-15T00:00:00.000Z', call: 1, pack: null, tool: 't', bytesOut: 1, ms: 1, outcome: 'ok', caller: 'c1'};
     assert.strictEqual(normalise(Object.assign({session: A}, base)).session, A);
     assert.ok(!('session' in normalise(base)));
   });
@@ -48,7 +48,7 @@ describe('usage 20: the session on usage records and jobs (shared runtime B1, Ta
     it('a task run\'s usage call takes its run\'s session (shared mode only)', () => {
       const u = createUsage({usageDir: null, pid: 1, startMs: 1});
       const hooks = taskHooks({usage: () => u, targetFor: () => ({name: 't', role: 'module', module: 'm'}), buildResult: () => null});
-      const out = (session) => { const s = hooks.start({ownerId: 'c1'}, session); u.recordOut(s.usageCall, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'}); return u.records().find((r) => r.call === s.usageCall); };
+      const out = (session) => { const s = hooks.start({ownerId: 'c1'}, session); u.recordOut(s.usageCall, {tool: 't', bytes: 1, ms: 1, outcome: 'ok'}); return u.records().find((r) => r.call === s.usageCall); };
       assert.ok(!('session' in out(A)), 'not shared: no field (--stdio\'s records as before)');
       sessions.attach(new (require('events'))());
       assert.strictEqual(out(A).session, A);

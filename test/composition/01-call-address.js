@@ -88,7 +88,7 @@ describe('call-address: deviceID derivation (8.0: countinghouse\'s own namespace
     const at = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
     for (const [f, names] of [
       ['pre-installed-packages/echo-device-client-module/handlers/errTestService/testErrorInfo.js', ['echo-device']],
-      ['pre-installed-packages/echo-device-client-module/handlers/服务名称/API名称.js', ['echo-device']]
+      ['pre-installed-packages/echo-device-client-module/handlers/x/API.js', ['echo-device']]
     ]) {
       for (const n of names) assert.ok(at(f).includes(addr.deviceIDForName(n)), `${f}: ${n}`);
     }

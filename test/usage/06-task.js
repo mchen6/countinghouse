@@ -79,13 +79,13 @@ describe('task-augmented tools/call: counting and the receipt', () => {
 
   it('a scenario\'s success: the Out record under the same id, the receipt kept for tasks/result with the run\'s In records', () => {
     const extra = hooks.start(job(SCENARIO));
-    u.recordIn(extra.usageCall, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 2048, lines: 20, ms: 3, outcome: 'ok', credential: 'GITHUB_TOKEN'});
-    u.recordIn(extra.usageCall, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 2048, lines: 20, ms: 3, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+    u.recordIn(extra.usageCall, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 2048, ms: 3, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+    u.recordIn(extra.usageCall, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 2048, ms: 3, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     const output = {summary: 'it broke'};
     const kept = hooks.complete(job(SCENARIO), {output}, {extra});
     const text = JSON.stringify(output);
-    assert.deepStrictEqual(kept.usageReceipt, {calls: 2, linesIn: 40, bytesIn: 4096, linesOut: 1, bytesOut: Buffer.byteLength(text), servers: ['github']});
-    assert.match(kept.usageSentence, /^read 40 lines \(4\.0 KB\) in 2 calls to github; 1 line \(\d+ B\) reached the model\.$/);
+    assert.deepStrictEqual(kept.usageReceipt, {calls: 2, bytesIn: 4096, bytesOut: Buffer.byteLength(text), servers: ['github']});
+    assert.match(kept.usageSentence, /^read 4\.0 KB in 2 calls to github; \d+ B reached the model\.$/);
     const out = u.records().filter((r) => r.bytesOut !== undefined);
     assert.deepStrictEqual(out.map((r) => [r.call, r.outcome, r.bytesOut]), [[extra.usageCall, 'ok', Buffer.byteLength(text)]]);
   });
@@ -152,9 +152,9 @@ describe('task-augmented tools/call: counting and the receipt', () => {
 
   it('tasks/result adds the kept receipt in _meta and as a second text block, structuredContent untouched', () => {
     const output = {summary: 'x'};
-    const r = addTaskReceipt(built(null, {output}), {usageReceipt: {calls: 0, linesIn: 0, bytesIn: 0, linesOut: 1, bytesOut: 15, servers: []}, usageSentence: 'no server was called; 1 line (15 B) reached the model.'});
+    const r = addTaskReceipt(built(null, {output}), {usageReceipt: {calls: 0, bytesIn: 0, bytesOut: 15, servers: []}, usageSentence: 'no server was called; 15 B reached the model.'});
     assert.deepStrictEqual(r.structuredContent, output);
-    assert.deepStrictEqual(r.content.map((c) => c.text), [JSON.stringify(output), 'no server was called; 1 line (15 B) reached the model.']);
+    assert.deepStrictEqual(r.content.map((c) => c.text), [JSON.stringify(output), 'no server was called; 15 B reached the model.']);
     assert.deepStrictEqual(r._meta['countinghouse/receipt'].servers, []);
     const plain = built(null, {output});
     assert.strictEqual(addTaskReceipt(plain, {}), plain);

@@ -10,6 +10,7 @@ the auth config.
 
 ## Unreleased
 
+- The runtime, its shipped packages and its docs are in English only. `--locale` and the `locale` setting are removed: passing `--locale` has no effect, and every message is in English. `echo-device-client-module`'s service and action are now `x` and `API`; its tool name is unchanged.
 - A shared runtime's 2025-11-25 session now hears `notifications/tools/list_changed`, as a `--stdio` client does: declared on its `initialize`, and sent once it has listed, whenever the tool set changes (it may leave that session's list the same, which costs one re-list). Claude Code (2.1.330) falls back to 2025-11-25 when its 3 s `server/discover` probe times out. A slow cold start of the shared runtime does that; a fast one doesn't. A session on 2025-11-25 never heard a tool added or removed.
 - `countinghouse_usage_report` in a session's own runtime (ch-local's per-session profile) covers that session's calls since its runtime started, not every earlier session's: as on the shared runtime, each session's usage is its own. `countinghouse-usage --usageDir <dir>` still covers every session that writes there.
 
@@ -852,7 +853,7 @@ configuration). None of it is available to a hosted server.
 ### Added — `ctx.usage()`: the current call's counts so far
 
 - `ctx.usage()` resolves with the current tools/call's counts so far,
-  read-only: `{calls, linesIn, bytesIn, tokensInEst, servers, sentence}`
+  read-only: `{calls, bytesIn, tokensInEst, servers, sentence}`
   (and `standIn` when a stand-in answered). `sentence` is the first half of
   the receipt's sentence, word for word. Every remote server call made under
   the call is counted, its parts' included. The call's own output is not
@@ -1139,7 +1140,7 @@ configuration). None of it is available to a hosted server.
   `--hardened` exited 2, unable to read it.
 - Each remote call is a usage record under the `tools/call` it was made
   for, so the receipt and `countinghouse_usage_report` count it as a
-  server call: the remote's name, the tool, the text content's lines and
+  server call: the remote's name, the tool, the text content's
   bytes (other blocks are passed on, not counted), the time, the outcome
   (`ok`, `isError` or the rejection's code) and the credential's variable
   name. No content and no credential value is recorded. The call id rides
@@ -1172,13 +1173,13 @@ configuration). None of it is available to a hosted server.
 ### Added — usage records, the receipt and `countinghouse_usage_report` (local mode, part C)
 
 - Every `tools/call` on a listed module is counted at the runtime's
-  boundary: each call to a declared server (lines and bytes read) and the
-  tool's own text result (lines and bytes out). A task-augmented call is
-  counted the same way, under its own call id.
+  boundary: each call to a declared server (bytes read) and the tool's own
+  text result (bytes out). A task-augmented call is counted the same way,
+  under its own call id.
 - A scenario's successful result carries a receipt:
-  `_meta['countinghouse/receipt']` = `{calls, linesIn, bytesIn, linesOut,
-  bytesOut, servers}`, and a second text block with its sentence.
-  `structuredContent` is the module's output exactly as validated.
+  `_meta['countinghouse/receipt']` = `{calls, bytesIn, bytesOut, servers}`,
+  and a second text block with its sentence. `structuredContent` is the
+  module's output exactly as validated.
   `tasks/result` carries the same receipt.
 - A scenario's output may not have a top-level `receipt` field
   (`RECEIPT_RESERVED`): there the name is the runtime's. Any other module's

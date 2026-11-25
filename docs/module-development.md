@@ -66,7 +66,7 @@ name and the fix. A module never half-loads.
 | `ctx.job` | `{id, progress(n), info(cb)}`. Inside a task: the job's id; `progress(n)` (0–100) updates the job; `info` reads it. Outside a task: `id` is `null`; `progress(n)` (0–100) is the call's own progress, sent to a client that asked for it (at most one every 250 ms, the latest winning, none after the answer; a composite's parts' reports are dropped); `info` calls back with an error. Ask `ctx.job.id == null`, not `ctx.job == null`, to tell a call that is not a task |
 | `ctx.redis` | your module's own key-value space, in node_redis v3's callback style: Redis db 5 under `--store redis`, a local store with the same commands and answers under `--store local`. Every key you name is your module's alone: the runtime stores it as `m:<module name, URI-encoded>:<key>`, by the name it loaded your module under, so another module's `get('x')` never sees your `x`, and you never see the runtime's own keys. You write and read the key as you named it. The commands are `del`, `get`, `hdel`, `hget`, `hgetall`, `hmget`, `hmset` (fields as pairs or one `{field: value}` object), `hset`, `llen`, `lpush`, `lrange`, `ltrim`, `mget`, `pexpire`, `rpush`, `set`, `zadd`, `zrange` and `zrem`; there is no `multi`/`exec` |
 | `ctx.recordUsage(tool, cost, cb)` | app-layer bookkeeping; never touches balance; answers `{id, tool, cost, ts}` |
-| `ctx.usage()` | a promise of the current tools/call's counts so far, read-only: `{calls, linesIn, bytesIn, tokensInEst, servers: {name: calls}, sentence}`, plus `standIn: [names]` when an acceptance stand-in answered (`--remoteOriginMap`). They are the call's remote server calls, its parts' included, and the lines and bytes of text those calls returned; `tokensInEst` is bytes/4, an estimate; `sentence` is the first half of the runtime's receipt sentence, word for word (`read 48,210 lines (3.1 MB) in 14 calls to github`, or `no server was called`). The call's own output is measured when it returns, so it is not counted here. `null` when the call is not a counted one (not a tools/call, or one that has already answered). In a worker the query carries the call's token and is refused `CALL_TOKEN_INVALID` without it (a direct peer channel's call has none, and a call's token ends when it answers). Never a key, an id or a caller. A scenario writes its receipt sentence from it |
+| `ctx.usage()` | a promise of the current tools/call's counts so far, read-only: `{calls, bytesIn, tokensInEst, servers: {name: calls}, sentence}`, plus `standIn: [names]` when an acceptance stand-in answered (`--remoteOriginMap`). They are the call's remote server calls, its parts' included, and the bytes of text those calls returned; `tokensInEst` is bytes/4, an estimate; `sentence` is the first half of the runtime's receipt sentence, word for word (`read 3.1 MB in 14 calls to github`, or `no server was called`). The call's own output is measured when it returns, so it is not counted here. `null` when the call is not a counted one (not a tools/call, or one that has already answered). In a worker the query carries the call's token and is refused `CALL_TOKEN_INVALID` without it (a direct peer channel's call has none, and a call's token ends when it answers). Never a key, an id or a caller. A scenario writes its receipt sentence from it |
 | `ctx.ask(name, values)` | a promise of the user's answer to one of this action's declared questions: the form's content, or `null` when the user declined — see [Asking the user](#asking-the-user-ctxask) |
 | `ctx.httpHeaders` | request headers, when the call arrived over HTTP, minus `X-CH-Key`, `X-App-Key` and `Authorization` |
 
@@ -393,7 +393,7 @@ is yours to guard, as any input is. Two things to keep it that way:
   `%252E%252E` arrives as `%2E%2E`, and a second decode makes it `..`.
 - Don't normalise it (NFKC, NFKD) before you use it as a path or a key.
   Compatibility forms pass the checks above as the characters they are
-  (`．．`, two U+FF0E fullwidth full stops, is not `..`), and NFKC turns
+  (two U+FF0E fullwidth full stops are not `..`), and NFKC turns
   them back into `..` and `/`.
 
 If two of the modules a runtime lists have names that spell the same
@@ -456,7 +456,9 @@ the keys that may reach the module, with its `title`, `description` and
 required). `prompts/get` runs none of your code: it checks the arguments
 against that schema, replaces each `{{name}}` once with the argument's value
 (an absent optional one is the empty string; substituted text is never
-scanned again) and returns your messages, at most 64 KiB in all.
+scanned again) and returns your messages, at most 64 KiB in all. When an
+argument fails its `pattern`, the refusal quotes its `description`, if it has
+one, as your words: say the form there.
 
 `completion/complete` offers values for a prompt's argument, or for a
 resource template's variable (`ref/resource`, the template as listed): the

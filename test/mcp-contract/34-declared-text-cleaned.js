@@ -45,13 +45,13 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     it('every hidden character is a space, one for one', () => {
       // a member of each range of the class
       const members = ['\u0000', '\u0007', '\u001f', '\u007f', '\u0085', '\u009f', '­', '͏', '؜', 'ᅟ', 'ᅠ', '᠎', ZWSP, '‏',
-        ' ', '‮', '⁠', LRI, '⁩', '⠀', NBSP_HANGUL, '\ud800', '\udfff', '︀', VS16, '﻿', 'ﾠ', '￹', '￻',
+        ' ', '‮', '⁠', LRI, '⁩', '⠀', NBSP_HANGUL, '\ud800', '\udfff', '︀', VS16, '﻿', '\uffa0', '￹', '￻',
         '\u{1d173}', '\u{1d17a}', '\u{e0000}', TAG_A, '\u{e007f}', '\u{e0100}', '\u{e01ef}'];
       for (const c of members) {
         assert.ok(hidden.test(c), `${c.codePointAt(0).toString(16)} is in the class`);
         assert.strictEqual(clientText.line(`a${c}b`), 'a b', c.codePointAt(0).toString(16));
       }
-      assert.strictEqual(clientText.line('plain text, untouched: é ü 日本 \u{1f600}'), 'plain text, untouched: é ü 日本 \u{1f600}');
+      assert.strictEqual(clientText.line('plain text, untouched: é ü \u65e5\u672c \u{1f600}'), 'plain text, untouched: é ü \u65e5\u672c \u{1f600}');
     });
 
     it('a message keeps its \\n and \\t; a line makes them spaces too', () => {

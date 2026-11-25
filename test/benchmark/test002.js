@@ -13,7 +13,7 @@ module.exports = function (cp, isSingleThread) {
     const flow = {
       main: [
         { post: `http://localhost:${testPort(9527)}/devices/${deviceIDForName('echo-device-client')}/invoke-action`,
-          json: {serviceID: 'urn:example-com:serviceID:服务名称', actionName: 'API名称', input:{foo: 'vv'}},
+          json: {serviceID: 'urn:example-com:serviceID:x', actionName: 'API', input:{foo: 'vv'}},
           headers: {
             'X-CH-Key': 'aabbcc',
             'Content-Type': 'application/json'

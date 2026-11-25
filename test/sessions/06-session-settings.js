@@ -258,8 +258,8 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
     assert.deepStrictEqual(heard, [A, A, A]);
   });
 
-  it('locale is the terminal\'s; an ended session sets nothing; forget leaves the others', () => {
-    assert.throws(() => settings.set(A, 'locale', 'zh-CN'), (e) => e.code === 'SETTING_TERMINAL_ONLY_SHARED' && /ch-local settings set locale/.test(e.message));
+  it('a locale is no setting; an ended session sets nothing; forget leaves the others', () => {
+    assert.throws(() => settings.set(A, 'locale', 'en'), (e) => e.code === 'SETTING_UNKNOWN');
     live.delete(A);
     assert.throws(() => settings.set(A, 'requestTimeout', 10000), /has ended/);
     settings.set(B, 'requestTimeout', 10000);

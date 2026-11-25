@@ -62,9 +62,9 @@ describe('remote 09: a module\'s remote call under --moduleSandbox enforce', fun
   // under enforce, answered on the main thread with the call's counts so far.
   it('ctx.usage() in the sandboxed worker: the call\'s two server calls so far, and nothing of the call itself', async () => {
     const out = await mcpCall(PORT, KEY, 'remote_probe_probeservice_callthenusage', {times: 2, args: {a: 1}}).then(toolOutput);
-    // echo_text answers '{"a":1}': 7 bytes, one line, twice
-    assert.deepStrictEqual(out, {usage: {calls: 2, linesIn: 2, bytesIn: 14, tokensInEst: 4, servers: {probe: 2}, sentence: 'read 2 lines (14 B) in 2 calls to probe'}}, server.output.slice(-1500));
+    // echo_text answers '{"a":1}': 7 bytes, twice
+    assert.deepStrictEqual(out, {usage: {calls: 2, bytesIn: 14, tokensInEst: 4, servers: {probe: 2}, sentence: 'read 14 B in 2 calls to probe'}}, server.output.slice(-1500));
     const none = await mcpCall(PORT, KEY, 'remote_probe_probeservice_callthenusage', {times: 0}).then(toolOutput);
-    assert.deepStrictEqual(none, {usage: {calls: 0, linesIn: 0, bytesIn: 0, tokensInEst: 0, servers: {}, sentence: 'no server was called'}}, 'a fresh call starts at nothing');
+    assert.deepStrictEqual(none, {usage: {calls: 0, bytesIn: 0, tokensInEst: 0, servers: {}, sentence: 'no server was called'}}, 'a fresh call starts at nothing');
   });
 });

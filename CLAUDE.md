@@ -50,7 +50,7 @@ assuming a plan doc exists.
   change touches, one file at a time (docs/testing.md); the full suite is
   CI's job, and PR CI is the gate. Don't skip the pre-commit hook.
 - Never delete adaptive-test/, perf/, spec/ — benchmarks are assets.
-- All new docs and code comments in English.
+- English only: everything this repo delivers or shows to users is in English, including code text, agent-facing prompts and skills, docs, READMEs, tests and fixtures, and packages. Input that must be in another script is written as `\u` escapes. `test/validation/36-english-only.js` enforces this.
 - Never tag a release or publish to npm; the maintainer gates releases.
   A change to `.github/workflows/` needs the maintainer's explicit yes.
 - Never force-push. Update a pushed branch by merging master into it. Open

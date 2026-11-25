@@ -74,8 +74,8 @@ describe('remote 07: usage records for remote calls, and the call id across ever
     const records = ins();
     assert.strictEqual(records.length, 1);
     const r = records[0];
-    assert.deepStrictEqual([r.call, r.server, r.module, r.tool, r.bytesIn, r.linesIn, r.outcome, r.credential, r.caller],
-      [id, 'probe', 'count-probe', 'echo_text', Buffer.byteLength(text), 1, 'ok', 'CH_TEST_REMOTE_TOKEN', 'u_test']);
+    assert.deepStrictEqual([r.call, r.server, r.module, r.tool, r.bytesIn, r.outcome, r.credential, r.caller],
+      [id, 'probe', 'count-probe', 'echo_text', Buffer.byteLength(text), 'ok', 'CH_TEST_REMOTE_TOKEN', 'u_test']);
     assert.ok(Number.isInteger(r.ms) && r.ms >= 0);
     assert.ok(!JSON.stringify(r).includes(text), 'no content is recorded');
   });
@@ -112,7 +112,7 @@ describe('remote 07: usage records for remote calls, and the call id across ever
     const id = u.beginCall({tool: 'outer'});
     const r = await call('mixed', {}, {usageCall: id});
     assert.deepStrictEqual(r.content.map((c) => c.type), ['text', 'image'], 'passed as the server sent it');
-    assert.deepStrictEqual(ins().map((x) => [x.bytesIn, x.linesIn]), [[Buffer.byteLength('ab\ncd'), 2]]);
+    assert.deepStrictEqual(ins().map((x) => x.bytesIn), [Buffer.byteLength('ab\ncd')]);
   });
 
   it('no record holds the token', async () => {
@@ -230,7 +230,7 @@ describe('remote 07: usage records for remote calls, and the call id across ever
 
     it('a finished id goes on and records nothing', async () => {
       const id = u.beginCall({tool: 'outer'});
-      u.recordOut(id, {tool: 'outer', bytes: 0, lines: 0, ms: 0, outcome: 'ok'});
+      u.recordOut(id, {tool: 'outer', bytes: 0, ms: 0, outcome: 'ok'});
       const r = await registry.answerRemoteMessage('count-probe', {remote: 'probe', tool: 'echo_text', args: {n: 5}, billingKey: KEY, usageCall: id, token: tokenFor(W)}, W);
       assert.deepStrictEqual(r.content, [{type: 'text', text: JSON.stringify({n: 5})}]);
       assert.deepStrictEqual(ins(), []);

@@ -28,11 +28,11 @@ function recorder() {
     t = Date.parse(at);
     const c = u.beginCall({scenario: pack, tool, caller});
     for (const i of ins) {
-      u.recordIn(c, {server: i.server || 'github', module: 'ch-access-github', tool: 'get_logs', bytes: i.bytes || 0, lines: 1, ms: i.ms === undefined ? 1 : i.ms,
+      u.recordIn(c, {server: i.server || 'github', module: 'ch-access-github', tool: 'get_logs', bytes: i.bytes || 0, ms: i.ms === undefined ? 1 : i.ms,
         outcome: i.outcome || 'ok', credential: 'GITHUB_TOKEN', mapped: i.mapped === true});
       t += 1;
     }
-    if (out !== null) u.recordOut(c, {tool, bytes: out.bytes || 0, lines: 1, inlineBytes: out.inline || 0, ms: out.ms === undefined ? 5 : out.ms, outcome: out.outcome || 'ok', code: out.code});
+    if (out !== null) u.recordOut(c, {tool, bytes: out.bytes || 0, inlineBytes: out.inline || 0, ms: out.ms === undefined ? 5 : out.ms, outcome: out.outcome || 'ok', code: out.code});
     return c;
   };
   return u;
@@ -184,7 +184,7 @@ describe('countinghouse_usage_report, Part A', () => {
       try {
         fs.mkdirSync(path.join(dir, '2026-11-13'));
         fs.writeFileSync(path.join(dir, '2026-11-13', '5-1.jsonl'),
-          `${JSON.stringify({t: '2026-11-13T10:00:00.000Z', call: 1, pack: 'p', tool: 'x', bytesOut: 1, linesOut: 1, ms: 3, outcome: 'error', caller: 'u_a'})}\n`);
+          `${JSON.stringify({t: '2026-11-13T10:00:00.000Z', call: 1, pack: 'p', tool: 'x', bytesOut: 1, ms: 3, outcome: 'error', caller: 'u_a'})}\n`);
         assert.deepStrictEqual((await usageReport({since: 'all'}, ADMIN, {usage: null, usageDir: dir, now: () => NOW})).profile.errors.calls, {UNRECORDED: 1});
       } finally {
         fs.rmSync(dir, {recursive: true, force: true});

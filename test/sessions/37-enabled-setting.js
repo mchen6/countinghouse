@@ -28,7 +28,6 @@ const DECLINE = {approve: {action: 'decline'}};
 describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
   let dir;
   let file;
-  let savedLocale;
   const history = () => { try { return fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (e) { return []; } };
   const stored = () => JSON.parse(fs.readFileSync(file, 'utf8')).values;
   // ch-local's record: by default each module that is no part is a pack of
@@ -53,13 +52,10 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     file = path.join(dir, 'settings.json');
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci-failure-triage': false}}));
     record({[SCENARIO]: {version: '0.5.0', role: 'scenario'}, [PART]: {version: '0.2.0', role: 'part'}, [TOOL]: {version: '1.2.0', role: null}, [CALLER]: {version: '2.0.0', role: 'scenario'}});
-    savedLocale = options.locale;
-    options.locale = 'en-US';
     confirm.resetForTests();
     settingsTool.resetForTests();
   });
   afterEach(() => {
-    options.locale = savedLocale;
     fs.rmSync(dir, {recursive: true, force: true});
   });
 
@@ -238,10 +234,9 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.deepStrictEqual({old: done.old, new: done.new, applies: done.applies}, {old: 'off', new: 'on', applies: 'now'});
     assert.strictEqual(stored()[`enabled.${TOOL}`], true);
     assert.match(history().filter((l) => l.setting === `enabled.${TOOL}`).pop().confirmed, /^1\.2\.0 \(elicitation, claude-code 2\.1\.323\)$/);
-    options.locale = 'zh-CN';
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {[`enabled.${CALLER}`]: false}}));
-    const zh = await tool().set(`enabled.${CALLER}`, 'on', 'settings tool', CLIENT);
-    assert.strictEqual(zh.inputRequired.inputRequests.approve.params.message, `要在 countinghouse 中为你的所有会话启用模块 ${CALLER}（2.0.0）吗？启用后一直有效，重启后仍然有效，直到被关闭。`);
+    const other = await tool().set(`enabled.${CALLER}`, 'on', 'settings tool', CLIENT);
+    assert.strictEqual(other.inputRequired.inputRequests.approve.params.message, `Turn on ${CALLER} 2.0.0 in countinghouse for all your sessions? It stays on, now and after a restart, until it is turned off.`);
   });
 
   it('on: a version that changed while the user was asked writes nothing (SETTING_CHANGED_MEANWHILE); a decline locks the kind', async () => {

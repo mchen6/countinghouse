@@ -43,7 +43,7 @@ describe('usage 28: the report of a session\'s own runtime covers its own proces
     const day = new Date().toISOString().slice(0, 10);
     const at = path.join(home, 'store', 'usage', day);
     fs.mkdirSync(at, {recursive: true});
-    fs.writeFileSync(path.join(at, '1-1.jsonl'), `${JSON.stringify({t: new Date(Date.now() - 60000).toISOString(), call: 1, scenario: 'earlier-pack', tool: 'earlier_tool', bytesOut: 4, linesOut: 1, ms: 2, outcome: 'ok', caller: CALLER})}\n`);
+    fs.writeFileSync(path.join(at, '1-1.jsonl'), `${JSON.stringify({t: new Date(Date.now() - 60000).toISOString(), call: 1, scenario: 'earlier-pack', tool: 'earlier_tool', bytesOut: 4, ms: 2, outcome: 'ok', caller: CALLER})}\n`);
   };
   const report = async (extra, before = async () => {}) => {
     io = start(extra);

@@ -15,8 +15,8 @@ const reportOf = (u) => usageReport({since: 'all'}, ADMIN, {usage: u, usageDir: 
 describe('usage 25: a cancelled call is counted as that, not as an error (B-cancelled)', () => {
   const call = (u, outcome, extra = {}, serverCalls = 0) => {
     const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-    for (let i = 0; i < serverCalls; i++) u.recordIn(c, {server: 'remote', tool: 'x', bytes: 10, lines: 1, ms: 3, outcome: 'ok'});
-    u.recordOut(c, Object.assign({tool: 't', bytes: 5, lines: 1, ms: 7, outcome}, extra));
+    for (let i = 0; i < serverCalls; i++) u.recordIn(c, {server: 'remote', tool: 'x', bytes: 10, ms: 3, outcome: 'ok'});
+    u.recordOut(c, Object.assign({tool: 't', bytes: 5, ms: 7, outcome}, extra));
     return c;
   };
 
@@ -39,18 +39,18 @@ describe('usage 25: a cancelled call is counted as that, not as an error (B-canc
     const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => clock});
     const aborted = (resultLate) => {
       const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-      u.recordIn(c, {server: 'remote', tool: 'x', bytes: 10, lines: 1, ms: 3, outcome: 'ok'});
-      u.recordIn(c, {server: 'remote', tool: 'x', bytes: 0, lines: 0, ms: 3, outcome: 'CALL_TOKEN_INVALID'});
+      u.recordIn(c, {server: 'remote', tool: 'x', bytes: 10, ms: 3, outcome: 'ok'});
+      u.recordIn(c, {server: 'remote', tool: 'x', bytes: 0, ms: 3, outcome: 'CALL_TOKEN_INVALID'});
       if (resultLate) clock = NOW + 5;
-      u.recordOut(c, {tool: 't', bytes: 5, lines: 1, ms: 7, outcome: 'cancelled'});
+      u.recordOut(c, {tool: 't', bytes: 5, ms: 7, outcome: 'cancelled'});
       clock = NOW - 1000;
     };
     aborted(false);
     aborted(true);
     // a call that was not cancelled keeps its server-call error
     const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-    u.recordIn(c, {server: 'remote', tool: 'x', bytes: 0, lines: 0, ms: 3, outcome: 'CALL_TOKEN_INVALID'});
-    u.recordOut(c, {tool: 't', bytes: 5, lines: 1, ms: 7, outcome: 'error', code: 'CALL_TOKEN_INVALID'});
+    u.recordIn(c, {server: 'remote', tool: 'x', bytes: 0, ms: 3, outcome: 'CALL_TOKEN_INVALID'});
+    u.recordOut(c, {tool: 't', bytes: 5, ms: 7, outcome: 'error', code: 'CALL_TOKEN_INVALID'});
     const report = await reportOf(u);
     assert.deepStrictEqual(report.profile.errors.serverCalls, {CALL_TOKEN_INVALID: 1});
     // the late result is past the window: counted on the day it lands, as
