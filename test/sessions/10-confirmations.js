@@ -970,6 +970,66 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       });
     });
 
+    // R-undo-after-restart: a restored lock may be a decline's only where a
+    // form could have been shown; with no tested client none is, so it
+    // doesn't hold the undo of the session's own lowering
+    describe('with no tested client, a lock restored across a restart and the undo of a session\'s own lowering', () => {
+      const {ALLOWLIST} = require('../../lib/elicitation-clients');
+      const NO = {status: 'ok', conditions: 'no', repo: null, why: {reason: 'client settings unreadable'}};
+      const production = (o = {}) => tool(Object.assign({allowlist: ALLOWLIST, sessionClient: undefined}, o));
+      const lower = async (t0, id) => { await t0.set('requestTimeout', '10s', 'settings tool', ctx(id)); notices.take(null, id); };
+      const ALL_KINDS = ['enabled', 'maxOutputBytes', 'module', 'requestTimeout'];
+
+      for (const fresh of [false, true]) {
+        it(`a latched session resumed after a restart${fresh ? ', its client saying "no" again' : ''}: undone with no tested client, held with one`, async () => {
+          // as the restart leaves it: the locks and its own value, replayed
+          confirm.confirmations(A).restore({locks: ALL_KINDS, formsLeft: 3});
+          if (fresh) sources[A].emit('client', NO);
+          await lower(production(), A);
+          const held = await refused(tool().set('requestTimeout', '30s', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
+          assert.match(held.message, /\(it may have been locked before the runtime restarted\)/);
+          assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+          assert.strictEqual((await production().set('requestTimeout', '20s', 'settings tool', ctx(A))).new, 20000);
+          assert.strictEqual((await production().set('requestTimeout', '30s', 'settings tool', ctx(A))).new, 30000);
+          assert.deepStrictEqual(settings.overridesOf(A), []);
+          // the lock itself is as it was
+          assert.deepStrictEqual(confirm.confirmations(A).locks(), ALL_KINDS);
+          assert.strictEqual(confirm.confirmations(A).userLockOf('requestTimeout'), 'restored');
+        });
+      }
+
+      it('a loosening above the value for all sessions is refused all the same, changing nothing', async () => {
+        confirm.confirmations(A).restore({locks: ALL_KINDS, formsLeft: 3});
+        await lower(production(), A);
+        await refused(production().set('requestTimeout', '45s', 'settings tool', ctx(A)), 'SETTING_LOCKED_THIS_SESSION');
+        await refused(production().set('requestTimeout', '30001', 'settings tool', ctx(A)), 'SETTING_LOCKED_THIS_SESSION');
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+      });
+
+      it('the user\'s own lock in this runtime holds it: a decline, also after a restored lock; a form up when the latch fell', async () => {
+        confirm.confirmations(A).restore({locks: ['requestTimeout'], formsLeft: 3});
+        confirm.confirmations(A).decline('requestTimeout');
+        await lower(production(), A);
+        const e = await refused(production().set('requestTimeout', '30s', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
+        assert.match(e.message, /declined or left unanswered in this session/);
+        await lower(production(), B);
+        const t0 = tool();
+        await t0.set('requestTimeout', '45s', 'settings tool', ctx(B));
+        sources[B].emit('client', NO);
+        await refused(production().set('requestTimeout', '30s', 'settings tool', ctx(B)), 'SETTING_SESSION_OWN_VALUE_HELD');
+      });
+
+      it('the user\'s window and the ceiling hold it, and its bound is the same', async () => {
+        confirm.confirmations(A).restore({locks: ALL_KINDS, formsLeft: 3});
+        await lower(production(), A);
+        const off = {ceiling: () => ({state: 'trusted', ceiling: {conversation: false, forbid: []}})};
+        assert.match((await refused(production(off).set('requestTimeout', '30s', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD')).message, /ceiling turns changes in conversation off/);
+        confirm.userWindow().lockAll();
+        assert.match((await refused(production().set('requestTimeout', '30s', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD')).message, /paused across your sessions/);
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+      });
+    });
+
     // The reviewer's ruling (c) on #337: a lock restored from the daemon's row has an unknown origin (a
     // decline or a latch before the restart), so its refusal claims neither. A fresh "no" re-latches with its why.
     it('a lock restored across a restart is told neutrally, never "declined"; a fresh "no" then gives the latch\'s text with its why', async () => {

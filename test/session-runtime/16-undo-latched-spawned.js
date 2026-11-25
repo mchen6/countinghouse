@@ -9,7 +9,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {runtime, listening, request, shim} = require('./helpers/per-session');
+const {until, runtime, listening, request, shim} = require('./helpers/per-session');
 // (under os.tmpdir(): the socket's path is short there)
 const trees = require('../helpers/test-tmp').forFile(['ch-sr16-'], {base: os.tmpdir()});
 
@@ -17,8 +17,10 @@ describe('session-runtime 16: a latched session\'s own lowering, undone', functi
   this.timeout(120000);
   if (process.platform === 'win32') return;   // the named pipe is C2's
   let r = null;
-  after(async () => {
+  // (after each: two runtimes never at once)
+  afterEach(async () => {
     if (r != null && r.code === undefined) { r.child.kill('SIGKILL'); await r.exited; }
+    r = null;
   });
 
   it('client frame "no" at connect: lowered, undone and recorded, its client asked nothing; above the value for all sessions refused as before', async () => {
@@ -52,6 +54,36 @@ describe('session-runtime 16: a latched session\'s own lowering, undone', functi
     const lines = fs.readFileSync(path.join(home, 'history.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     assert.deepStrictEqual(lines.filter((l) => l.change === 'this session: its own lowering undone').map((l) => [l.setting, l.old, l.new]), [['requestTimeout', 10000, 30000]]);
     s.c.end();
+  });
+
+  // R-undo-after-restart: the lock comes back with no cause, and with no
+  // tested client (production's list) it doesn't hold the undo
+  it('lowered, the runtime restarted, the session resumed with "no" again: still undone', async () => {
+    const home = trees.mkdtemp('ch-sr16-');
+    const settingsFile = path.join(home, 'settings.json');
+    const no = {status: 'ok', conditions: 'no', repo: null, token: null, why: {reason: 'client settings unreadable'}};
+    const set = async (s, value) => request(s.c, 'tools/call', {name: 'countinghouse_settings', arguments: {action: 'set', name: 'requestTimeout', value}});
+    r = runtime(home, ['--settingsFile', settingsFile]);
+    const first = await shim.session(r.socket, await listening(r), no);
+    assert.ok(first.welcome != null, r.log().slice(-2000));
+    const id = first.welcome.session;
+    assert.strictEqual((await set(first, '10s')).result.structuredContent.new, 10000);
+    // the daemon's row for it, as last told: its locks and its own value
+    const row = () => r.told.filter((m) => m.type === 'session-state' && m.session === id).pop();
+    await until(async () => row() != null && row().state.overrides.length === 1);
+    assert.deepStrictEqual(row().state.locks, ['enabled', 'maxOutputBytes', 'module', 'requestTimeout']);
+    const resume = r.told.filter((m) => m.type === 'session-resume' && m.session === id).pop().hash;
+    const state = row().state;
+    r.child.kill('SIGKILL');
+    await r.exited;
+    r = runtime(home, ['--settingsFile', settingsFile], {restore: {id: 'restore-1', type: 'restore', sessions: [{session: id, resume, state}], declines: [], reset: []}});
+    const back = await shim.session(r.socket, await listening(r), no, {resume: first.welcome.resumeToken});
+    assert.strictEqual(back.welcome != null && back.welcome.session, id, JSON.stringify(back.refused));
+    const above = await set(back, '45s');
+    assert.strictEqual(above.result.isError, true, JSON.stringify(above));
+    const undone = await set(back, '30s');
+    assert.deepStrictEqual(undone.result.structuredContent, {name: 'requestTimeout', old: 10000, new: 30000, applies: 'this session'}, JSON.stringify(undone));
+    back.c.end();
   });
 
   trees.hooks();

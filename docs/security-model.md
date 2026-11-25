@@ -1206,9 +1206,10 @@ sessions) all of this is each session's own, for the two caps:
   client has loaded can be deleted from disk and still answer). The lock is
   on dialogs. A session's own lowering shows none when it is undone, so it
   can still be undone. After a runtime restart a lock's cause isn't known, so
-  any lock kept from before it holds the undo. Every frame
-  is seen as it arrives, also one that answers late or that nobody asked
-  for. While no client is on the tested list no dialog is shown to anyone, so
+  with a client on the tested list any lock kept from before it holds the
+  undo. With none, no dialog is shown that could be declined, and such a lock
+  doesn't hold it. Every frame is seen as it arrives, also one that answers
+  late or that nobody asked for. While no client is on the tested list no dialog is shown to anyone, so
   a latched session gets the answer every session gets, the terminal command
   (`SETTING_NEEDS_CONFIRMATION`). With one listed, a latched session is told
   `SETTING_CLIENT_NOT_CONFIRMED`, never that the user declined, with why its
