@@ -27,7 +27,7 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       // (ch-local's stopped and restart, 2026-11-20)
       assert.strictEqual(F.stopped(null), 'Stopped by countinghouse: it loads again once its version changes. Run `ch-local status` in your own terminal to see why.');
       assert.strictEqual(F.stopped('/home/u/.ch/bin/ch-local.js'), 'Stopped by countinghouse: it loads again once its version changes. Run `node "/home/u/.ch/bin/ch-local.js" status` in your own terminal to see why.');
-      assert.strictEqual(F.restart, 'Restart your client to load it.');
+      assert.strictEqual(F.restart, 'Not loaded now: it is tried again when countinghouse restarts.');
       // (an own module held back: the own-modules design §5, line 11)
       assert.strictEqual(F.changed(null, '/home/u/my-tool'), 'Not loaded: its files changed since you added it: run `ch-local add-module "/home/u/my-tool"` again.');
       assert.strictEqual(F.changed('/home/u/.ch/bin/ch-local.js', null), 'Not loaded: its files changed since you added it: run `node "/home/u/.ch/bin/ch-local.js" add-module "<its folder>"` again.');
