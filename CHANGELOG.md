@@ -730,7 +730,7 @@ configuration). None of it is available to a hosted server.
 - **`--settingsFile <path>`** (ch-local's `<home>/settings.json`) lists
   **`countinghouse_settings`**, to the one local user only, never through
   `ctx.call`. `get` returns each setting's value, default, bounds, whether
-  it guards, when it applies, and the last 50 changes, without ch-local's
+  it guards, when it applies, and the last 50 entries of its history, without ch-local's
   host or pid. `set` changes one setting within its bounds and never
   loosens a guarding one:
   - `SETTING_UNKNOWN`, `SETTING_OUT_OF_BOUNDS` and `SETTING_LOOSENS_A_GUARD`

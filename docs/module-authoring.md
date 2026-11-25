@@ -235,12 +235,11 @@ tool, server, scenario (the top-level module a call was made to) or module. A ke
 caller by opaque id. `since` and `until` set the window (`since: "all"`: from
 the first record; with no `since`, a plain key's window is the last 31 days
 and an admin's is everything). The headline is the period's totals, with the
-tokens kept out of the model's context: an upper-bound estimate, `{estimate,
-method, bound: "upper"}`, per tool call `max(0, bytes its server calls read -
+tokens of what the tools read that did not reach the model: an estimate,
+`{estimate, method}`, per tool call `max(0, bytes its server calls read -
 bytes its result returned) / 4`, rounded per tool call so that the day rows
-add up to the total. It is an upper bound because it takes the model to have
-read, without the tool, every byte the tool read. Below it come one row
-per day with activity (at most 366) and a profile: call and server-call time,
+add up to the total. It counts all of what the tools read as if the model
+would have read it. Below it come one row per day with activity (at most 366) and a profile: call and server-call time,
 errors by code, and server calls per call.
 
 ## When `tools/list` changes
