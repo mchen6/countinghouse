@@ -26,6 +26,10 @@ const NO_MODULES = {modules: {}};
 
 const MiB = 1024 * 1024;
 
+// a list with a tested client (production's has none yet): the latch's own
+// refusal, and a restored lock that may be a decline's
+const TESTED = require('../../lib/elicitation-clients').listFrom({clients: [{name: 'claude-code', conditions: 'claude-code', tested: [{from: '2.1.323', before: '2.1.324'}]}]});
+
 describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', () => {
   const A = 'a'.repeat(32);
   const B = 'b'.repeat(32);
@@ -55,7 +59,7 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
     return s;
   };
   const ctx = (id, over = {}) => Object.assign({shared: true, session: id, clientInfo: CLIENT, capabilities: {elicitation: {form: {}}}, scope: 'all-sessions'}, over);
-  const tool = (o = {}) => settingsTool.create(Object.assign({mm: NO_MODULES, file, lockWaitMs: 200, ceiling: () => ({state: 'none'}),
+  const tool = (o = {}) => settingsTool.create(Object.assign({mm: NO_MODULES, file, lockWaitMs: 200, ceiling: () => ({state: 'none'}), allowlist: TESTED,
     sessionClient: (c) => ({ok: true, client: c.clientInfo}),
     growValidators: async (bytes) => { grown.push(bytes); }}, o));
   const stored = () => JSON.parse(fs.readFileSync(file, 'utf8')).values;

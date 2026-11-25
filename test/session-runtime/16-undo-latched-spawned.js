@@ -34,10 +34,12 @@ describe('session-runtime 16: a latched session\'s own lowering, undone', functi
     const value = async () => (await request(s.c, 'tools/call', {name: 'countinghouse_settings', arguments: {action: 'get'}}))
       .result.structuredContent.settings.find((x) => x.name === 'requestTimeout').value;
     assert.deepStrictEqual((await set('10s')).result.structuredContent, {name: 'requestTimeout', old: 30000, new: 10000, applies: 'this session'});
-    // the latch is there: a loosening is refused with its text
+    // a loosening is refused as any session's is where no form can be shown
+    // (no tested client): the latch's own reason is not said
     const above = await set('45s');
-    assert.strictEqual(above.result._meta['countinghouse/code'], 'SETTING_CLIENT_NOT_CONFIRMED', JSON.stringify(above));
-    assert.match(above.result.content[0].text, /client settings unreadable/);
+    assert.strictEqual(above.result._meta['countinghouse/code'], 'SETTING_NEEDS_CONFIRMATION', JSON.stringify(above));
+    assert.match(above.result.content[0].text, /^Changing requestTimeout to 45s loosens/);
+    assert.doesNotMatch(above.result.content[0].text, /unreadable|configuration/);
     assert.strictEqual(await value(), 10000);
     const undone = await set('30s');
     assert.deepStrictEqual(undone.result.structuredContent, {name: 'requestTimeout', old: 10000, new: 30000, applies: 'this session'}, JSON.stringify(undone));
