@@ -27,10 +27,10 @@ describe('usage: the review fixes of #59', () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: clock(), memoryMax: 3});
     for (let i = 0; i < 5; i++) {
       const call = u.beginCall({scenario: null, module: 'm', tool: 't', caller: 'u_a'});
-      u.recordIn(call, {server: 's', tool: 'x', bytes: 1, lines: 1, ms: 1, outcome: 'ok', credential: null});
-      const receipt = u.recordOut(call, {tool: 't', bytes: 2, lines: 1, ms: 1, outcome: 'ok'});
+      u.recordIn(call, {server: 's', tool: 'x', bytes: 1, ms: 1, outcome: 'ok', credential: null});
+      const receipt = u.recordOut(call, {tool: 't', bytes: 2, ms: 1, outcome: 'ok'});
       assert.strictEqual(receipt.calls, 1);
-      assert.match(u.receiptSentenceOf(call), /^read 1 line/, 'the sentence is still there right after the Out record');
+      assert.match(u.receiptSentenceOf(call), /^read 1 B in 1 call/, 'the sentence is still there right after the Out record');
     }
     assert.strictEqual(u.inFlight(), 0, 'no finished call is kept open');
     assert.strictEqual(u.records().length, 3);
@@ -41,7 +41,7 @@ describe('usage: the review fixes of #59', () => {
     const u = createUsage({usageDir: dir, pid: 2, startMs: 2, now: clock(), memoryMax: 1});
     for (let i = 0; i < 3; i++) {
       const call = u.beginCall({scenario: null, module: 'm', tool: 't', caller: 'u_a'});
-      u.recordOut(call, {tool: 't', bytes: 2, lines: 1, ms: 1, outcome: 'ok'});
+      u.recordOut(call, {tool: 't', bytes: 2, ms: 1, outcome: 'ok'});
     }
     const out = (await usageReport({}, {caller: 'u_a', isAdmin: false}, {usage: u, usageDir: dir, now: () => NOW}));
     assert.deepStrictEqual(out.source, ['files']);
@@ -51,7 +51,7 @@ describe('usage: the review fixes of #59', () => {
   it('the reader skips the day directories before since without reading them', async () => {
     for (const day of ['2026-11-01', '2026-11-11']) {
       fs.mkdirSync(path.join(dir, day));
-      fs.writeFileSync(path.join(dir, day, '1-1.jsonl'), `${JSON.stringify({t: `${day}T10:00:00.000Z`, call: 1, tool: 't', bytesOut: 1, linesOut: 1, ms: 1, outcome: 'ok', caller: 'u_a'})}\n`);
+      fs.writeFileSync(path.join(dir, day, '1-1.jsonl'), `${JSON.stringify({t: `${day}T10:00:00.000Z`, call: 1, tool: 't', bytesOut: 1, ms: 1, outcome: 'ok', caller: 'u_a'})}\n`);
     }
     // readUsage reads whole files; the report streams them (review of #158)
     const read = [];
@@ -74,7 +74,7 @@ describe('usage: the review fixes of #59', () => {
   it('a direct call to a plain module is grouped under that module, not (unknown)', async () => {
     const u = createUsage({usageDir: null, pid: 3, startMs: 3, now: clock()});
     const call = u.beginCall({scenario: null, module: 'log-read', tool: 'log_read_svc_get', caller: 'u_a'});
-    u.recordOut(call, {tool: 'log_read_svc_get', bytes: 2, lines: 1, ms: 1, outcome: 'ok'});
+    u.recordOut(call, {tool: 'log_read_svc_get', bytes: 2, ms: 1, outcome: 'ok'});
     assert.strictEqual(u.records()[0].module, 'log-read');
     const out = (await usageReport({groupBy: 'module'}, {caller: 'u_a', isAdmin: false}, {usage: u, usageDir: null, now: () => NOW}));
     assert.deepStrictEqual(out.groups.map((g) => [g.module, g.calls]), [['log-read', 1]]);
@@ -83,7 +83,7 @@ describe('usage: the review fixes of #59', () => {
   it('a non-admin with no caller id sees nothing, not every other caller without one', async () => {
     const u = createUsage({usageDir: null, pid: 4, startMs: 4, now: clock()});
     const call = u.beginCall({scenario: null, module: 'm', tool: 't', caller: null});
-    u.recordOut(call, {tool: 't', bytes: 2, lines: 1, ms: 1, outcome: 'ok'});
+    u.recordOut(call, {tool: 't', bytes: 2, ms: 1, outcome: 'ok'});
     const out = (await usageReport({}, {caller: null, isAdmin: false}, {usage: u, usageDir: null, now: () => NOW}));
     assert.deepStrictEqual([out.groups, out.totals.calls], [[], 0]);
   });
@@ -93,7 +93,7 @@ describe('usage: the review fixes of #59', () => {
     const call = u.beginCall({scenario: 'p', module: 'p', tool: 't', caller: 'u_a'});
     const r = finishToolCall({usage: u, call, result: {isError: false}, role: 'scenario', tool: 't', startedMs: NOW, now: () => NOW});
     assert.strictEqual(r.content.length, 1);
-    assert.match(r.content[0].text, /^no server was called; 0 lines \(0 B\) reached the model\.$/);
+    assert.match(r.content[0].text, /^no server was called; 0 B reached the model\.$/);
     assert.ok(r._meta['countinghouse/receipt'] != null);
   });
 

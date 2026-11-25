@@ -25,13 +25,13 @@ describe('usage 26: every open call is closed at exit, cancelled (B-shutdown-usa
     t += 200;
     const b = u.beginCall({scenario: 'p', module: 'm', tool: 'slow_b', caller: 'c2', session: 's1'});
     const done = u.beginCall({module: 'm', tool: 'quick', caller: 'c1'});
-    u.recordOut(done, {tool: 'quick', bytes: 3, lines: 1, ms: 1, outcome: 'ok'});
+    u.recordOut(done, {tool: 'quick', bytes: 3, ms: 1, outcome: 'ok'});
     t += 300;
     assert.strictEqual(u.closeOpen(), 2);
     assert.strictEqual(u.inFlight(), 0);
     const outs = recordsUnder(dir).filter((r) => r.outcome != null && r.bytesOut !== undefined);
     const byCall = new Map(outs.map((r) => [r.call, r]));
-    assert.deepStrictEqual([byCall.get(a).outcome, byCall.get(a).ms, byCall.get(a).bytesOut, byCall.get(a).linesOut, byCall.get(a).tool], ['cancelled', 500, 0, 0, 'slow_a']);
+    assert.deepStrictEqual([byCall.get(a).outcome, byCall.get(a).ms, byCall.get(a).bytesOut, byCall.get(a).tool], ['cancelled', 500, 0, 'slow_a']);
     assert.deepStrictEqual([byCall.get(b).outcome, byCall.get(b).ms, byCall.get(b).session, byCall.get(b).caller], ['cancelled', 300, 's1', 'c2']);
     assert.strictEqual(byCall.get(b).code, undefined, 'a cancelled call carries no error code');
     assert.strictEqual(byCall.get(done).outcome, 'ok');

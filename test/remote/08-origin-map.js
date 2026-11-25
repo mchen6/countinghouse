@@ -169,7 +169,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
       assert.strictEqual(ins.length, 1);
       assert.strictEqual(ins[0].mapped, true);
       assert.strictEqual(ins[0].server, 'probe', 'the declared server name');
-      u.recordOut(id, {tool: 'outer', bytes: 2, lines: 1, ms: 1, outcome: 'ok'});
+      u.recordOut(id, {tool: 'outer', bytes: 2, ms: 1, outcome: 'ok'});
       assert.deepStrictEqual(u.totals(id).servers, ['probe']);
       assert.deepStrictEqual(u.totals(id).standIn, ['probe'], 'the structured receipt marks the stand-in too');
       assert.match(u.receiptSentenceOf(id), /in 1 call to probe \(acceptance stand-in\);/);
@@ -272,7 +272,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
       await registry.callRemote('map-probe', 'probe', 'echo_text', {n: 2}, {billingKey: 'k', usageCall: id});
       const ins = u.records().filter((x) => x.bytesIn !== undefined);
       assert.strictEqual(ins[0].mapped, undefined);
-      u.recordOut(id, {tool: 'outer', bytes: 2, lines: 1, ms: 1, outcome: 'ok'});
+      u.recordOut(id, {tool: 'outer', bytes: 2, ms: 1, outcome: 'ok'});
       assert.ok(!/acceptance/.test(u.receiptSentenceOf(id)));
       assert.strictEqual(u.totals(id).standIn, undefined);
     });
@@ -281,9 +281,9 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
   // A tool call (Out) with one real server call and two a stand-in answered.
   const usageRecords = () => {
     const t = new Date(Date.now() - 1000).toISOString();   // before the report's window ends
-    const base = {t, call: 1, tool: 'echo_text', bytesIn: 10, linesIn: 1, ms: 1, outcome: 'ok', credential: 'V', caller: 'u'};
+    const base = {t, call: 1, tool: 'echo_text', bytesIn: 10, ms: 1, outcome: 'ok', credential: 'V', caller: 'u'};
     return [{...base, server: 'github'}, {...base, server: 'github', mapped: true}, {...base, server: 'github', mapped: true},
-      {t, call: 1, server: null, pack: 'p', tool: 'outer', bytesOut: 5, linesOut: 1, ms: 1, outcome: 'ok', caller: 'u'}];
+      {t, call: 1, server: null, pack: 'p', tool: 'outer', bytesOut: 5, ms: 1, outcome: 'ok', caller: 'u'}];
   };
   const STAND_IN_SECTION = {serverCalls: 2, bytesIn: 20, tokensInEst: 5, servers: {github: 2}};
 
@@ -315,9 +315,9 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
   });
 
   it('receiptSentence marks each mapped server', async () => {
-    const r = {calls: 3, linesIn: 10, bytesIn: 100, linesOut: 1, bytesOut: 10, servers: ['github', 'linear']};
+    const r = {calls: 3, bytesIn: 100, bytesOut: 10, servers: ['github', 'linear']};
     assert.strictEqual(receiptSentence(r, {github: 2, linear: 1}, new Set(['github'])),
-      'read 10 lines (100 B) in 2 calls to github (acceptance stand-in) and 1 to linear; 1 line (10 B) reached the model.');
+      'read 100 B in 2 calls to github (acceptance stand-in) and 1 to linear; 10 B reached the model.');
   });
 
   describe('the start', () => {

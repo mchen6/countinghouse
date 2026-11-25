@@ -27,16 +27,16 @@ describe('usage 21: the usage report per session (shared runtime B5, Task 1)', (
     let t = NOW - 5000;
     const u = createUsage({usageDir: null, pid: 7, startMs: NOW - 9000, now: () => t++});
     const a = u.beginCall({scenario: 'ch-pack-alpha', module: 'ch-pack-alpha', tool: 'alpha_tool', caller: 'u_me', session: A});
-    u.recordIn(a, {server: 'alpha-server', module: 'ch-access-alpha', tool: 'alpha_read', bytes: 100, lines: 10, ms: 1, outcome: 'ok', credential: null});
-    u.recordOut(a, {tool: 'alpha_tool', bytes: 40, lines: 4, ms: 9, outcome: 'error', code: 'ALPHA_ONLY_CODE'});
+    u.recordIn(a, {server: 'alpha-server', module: 'ch-access-alpha', tool: 'alpha_read', bytes: 100, ms: 1, outcome: 'ok', credential: null});
+    u.recordOut(a, {tool: 'alpha_tool', bytes: 40, ms: 9, outcome: 'error', code: 'ALPHA_ONLY_CODE'});
     const b = u.beginCall({scenario: 'ch-pack-bravo', module: 'ch-pack-bravo', tool: 'bravo_tool', caller: 'u_me', session: B});
-    u.recordIn(b, {server: 'bravo-server', module: 'ch-access-bravo', tool: 'bravo_read', bytes: 300, lines: 30, ms: 1, outcome: 'error', credential: null, code: 'BRAVO_ONLY_CODE'});
+    u.recordIn(b, {server: 'bravo-server', module: 'ch-access-bravo', tool: 'bravo_read', bytes: 300, ms: 1, outcome: 'error', credential: null, code: 'BRAVO_ONLY_CODE'});
     // (B's server call with no result yet: its session's all the same)
     const b2 = u.beginCall({scenario: 'ch-pack-bravo', module: 'ch-pack-bravo', tool: 'bravo_tool', caller: 'u_me', session: B});
-    u.recordIn(b2, {server: 'bravo-server', module: 'ch-access-bravo', tool: 'bravo_open', bytes: 5, lines: 1, ms: 1, outcome: 'ok', credential: null});
-    u.recordOut(b, {tool: 'bravo_tool', bytes: 60, lines: 6, ms: 9, outcome: 'error', code: 'BRAVO_ONLY_CODE'});
+    u.recordIn(b2, {server: 'bravo-server', module: 'ch-access-bravo', tool: 'bravo_open', bytes: 5, ms: 1, outcome: 'ok', credential: null});
+    u.recordOut(b, {tool: 'bravo_tool', bytes: 60, ms: 9, outcome: 'error', code: 'BRAVO_ONLY_CODE'});
     const n = u.beginCall({scenario: null, module: 'plain', tool: 'nobody_tool', caller: 'u_me'});
-    u.recordOut(n, {tool: 'nobody_tool', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+    u.recordOut(n, {tool: 'nobody_tool', bytes: 1, ms: 1, outcome: 'ok'});
     return u;
   };
   // the same in an earlier process's file, and a line whose tool name carries A's session text but is B's
@@ -45,10 +45,10 @@ describe('usage 21: the usage report per session (shared runtime B5, Task 1)', (
     fs.mkdirSync(day, {recursive: true});
     const at = (s) => `2026-11-16T10:00:0${s}.000Z`;
     const lines = [
-      {t: at(1), call: 1, pack: 'ch-pack-alpha', module: 'ch-pack-alpha', tool: 'alpha_tool', bytesOut: 10, linesOut: 1, ms: 1, outcome: 'ok', caller: 'u_me', session: A},
-      {t: at(2), call: 2, pack: 'ch-pack-bravo', module: 'ch-pack-bravo', tool: 'bravo_tool', bytesOut: 10, linesOut: 1, ms: 1, outcome: 'ok', caller: 'u_me', session: B},
-      {t: at(3), call: 3, pack: 'ch-pack-bravo', module: 'ch-pack-bravo', tool: `trick"session":"${A}"`, bytesOut: 10, linesOut: 1, ms: 1, outcome: 'ok', caller: 'u_me', session: B},
-      {t: at(4), call: 4, pack: null, module: 'plain', tool: 'nobody_tool', bytesOut: 10, linesOut: 1, ms: 1, outcome: 'ok', caller: 'u_me'}
+      {t: at(1), call: 1, pack: 'ch-pack-alpha', module: 'ch-pack-alpha', tool: 'alpha_tool', bytesOut: 10, ms: 1, outcome: 'ok', caller: 'u_me', session: A},
+      {t: at(2), call: 2, pack: 'ch-pack-bravo', module: 'ch-pack-bravo', tool: 'bravo_tool', bytesOut: 10, ms: 1, outcome: 'ok', caller: 'u_me', session: B},
+      {t: at(3), call: 3, pack: 'ch-pack-bravo', module: 'ch-pack-bravo', tool: `trick"session":"${A}"`, bytesOut: 10, ms: 1, outcome: 'ok', caller: 'u_me', session: B},
+      {t: at(4), call: 4, pack: null, module: 'plain', tool: 'nobody_tool', bytesOut: 10, ms: 1, outcome: 'ok', caller: 'u_me'}
     ];
     fs.writeFileSync(path.join(day, '5-1.jsonl'), `${lines.map((l) => JSON.stringify(l)).join('\n')}\n`);
   };

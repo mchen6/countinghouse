@@ -36,8 +36,31 @@ test('a record is read by its own date, whatever day its directory is named for'
   try {
     fs.mkdirSync(path.join(dir, '2026-11-12'), {recursive: true});
     fs.writeFileSync(path.join(dir, '2026-11-12', '9-1794450000000.jsonl'),
-      `${JSON.stringify({t: '2026-11-11T16:00:00.000Z', call: 1, pack: 'p', tool: 't', bytesOut: 4, linesOut: 1, ms: 1, outcome: 'ok'})  }\n`);
+      `${JSON.stringify({t: '2026-11-11T16:00:00.000Z', call: 1, pack: 'p', tool: 't', bytesOut: 4, ms: 1, outcome: 'ok'})  }\n`);
     assert.strictEqual(readUsage(dir, {until: '2026-11-11'}).length, 1);
+  } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+// records an earlier build wrote have line counts beside the bytes: read, and
+// the counts are in nothing the report answers
+test('a record with line counts is read, and they are in no answer', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-report-old-'));
+  try {
+    fs.mkdirSync(path.join(dir, '2026-11-11'), {recursive: true});
+    const at = '2026-11-11T16:00:00.000Z';
+    fs.writeFileSync(path.join(dir, '2026-11-11', '9-1794450000000.jsonl'), [
+      {t: at, call: 1, server: 'github', tool: 'x', bytesIn: 40, linesIn: 7, ms: 1, outcome: 'ok', credential: 'V'},
+      {t: at, call: 1, scenario: 'p', tool: 't', bytesOut: 4, linesOut: 1, ms: 1, outcome: 'ok'},
+      {t: at, call: 2, scenario: 'p', tool: 't', bytesOut: 4, linesOut: 'many', ms: 1, outcome: 'ok'}
+    ].map((r) => `${JSON.stringify(r)}\n`).join(''));
+    const records = readUsage(dir, {});
+    assert.strictEqual(records.length, 3, 'none refused for them');
+    const agg = aggregate(records);
+    assert.deepStrictEqual(agg.totals, {calls: 2, serverCalls: 1, bytesIn: 40, bytesOut: 8, tokensInEst: 10, tokensOutEst: 2});
+    const report = await require('../../lib/usage/report').usageReport({}, {caller: null, isAdmin: true}, {usage: null, usageDir: dir, now: () => Date.parse('2026-11-12T00:00:00Z')});
+    for (const said of [JSON.stringify(agg), JSON.stringify(report)]) assert.doesNotMatch(said, /lines/i);
   } finally {
     fs.rmSync(dir, {recursive: true, force: true});
   }
@@ -88,14 +111,14 @@ test('csv has one row per tool with the fixed header', () => {
     '(unknown),(no result recorded),0,1,500,0,125,0',
     ''
   ]);
-  assert.strictEqual(formatCsv(aggregate([{t: '2026-11-11T00:00:00Z', call: 1, process: '1-1', pack: 'a,"b"', tool: 't', server: null, bytesIn: 0, linesIn: 0, bytesOut: 4, linesOut: 1, ms: 1, outcome: 'ok'}])).split('\n')[1],
+  assert.strictEqual(formatCsv(aggregate([{t: '2026-11-11T00:00:00Z', call: 1, process: '1-1', pack: 'a,"b"', tool: 't', server: null, bytesIn: 0, bytesOut: 4, ms: 1, outcome: 'ok'}])).split('\n')[1],
     '"a,""b""",t,1,0,0,4,0,1');
 });
 
 // M6 (#413 rev 3 section 13.1): a record names its scenario; one written
 // before says pack, and is read the same
 test('a record\'s scenario and an older record\'s pack are read alike', () => {
-  const rec = (field, call) => ({t: '2026-11-11T00:00:00Z', call, process: '1-1', [field]: 'ch-pack-x', tool: 't', server: null, bytesIn: 0, linesIn: 0, bytesOut: 4, linesOut: 1, ms: 1, outcome: 'ok'});
+  const rec = (field, call) => ({t: '2026-11-11T00:00:00Z', call, process: '1-1', [field]: 'ch-pack-x', tool: 't', server: null, bytesIn: 0, bytesOut: 4, ms: 1, outcome: 'ok'});
   const agg = aggregate([rec('scenario', 1), rec('pack', 2)]);
   assert.deepStrictEqual(agg.byTool.map((t) => [t.scenario, t.tool, t.calls]), [['ch-pack-x', 't', 2]]);
 });

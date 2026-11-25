@@ -33,9 +33,9 @@ function writeFixture(dir, records) {
     for (let i = 0; i < perDay && call < calls; i++, call++) {
       const t = (k) => new Date(dayStart + i * 1000 + k).toISOString();
       const caller = `u_${String(call % CALLERS).padStart(8, '0')}`;
-      lines.push(JSON.stringify({t: t(0), call, server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytesIn: 4000, linesIn: 40, ms: 120, outcome: 'ok', credential: 'GITHUB_TOKEN', caller}));
-      lines.push(JSON.stringify({t: t(1), call, server: 'github', module: 'ch-access-github', tool: 'actions_list', bytesIn: 2000, linesIn: 20, ms: 80, outcome: 'ok', credential: 'GITHUB_TOKEN', caller}));
-      lines.push(JSON.stringify({t: t(2), call, pack: 'ch-pack-ci-failure-triage', module: 'ch-pack-ci-failure-triage', tool: 'ci_failure_triage', bytesOut: 600, linesOut: 6, ms: 900, outcome: 'ok', caller}));
+      lines.push(JSON.stringify({t: t(0), call, server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytesIn: 4000, ms: 120, outcome: 'ok', credential: 'GITHUB_TOKEN', caller}));
+      lines.push(JSON.stringify({t: t(1), call, server: 'github', module: 'ch-access-github', tool: 'actions_list', bytesIn: 2000, ms: 80, outcome: 'ok', credential: 'GITHUB_TOKEN', caller}));
+      lines.push(JSON.stringify({t: t(2), call, pack: 'ch-pack-ci-failure-triage', module: 'ch-pack-ci-failure-triage', tool: 'ci_failure_triage', bytesOut: 600, ms: 900, outcome: 'ok', caller}));
     }
     fs.writeFileSync(path.join(dir, day, `${1000 + d}-${dayStart}.jsonl`), `${lines.join('\n')}\n`);
   }
