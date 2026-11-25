@@ -24,7 +24,7 @@ describe('usage: a call is owned by the workers it was sent to', () => {
     r2();
     assert.strictEqual(u.ownsCall(call, 7), false);
     u.grantCall(call, 7);
-    u.recordOut(call, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+    u.recordOut(call, {tool: 't', bytes: 1, ms: 1, outcome: 'ok'});
     assert.strictEqual(u.ownsCall(call, 7), false, 'a finished call is no one\'s');
     u.grantCall(call, 9)();
     assert.strictEqual(u.ownsCall(call, 9), false, 'and cannot be granted');
@@ -34,7 +34,7 @@ describe('usage: a call is owned by the workers it was sent to', () => {
     const u = usage();
     const call = begin(u);
     assert.deepStrictEqual([u.isFinished(call), u.isFinished(call + 1), u.isFinished(0), u.isFinished('1')], [false, false, false, false]);
-    u.recordOut(call, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+    u.recordOut(call, {tool: 't', bytes: 1, ms: 1, outcome: 'ok'});
     assert.strictEqual(u.isFinished(call), true);
   });
 
@@ -48,7 +48,7 @@ describe('usage: a call is owned by the workers it was sent to', () => {
       assert.strictEqual(c.error && c.error.code, 'USAGE_CALL_FOREIGN', JSON.stringify(forged));
     }
     const done = begin(u);
-    u.recordOut(done, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+    u.recordOut(done, {tool: 't', bytes: 1, ms: 1, outcome: 'ok'});
     const args = {input: {}, usageCall: done};
     assert.deepStrictEqual(claimHop(u, args, 8), {});
     assert.deepStrictEqual(args, {input: {}}, 'it goes on without the id');

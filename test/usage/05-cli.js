@@ -31,11 +31,13 @@ describe('countinghouse-usage', function() {
   it('prints text by default and CSV with --csv, the token columns marked as estimates', async () => {
     const text = run('--usageDir', dir, '--groupBy', 'server');
     assert.strictEqual(text.status, 0, text.stderr);
-    assert.match(text.stdout, /github: \d+ calls, \d+ server calls/);
+    assert.match(text.stdout, / github: \d+ calls, \d+ server calls; read [\d,]+ B, returned [\d,]+ B; about /m);
+    assert.match(text.stdout, /^total: \d+ calls, \d+ server calls; read [\d,]+ B, returned [\d,]+ B; about /m);
+    assert.doesNotMatch(text.stdout, /\blines?\b/i);
     assert.match(text.stdout, /estimate \(utf8 bytes \/ 4\)/);
     assert.doesNotMatch(text.stdout, /saved/i);
     const csv = run('--usageDir', dir, '--csv');
-    assert.strictEqual(csv.stdout.split('\n')[0], 'caller,tool,server,scenario,module,calls,server_calls,bytes_in,lines_in,bytes_out,lines_out,tokens_in_est,tokens_out_est');
+    assert.strictEqual(csv.stdout.split('\n')[0], 'caller,tool,server,scenario,module,calls,server_calls,bytes_in,bytes_out,tokens_in_est,tokens_out_est');
   });
 
   it('--since all --until a day: the window\'s days first, then the period\'s totals with the upper-bound estimate', async () => {
@@ -52,7 +54,7 @@ describe('countinghouse-usage', function() {
   it('the shell\'s report lists every group: the 500-row bound is the tool\'s', async () => {
     const {createUsage} = require('../../lib/usage');
     const u = createUsage({usageDir: null, pid: 3, startMs: 1, now: () => Date.parse('2026-11-13T10:00:00Z')});
-    for (let i = 0; i < 510; i++) u.recordOut(u.beginCall({scenario: 'p', tool: `t${i}`, caller: 'u_a'}), {tool: `t${i}`, bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+    for (let i = 0; i < 510; i++) u.recordOut(u.beginCall({scenario: 'p', tool: `t${i}`, caller: 'u_a'}), {tool: `t${i}`, bytes: 1, ms: 1, outcome: 'ok'});
     const who = {caller: null, isAdmin: true};
     assert.strictEqual((await usageReport({}, who, {usage: u, usageDir: null})).groups.length, 500);
     const all = (await usageReport({}, who, {usage: u, usageDir: null, maxGroups: Infinity}));

@@ -18,7 +18,7 @@ const DAY = 86400000;
 const ADMIN = {caller: 'u_admin', isAdmin: true};
 const PLAIN = {caller: 'u_a', isAdmin: false};
 
-const result = (t, caller, call = 1) => ({t, call, pack: 'p', tool: 'x', bytesOut: 4, linesOut: 1, ms: 2, outcome: 'ok', caller});
+const result = (t, caller, call = 1) => ({t, call, pack: 'p', tool: 'x', bytesOut: 4, ms: 2, outcome: 'ok', caller});
 const iso = (msBack) => new Date(NOW - msBack).toISOString();
 
 // A usage directory: { 'YYYY-MM-DD': [record or raw line, ...] }, one file per day.

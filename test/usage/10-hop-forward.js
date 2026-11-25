@@ -45,7 +45,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     auth = 'allow';
     duringAuth = null;
     // Leave no open call in the runtime's recorder, and no options of this file's.
-    for (const call of begun) { try { usage().recordOut(call, {tool: 't', bytes: 0, lines: 0, ms: 0, outcome: 'ok'}); } catch (e) { /* already finished */ } }
+    for (const call of begun) { try { usage().recordOut(call, {tool: 't', bytes: 0, ms: 0, outcome: 'ok'}); } catch (e) { /* already finished */ } }
     require(path.join(LIB, 'cli-options')).setOptions({});
   });
 
@@ -167,7 +167,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
   it('a hop stating a call that has finished goes on without the id, so nothing is recorded under it', () => {
     const call = begin();
     usage().grantCall(call, 1);
-    usage().recordOut(call, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+    usage().recordOut(call, {tool: 't', bytes: 1, ms: 1, outcome: 'ok'});
     const w = workers();
     forward(w, {input: {}, usageCall: call});
     assert.deepStrictEqual([w.sent.length, w.replies.length], [1, 0]);
