@@ -578,9 +578,18 @@ all) wait on a question at once, past which `ctx.ask` is
   as "project plugin or marketplace" and a place under the home as
   "~/..."), or "this client could not be confirmed". It was
   `SETTING_DECLINED_THIS_SESSION`, whose text read as if the user had
-  declined.
+  declined. While the tested list, read whole, has no client, so that no session
+  can be shown a dialog, such a session gets the answer every session gets
+  (`SETTING_NEEDS_CONFIRMATION`, with the terminal command), and a lock kept
+  across a runtime restart doesn't hold the undo of a session's own lowering.
 - **`SETTING_DECLINED_THIS_SESSION`** is a decline's, or two dialogs left
   unanswered: its text no longer speaks of the client's configuration.
+- **A session's own lowering is undone in conversation**, with no dialog, up to
+  the value for all sessions, also where its client locked its dialogs.
+  `SETTING_SESSION_OWN_VALUE_HELD` (new) says what holds it: the user's own
+  lock, the ceiling, a lock kept across a restart or one across the user's
+  sessions. A loosening in a session whose lock was kept across a restart is
+  told `SETTING_LOCKED_THIS_SESSION`.
 
 ### Changed — `countinghouse-validate` fails a `schema.json` the load refuses as unsafe
 
