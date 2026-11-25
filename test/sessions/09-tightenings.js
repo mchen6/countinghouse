@@ -166,7 +166,7 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     // (a stored pack.* is no setting since M5b; a module's on/off is every session's: sessions 37)
     for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['autoUpgrade', 'on'], ['upgradeCheck', 'weekly']]) {
       const e = await refused(tool.set(name, value, 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
-      assert.match(e.message, /ch-local settings set/, `${name} ${value}`);
+      assert.strictEqual(e.message, `This shared runtime takes this change to ${name} from a terminal only; nothing was changed. To make it, run \`ch-local settings set ${name} ${value}\` in a terminal yourself.`);
     }
     await refused(tool.set('nonsense', '1', 'settings tool', ctx(A)), 'SETTING_UNKNOWN');
     await refused(tool.set('maxOutputBytes', '1KiB', 'settings tool', ctx(A)), 'SETTING_OUT_OF_BOUNDS');
