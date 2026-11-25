@@ -5,8 +5,8 @@ const {testPort} = require('../helpers/test-env');
 const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/direct-peer-channels-design.md section 5, step 1's required unit
-// test: "两 worker 直连 echo 往返" (two workers, direct-connect, echo round
-// trip). Uses echo-device-client-module's action, which internally
+// test: two workers, direct-connect, echo round
+// trip. Uses echo-device-client-module's action, which internally
 // constructs a ServiceClient and calls echo-device-module's echo action --
 // exactly the isRemoteThread path lib/service-client.js now branches on
 // options.directPeerChannels for. This file is only loaded by test8.js,
@@ -23,7 +23,7 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
   it('completes a cross-worker call end to end', (done) => {
     request(url).post(`/devices/${ECHO_DEVICE_CLIENT_ID}/invoke-action`)
     .set('X-CH-Key', 'aabbcc')
-    .send({serviceID: 'urn:example-com:serviceID:服务名称', actionName: 'API名称', input: {}})
+    .send({serviceID: 'urn:example-com:serviceID:x', actionName: 'API', input: {}})
     .expect('Content-Type', /[json | text]/)
     .expect(200, (err, res) => {
       if (err) return done(new Error(`direct-peer-channels 01 fail: ${err.message}`));
@@ -32,7 +32,7 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
     });
   });
 
-  // D1's port-reuse claim ("端口按 worker 对复用") isn't observable from the
+  // D1's port-reuse claim (one port per worker pair) isn't observable from the
   // outside without instrumenting the broker itself, so this doesn't assert
   // "no new MessageChannel was created" directly -- it asserts the
   // behavior that reuse is *for*: repeated calls keep succeeding with the
@@ -52,7 +52,7 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
 
       request(url).post(`/devices/${ECHO_DEVICE_CLIENT_ID}/invoke-action`)
       .set('X-CH-Key', 'aabbcc')
-      .send({serviceID: 'urn:example-com:serviceID:服务名称', actionName: 'API名称', input: {}})
+      .send({serviceID: 'urn:example-com:serviceID:x', actionName: 'API', input: {}})
       .expect(200, (err, res) => {
         if (err) { failed = new Error(`direct-peer-channels 01 fail: ${err.message}`); return next(); }
         if (res.body.output == null) { failed = new Error('direct-peer-channels 01 fail: no output in response on repeat call'); return next(); }

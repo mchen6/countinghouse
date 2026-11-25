@@ -371,7 +371,7 @@ describe('mcp-contract 24: prompts (M10)', function() {
   it('prompts/get: a check that timed out says its code (VALIDATION_TIMEOUT), as a refused one does', async () => {
     const checks = moduleSpec.promptArgs;
     const {CountinghouseError} = require('../../lib/countinghouse-error');
-    moduleSpec.promptArgs = async () => ({timeout: CountinghouseError.withFields('VALIDATION_TIMEOUT', {module: 'notes', action: '(prompt summarise)', which: {en: 'input', zh: '输入'}, ms: 1000})});
+    moduleSpec.promptArgs = async () => ({timeout: CountinghouseError.withFields('VALIDATION_TIMEOUT', {module: 'notes', action: '(prompt summarise)', which: 'input', ms: 1000})});
     try {
       const r = await get(KEY_A, 'notes_summarise', {id: 'a'});
       assert.strictEqual(r.error && r.error.code, -32603, JSON.stringify(r));

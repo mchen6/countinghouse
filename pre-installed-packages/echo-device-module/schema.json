@@ -245,11 +245,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }
@@ -260,11 +260,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }
@@ -277,11 +277,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }
@@ -292,11 +292,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }
@@ -309,11 +309,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }
@@ -324,11 +324,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }
@@ -339,11 +339,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }
@@ -354,11 +354,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }
@@ -369,11 +369,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }
@@ -384,11 +384,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }
@@ -399,11 +399,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }
@@ -414,11 +414,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }
@@ -429,11 +429,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }
@@ -444,11 +444,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }
@@ -459,11 +459,11 @@
           "type": "object",
           "properties": {
             "reason": {
-              "title": "具体错误原因",
+              "title": "Specific error reason",
               "type": "string"
             },
             "info": {
-              "title": "错误详细信息",
+              "title": "Error details",
               "type": "string"
             }
           }

@@ -40,12 +40,11 @@ describe('sessions 23: the latch says why (conditionsWhy)', () => {
     assert.strictEqual(conditionsWhy.check(undefined), null);
   });
 
-  it('as a sentence, in each language: the reason, and its place when there is one', () => {
-    assert.deepStrictEqual(conditionsWhy.said({reason: 'project plugin or marketplace', at: '~/.claude/settings.json'}), {
-      en: 'this client\'s configuration could answer forms by itself (project plugin or marketplace: ~/.claude/settings.json)',
-      zh: '此客户端的配置可能代你作答（project plugin or marketplace：~/.claude/settings.json）'});
-    assert.deepStrictEqual(conditionsWhy.said({reason: 'not an interactive session'}).zh, '此客户端的配置可能代你作答（not an interactive session）');
-    assert.deepStrictEqual(conditionsWhy.said(null), {en: 'this client could not be confirmed', zh: '无法确认此客户端'});
+  it('as a sentence: the reason, and its place when there is one', () => {
+    assert.strictEqual(conditionsWhy.said({reason: 'project plugin or marketplace', at: '~/.claude/settings.json'}),
+      'this client\'s configuration could answer forms by itself (project plugin or marketplace: ~/.claude/settings.json)');
+    assert.strictEqual(conditionsWhy.said({reason: 'not an interactive session'}), 'this client\'s configuration could answer forms by itself (not an interactive session)');
+    assert.strictEqual(conditionsWhy.said(null), 'this client could not be confirmed');
   });
 
   // /code-review of #337, 1: the rule the runtime holds is in lib/ (docs/ is not in the package), and it is

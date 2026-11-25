@@ -516,14 +516,14 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
         Array.prototype[Symbol.iterator] = function* () {};
         Array.prototype.includes = () => false;
         Number.isInteger = () => false;
-        const target = {maxOutputBytes: 16777216, requestTimeout: 30000, locale: 'zh-CN'};
-        applyLiveOptions(target, {maxOutputBytes: 4096, requestTimeout: 1000, locale: 'en-US'});
+        const target = {maxOutputBytes: 16777216, requestTimeout: 30000};
+        applyLiveOptions(target, {maxOutputBytes: 4096, requestTimeout: 1000});
         parentPort.postMessage(target);
       `, {eval: true});
       w.once('message', (m) => { w.terminate(); resolve(m); });
       w.once('error', reject);
     });
-    assert.deepStrictEqual(out, {maxOutputBytes: 4096, requestTimeout: 1000, locale: 'en-US'});
+    assert.deepStrictEqual(out, {maxOutputBytes: 4096, requestTimeout: 1000});
   });
 
   // without --testLateLoads the probe is never installed: its control

@@ -30,12 +30,9 @@ describe('validation 04: the error catalogue (logger-design §5.3)', () => {
   // M6 (#413 rev 3 section 11): a module, never a pack, in the texts
   it('names a module, never a pack: the section 11 texts', () => {
     assert.strictEqual(CODES.PART_MISSING.en, 'A module this one calls is not installed or not available, so it was not loaded');
-    assert.strictEqual(CODES.PART_MISSING.zh, '此模块调用的某个模块未安装或不可用，因此未加载');
     assert.strictEqual(CODES.TOOL_NAME_TAKEN.en, 'A module\'s tool name is already taken by another tool, so the module was not loaded');
-    assert.strictEqual(CODES.TOOL_NAME_TAKEN.zh, '该模块的工具名已被其他工具占用，因此未加载该模块');
     assert.strictEqual(CODES.PROMPT_NAME_TAKEN.en, 'A module\'s prompt name is already taken by another prompt, so the module was not loaded');
-    assert.strictEqual(CODES.PROMPT_NAME_TAKEN.zh, '该模块的提示名已被其他提示占用，因此未加载该模块');
-    const saysPack = Object.entries(CODES).filter(([, e]) => /\bpacks?\b/i.test(e.en) || /工具包/.test(e.zh)).map(([c]) => c);
+    const saysPack = Object.entries(CODES).filter(([, e]) => /\bpacks?\b/i.test(e.en)).map(([c]) => c);
     assert.deepStrictEqual(saysPack, []);
   });
 
@@ -74,7 +71,7 @@ describe('validation 04: the error catalogue (logger-design §5.3)', () => {
     assert.deepStrictEqual(left, []);
   });
 
-  it('gives every entry a kind, retryable, httpStatus, mcpCode, and en and zh text', () => {
+  it('gives every entry a kind, retryable, httpStatus, mcpCode and its text, in English alone', () => {
     for (const [code, e] of Object.entries(CODES)) {
       assert.ok(/^[A-Z][A-Z0-9_]+$/.test(code), code);
       assert.ok(KINDS.includes(e.kind), `${code}: kind ${e.kind}`);
@@ -82,7 +79,7 @@ describe('validation 04: the error catalogue (logger-design §5.3)', () => {
       assert.ok(Number.isInteger(e.httpStatus) && e.httpStatus >= 400 && e.httpStatus <= 599, `${code}: httpStatus ${e.httpStatus}`);
       assert.strictEqual(e.mcpCode, null, code);
       assert.ok(typeof(e.en) === 'string' && e.en.length > 0, `${code}: en`);
-      assert.ok(typeof(e.zh) === 'string' && e.zh.length > 0, `${code}: zh`);
+      assert.deepStrictEqual(Object.keys(e).sort(), ['en', 'httpStatus', 'kind', 'mcpCode', 'retryable'], code);
     }
   });
 });

@@ -73,7 +73,7 @@ describe('stdio 12: the control channel, server-free', () => {
 
   it('a reply cannot carry another id or ok than its own', async () => {
     const {ask, sent, settled} = channel({set: async () => ({id: 99, ok: false, value: 1})});
-    ask({id: 7, type: 'set', name: 'locale', value: 'zh'});
+    ask({id: 7, type: 'set', name: 'requestTimeout', value: 20});
     await settled();
     assert.deepStrictEqual(sent, [{value: 1, id: 7, ok: true}]);
   });
