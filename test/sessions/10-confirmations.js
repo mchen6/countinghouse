@@ -18,6 +18,8 @@ const MIN = 60 * 1000;
 // a list with a tested client (production's has none yet): the latch's own
 // refusal, and a restored lock that may be a decline's
 const TESTED = require('../../lib/elicitation-clients').listFrom({clients: [{name: 'claude-code', conditions: 'claude-code', tested: [{from: '2.1.323', before: '2.1.324'}]}]});
+// and one with none, as production's is now
+const NONE = require('../../lib/elicitation-clients').listFrom({clients: [{name: 'claude-code', conditions: 'claude-code', tested: []}]});
 
 describe('sessions 10: confirmations per session, a window per user (shared runtime B2, Task 5)', () => {
   const A = 'a'.repeat(32);
@@ -895,18 +897,34 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
     // form, so that one could be answered for the user is no reason: a
     // latched session gets exactly the answer an unlatched one gets
     describe('with no tested client (production\'s list), a latched session\'s refusals', () => {
-      const {ALLOWLIST, hasTestedClient, listFrom} = require('../../lib/elicitation-clients');
+      const {ALLOWLIST, noClientTested, listFrom} = require('../../lib/elicitation-clients');
       const NO = {status: 'ok', conditions: 'no', repo: null, why: {reason: 'client settings unreadable'}};
-      const production = (o = {}) => tool(Object.assign({allowlist: ALLOWLIST, sessionClient: undefined}, o));
+      const production = (o = {}) => tool(Object.assign({allowlist: NONE, sessionClient: undefined}, o));
       const said = async (p) => { try { await p; } catch (e) { return {code: e.code, message: e.message}; } return assert.fail('not refused'); };
       const L = '3'.repeat(32);
       beforeEach(() => { openSession(L, NO); assert.strictEqual(confirm.confirmations(L).latched(), true); });
 
-      it('the condition: no entry has a tested range', () => {
-        assert.strictEqual(hasTestedClient(ALLOWLIST), false, 'a tested range listed: move this case, the latch\'s own refusal is back');
-        assert.strictEqual(hasTestedClient(TESTED), true);
-        assert.strictEqual(hasTestedClient(listFrom(null)), false);
-        assert.strictEqual(hasTestedClient(listFrom({clients: [{name: 'claude-code', conditions: 'x', tested: [{from: '2', before: '1'}]}]})), false, 'a malformed range is none');
+      it('the condition: a list read whole, with no tested range; what could not be read is not "none"', () => {
+        assert.strictEqual(noClientTested(ALLOWLIST), true, 'a tested range listed: move this line, and sessions 09\'s and session-runtime 16\'s pins with it');
+        assert.strictEqual(noClientTested(NONE), true);
+        assert.strictEqual(noClientTested(TESTED), false);
+        const entry = (tested) => ({name: 'claude-code', conditions: 'claude-code', tested});
+        for (const data of [null, undefined, {}, {clients: 'x'}, {clients: [null]}, {clients: [{name: 1, conditions: 'x', tested: []}]}, {clients: [{name: 'claude-code', conditions: 'x'}]},
+          {clients: [entry('x')]}, {clients: [entry([{from: '2.1.3', before: '2.1.1'}])]}, {clients: [entry([null])]}, {clients: [entry([{from: '2.1.1', before: '2.1.2', to: 1}])]},
+          {clients: [entry([]), null]}]) {
+          assert.strictEqual(noClientTested(listFrom(data)), false, JSON.stringify(data));
+        }
+        // (a list not made here says nothing of how it was read)
+        assert.strictEqual(noClientTested([]), false);
+      });
+
+      it('a list that could not be read: the latch\'s own refusal, and a restored lock holds the undo, as with a tested client', async () => {
+        const unread = {allowlist: listFrom(null), sessionClient: undefined};
+        assert.strictEqual((await said(tool(unread).set('requestTimeout', '60s', 'settings tool', ctx(L)))).code, 'SETTING_CLIENT_NOT_CONFIRMED');
+        confirm.confirmations(A).restore({locks: ['requestTimeout'], formsLeft: 3});
+        await tool(unread).set('requestTimeout', '10s', 'settings tool', ctx(A));
+        assert.strictEqual((await said(tool(unread).set('requestTimeout', '30s', 'settings tool', ctx(A)))).code, 'SETTING_SESSION_OWN_VALUE_HELD');
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
       });
 
       for (const [name, value] of [['requestTimeout', '60s'], ['requestTimeout', '30001'], ['maxOutputBytes', '16MiB'], ['maxOutputBytes', '8388609']]) {
@@ -974,9 +992,8 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
     // form could have been shown; with no tested client none is, so it
     // doesn't hold the undo of the session's own lowering
     describe('with no tested client, a lock restored across a restart and the undo of a session\'s own lowering', () => {
-      const {ALLOWLIST} = require('../../lib/elicitation-clients');
       const NO = {status: 'ok', conditions: 'no', repo: null, why: {reason: 'client settings unreadable'}};
-      const production = (o = {}) => tool(Object.assign({allowlist: ALLOWLIST, sessionClient: undefined}, o));
+      const production = (o = {}) => tool(Object.assign({allowlist: NONE, sessionClient: undefined}, o));
       const lower = async (t0, id) => { await t0.set('requestTimeout', '10s', 'settings tool', ctx(id)); notices.take(null, id); };
       const ALL_KINDS = ['enabled', 'maxOutputBytes', 'module', 'requestTimeout'];
 

@@ -71,7 +71,8 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     reset();
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s09-'));
     file = path.join(home, 'settings.json');
-    tool = settingsTool.create({mm: NO_MODULES, file, lockWaitMs: 200});
+    // (a list with no tested client, as production's is now)
+    tool = settingsTool.create({mm: NO_MODULES, file, lockWaitMs: 200, allowlist: require('../../lib/elicitation-clients').listFrom({clients: [{name: 'claude-code', conditions: 'claude-code', tested: []}]})});
     reg = new EventEmitter();
     sessions.attach(reg);
     sources = {};

@@ -77,10 +77,16 @@ describe('session-runtime 16: a latched session\'s own lowering, undone', functi
     r.child.kill('SIGKILL');
     await r.exited;
     r = runtime(home, ['--settingsFile', settingsFile], {restore: {id: 'restore-1', type: 'restore', sessions: [{session: id, resume, state}], declines: [], reset: []}});
-    const back = await shim.session(r.socket, await listening(r), no, {resume: first.welcome.resumeToken});
+    // its client first says "yes": the locks are the restored ones, with their own refusal
+    const back = await shim.session(r.socket, await listening(r), undefined, {resume: first.welcome.resumeToken});
     assert.strictEqual(back.welcome != null && back.welcome.session, id, JSON.stringify(back.refused));
-    const above = await set(back, '45s');
-    assert.strictEqual(above.result.isError, true, JSON.stringify(above));
+    const code = async () => (await set(back, '45s')).result._meta['countinghouse/code'];
+    assert.strictEqual(await code(), 'SETTING_LOCKED_THIS_SESSION');
+    // then "no" again: the latch's
+    back.c.send('C', Object.assign({op: 'client'}, no));
+    let last;
+    for (let i = 0; i < 100 && (last = await code()) === 'SETTING_LOCKED_THIS_SESSION'; i++) await new Promise((done) => setTimeout(done, 50));
+    assert.strictEqual(last, 'SETTING_NEEDS_CONFIRMATION');
     const undone = await set(back, '30s');
     assert.deepStrictEqual(undone.result.structuredContent, {name: 'requestTimeout', old: 10000, new: 30000, applies: 'this session'}, JSON.stringify(undone));
     back.c.end();
