@@ -127,11 +127,12 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
   // form and its answer are sessions 10's)
   it('a loosening is judged against the session\'s own value, and in a session whose client could answer for the user it is not asked; nothing changes', async () => {
     await tool.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
-    // back toward the default, in a locked session: refused, and it names no
-    // terminal command, which would never move A's own value
-    const e = await refused(tool.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
-    assert.ok(/it is locked in this session/.test(e.message) && !/settings set/.test(e.message), e.message);
-    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 2 * MiB);
+    // back toward the default: its own lowering undone, though its client
+    // latched it (the undo shows no form: sessions 10)
+    assert.strictEqual((await tool.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A))).new, 4 * MiB);
+    // above it: a loosening, not asked
+    await refused(tool.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 4 * MiB);
     // B has no override: above the default is one
     await refused(tool.set('requestTimeout', '60s', 'settings tool', ctx(B)), 'SETTING_CLIENT_NOT_CONFIRMED');
     assert.strictEqual(settings.limitsOf(B), null);
