@@ -80,7 +80,7 @@ describe('session-runtime 17: a module turned off in conversation on a shared ru
     assert.strictEqual(on.result._meta['countinghouse/code'], 'SETTING_NEEDS_CONFIRMATION', JSON.stringify(on));
     const check = await call(b, {action: 'set', name: 'upgradeCheck', value: 'weekly'});
     assert.strictEqual(check.result._meta['countinghouse/code'], 'SETTING_TERMINAL_ONLY_SHARED', JSON.stringify(check));
-    assert.match(check.result.content[0].text, /^This shared runtime takes this change to upgradeCheck from a terminal only; nothing was changed\. To make it, run `.*settings set upgradeCheck weekly` in a terminal yourself\.$/);
+    assert.match(check.result.content[0].text, /^This shared runtime takes this change to upgradeCheck from a terminal only; nothing was changed\. To change upgradeCheck for all sessions, run `.*settings set upgradeCheck weekly` in a terminal yourself\.$/);
     a.c.end();
     b.c.end();
   });

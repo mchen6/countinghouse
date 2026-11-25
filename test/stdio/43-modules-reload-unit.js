@@ -402,7 +402,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       assert.ok(!log.slice(at + 1).some((l) => /^held @t\/ch-step-p/.test(l)), `no spawn of ch-step-p after the unload:\n${log.join('\n')}`);
       assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'it stays unloaded');
       // the unit's record no longer says what runs: a reload of it is refused
-      await assert.rejects(reloadTo(mm, dm, '2.0.0'), (e) => e.code === 'CONTROL_MODULE_UNCERTAIN' && /left to a later operator action; restart your client/.test(e.message));
+      await assert.rejects(reloadTo(mm, dm, '2.0.0'), (e) => e.code === 'CONTROL_MODULE_UNCERTAIN' && /left to a later operator action; nothing of it is reloaded until countinghouse restarts$/.test(e.message));
     });
   }
 
