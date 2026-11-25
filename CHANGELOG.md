@@ -690,8 +690,8 @@ all) wait on a question at once, past which `ctx.ask` is
   their client's own dialog (an MCP elicitation form), for this start only:
   `settings.json` is never written, and the change ends when the client
   restarts countinghouse. A dialog is shown only to a client inside a tested
-  version range (`lib/elicitation-clients.json`, shipped empty until the
-  maintainer's hand test before release), on a request that declares form
+  version range (`lib/elicitation-clients.json`, shipped empty until
+  the maintainer's hand test adds the first range), on a request that declares form
   elicitation, and when ch-local finds nothing in the client's own
   configuration that could answer it. Otherwise the terminal command is
   given, as before. New codes: `SETTING_CONFIRMATION_INVALID`,
