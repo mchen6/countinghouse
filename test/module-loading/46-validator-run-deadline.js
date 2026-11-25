@@ -288,6 +288,179 @@ describe('module-loading 46: a running check\'s deadline', function() {
     });
   });
 
+  // `new Worker` can throw (no thread to be had): the options here cannot be
+  // cloned, so it really does, at once, with nothing stubbed. fail() used to
+  // start the replacement before it refused the request the validator held: a
+  // throw there left that request with no answer at all, and the queue
+  // unserved. (The error itself goes where it did, to what called fail(): a
+  // worker's event, a timer, and the process's own log.)
+  describe('the replacement cannot be started', () => {
+    const UNCLONEABLE = {f: () => {}};
+    const LATE_MS = 10000;
+    let handlers = [];
+    const uncaught = [];
+    beforeEach(() => {
+      uncaught.length = 0;
+      handlers = process.listeners('uncaughtException');
+      process.removeAllListeners('uncaughtException');
+      process.on('uncaughtException', (e) => uncaught.push(`${e && e.name}: ${e && e.message}`));
+    });
+    afterEach(() => {
+      process.removeAllListeners('uncaughtException');
+      for (const h of handlers) process.on('uncaughtException', h);
+    });
+    const answered = (pending) => {
+      let timer = null;
+      return Promise.race([pending, new Promise((r) => { timer = setTimeout(r, LATE_MS, 'no answer'); })]).finally(() => clearTimeout(timer));
+    };
+    const apiOf = (name) => JSON.stringify({device: {friendlyName: name, serviceList: {[SERVICE]: {actionList: [{name: 'a', input: {schema: '/s/a/input'}, output: {schema: '/s/a/output'}}]}}}});
+    const SCHEMAS = JSON.stringify({$id: '#/', s: {a: {input: {type: 'object'}, output: {type: 'object'}}}});
+    const notCloned = (e) => e.name === 'DataCloneError';
+
+    // what a validator can hold when it fails: its refusal's code, and what it
+    // counts against (the module's strikes and cool-down, or the caller)
+    const timeoutOf = (r) => (r != null && r.timeout != null ? r.timeout.code : null);
+    const bytes = () => { const u = require('v8').serialize({output: {}}); return u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength); };
+    const OWN = {strikes: 1, cooldown: true, caller: 0};
+    const CALLER = {strikes: 0, cooldown: false, caller: 1};
+    const NEITHER = {strikes: 0, cooldown: false, caller: 0};
+    const HELD = {
+      'an output\'s check': {ask: (w) => check(w), code: codeOf, counts: OWN},
+      'a hop\'s result (its bytes)': {ask: ({p, m}) => p.checkSerialized(m.key, SERVICE, 'a', 'output', bytes()), code: (r) => codeOf(r.refused), counts: OWN},
+      'a load\'s compile': {ask: ({p, m}) => p.warm(m.key), code: timeoutOf, counts: OWN},
+      'an input\'s check': {ask: ({p, m}) => p.check(m.key, SERVICE, 'a', 'input', {input: {}}, 'u_caller'), code: codeOf, counts: CALLER},
+      'a load\'s safety check': {ask: ({p, m}) => p.safety(m.key), code: timeoutOf, counts: NEITHER},
+      'a question': {ask: ({p, m}) => p.question(m.key, '/s/a/input', {}), code: timeoutOf, counts: NEITHER}
+    };
+    const counts = ({p, m}) => ({strikes: (p.strikes.get(m.name) || []).length, cooldown: p.cooldown.has(m.key), caller: (p.callerStalls.get(`u_caller\n${m.name}`) || []).length});
+    // `what` held by the pool's one validator, another module's check behind
+    // it, and no thread to be had from here on
+    async function held(what, {spareReady = true} = {}) {
+      const w = await poolWith('silent', {timeoutMs: 60000});
+      const name = `deadline-module-${++names}`;
+      const other = `${name}#1`;
+      w.p.register(other, name, apiOf(name), SCHEMAS);
+      assert.strictEqual(await w.p.warm(other), null);
+      w.slot.worker.postMessage = () => {};   // it answers nothing from here on
+      let answers = 0;
+      const pending = HELD[what].ask(w).then((r) => { answers++; return r; });
+      const req = w.slot.current;
+      assert.ok(req != null && req.phase === 'run', 'the request runs');
+      const behind = w.p.check(other, SERVICE, 'a', 'output', {output: {}});
+      const waits = (w.p.queues.get(other) || [])[0];
+      assert.ok(waits != null, 'the other module\'s check waits');
+      // (their timers are 60 s: none outlives the test)
+      ends.push(async () => { clearTimeout(req.timer); clearTimeout(waits.timer); });
+      if (!spareReady) w.p.spare.ready = false;
+      w.p.workerOptions = UNCLONEABLE;
+      const refused = async () => {
+        const answer = await answered(pending);
+        assert.notStrictEqual(answer, 'no answer', 'the request the validator held was never answered');
+        assert.strictEqual(HELD[what].code(answer), 'VALIDATION_TIMEOUT');
+        await turn();
+        assert.strictEqual(answers, 1);
+      };
+      // in the same turn, on the validator in its place: not by a timer later
+      const servedNow = () => assert.ok(w.p.slots[0] !== w.slot && w.p.slots[0].current === waits, 'the queue was not served at once');
+      // (a check of the module's own, so it passes)
+      const passes = async () => {
+        const answer = await answered(behind);
+        assert.notStrictEqual(answer, 'no answer', `the waiting check had no answer within ${LATE_MS} ms on the validator put in its place`);
+        assert.strictEqual(answer, null);
+      };
+      return {w, req, waits, behind, refused, servedNow, passes, answers: () => answers};
+    }
+    // each error that reached the process, when one did
+    const thrown = () => uncaught.splice(0).map((e) => e.split(':')[0]);
+
+    for (const what of Object.keys(HELD)) {
+      it(`${what}, its validator ended: refused once and counted once, and the queue is served`, async () => {
+        const {w, refused, servedNow, passes} = await held(what);
+        assert.throws(() => { w.slot.worker.emit('error', new Error('out of memory')); }, notCloned);
+        servedNow();
+        assert.deepStrictEqual(counts(w), HELD[what].counts);
+        w.slot.worker.emit('exit', 1);
+        await refused();
+        assert.deepStrictEqual(counts(w), HELD[what].counts);
+        await passes();
+        assert.deepStrictEqual(thrown(), []);
+      });
+    }
+
+    it('at its deadline: refused, and the queue is served', async () => {
+      const {w, refused, servedNow, passes} = await held('an output\'s check');
+      const req = w.slot.current;
+      req.startedAt = Date.now() - 60001;   // its full budget has run
+      w.p.onDeadline(req);
+      await turn();
+      await turn();
+      servedNow();
+      await refused();
+      assert.deepStrictEqual([counts(w), said(w).length], [OWN, 1]);
+      await passes();
+      assert.deepStrictEqual(thrown(), ['DataCloneError']);
+    });
+
+    it('one refused as a wait already, its full budget run: its strike is counted', async () => {
+      const {w, refused, servedNow, passes} = await held('an output\'s check');
+      w.p.onDeadline(w.slot.current);   // started late: refused as a wait, and still held
+      await turn();
+      await turn();
+      await refused();
+      assert.deepStrictEqual(counts(w), NEITHER);
+      assert.throws(() => { w.slot.worker.emit('exit', 1); }, notCloned);
+      servedNow();
+      assert.deepStrictEqual(counts(w), OWN);
+      await passes();
+      assert.deepStrictEqual(thrown(), []);
+    });
+
+    it('with no spare ready either: refused', async () => {
+      const {w, waits, behind, refused} = await held('an output\'s check', {spareReady: false});
+      assert.throws(() => { w.slot.worker.emit('exit', 1); }, notCloned);
+      await refused();
+      w.p.onDeadline(waits);   // nothing can serve it: its own deadline
+      assert.strictEqual(codeOf(await answered(behind)), 'VALIDATION_TIMEOUT');
+      assert.deepStrictEqual(thrown(), []);
+    });
+
+    // (what the refusal meets is another matter: the place is taken all the same)
+    it('a refusal that throws: the validator is replaced and the queue served', async () => {
+      const {w, req, servedNow, passes, answers} = await held('an output\'s check');
+      w.p.workerOptions = workerOptions;
+      const was = LOG.E;
+      LOG.E = () => { throw new Error('no log'); };
+      try {
+        assert.throws(() => { w.slot.worker.emit('exit', 1); }, /^Error: no log$/);
+      } finally {
+        LOG.E = was;
+      }
+      servedNow();
+      await passes();
+      // the refusal that threw answered nothing: the held request's own answer
+      // is taken after its log (the old order too; a later row)
+      await turn();
+      assert.deepStrictEqual([answers(), req.done], [0, false]);
+      assert.deepStrictEqual(thrown(), []);
+    });
+
+    // (a control: it holds nothing, so its check waits for its own deadline on
+    // any order)
+    it('one that ended before it was online: a check waiting for it is refused at its deadline', async () => {
+      const p = new ValidatorPool({size: 1, timeoutMs: 500, compileMs: 60000, workerOptions});
+      const spare = p.spare;
+      ends.push(async () => { p.close(); await spare.worker.terminate(); });
+      const name = `deadline-module-${++names}`;
+      p.register(`${name}#1`, name, apiOf(name), SCHEMAS);
+      const pending = p.check(`${name}#1`, SERVICE, 'a', 'output', {output: {}});
+      assert.ok(!p.slots[0].ready, 'not online yet');
+      p.workerOptions = UNCLONEABLE;
+      assert.throws(() => { p.slots[0].worker.emit('exit', 1); }, notCloned);
+      assert.strictEqual(codeOf(await answered(pending)), 'VALIDATION_TIMEOUT');
+      assert.deepStrictEqual(thrown(), []);
+    });
+  });
+
   describe('what the refusals say', () => {
     it('a validator that ended: no time is said', async () => {
       const w = await poolWith('exit', {timeoutMs: 60000});
