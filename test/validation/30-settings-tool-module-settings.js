@@ -103,9 +103,16 @@ describe('validation 30: countinghouse_settings and module settings', () => {
         type: 'enum', value: 'imperial', default: 'metric', bounds: {enum: ['metric', 'imperial']}, changes: 'on request',
         byTheModule: {title: 'Units'}});
       assert.deepStrictEqual(rows['module.@acme/weather-tool.maxResults'].bounds, {min: 1, max: 100});
-      assert.strictEqual(rows['module.@acme/weather-tool.shareStats'].changes, 'needs your confirmation');
+      // (no client is on the tested list: no form can confirm one)
+      assert.strictEqual(rows['module.@acme/weather-tool.shareStats'].changes, 'at a terminal only');
+      const {listFrom} = require('../../lib/elicitation-clients');
+      const label = async (allowlist) => (await make({allowlist}).get()).settings.filter((x) => /shareStats|defaultRepo|units/.test(x.name)).map((x) => x.changes).sort();
+      const client = (tested) => ({name: 'claude-code', conditions: 'claude-code', tested});
+      assert.deepStrictEqual(await label(listFrom({clients: [client([{from: '2.1.1', before: '2.1.2'}])]})), ['needs your confirmation', 'needs your confirmation', 'on request']);
+      assert.deepStrictEqual(await label(listFrom(null)), ['needs your confirmation', 'needs your confirmation', 'on request'], 'a list that could not be read says nothing of forms');
+      assert.deepStrictEqual(await label(listFrom({clients: [client([])]})), ['at a terminal only', 'at a terminal only', 'on request']);
       const repo = rows['module.@acme/weather-tool.defaultRepo'];
-      assert.strictEqual(repo.changes, 'needs your confirmation');
+      assert.strictEqual(repo.changes, 'at a terminal only');
       assert.strictEqual(repo.value, undefined, 'unset: no value');
       assert.deepStrictEqual(repo.byTheModule, {title: 'Default repository', description: 'Used when you name none'});
       assert.deepStrictEqual(repo.bounds, {format: 'repo', maxLength: 256});
