@@ -340,7 +340,7 @@ you have to do. What the sandbox does and does not protect is in
   a `SharedArrayBuffer`, now fails the `ctx.call` there. A
   `SharedArrayBuffer` used to be shared between two modules' workers.
 - **New: `ctx.usage()`** resolves with the current `tools/call`'s counts so
-  far (`{calls, linesIn, bytesIn, tokensInEst, servers, sentence}`). A
+  far (`{calls, bytesIn, tokensInEst, servers, sentence}`). A
   scenario can put its receipt sentence in its own summary. It's `null`
   outside a counted call, and never carries a key or a caller.
 - **A scenario module may not have a top-level `receipt` output field**
@@ -601,7 +601,7 @@ says how to write a module for this.
 - **A scenario's result carries a receipt**
   ([module-authoring.md](module-authoring.md#the-receipt-and-the-usage-report)):
   `_meta['countinghouse/receipt']` holds the counts, and a second text block
-  holds its sentence (`read 48,210 lines (3.1 MB) in 14 calls to github; …`).
+  holds its sentence (`read 3.1 MB in 14 calls to github; …`).
   `structuredContent` is unchanged; a client that reads only
   `content[0].text` is unaffected.
 - **Different error codes from the bundled modules and examples:**

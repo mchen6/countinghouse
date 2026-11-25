@@ -196,19 +196,18 @@ a module is listed as it always was.
 ## The receipt and the usage report
 
 Every `tools/call` on a listed module is counted at the runtime's boundary.
-- **In:** each call to a declared server, as lines and bytes read.
-- **Out:** the lines and bytes of the tool's own text result, and the
-  decoded bytes of its image, audio and inline resource blocks (`inlineBytesOut`),
-  and the bytes behind its resource links (`linkedBytesOut`).
+- **In:** each call to a declared server, as bytes of text read.
+- **Out:** the bytes of the tool's own text result, the decoded bytes of its
+  image, audio and inline resource blocks (`inlineBytesOut`), and the bytes
+  behind its resource links (`linkedBytesOut`).
 
 A scenario's result also carries a receipt. `_meta['countinghouse/receipt']`
-holds `{calls, linesIn, bytesIn, linesOut, bytesOut, servers}`, and a second
-text block holds its sentence, for example `read 48,210 lines (3.1 MB) in 14
-calls to github; 35 lines (2.4 KB) reached the model.`. `structuredContent` is
-your output exactly as validated, except that an image or audio value is
-replaced by its reference (see module-development), so a closed output schema
-stays the guarantee. A scenario's top-level output field named `receipt` is refused
-`RECEIPT_RESERVED`, because there the name is the runtime's. Any other module's
+holds `{calls, bytesIn, bytesOut, servers}`, and a second text block holds its
+sentence, for example `read 3.1 MB in 14 calls to github; 2.4 KB reached the
+model.`. `structuredContent` is your output exactly as validated, except that
+an image or audio value is replaced by its reference (see module-development),
+so a closed output schema stays the guarantee. A scenario's top-level output
+field named `receipt` is refused `RECEIPT_RESERVED`, because there the name is the runtime's. Any other module's
 `receipt` field (a payments receipt, say) passes through untouched: the
 runtime adds no receipt to it.
 A task-augmented call (`tools/call` with `task`) is counted the same way: the

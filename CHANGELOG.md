@@ -844,7 +844,7 @@ configuration). None of it is available to a hosted server.
 ### Added — `ctx.usage()`: the current call's counts so far
 
 - `ctx.usage()` resolves with the current tools/call's counts so far,
-  read-only: `{calls, linesIn, bytesIn, tokensInEst, servers, sentence}`
+  read-only: `{calls, bytesIn, tokensInEst, servers, sentence}`
   (and `standIn` when a stand-in answered). `sentence` is the first half of
   the receipt's sentence, word for word. Every remote server call made under
   the call is counted, its parts' included. The call's own output is not
@@ -1131,7 +1131,7 @@ configuration). None of it is available to a hosted server.
   `--hardened` exited 2, unable to read it.
 - Each remote call is a usage record under the `tools/call` it was made
   for, so the receipt and `countinghouse_usage_report` count it as a
-  server call: the remote's name, the tool, the text content's lines and
+  server call: the remote's name, the tool, the text content's
   bytes (other blocks are passed on, not counted), the time, the outcome
   (`ok`, `isError` or the rejection's code) and the credential's variable
   name. No content and no credential value is recorded. The call id rides
@@ -1164,13 +1164,13 @@ configuration). None of it is available to a hosted server.
 ### Added — usage records, the receipt and `countinghouse_usage_report` (local mode, part C)
 
 - Every `tools/call` on a listed module is counted at the runtime's
-  boundary: each call to a declared server (lines and bytes read) and the
-  tool's own text result (lines and bytes out). A task-augmented call is
-  counted the same way, under its own call id.
+  boundary: each call to a declared server (bytes read) and the tool's own
+  text result (bytes out). A task-augmented call is counted the same way,
+  under its own call id.
 - A scenario's successful result carries a receipt:
-  `_meta['countinghouse/receipt']` = `{calls, linesIn, bytesIn, linesOut,
-  bytesOut, servers}`, and a second text block with its sentence.
-  `structuredContent` is the module's output exactly as validated.
+  `_meta['countinghouse/receipt']` = `{calls, bytesIn, bytesOut, servers}`,
+  and a second text block with its sentence. `structuredContent` is the
+  module's output exactly as validated.
   `tasks/result` carries the same receipt.
 - A scenario's output may not have a top-level `receipt` field
   (`RECEIPT_RESERVED`): there the name is the runtime's. Any other module's

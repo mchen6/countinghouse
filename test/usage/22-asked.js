@@ -15,7 +15,7 @@ const ADMIN = {caller: 'c1', isAdmin: true};
 describe('usage 22: the record of a call that asked (MCP completeness M13)', () => {
   const asked = (u, round) => {
     const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-    u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round});
+    u.recordOut(c, {tool: 't', bytes: 0, ms: 5, outcome: 'asked', round});
     return c;
   };
 
@@ -24,9 +24,9 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
     const first = asked(u, 1);
     const second = asked(u, 2);
     const done = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-    u.recordOut(done, {tool: 't', bytes: 10, lines: 1, ms: 7, outcome: 'ok', round: 3});
+    u.recordOut(done, {tool: 't', bytes: 10, ms: 7, outcome: 'ok', round: 3});
     const failed = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-    u.recordOut(failed, {tool: 't', bytes: 10, lines: 1, ms: 7, outcome: 'error', code: 'ASK_STATE_INVALID'});
+    u.recordOut(failed, {tool: 't', bytes: 10, ms: 7, outcome: 'error', code: 'ASK_STATE_INVALID'});
     const by = (call) => u.records().find((r) => r.call === call);
     assert.deepStrictEqual([by(first).outcome, by(first).round, by(second).round], ['asked', 1, 2]);
     assert.ok(!('round' in by(done)) && !('round' in by(failed)), 'a round is an asked record\'s only');
@@ -40,24 +40,24 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
   it('an asked pass names who asked: a module, an action, a question, each a bounded clean string', () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
     const c = u.beginCall({scenario: 'p', module: 'pack', tool: 't', caller: 'c1'});
-    u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: 'asks-part', action: 'store', question: 'overwrite'}});
+    u.recordOut(c, {tool: 't', bytes: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: 'asks-part', action: 'store', question: 'overwrite'}});
     const by = (call) => u.records().find((r) => r.call === call);
     assert.deepStrictEqual(by(c).askedBy, {module: 'asks-part', action: 'store', question: 'overwrite'});
     // only on an asked pass, and only as three strings: cut to 128 characters, controls taken out
     const ok = u.beginCall({scenario: 'p', module: 'pack', tool: 't', caller: 'c1'});
-    u.recordOut(ok, {tool: 't', bytes: 1, lines: 1, ms: 5, outcome: 'ok', askedBy: {module: 'x', action: 'y', question: 'z'}});
+    u.recordOut(ok, {tool: 't', bytes: 1, ms: 5, outcome: 'ok', askedBy: {module: 'x', action: 'y', question: 'z'}});
     assert.ok(!('askedBy' in by(ok)));
     const odd = u.beginCall({scenario: 'p', module: 'pack', tool: 't', caller: 'c1'});
-    u.recordOut(odd, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: `m\n${'x'.repeat(300)}`, action: 7, question: 'q'}});
+    u.recordOut(odd, {tool: 't', bytes: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: `m\n${'x'.repeat(300)}`, action: 7, question: 'q'}});
     assert.ok(!('askedBy' in by(odd)), 'not three strings: not recorded');
     const long = u.beginCall({scenario: 'p', module: 'pack', tool: 't', caller: 'c1'});
-    u.recordOut(long, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: `m\u001b[2J${'x'.repeat(300)}`, action: 'a', question: 'q'}});
+    u.recordOut(long, {tool: 't', bytes: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: `m\u001b[2J${'x'.repeat(300)}`, action: 'a', question: 'q'}});
     assert.strictEqual(by(long).askedBy.module.length, 128);
     assert.doesNotMatch(by(long).askedBy.module, /[\u0000-\u001f]/);
     // the one module-text rule: an override, the bidi marks, a zero-width
     // character
     const bidi = u.beginCall({scenario: 'p', module: 'pack', tool: 't', caller: 'c1'});
-    u.recordOut(bidi, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: 'a\u202eb\u200fc\u061cd\u200be', action: 'a', question: 'q'}});
+    u.recordOut(bidi, {tool: 't', bytes: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: 'a\u202eb\u200fc\u061cd\u200be', action: 'a', question: 'q'}});
     assert.strictEqual(by(bidi).askedBy.module, 'a b c d e');
   });
 
@@ -66,9 +66,9 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
     asked(u, 1);
     asked(u, 2);
     const done = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-    u.recordOut(done, {tool: 't', bytes: 10, lines: 1, ms: 7, outcome: 'ok'});
+    u.recordOut(done, {tool: 't', bytes: 10, ms: 7, outcome: 'ok'});
     const failed = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-    u.recordOut(failed, {tool: 't', bytes: 10, lines: 1, ms: 7, outcome: 'error', code: 'ASK_STATE_INVALID'});
+    u.recordOut(failed, {tool: 't', bytes: 10, ms: 7, outcome: 'error', code: 'ASK_STATE_INVALID'});
     const report = await usageReport({since: 'all'}, ADMIN, {usage: u, usageDir: null, now: () => NOW});
     assert.deepStrictEqual(report.profile.errors.calls, {ASK_STATE_INVALID: 1});
   });
@@ -85,9 +85,9 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
       for (const round of [1, 2, null]) {
         const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-        u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, lines: 10, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
-        if (round != null) u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'asked', round});
-        else u.recordOut(c, {tool: 't', bytes: 2000, lines: 5, ms: 50, outcome: 'ok'});
+        u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+        if (round != null) u.recordOut(c, {tool: 't', bytes: 0, ms: 40, outcome: 'asked', round});
+        else u.recordOut(c, {tool: 't', bytes: 2000, ms: 50, outcome: 'ok'});
       }
       return u;
     };
@@ -107,8 +107,8 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       const oncePass = await reportOf((() => {
         const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
         const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-        u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, lines: 10, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
-        u.recordOut(c, {tool: 't', bytes: 2000, lines: 5, ms: 50, outcome: 'ok'});
+        u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+        u.recordOut(c, {tool: 't', bytes: 2000, ms: 50, outcome: 'ok'});
         return u;
       })());
       assert.deepStrictEqual(report.totals.keptOut, oncePass.totals.keptOut);
@@ -138,8 +138,8 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
       for (const outcome of ['unavailable', 'unavailable', 'ok']) {
         const c = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
-        u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 1000, lines: 1, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
-        u.recordOut(c, {tool: 't', bytes: outcome === 'ok' ? 20 : 0, lines: 0, ms: 40, outcome});
+        u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 1000, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+        u.recordOut(c, {tool: 't', bytes: outcome === 'ok' ? 20 : 0, ms: 40, outcome});
       }
       const report = await reportOf(u, {since: 'all', groupBy: 'tool'});
       assert.deepStrictEqual([report.totals.calls, report.totals.serverCalls, report.profile.asked, report.profile.unavailable], [1, 3, 0, 2]);
@@ -163,9 +163,9 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       let now = Date.parse('2026-11-14T23:59:59.900Z');
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => now});
       const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-      u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, lines: 10, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+      u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
       now = Date.parse('2026-11-15T00:00:00.100Z');
-      u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'asked', round: 1});
+      u.recordOut(c, {tool: 't', bytes: 0, ms: 40, outcome: 'asked', round: 1});
       const report = await usageReport({since: '2026-11-14', until: '2026-11-14'}, ADMIN, {usage: u, usageDir: null, now: () => NOW});
       assert.strictEqual(report.totals.serverCalls, 1, 'its server call is in the window');
       const none = await usageReport({since: '2026-11-14', until: '2026-11-14'}, ADMIN, {usage: createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW}), usageDir: null, now: () => NOW});
@@ -179,8 +179,8 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
       for (const round of [1, 2]) {
         const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-        u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 1000, lines: 1, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
-        u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'asked', round});
+        u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 1000, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+        u.recordOut(c, {tool: 't', bytes: 0, ms: 40, outcome: 'asked', round});
       }
       const out = require('../../lib/usage/aggregate').aggregate(u.records().map((r) => normalise(r)).filter((r) => r != null).map((r) => Object.assign(r, {process: '1-1'})));
       assert.deepStrictEqual(out.replaced.map((r) => [r.tool, r.scenarioCalls, r.serverCalls]), [['t', 0, 2]]);
@@ -193,8 +193,8 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
       for (let i = 0; i < 2; i++) {
         const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-        u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 1000, lines: 1, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
-        u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'unavailable'});
+        u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 1000, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+        u.recordOut(c, {tool: 't', bytes: 0, ms: 40, outcome: 'unavailable'});
       }
       const out = require('../../lib/usage/aggregate').aggregate(u.records().map((r) => normalise(r)).filter((r) => r != null).map((r) => Object.assign(r, {process: '1-1'})));
       assert.deepStrictEqual(out.replaced.map((r) => [r.tool, r.scenarioCalls, r.serverCalls]), [['t', 0, 2]]);
@@ -211,10 +211,10 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
     it('a call that asked is counted from its final pass only, also when that pass read nothing; the method says so', async () => {
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
       const first = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-      u.recordIn(first, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, lines: 10, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
-      u.recordOut(first, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'asked', round: 1});
+      u.recordIn(first, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+      u.recordOut(first, {tool: 't', bytes: 0, ms: 40, outcome: 'asked', round: 1});
       const retry = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-      u.recordOut(retry, {tool: 't', bytes: 2000, lines: 5, ms: 50, outcome: 'ok'});
+      u.recordOut(retry, {tool: 't', bytes: 2000, ms: 50, outcome: 'ok'});
       const report = await reportOf(u);
       assert.strictEqual(report.totals.keptOut.estimate, 0, 'the final pass read nothing, so nothing is counted kept out');
       assert.deepStrictEqual([report.totals.keptOut.bound, report.totals.keptOut.method],
@@ -224,8 +224,8 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
     it('a call that asked and was never retried is no call, and kept nothing out: its server calls are still its cost', async () => {
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
       const c = u.beginCall({scenario: 'p', module: 'm', tool: 't', caller: 'c1'});
-      u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, lines: 10, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
-      u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'asked', round: 1});
+      u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+      u.recordOut(c, {tool: 't', bytes: 0, ms: 40, outcome: 'asked', round: 1});
       const report = await reportOf(u);
       assert.deepStrictEqual([report.totals.calls, report.totals.serverCalls, report.totals.bytesIn], [0, 1, 100000]);
       const none = await reportOf(createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW}));
