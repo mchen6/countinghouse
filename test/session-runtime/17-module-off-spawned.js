@@ -2,8 +2,9 @@
 // A module turned off in conversation on a shared runtime (R-terminal-only-shared-text):
 // written at once, with no form; ch-local's unload then takes it from every
 // session, each told once, with the one way back (runtime-claims 1). Turned on
-// is the user's own terminal's. Spawned as ch-local daemon spawns the runtime,
-// with release 1's tested-client list (empty).
+// is the user's own terminal's, from a client that declares form elicitation
+// too. Spawned as ch-local daemon spawns the runtime, with production's
+// tested-client list (a client listed there would be asked: move the case).
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -74,7 +75,8 @@ describe('session-runtime 17: a module turned off in conversation on a shared ru
       assert.doesNotMatch(await other(s), /is turned off for all your sessions/);
     }
 
-    const on = await call(b, {action: 'set', name: `enabled.${PKG}`, value: 'on'});
+    const meta = {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {elicitation: {form: {}}}, 'io.modelcontextprotocol/clientInfo': {name: 'claude-code', version: '2.1.330'}};
+    const on = await request(b.c, 'tools/call', {name: 'countinghouse_settings', arguments: {action: 'set', name: `enabled.${PKG}`, value: 'on'}, _meta: meta});
     assert.strictEqual(on.result._meta['countinghouse/code'], 'SETTING_NEEDS_CONFIRMATION', JSON.stringify(on));
     const check = await call(b, {action: 'set', name: 'upgradeCheck', value: 'weekly'});
     assert.strictEqual(check.result._meta['countinghouse/code'], 'SETTING_TERMINAL_ONLY_SHARED', JSON.stringify(check));

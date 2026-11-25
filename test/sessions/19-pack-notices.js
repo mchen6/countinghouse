@@ -129,7 +129,7 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
   // asker, so nothing is a duplicate. Every unload is told once, in its own
   // text, under its own module's key, never held, never silenced. An unload
   // with reason 'off' (ch-local's, explicit) is told the full off text: the
-  // callers loaded before it and both ways back
+  // callers loaded before it and the way back
   describe('every unload is told once, under its own key; reason off gives the full off text', () => {
     const MOD = '@countinghouse/ch-pack-mod';
     const CALLER = 'trip-planner';
@@ -169,7 +169,7 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
     });
 
     // (round 5, 2) reason off and the settings holding it off, both: a
-    // ceiling's unload or a stale reason never gets the ways back
+    // ceiling's unload or a stale reason never gets the way back
     // (round 5, 6) a caller unloaded with the module it went with, explicit:
     // its own line, with the way back
     it('reason calls, because the module turned off: the caller\'s line with the way back; otherwise its own words', async() => {
@@ -219,7 +219,7 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
 
     // (round 6, 1) a flood of caller unloads never evicts the runtime's own
     // off text
-    it('25 callers unloaded after it: the off text with its ways back is still delivered', async() => {
+    it('25 callers unloaded after it: the off text with its way back is still delivered', async() => {
       const control = c();
       await control.unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
       for (let i = 0; i < 25; i++) {
@@ -269,7 +269,7 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
       } finally { Object.assign(options, saved); }
     });
 
-    it('many callers: eight named and how many more, the ways back kept whole', async() => {
+    it('many callers: eight named and how many more, the way back kept whole', async() => {
       loaded = [{name: MOD, modules: [MOD], tools: []}].concat(Array.from({length: 11}, (_, i) => ({name: `caller-${String(i).padStart(2, '0')}-${'x'.repeat(12)}`, modules: [MOD], tools: []})));
       await c().unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
       const [t] = notices.take(MOD, A);

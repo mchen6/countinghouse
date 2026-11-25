@@ -153,7 +153,7 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
   });
 
   // the medium review of round 3, 7: the notice fits its bound whatever the
-  // names' length, the ways back always whole
+  // names' length, the way back always whole
   it('offNotice fits OWN_NOTICE_MAX: fewer callers named as the names grow, the command always whole', () => {
     const {OWN_NOTICE_MAX} = require('../../lib/notices');
     const pkg = `@${'s'.repeat(40)}/${'p'.repeat(172)}`;   // 214 characters
