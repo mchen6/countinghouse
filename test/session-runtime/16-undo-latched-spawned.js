@@ -10,19 +10,19 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {runtime, listening, request, shim} = require('./helpers/per-session');
+// (under os.tmpdir(): the socket's path is short there)
+const trees = require('../helpers/test-tmp').forFile(['ch-sr16-'], {base: os.tmpdir()});
 
 describe('session-runtime 16: a latched session\'s own lowering, undone', function() {
   this.timeout(120000);
   if (process.platform === 'win32') return;   // the named pipe is C2's
-  let home = null;
   let r = null;
   after(async () => {
     if (r != null && r.code === undefined) { r.child.kill('SIGKILL'); await r.exited; }
-    if (home != null) fs.rmSync(home, {recursive: true, force: true});
   });
 
   it('client frame "no" at connect: lowered, undone, told and recorded; above the value for all sessions refused as before', async () => {
-    home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sr16-'));
+    const home = trees.mkdtemp('ch-sr16-');
     const settingsFile = path.join(home, 'settings.json');
     r = runtime(home, ['--settingsFile', settingsFile]);
     const secret = await listening(r);
@@ -48,4 +48,6 @@ describe('session-runtime 16: a latched session\'s own lowering, undone', functi
     assert.deepStrictEqual(lines.filter((l) => l.change === 'this session: its own lowering undone').map((l) => [l.setting, l.old, l.new]), [['requestTimeout', 10000, 30000]]);
     s.c.end();
   });
+
+  trees.hooks();
 });

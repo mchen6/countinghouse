@@ -125,7 +125,7 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
   // these sessions' clients say "conditions: no" (openSession), so Task 5's
   // latch has locked them: a loosening is never asked of their users (the
   // form and its answer are sessions 10's)
-  it('a loosening is judged against the session\'s own value, and in a session whose client could answer for the user it is not asked; nothing changes', async () => {
+  it('in a session whose client could answer for the user: its own lowering undone; a loosening above the value for all sessions is not asked, and changes nothing', async () => {
     await tool.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
     // back toward the default: its own lowering undone, though its client
     // latched it (the undo shows no form: sessions 10)

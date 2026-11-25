@@ -1183,8 +1183,8 @@ sessions) all of this is each session's own, for the two caps:
   sessions, under the ceiling), which only the user or operator set at a
   terminal or confirmed. The ceiling's rules still apply to the undo: one
   that forbids the setting, or turns conversation off, refuses it, and so
-  does a kind locked in the session or across the user's sessions. Past a
-  session's 32 recorded changes, each further undo is still told but only
+  does a kind the user locked in the session (a dialog declined, or two left
+  unanswered), or one locked across the user's sessions. Past a session's 32 recorded changes, each further undo is still told but only
   counted in history, and a hard crash can lose that count. The options every
   session shares, and `settings.json`, are not touched; every history line
   names the session, and only that session reads it. A session may also
@@ -1202,7 +1202,10 @@ sessions) all of this is each session's own, for the two caps:
   applied; nothing process-wide is asked. Any frame from a session's client
   that says its configuration could answer a dialog locks every setting for
   that session's life, even when a later answer says otherwise (a hook the
-  client has loaded can be deleted from disk and still answer). Every frame
+  client has loaded can be deleted from disk and still answer). The lock is
+  on dialogs. A session's own lowering shows none when it is undone, so it
+  can still be undone. After a runtime restart a lock's cause isn't known, so
+  any lock kept from before it holds the undo. Every frame
   is seen as it arrives, also one that answers late or that nobody asked
   for. A latched session is told `SETTING_CLIENT_NOT_CONFIRMED`, never that
   the user declined, with why its client said so when the client line gives

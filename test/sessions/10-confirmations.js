@@ -595,6 +595,20 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
           await held(t0, DECLINED, A);
         });
 
+        // (its answer, a decline too, would come to a form that is gone)
+        it('held by a form that was up when the latch fell, its answer lost; the window counts nothing', async () => {
+          const t0 = tool();
+          await lower(t0, A);
+          const r = await t0.set('requestTimeout', '45s', 'settings tool', ctx(A));
+          sources[A].emit('client', NO);
+          await refused(t0.confirm('requestTimeout', '45s', {requestState: r.inputRequired.requestState, inputResponses: DECLINE}, ctx(A)), 'SETTING_CONFIRMATION_INVALID');
+          await held(t0, DECLINED, A);
+          assert.strictEqual(confirm.userWindow().count('requestTimeout'), 0);
+          // the form's kind alone
+          await t0.set('maxOutputBytes', '2MiB', 'settings tool', at(A));
+          assert.strictEqual((await t0.set('maxOutputBytes', '8MiB', 'settings tool', at(A))).new, 8 * MiB);
+        });
+
         it('held by a decline that comes after the latch', async () => {
           openSession(L, NO);
           const t0 = noForm();
