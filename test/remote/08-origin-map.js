@@ -285,7 +285,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
     return [{...base, server: 'github'}, {...base, server: 'github', mapped: true}, {...base, server: 'github', mapped: true},
       {t, call: 1, server: null, pack: 'p', tool: 'outer', bytesOut: 5, linesOut: 1, ms: 1, outcome: 'ok', caller: 'u'}];
   };
-  const STAND_IN_SECTION = {serverCalls: 2, bytesIn: 20, linesIn: 2, tokensInEst: 5, servers: {github: 2}};
+  const STAND_IN_SECTION = {serverCalls: 2, bytesIn: 20, tokensInEst: 5, servers: {github: 2}};
 
   it('the aggregate counts stand-in calls in no total or grouping, only in its standIn section', async () => {
     const r = aggregate(usageRecords().map((x) => ({...x, process: 'p-1'})));
@@ -311,7 +311,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
       assert.deepStrictEqual(r.standIn, STAND_IN_SECTION, groupBy);
       assert.ok(ajv.validate(OUTPUT_SCHEMA, r), JSON.stringify(ajv.errors));
     }
-    assert.match(reportText((await usageReport({groupBy: 'server'}, {isAdmin: true}, {usage}))), /acceptance stand-in \(in no row or total above\): 2 server calls \(2 to github\)/);
+    assert.match(reportText((await usageReport({groupBy: 'server'}, {isAdmin: true}, {usage}))), /acceptance stand-in \(in no row or total above\): 2 server calls \(2 to github\); read 20 B$/m);
   });
 
   it('receiptSentence marks each mapped server', async () => {

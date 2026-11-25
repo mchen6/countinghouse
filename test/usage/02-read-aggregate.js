@@ -45,7 +45,7 @@ test('a record is read by its own date, whatever day its directory is named for'
 
 test('aggregates per process, tool, server and pack with exact sums, server calls joined to their tool call', () => {
   const agg = aggregate(readUsage(home, {since: '2026-11-10'}));
-  assert.deepStrictEqual(agg.totals, {calls: 4, serverCalls: 6, bytesIn: 18500, linesIn: 465, bytesOut: 2802, linesOut: 51, tokensInEst: 4625, tokensOutEst: 701});
+  assert.deepStrictEqual(agg.totals, {calls: 4, serverCalls: 6, bytesIn: 18500, bytesOut: 2802, tokensInEst: 4625, tokensOutEst: 701});
   assert.deepStrictEqual(agg.processes.map((p) => [p.process, p.calls, p.serverCalls, p.bytesIn, p.bytesOut, p.first, p.last]), [
     ['1111-1794304800000', 1, 2, 12000, 1200, '2026-11-10T10:00:01.000Z', '2026-11-10T10:00:03.000Z'],
     ['2222-1794391200000', 2, 3, 6000, 1202, '2026-11-11T10:00:01.000Z', '2026-11-11T11:00:00.000Z'],
@@ -53,12 +53,12 @@ test('aggregates per process, tool, server and pack with exact sums, server call
   ]);
   assert.strictEqual(agg.processes[0].pid, 1111);
   assert.strictEqual(agg.processes[0].started, '2026-11-10T10:00:00.000Z');
-  assert.deepStrictEqual(agg.byTool.map((t) => [t.scenario, t.tool, t.calls, t.serverCalls, t.linesIn, t.linesOut]), [
-    [PACK, TOOL, 3, 5, 460, 39],
-    ['ch-report', 'usage_report', 1, 0, 0, 12],
-    ['(unknown)', '(no result recorded)', 0, 1, 5, 0] // the call a stopped process never finished
+  assert.deepStrictEqual(agg.byTool.map((t) => [t.scenario, t.tool, t.calls, t.serverCalls, t.bytesIn, t.bytesOut]), [
+    [PACK, TOOL, 3, 5, 18000, 2400],
+    ['ch-report', 'usage_report', 1, 0, 0, 402],
+    ['(unknown)', '(no result recorded)', 0, 1, 500, 0] // the call a stopped process never finished
   ]);
-  assert.deepStrictEqual(agg.byServer, [{server: 'github', serverCalls: 6, bytesIn: 18500, linesIn: 465, tokensInEst: 4625, credentials: ['GITHUB_TOKEN'], tools: {actions_list: 2, get_job_logs: 4}}]);
+  assert.deepStrictEqual(agg.byServer, [{server: 'github', serverCalls: 6, bytesIn: 18500, tokensInEst: 4625, credentials: ['GITHUB_TOKEN'], tools: {actions_list: 2, get_job_logs: 4}}]);
   assert.deepStrictEqual(agg.byScenario.map((p) => [p.scenario, p.calls, p.serverCalls]), [[PACK, 3, 5], ['ch-report', 1, 0], ['(unknown)', 0, 1]]);
   assert.deepStrictEqual(agg.outcomes, {ok: 3, error: 1});
 });
@@ -80,16 +80,16 @@ test('token estimates are bytes/4 and every rendering carries the estimate label
 
 test('csv has one row per tool with the fixed header', () => {
   const csv = formatCsv(aggregate(readUsage(home, {since: '2026-11-10'})));
-  assert.strictEqual(CSV_HEADER, 'scenario,tool,calls,server_calls,bytes_in,lines_in,bytes_out,lines_out,tokens_in_est,tokens_out_est');
+  assert.strictEqual(CSV_HEADER, 'scenario,tool,calls,server_calls,bytes_in,bytes_out,tokens_in_est,tokens_out_est');
   assert.deepStrictEqual(csv.split('\n'), [
     CSV_HEADER,
-    `${PACK},${TOOL},3,5,18000,460,2400,39,4500,600`,
-    'ch-report,usage_report,1,0,0,0,402,12,0,101',
-    '(unknown),(no result recorded),0,1,500,5,0,0,125,0',
+    `${PACK},${TOOL},3,5,18000,2400,4500,600`,
+    'ch-report,usage_report,1,0,0,402,0,101',
+    '(unknown),(no result recorded),0,1,500,0,125,0',
     ''
   ]);
   assert.strictEqual(formatCsv(aggregate([{t: '2026-11-11T00:00:00Z', call: 1, process: '1-1', pack: 'a,"b"', tool: 't', server: null, bytesIn: 0, linesIn: 0, bytesOut: 4, linesOut: 1, ms: 1, outcome: 'ok'}])).split('\n')[1],
-    '"a,""b""",t,1,0,0,0,4,1,0,1');
+    '"a,""b""",t,1,0,0,4,0,1');
 });
 
 // M6 (#413 rev 3 section 13.1): a record names its scenario; one written
@@ -103,10 +103,12 @@ test('a record\'s scenario and an older record\'s pack are read alike', () => {
 test('text output states what scenario calls stood for, per scenario, tool, server and process, and never says saved', () => {
   const text = formatText(aggregate(readUsage(home, {since: '2026-11-10'})));
   assert.match(text, /^3 scenario calls stood for 5 server calls; 4 tool calls in all, from 3 launcher process\(es\)\.$/m);
-  assert.match(text, /read 465 lines \(18\.1 KB\) from servers; 51 lines \(2\.7 KB\) returned to the model/);
+  assert.match(text, /^read 18\.1 KB from servers; 2\.7 KB returned to the model\.$/m);
   for (const heading of ['by scenario:', 'by tool:', 'by server:', 'by process:']) assert.ok(text.includes(heading), heading);
   assert.match(text, /ci_failure_triage: 3 calls stood for 5 server calls/);
   assert.doesNotMatch(text, /saved/i);
+  // (a line of text is no measure: a JSON answer is one line)
+  assert.doesNotMatch(text, /\blines?\b/i);
   assert.match(formatText(aggregate([])), /^no usage recorded/);
 });
 

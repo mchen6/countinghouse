@@ -179,7 +179,7 @@
   },
   {
     "name": "countinghouse_usage_report",
-    "description": "What this countinghouse has done for you: per tool, server, scenario or module, the calls, the server calls made for them, and the lines and bytes read from servers and returned to the model, from this process and, where a usage directory is kept, earlier ones that wrote to it. On a shared runtime, the calls of this session only; in a session's own ch-local runtime, this session's calls since that runtime started. `countinghouse-usage --usageDir <the usage directory>` in a terminal covers every session that writes there. Token columns are an estimate (utf8 bytes / 4).",
+    "description": "What this countinghouse has done for you: per tool, server, scenario or module, the calls, the server calls made for them, and the bytes read from servers and returned to the model, from this process and, where a usage directory is kept, earlier ones that wrote to it. On a shared runtime, the calls of this session only; in a session's own ch-local runtime, this session's calls since that runtime started. `countinghouse-usage --usageDir <the usage directory>` in a terminal covers every session that writes there. Token columns are an estimate (utf8 bytes / 4).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -310,15 +310,7 @@
                 "type": "integer",
                 "minimum": 0
               },
-              "linesIn": {
-                "type": "integer",
-                "minimum": 0
-              },
               "bytesOut": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "linesOut": {
                 "type": "integer",
                 "minimum": 0
               },
@@ -337,9 +329,7 @@
               "calls",
               "serverCalls",
               "bytesIn",
-              "linesIn",
               "bytesOut",
-              "linesOut",
               "tokensInEst",
               "tokensOutEst"
             ],
@@ -367,15 +357,7 @@
               "type": "integer",
               "minimum": 0
             },
-            "linesIn": {
-              "type": "integer",
-              "minimum": 0
-            },
             "bytesOut": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "linesOut": {
               "type": "integer",
               "minimum": 0
             },
@@ -419,9 +401,7 @@
             "calls",
             "serverCalls",
             "bytesIn",
-            "linesIn",
             "bytesOut",
-            "linesOut",
             "tokensInEst",
             "tokensOutEst",
             "keptOut"
@@ -713,9 +693,6 @@
             "bytesIn": {
               "type": "integer"
             },
-            "linesIn": {
-              "type": "integer"
-            },
             "tokensInEst": {
               "type": "integer"
             },
@@ -733,7 +710,6 @@
           "required": [
             "serverCalls",
             "bytesIn",
-            "linesIn",
             "tokensInEst",
             "servers"
           ],

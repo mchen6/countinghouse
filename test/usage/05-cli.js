@@ -31,11 +31,13 @@ describe('countinghouse-usage', function() {
   it('prints text by default and CSV with --csv, the token columns marked as estimates', async () => {
     const text = run('--usageDir', dir, '--groupBy', 'server');
     assert.strictEqual(text.status, 0, text.stderr);
-    assert.match(text.stdout, /github: \d+ calls, \d+ server calls/);
+    assert.match(text.stdout, / github: \d+ calls, \d+ server calls; read [\d,]+ B, returned [\d,]+ B; about /m);
+    assert.match(text.stdout, /^total: \d+ calls, \d+ server calls; read [\d,]+ B, returned [\d,]+ B; about /m);
+    assert.doesNotMatch(text.stdout, /\blines?\b/i);
     assert.match(text.stdout, /estimate \(utf8 bytes \/ 4\)/);
     assert.doesNotMatch(text.stdout, /saved/i);
     const csv = run('--usageDir', dir, '--csv');
-    assert.strictEqual(csv.stdout.split('\n')[0], 'caller,tool,server,scenario,module,calls,server_calls,bytes_in,lines_in,bytes_out,lines_out,tokens_in_est,tokens_out_est');
+    assert.strictEqual(csv.stdout.split('\n')[0], 'caller,tool,server,scenario,module,calls,server_calls,bytes_in,bytes_out,tokens_in_est,tokens_out_est');
   });
 
   it('--since all --until a day: the window\'s days first, then the period\'s totals with the upper-bound estimate', async () => {
