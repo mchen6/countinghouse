@@ -20,7 +20,8 @@ const SERVICE = 'urn:countinghouse-test:serviceID:s';
 const TAKE_MS = 20000;
 const turn = () => new Promise((r) => setImmediate(r));
 
-// mode: 'answer' (with `refused`), 'silent', or 'exit' (it ends, no answer)
+// mode: 'answer' (with `refused`), 'held' (answered once told to, taken[1]),
+// 'silent', or 'exit' (it ends, no answer)
 const VALIDATOR = `
 const {parentPort: port, workerData: {flag, mode, refused}} = require('worker_threads');
 const taken = new Int32Array(flag);
@@ -28,7 +29,8 @@ const say = () => { Atomics.store(taken, 0, 1); Atomics.notify(taken, 0); };
 port.on('message', (m) => {
   if (m.type === 'compile') return port.postMessage({type: 'answer', id: m.id, compiled: true});
   if (m.type !== 'check') return undefined;
-  if (mode === 'answer') port.postMessage({type: 'answer', id: m.id, refused: refused});
+  if (mode === 'held') Atomics.wait(taken, 1, 0, 20000);
+  if (mode === 'answer' || mode === 'held') port.postMessage({type: 'answer', id: m.id, refused: refused});
   say();
   if (mode === 'exit') process.exit(0);
   return undefined;
@@ -65,15 +67,22 @@ describe('module-loading 46: a running check\'s deadline', function() {
   // one action in it, compiled there.
   async function poolWith(mode, {timeoutMs = 100, refused = null} = {}) {
     const p = new ValidatorPool({size: 1, timeoutMs, compileMs: 60000, workerOptions});
+    let real = null;
+    let own = null;
+    // (closed whatever happens next: a boot that fails too)
+    ends.push(async () => {
+      p.close();
+      if (real != null) real.removeAllListeners();
+      await Promise.all([real, own].map((x) => (x != null ? x.terminate() : null)));
+    });
     for (let w = 0; !(p.slots[0].ready && p.spare.ready) && w < 60000; w += 20) await new Promise((r) => setTimeout(r, 20));
     const slot = p.slots[0];
     assert.ok(slot.ready && p.spare.ready, 'the validators booted');
-    const real = slot.worker;
-    const taken = new Int32Array(new SharedArrayBuffer(4));
-    const own = new Worker(VALIDATOR, {eval: true, workerData: {flag: taken.buffer, mode, refused}});
+    real = slot.worker;
+    const taken = new Int32Array(new SharedArrayBuffer(8));
+    own = new Worker(VALIDATOR, {eval: true, workerData: {flag: taken.buffer, mode, refused}});
     for (const event of ['message', 'error', 'exit']) own.on(event, (x) => real.emit(event, x));
     slot.worker = {postMessage: (m, transfer) => own.postMessage(m, transfer), terminate: () => own.terminate(), emit: (...a) => real.emit(...a)};
-    ends.push(async () => { p.close(); real.removeAllListeners(); await Promise.all([real.terminate(), own.terminate()]); });
     const name = `deadline-module-${++names}`;
     const api = {device: {friendlyName: name, serviceList: {[SERVICE]: {actionList: [{name: 'a', input: {schema: '/s/a/input'}, output: {schema: '/s/a/output'}}]}}}};
     const m = {key: `${name}#1`, name};
@@ -157,6 +166,27 @@ describe('module-loading 46: a running check\'s deadline', function() {
       assert.deepStrictEqual([strikes(w), respawns(w), said(w).length], [1, 1, 1]);
       assert.match(said(w)[0], /its wait in the queue/);
       assert.ok(errors.some((e) => e.includes(`${w.m.name}/a: output ran past a full budget (its deadline); a strike`)), errors.join('\n'));
+    });
+
+    it('one started late, refused as a wait, and answered while the main thread is paused past its full budget: no strike, no replacement', async () => {
+      const w = await poolWith('held', {timeoutMs: 600000});
+      const pending = check(w);
+      const req = w.slot.current;
+      req.startedAt = Date.now() - 596000;
+      w.p.onDeadline(req);
+      assert.strictEqual(codeOf(await pending), 'VALIDATION_TIMEOUT');
+      assert.ok(w.slot.current === req, 'its validator has the rest of its budget');
+      // from the check phase, as paused(): the re-armed timer and the answer are both waiting after
+      await turn();
+      Atomics.store(w.taken, 1, 1);
+      Atomics.notify(w.taken, 1);
+      assert.notStrictEqual(Atomics.wait(w.taken, 0, 0, TAKE_MS), 'timed-out', 'the test\'s own validator did not answer: the machine, not the pool');
+      while (Date.now() <= req.startedAt + 600020);
+      for (let i = 0; w.slot.current != null && i < 1000; i++) await turn();
+      await turn();
+      assert.deepStrictEqual([strikes(w), respawns(w), said(w).length], [0, 0, 1]);
+      assert.ok(w.slot.current == null && w.p.slots[0] === w.slot, 'the same validator, free again');
+      assert.ok(!errors.some((e) => e.includes(`${w.m.name}/a: output ran past a full budget`)), errors.join('\n'));
     });
 
     it('one that never answers is still failed: refused, one strike, one replacement', async () => {
