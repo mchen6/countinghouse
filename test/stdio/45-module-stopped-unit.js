@@ -76,6 +76,21 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
     assert.strictEqual(mm.packsInPlace.has('ch-pack-pf'), false);
   });
 
+  it('every session is told it stopped, and that a restart of countinghouse tries it again (never of one\'s client: runtime-claims 2)', async () => {
+    const notices = require('../../lib/notices');
+    const add = notices.add;
+    const told = [];
+    notices.add = (module, text) => { told.push([module, text]); };
+    try {
+      const mm = runtime();
+      await loadPf(mm);
+      await mip.selfUnload(mm, 'ch-step-x', 'MODULE_SUSPENDED');
+    } finally {
+      notices.add = add;
+    }
+    assert.deepStrictEqual(told, [['ch-pack-pf', 'ch-pack-pf stopped (MODULE_SUSPENDED); it is tried again when countinghouse restarts']]);
+  });
+
   it('8: a module still in the map after the self-unload: the record comes back marked, and a reload of it is refused', async () => {
     const mm = runtime({stuck: 'ch-step-x'});
     await loadPf(mm);

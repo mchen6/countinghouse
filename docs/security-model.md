@@ -1105,12 +1105,11 @@ A dialog is shown only when all of these hold:
 - **A tested client.** The client's name and version are inside a range on
   the tested-client list (`lib/elicitation-clients.json`). A range names
   exactly the versions tested, with no open range, so a new version gets no
-  dialog until it is re-tested. The list ships empty: until the
-  maintainer's hand test before release
+  dialog until it is re-tested. The list ships empty, so no client is shown a
+  dialog in this version. A maintainer's hand test
   ([`docs/development/elicitation-hand-test.md`](development/elicitation-hand-test.md))
-  adds the first range, no client sees a dialog. After that, the automated
-  re-test of each new Claude Code version (not built yet) will open the pull
-  request that adds its range.
+  adds the first range. After that, the automated re-test of each new Claude
+  Code version (not built yet) will open the pull request that adds its range.
 - **The request declares form elicitation.** The capability is read from
   the request itself, never inferred from earlier ones.
 - **Nothing in the client's own configuration could answer the dialog.**

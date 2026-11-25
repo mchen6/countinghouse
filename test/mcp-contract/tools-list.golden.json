@@ -166,7 +166,7 @@
         },
         "update": {
           "type": "string",
-          "description": "The last update check you asked for (ch-local upgrade --check), as it was left on this machine: countinghouse itself never checks for updates."
+          "description": "The last update check you asked for (ch-local upgrade --check), as it was left on this machine: the runtime itself never checks for updates; ch-local checks when you ask, or when automatic upgrades are on."
         }
       },
       "required": [
@@ -372,7 +372,7 @@
               "minimum": 0
             },
             "keptOut": {
-              "title": "tokens kept out of the model's context: an upper-bound estimate, not a measurement",
+              "title": "tokens of what the tools read that did not reach the model (an estimate: bytes / 4, counting all of it as if the model would have read it)",
               "type": "object",
               "properties": {
                 "estimate": {
@@ -382,17 +382,11 @@
                 "method": {
                   "type": "string",
                   "const": "utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), rounded per tool call; a call that asked is counted from its final pass only"
-                },
-                "bound": {
-                  "title": "upper: it takes the model to have read, without the tool, every byte the tool read",
-                  "type": "string",
-                  "const": "upper"
                 }
               },
               "required": [
                 "estimate",
-                "method",
-                "bound"
+                "method"
               ],
               "additionalProperties": false
             }
@@ -447,7 +441,7 @@
                 "minimum": 0
               },
               "keptOut": {
-                "title": "tokens kept out of the model's context: an upper-bound estimate, not a measurement",
+                "title": "tokens of what the tools read that did not reach the model (an estimate: bytes / 4, counting all of it as if the model would have read it)",
                 "type": "object",
                 "properties": {
                   "estimate": {
@@ -457,17 +451,11 @@
                   "method": {
                     "type": "string",
                     "const": "utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), rounded per tool call; a call that asked is counted from its final pass only"
-                  },
-                  "bound": {
-                    "title": "upper: it takes the model to have read, without the tool, every byte the tool read",
-                    "type": "string",
-                    "const": "upper"
                   }
                 },
                 "required": [
                   "estimate",
-                  "method",
-                  "bound"
+                  "method"
                 ],
                 "additionalProperties": false
               }

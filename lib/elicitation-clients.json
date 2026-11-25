@@ -1,5 +1,5 @@
 {
-  "$comment": "The tested-client list for elicitation (lib/elicitation-clients.js). Each client: its clientInfo.name, the conditions ch-local checks for it, and its tested version ranges, each {from, before}: from inclusive, before exclusive, both plain major.minor.patch. A range names exactly the versions tested: there is no open range. The automated re-test of a new Claude Code version opens the pull request that adds one; the maintainer's hand test before release sets the first.",
+  "$comment": "The tested-client list for elicitation (lib/elicitation-clients.js). Each client: its clientInfo.name, the conditions ch-local checks for it, and its tested version ranges, each {from, before}: from inclusive, before exclusive, both plain major.minor.patch. A range names exactly the versions tested: there is no open range. The automated re-test of a new Claude Code version opens the pull request that adds one; the maintainer's hand test sets the first.",
   "clients": [
     {"name": "claude-code", "conditions": "claude-code", "tested": []}
   ]

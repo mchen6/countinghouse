@@ -217,8 +217,8 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       u.recordOut(retry, {tool: 't', bytes: 2000, ms: 50, outcome: 'ok'});
       const report = await reportOf(u);
       assert.strictEqual(report.totals.keptOut.estimate, 0, 'the final pass read nothing, so nothing is counted kept out');
-      assert.deepStrictEqual([report.totals.keptOut.bound, report.totals.keptOut.method],
-        ['upper', 'utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), rounded per tool call; a call that asked is counted from its final pass only']);
+      assert.deepStrictEqual([Object.keys(report.totals.keptOut), report.totals.keptOut.method],
+        [['estimate', 'method'], 'utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), rounded per tool call; a call that asked is counted from its final pass only']);
     });
 
     it('a call that asked and was never retried is no call, and kept nothing out: its server calls are still its cost', async () => {

@@ -699,8 +699,8 @@ all) wait on a question at once, past which `ctx.ask` is
   their client's own dialog (an MCP elicitation form), for this start only:
   `settings.json` is never written, and the change ends when the client
   restarts countinghouse. A dialog is shown only to a client inside a tested
-  version range (`lib/elicitation-clients.json`, shipped empty until the
-  maintainer's hand test before release), on a request that declares form
+  version range (`lib/elicitation-clients.json`, shipped empty until
+  the maintainer's hand test adds the first range), on a request that declares form
   elicitation, and when ch-local finds nothing in the client's own
   configuration that could answer it. Otherwise the terminal command is
   given, as before. New codes: `SETTING_CONFIRMATION_INVALID`,
@@ -739,7 +739,7 @@ configuration). None of it is available to a hosted server.
 - **`--settingsFile <path>`** (ch-local's `<home>/settings.json`) lists
   **`countinghouse_settings`**, to the one local user only, never through
   `ctx.call`. `get` returns each setting's value, default, bounds, whether
-  it guards, when it applies, and the last 50 changes, without ch-local's
+  it guards, when it applies, and the last 50 entries of its history, without ch-local's
   host or pid. `set` changes one setting within its bounds and never
   loosens a guarding one:
   - `SETTING_UNKNOWN`, `SETTING_OUT_OF_BOUNDS` and `SETTING_LOOSENS_A_GUARD`

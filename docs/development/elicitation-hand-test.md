@@ -15,9 +15,9 @@ The list ships empty: until this test passes, no client is shown a dialog.
 
 ## How a version gets onto the list
 
-- **Once, before release, by hand.** The maintainer runs the checklist
-  below on the current Claude Code, and the first range is added with the
-  results recorded here.
+- **Once, by hand, before a client is first listed.** The maintainer runs the
+  checklist below on the current Claude Code, and the first range is added with
+  the results recorded here.
 - **Each new version after that, automatically** (not built yet). The
   automated re-test will plant a hook at every location ch-local's scan knows
   (`lib/client-conditions-fixtures.js` in ch-local: `LOCATIONS` and

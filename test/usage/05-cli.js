@@ -40,12 +40,12 @@ describe('countinghouse-usage', function() {
     assert.strictEqual(csv.stdout.split('\n')[0], 'caller,tool,server,scenario,module,calls,server_calls,bytes_in,bytes_out,tokens_in_est,tokens_out_est');
   });
 
-  it('--since all --until a day: the window\'s days first, then the period\'s totals with the upper-bound estimate', async () => {
+  it('--since all --until a day: the window\'s days first, then the period\'s totals with the estimate', async () => {
     const r = run('--usageDir', dir, '--since', 'all', '--until', '2026-11-10');
     assert.strictEqual(r.status, 0, r.stderr);
     const lines = r.stdout.split('\n');
     assert.match(lines[0], /^usage from 2026-11-09 to 2026-11-10 \(window: all records to 2026-11-10T23:59:59\.999Z\)/);
-    assert.match(lines[1], /^period: 2 calls, 3 server calls; about [\d,]+ fewer tokens: kept out of the model's context, an upper-bound estimate/);
+    assert.match(lines[1], /^period: 2 calls, 3 server calls; about [\d,]+ tokens of what the tools read did not reach the model \(an estimate: bytes \/ 4, counting all of it as if the model would have read it\)$/);
     assert.match(r.stdout, /^by day:$/m);
     assert.match(r.stdout, /^profile: /m);
     assert.doesNotMatch(r.stdout, /sav(e|ed|ing)|lower bill|cost/i);

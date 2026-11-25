@@ -25,9 +25,9 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.strictEqual(F.notLoaded('/home/u/.ch/bin/ch-local.js'), 'Not loaded: run `node "/home/u/.ch/bin/ch-local.js" status` in your own terminal to see why.');
       assert.strictEqual(F.notLoadedHosted, 'Not loaded on this runtime.');
       // (ch-local's stopped and restart, 2026-11-20)
-      assert.strictEqual(F.stopped(null), 'Stopped by countinghouse: it loads again once its version changes. Run `ch-local status` in your own terminal to see why.');
-      assert.strictEqual(F.stopped('/home/u/.ch/bin/ch-local.js'), 'Stopped by countinghouse: it loads again once its version changes. Run `node "/home/u/.ch/bin/ch-local.js" status` in your own terminal to see why.');
-      assert.strictEqual(F.restart, 'Restart your client to load it.');
+      assert.strictEqual(F.stopped(null), 'Stopped by countinghouse: it is tried again when countinghouse restarts, or once its version changes. Run `ch-local status` in your own terminal to see why.');
+      assert.strictEqual(F.stopped('/home/u/.ch/bin/ch-local.js'), 'Stopped by countinghouse: it is tried again when countinghouse restarts, or once its version changes. Run `node "/home/u/.ch/bin/ch-local.js" status` in your own terminal to see why.');
+      assert.strictEqual(F.restart, 'Not loaded now: it is tried again when countinghouse restarts.');
       // (an own module held back: the own-modules design §5, line 11)
       assert.strictEqual(F.changed(null, '/home/u/my-tool'), 'Not loaded: its files changed since you added it: run `ch-local add-module "/home/u/my-tool"` again.');
       assert.strictEqual(F.changed('/home/u/.ch/bin/ch-local.js', null), 'Not loaded: its files changed since you added it: run `node "/home/u/.ch/bin/ch-local.js" add-module "<its folder>"` again.');
@@ -768,7 +768,7 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.strictEqual(overview.build({version: '1', settingsProfile: true, packs: [], update: {unreadable: true}}).update,
         'The last update check could not be read: run `ch-local upgrade --check` in your own terminal to check again.');
       assert.strictEqual(overview.OUTPUT_SCHEMA.properties.update.description,
-        'The last update check you asked for (ch-local upgrade --check), as it was left on this machine: countinghouse itself never checks for updates.');
+        'The last update check you asked for (ch-local upgrade --check), as it was left on this machine: the runtime itself never checks for updates; ch-local checks when you ask, or when automatic upgrades are on.');
     });
 
     // (A's medium, 7) the gateway passes the home's check in the settings
