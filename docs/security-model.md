@@ -1183,11 +1183,11 @@ sessions) all of this is each session's own, for the two caps:
   sessions, under the ceiling), which only the user or operator set at a
   terminal or confirmed. The ceiling's rules still apply to the undo: one
   that forbids the setting, or turns conversation off, refuses it, and so
-  does a kind the user locked in the session (a dialog declined, or two left
-  unanswered), or one locked across the user's sessions. Past a session's 32
-  recorded changes, each further undo is still told but only counted in
-  history, and a hard crash can lose that count. The options every session
-  shares, and `settings.json`, are not touched; every history line
+  does a kind held in the session (a dialog declined, two left unanswered, or
+  one still open when the session's dialogs were locked), or one locked
+  across the user's sessions. Past a session's 32 recorded changes, each
+  further undo is still told but only counted in history, and a hard crash
+  can lose that count. The options every session shares, and `settings.json`, are not touched; every history line
   names the session, and only that session reads it. A session may also
   turn a module on or off (`enabled.*`) and change a module's settings
   (`module.*`), under the same rules as a single-user runtime: those are

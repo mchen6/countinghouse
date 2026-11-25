@@ -21,7 +21,7 @@ describe('session-runtime 16: a latched session\'s own lowering, undone', functi
     if (r != null && r.code === undefined) { r.child.kill('SIGKILL'); await r.exited; }
   });
 
-  it('client frame "no" at connect: lowered, undone, told and recorded; above the value for all sessions refused as before', async () => {
+  it('client frame "no" at connect: lowered, undone and recorded, its client asked nothing; above the value for all sessions refused as before', async () => {
     const home = trees.mkdtemp('ch-sr16-');
     const settingsFile = path.join(home, 'settings.json');
     r = runtime(home, ['--settingsFile', settingsFile]);
@@ -42,7 +42,10 @@ describe('session-runtime 16: a latched session\'s own lowering, undone', functi
     const undone = await set('30s');
     assert.deepStrictEqual(undone.result.structuredContent, {name: 'requestTimeout', old: 10000, new: 30000, applies: 'this session'}, JSON.stringify(undone));
     assert.strictEqual(await value(), 30000);
-    assert.strictEqual(await s.c.json('C', 300), null, 'its client was asked nothing');
+    // every frame the runtime sent before that last answer is here (one
+    // connection, in order): its shim's records, and no conditions?
+    assert.deepStrictEqual(s.c.got.filter((f) => f.kind === 'C').map((f) => JSON.parse(f.payload.toString('utf8'))),
+      [{op: 'forget'}, {op: 'record', entry: {requestTimeout: 10000}}, {op: 'forget'}]);
     assert.ok(!fs.existsSync(settingsFile), 'settings.json never written');
     const lines = fs.readFileSync(path.join(home, 'history.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     assert.deepStrictEqual(lines.filter((l) => l.change === 'this session: its own lowering undone').map((l) => [l.setting, l.old, l.new]), [['requestTimeout', 10000, 30000]]);
