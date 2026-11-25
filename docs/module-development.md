@@ -456,7 +456,9 @@ the keys that may reach the module, with its `title`, `description` and
 required). `prompts/get` runs none of your code: it checks the arguments
 against that schema, replaces each `{{name}}` once with the argument's value
 (an absent optional one is the empty string; substituted text is never
-scanned again) and returns your messages, at most 64 KiB in all.
+scanned again) and returns your messages, at most 64 KiB in all. When an
+argument fails its `pattern`, the refusal quotes its `description`, if it has
+one, as your words: say the form there.
 
 `completion/complete` offers values for a prompt's argument, or for a
 resource template's variable (`ref/resource`, the template as listed): the

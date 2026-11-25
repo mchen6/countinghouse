@@ -185,8 +185,8 @@ describe('mcp-contract 39: one table of declared text fields', () => {
       'line(where)', 'line(a.slice(0, 80))', 'line(action.description).trim() !== ', 'line(t))'],
     // (a legacy task's reason as its marks leave it, failedText: #482's
     // round 2 medium, 1)
-    'lib/mcp/gateway.js': [              // a prompt argument's schema errors; a failed task's reason (twice)
-      'line(declaredText(`${e.instancePath ', 'line(declaredText(failedText))', 'line(declaredText(codeMatch != null '],
+    'lib/mcp/gateway.js': [              // a failed task's reason (twice)
+      'line(declaredText(failedText))', 'line(declaredText(codeMatch != null '],
     'lib/mcp/result-content.js': ['message(e.description)} : {})'],   // a call result's resource link (the module's output)
     'lib/mcp/tool-registry.js': ['line(action.description).trim() === '],   // a description of hidden characters alone is none
     'lib/module-settings.js': ['message(cutAt(d.description, MAX_DESCRIPTION))']   // a module setting's description (B-bythemodule: ownWords)
