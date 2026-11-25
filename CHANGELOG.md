@@ -577,8 +577,8 @@ all) wait on a question at once, past which `ctx.ask` is
   as "project plugin or marketplace" and a place under the home as
   "~/..."), or "this client could not be confirmed". It was
   `SETTING_DECLINED_THIS_SESSION`, whose text read as if the user had
-  declined. While no client is on the tested list, so that no session can be
-  shown a dialog, such a session gets the answer every session gets
+  declined. While the tested list, read whole, has no client, so that no session
+  can be shown a dialog, such a session gets the answer every session gets
   (`SETTING_NEEDS_CONFIRMATION`, with the terminal command), and a lock kept
   across a runtime restart doesn't hold the undo of a session's own lowering.
 - **`SETTING_DECLINED_THIS_SESSION`** is a decline's, or two dialogs left

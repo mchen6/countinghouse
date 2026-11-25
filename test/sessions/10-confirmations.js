@@ -1015,6 +1015,23 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
         });
       }
 
+      // the other order of a resume: its client's frame latches it before the
+      // daemon's row is applied
+      it('latched first, then its locks restored: the latch\'s refusal, and the undo as a restored lock\'s', async () => {
+        sources[A].emit('client', NO);
+        confirm.confirmations(A).restore({locks: ALL_KINDS, formsLeft: 3});
+        assert.strictEqual(confirm.confirmations(A).latchedFor('requestTimeout'), true);
+        assert.strictEqual(confirm.confirmations(A).userLockOf('requestTimeout'), 'restored');
+        await refused(production().set('requestTimeout', '45s', 'settings tool', ctx(A)), 'SETTING_NEEDS_CONFIRMATION');
+        await refused(tool().set('requestTimeout', '45s', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
+        await lower(production(), A);
+        await refused(tool().set('requestTimeout', '30s', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
+        assert.strictEqual((await production().set('requestTimeout', '30s', 'settings tool', ctx(A))).new, 30000);
+        // (a decline after it all is the user's)
+        confirm.confirmations(A).decline('requestTimeout');
+        assert.strictEqual(confirm.confirmations(A).userLockOf('requestTimeout'), 'user');
+      });
+
       it('a loosening above the value for all sessions is refused all the same, changing nothing', async () => {
         confirm.confirmations(A).restore({locks: ALL_KINDS, formsLeft: 3});
         await lower(production(), A);
@@ -1036,7 +1053,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
         await refused(production().set('requestTimeout', '30s', 'settings tool', ctx(B)), 'SETTING_SESSION_OWN_VALUE_HELD');
       });
 
-      it('the user\'s window and the ceiling hold it, and its bound is the same', async () => {
+      it('the user\'s window and the ceiling hold it', async () => {
         confirm.confirmations(A).restore({locks: ALL_KINDS, formsLeft: 3});
         await lower(production(), A);
         const off = {ceiling: () => ({state: 'trusted', ceiling: {conversation: false, forbid: []}})};

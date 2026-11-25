@@ -1206,22 +1206,24 @@ sessions) all of this is each session's own, for the two caps:
   client has loaded can be deleted from disk and still answer). The lock is
   on dialogs. A session's own lowering shows none when it is undone, so it
   can still be undone. After a runtime restart a lock's cause isn't known, so
-  with a client on the tested list any lock kept from before it holds the
-  undo. With none, no dialog is shown that could be declined, and such a lock
-  doesn't hold it; nor does a decline made under an earlier version that had
-  one, after going back from it. Nothing is raised above the value for all
-  sessions by either. Every frame is seen as it arrives, also one that answers
-  late or that nobody asked for. While no client is on the tested list no
-  dialog is shown to anyone, so a latched session gets the answer every
-  session gets, the terminal command (`SETTING_NEEDS_CONFIRMATION`); one
-  resumed after a runtime restart is told `SETTING_LOCKED_THIS_SESSION` until
-  its client's configuration says so again. With one listed, a latched session
-  is told `SETTING_CLIENT_NOT_CONFIRMED`, never that the user declined, with
-  why its client said so when the client line gives it (contract 2's
-  conditionsWhy: a reason from a closed set and a place under the home as
-  "~/...", checked again by the runtime, so no user name and no path outside
-  the home reaches the agent), and the terminal command. A session locked by a
-  decline, or by two dialogs left unanswered, is told
+  with a client on the tested list, or a list that can't be read whole, any
+  lock kept from before it holds the undo. With none, no dialog is shown that
+  could be declined, and such a lock doesn't hold it; nor does a decline made
+  under a later version that had one, after going back from it. Nothing is
+  raised above the value for all sessions by either. Every frame is seen as it
+  arrives, also one that answers late or that nobody asked for. While no client
+  is on the tested list no dialog is shown to anyone, so a latched session gets
+  the answer every session gets, the terminal command
+  (`SETTING_NEEDS_CONFIRMATION`); one resumed after a runtime restart is told
+  `SETTING_LOCKED_THIS_SESSION` until its client again reports that its
+  configuration could answer a dialog by itself. With one listed, or a list
+  that can't be read whole, a latched session is told
+  `SETTING_CLIENT_NOT_CONFIRMED`, never that the user declined, with why its
+  client said so when the client line gives it (contract 2's conditionsWhy: a
+  reason from a closed set and a place under the home as "~/...", checked
+  again by the runtime, so no user name and no path outside the home reaches
+  the agent), and the terminal command. A session locked by a decline, or by
+  two dialogs left unanswered, is told
   `SETTING_DECLINED_THIS_SESSION`. A confirmed raise of
   the output cap waits for the validators to grow; the session, its lock,
   the ceiling and its value are checked again after that wait, and a change
