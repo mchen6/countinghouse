@@ -77,6 +77,10 @@ describe('usage: counters, files and the receipt', () => {
   it('the receipt sentence: size and calls per server, never "saved"', () => {
     assert.strictEqual(receiptSentence({calls: 14, bytesIn: 3250586, bytesOut: 2458, servers: ['github']}, {github: 14}),
       'read 3.1 MB in 14 calls to github; 2.4 KB reached the model.');
+    // (a size that rounds up to the next unit is said in it)
+    for (const [bytes, said] of [[1023, '1023 B'], [1024, '1.0 KB'], [1048524, '1023.9 KB'], [1048525, '1.0 MB'], [1048575, '1.0 MB'], [1048576, '1.0 MB']]) {
+      assert.strictEqual(receiptSentence({calls: 0, bytesIn: 0, bytesOut: bytes, servers: []}, {}), `no server was called; ${said} reached the model.`);
+    }
     assert.strictEqual(receiptSentence({calls: 16, bytesIn: 100, bytesOut: 10, servers: ['github', 'linear']}, {github: 14, linear: 2}),
       'read 100 B in 14 calls to github and 2 to linear; 10 B reached the model.');
     assert.strictEqual(receiptSentence({calls: 0, bytesIn: 0, bytesOut: 40, servers: []}, {}),
