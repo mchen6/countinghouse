@@ -1130,7 +1130,7 @@ configuration). None of it is available to a hosted server.
   `--hardened` exited 2, unable to read it.
 - Each remote call is a usage record under the `tools/call` it was made
   for, so the receipt and `countinghouse_usage_report` count it as a
-  server call: the remote's name, the tool, the text content's lines and
+  server call: the remote's name, the tool, the text content's
   bytes (other blocks are passed on, not counted), the time, the outcome
   (`ok`, `isError` or the rejection's code) and the credential's variable
   name. No content and no credential value is recorded. The call id rides
