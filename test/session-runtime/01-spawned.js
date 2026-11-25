@@ -181,7 +181,7 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     }
     // everything else is the terminal's: any other setting, and its retries;
     // nothing is written (no setting is a pack's since M5b: unknown)
-    for (const [args, extra] of [[{action: 'set', name: 'moduleSandbox', value: 'audit'}, {}], [{action: 'set', name: 'locale', value: 'zh'}, {}]]) {
+    for (const [args, extra] of [[{action: 'set', name: 'moduleSandbox', value: 'audit'}, {}], [{action: 'set', name: 'upgradeCheck', value: 'weekly'}, {}]]) {
       const r2 = await call(args, extra);
       assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
       assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_TERMINAL_ONLY_SHARED', `${JSON.stringify(args)}: ${JSON.stringify(r2)}`);
@@ -361,7 +361,7 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.strictEqual(valueOf(await call(b, {action: 'get'}), 'requestTimeout'), 60000);
 
     // every other setting is the terminal's, for all sessions too; a scope that is not one is refused
-    for (const args of [{action: 'set', name: 'moduleSandbox', value: 'audit', scope: 'all-sessions'}, {action: 'set', name: 'locale', value: 'zh', scope: 'all-sessions'}]) {
+    for (const args of [{action: 'set', name: 'moduleSandbox', value: 'audit', scope: 'all-sessions'}, {action: 'set', name: 'upgradeCheck', value: 'weekly', scope: 'all-sessions'}]) {
       const refusedAll = await call(a, args);
       assert.strictEqual(refusedAll.result._meta['countinghouse/code'], 'SETTING_TERMINAL_ONLY_SHARED', JSON.stringify(refusedAll));
     }

@@ -65,9 +65,9 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
   };
   const reset = () => { sessions.resetForTests(); settings.resetForTests(); jobSessions.resetForTests(); notices.resetForTests(); settingsTool.resetForTests(); require('../../lib/settings-confirm').resetForTests(); };
   beforeEach(() => {
-    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout, locale: options.locale};
+    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout};
     // the defaults every session shares, whatever the options' own are
-    Object.assign(options, {maxOutputBytes: 8 * MiB, requestTimeout: 30000, locale: 'en-US'});
+    Object.assign(options, {maxOutputBytes: 8 * MiB, requestTimeout: 30000});
     reset();
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s09-'));
     file = path.join(home, 'settings.json');
@@ -125,13 +125,14 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
   // these sessions' clients say "conditions: no" (openSession), so Task 5's
   // latch has locked them: a loosening is never asked of their users (the
   // form and its answer are sessions 10's)
-  it('a loosening is judged against the session\'s own value, and in a session whose client could answer for the user it is not asked; nothing changes', async () => {
+  it('in a session whose client could answer for the user: its own lowering undone; a loosening above the value for all sessions is not asked, and changes nothing', async () => {
     await tool.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
-    // back toward the default, in a locked session: refused, and it names no
-    // terminal command, which would never move A's own value
-    const e = await refused(tool.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
-    assert.ok(/it is locked in this session/.test(e.message) && !/settings set/.test(e.message), e.message);
-    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 2 * MiB);
+    // back toward the default: its own lowering undone, though its client
+    // latched it (the undo shows no form: sessions 10)
+    assert.strictEqual((await tool.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A))).new, 4 * MiB);
+    // above it: a loosening, not asked
+    await refused(tool.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 4 * MiB);
     // B has no override: above the default is one
     await refused(tool.set('requestTimeout', '60s', 'settings tool', ctx(B)), 'SETTING_CLIENT_NOT_CONFIRMED');
     assert.strictEqual(settings.limitsOf(B), null);
@@ -163,7 +164,7 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci': true}}));
     const before = fs.readFileSync(file);
     // (a stored pack.* is no setting since M5b; a module's on/off is every session's: sessions 37)
-    for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['autoUpgrade', 'on'], ['upgradeCheck', 'weekly'], ['locale', 'zh']]) {
+    for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['autoUpgrade', 'on'], ['upgradeCheck', 'weekly']]) {
       const e = await refused(tool.set(name, value, 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
       assert.match(e.message, /ch-local settings set/, `${name} ${value}`);
     }

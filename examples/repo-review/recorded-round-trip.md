@@ -192,21 +192,21 @@ verbatim and complete:
             "line": 30,
             "type": "generic-credential-assignment",
             "severity": "medium",
-            "redacted": "TOKEN\": \"非法访***(9 chars)\""
+            "redacted": "TOKEN\": \"\u975e\u6cd5\u8bbf***(9 chars)\""
           },
           {
             "file": "lib/error-info.zh-CN.json",
             "line": 31,
             "type": "generic-credential-assignment",
             "severity": "medium",
-            "redacted": "TOKEN\": \"无法校***(11 chars)\""
+            "redacted": "TOKEN\": \"\u65e0\u6cd5\u6821***(11 chars)\""
           },
           {
             "file": "lib/error-info.zh-CN.json",
             "line": 42,
             "type": "generic-credential-assignment",
             "severity": "medium",
-            "redacted": "TOKEN\": \"无法生***(11 chars)\""
+            "redacted": "TOKEN\": \"\u65e0\u6cd5\u751f***(11 chars)\""
           },
           {
             "file": "lib/couchdb-adapter/couchdb-auth-provider.js",

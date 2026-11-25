@@ -409,8 +409,8 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
     };
     const reset = () => { sessions.resetForTests(); settings.resetForTests(); jobSessions.resetForTests(); notices.resetForTests(); settingsTool.resetForTests(); };
     beforeEach(() => {
-      saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout, locale: options.locale};
-      Object.assign(options, {maxOutputBytes: 8 * MiB, requestTimeout: 30000, locale: 'en-US'});
+      saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout};
+      Object.assign(options, {maxOutputBytes: 8 * MiB, requestTimeout: 30000});
       reset();
       settings.configure({ceiling: () => ({state: 'none'})});
       home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s10-'));
@@ -477,18 +477,13 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       // three declines across sessions, or a start with no restore table
       // (lockAll, fail closed), hold the undo too -- a session replayed after
       // that restart has lost its own lock, and the window is what remains
-      it('the user\'s window locked: no undo here, said with its own reason, in the locale\'s words', async () => {
+      it('the user\'s window locked: no undo here, said with its own reason', async () => {
         const t0 = noForm();
         await t0.set('requestTimeout', '10s', 'settings tool', at(A));
         require('../../lib/settings-confirm').userWindow().lockAll();
         const held = await refused(t0.set('requestTimeout', '30s', 'settings tool', at(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
         assert.match(held.message, /\(changes to it in conversation are paused across your sessions, for up to 30 minutes\)/);
         assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
-        // (#537's high, L3) the reason in the refusal's own language
-        options.locale = 'zh-CN';
-        const zh = await refused(t0.set('requestTimeout', '30s', 'settings tool', at(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
-        assert.ok(zh.message.includes('（在对话中修改它已在你的所有会话中暂停，最长 30 分钟）'), zh.message);
-        assert.ok(!/paused/.test(zh.message), zh.message);
       });
 
       // (#537's high, L1) the ceiling read before the lock's wait, read again
@@ -520,8 +515,170 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
         const r = await t0.set('requestTimeout', '45s', 'settings tool', ctx(A));
         assert.strictEqual((await t0.confirm('requestTimeout', '45s', {requestState: r.inputRequired.requestState, inputResponses: DECLINE}, ctx(A))).applies, 'declined');
         const held = await refused(t0.set('requestTimeout', '30s', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
-        assert.strictEqual(held.message, 'This session set requestTimeout to 10s itself, and it cannot be raised back in conversation now (it is locked in this session); nothing was changed. A change in a terminal would not move it: it sets the value for all sessions (30s), and this session keeps its own lower value. It ends with this session: restart your client, and its new session runs at 30s.');
+        assert.strictEqual(held.message, 'This session set requestTimeout to 10s itself, and it cannot be raised back in conversation now (a change to it was declined or left unanswered in this session); nothing was changed. A change in a terminal would not move it: it sets the value for all sessions (30s), and this session keeps its own lower value. It ends with this session: restart your client, and its new session runs at 30s.');
         assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+      });
+
+      // R-undo-latched (walk finding 6): a client whose conditions say "no" at
+      // connect (any hook, or settings it can't read) latches every kind, and
+      // the undo shows no form, so the latch has no bearing on it. A lock
+      // that is, or might be, the user's own still holds it.
+      describe('in a session its client has latched', () => {
+        const NO = {status: 'ok', conditions: 'no', repo: null, why: {reason: 'client hook present', at: '~/.claude/settings.json'}};
+        const L = '1'.repeat(32);
+        const lower = async (t0, id = L) => { await t0.set('requestTimeout', '10s', 'settings tool', at(id)); notices.take(null, id); };
+        const held = async (t0, why, id = L) => {
+          const e = await refused(t0.set('requestTimeout', '30s', 'settings tool', at(id)), 'SETTING_SESSION_OWN_VALUE_HELD');
+          assert.ok(e.message.includes(`(${why})`), e.message);
+          assert.strictEqual(settings.effective(id, 'requestTimeout'), 10000);
+        };
+        const DECLINED = 'a change to it was declined or left unanswered in this session';
+        const RESTORED = 'it may have been locked before the runtime restarted';
+
+        it('at connect: its own lowering undone, back to the value for all sessions and part of the way, said and written', async () => {
+          openSession(L, NO);
+          assert.strictEqual(confirm.confirmations(L).latched(), true);
+          const t0 = noForm();
+          await lower(t0);
+          assert.deepStrictEqual(await t0.set('requestTimeout', '20s', 'settings tool', at(L)), {name: 'requestTimeout', old: 10000, new: 20000, applies: 'this session'});
+          assert.deepStrictEqual(await t0.set('requestTimeout', '30s', 'settings tool', at(L)), {name: 'requestTimeout', old: 20000, new: 30000, applies: 'this session'});
+          assert.deepStrictEqual(settings.overridesOf(L), []);
+          assert.deepStrictEqual(notices.take(null, L).length, 2, 'each said to it');
+          assert.deepStrictEqual(history().filter((h) => h.change === 'this session: its own lowering undone').map((h) => [h.old, h.new, h.session]), [[10000, 20000, L], [20000, 30000, L]]);
+          await t0.set('maxOutputBytes', '2MiB', 'settings tool', at(L));
+          assert.strictEqual((await t0.set('maxOutputBytes', '8MiB', 'settings tool', at(L))).new, 8 * MiB);
+        });
+
+        it('latched after it lowered: undone too; still latched, its locks as they were', async () => {
+          const t0 = noForm();
+          await lower(t0, A);
+          sources[A].emit('client', NO);
+          assert.strictEqual((await t0.set('requestTimeout', '30s', 'settings tool', at(A))).new, 30000);
+          assert.deepStrictEqual(confirm.confirmations(A).locks(), ['enabled', 'maxOutputBytes', 'module', 'requestTimeout']);
+          assert.strictEqual(confirm.confirmations(A).latchedFor('requestTimeout'), true);
+        });
+
+        it('a loosening above the value for all sessions: refused with the latch\'s text, as before', async () => {
+          openSession(L, NO);
+          const t0 = tool();
+          await lower(t0);
+          const above = await refused(t0.set('requestTimeout', '45s', 'settings tool', ctx(L)), 'SETTING_CLIENT_NOT_CONFIRMED');
+          assert.match(above.message, /client hook present: ~\/\.claude\/settings\.json/);
+          await refused(t0.set('requestTimeout', '30001', 'settings tool', ctx(L)), 'SETTING_CLIENT_NOT_CONFIRMED');
+          assert.strictEqual(settings.effective(L, 'requestTimeout'), 10000);
+          assert.deepStrictEqual(asked, [], 'its client is not asked');
+        });
+
+        it('held by the user\'s decline before the latch', async () => {
+          const t0 = tool();
+          await lower(t0, A);
+          const r = await t0.set('requestTimeout', '45s', 'settings tool', ctx(A));
+          assert.strictEqual((await t0.confirm('requestTimeout', '45s', {requestState: r.inputRequired.requestState, inputResponses: DECLINE}, ctx(A))).applies, 'declined');
+          sources[A].emit('client', NO);
+          await held(t0, DECLINED, A);
+          // (its other kinds are the latch's alone)
+          await t0.set('maxOutputBytes', '2MiB', 'settings tool', at(A));
+          assert.strictEqual((await t0.set('maxOutputBytes', '8MiB', 'settings tool', at(A))).new, 8 * MiB);
+        });
+
+        it('held by two forms left unanswered before the latch', async () => {
+          const t0 = tool();
+          await lower(t0, A);
+          for (const v of ['45s', '50s', '55s']) { try { await t0.set('requestTimeout', v, 'settings tool', ctx(A)); } catch (e) { /* the third gets no form */ } }
+          assert.strictEqual(confirm.confirmations(A).declined('requestTimeout'), true);
+          sources[A].emit('client', NO);
+          await held(t0, DECLINED, A);
+        });
+
+        // (its answer, a decline too, would come to a form that is gone)
+        it('held by a form that was up when the latch fell, its answer lost; the window counts nothing', async () => {
+          const t0 = tool();
+          await lower(t0, A);
+          const r = await t0.set('requestTimeout', '45s', 'settings tool', ctx(A));
+          sources[A].emit('client', NO);
+          await refused(t0.confirm('requestTimeout', '45s', {requestState: r.inputRequired.requestState, inputResponses: DECLINE}, ctx(A)), 'SETTING_CONFIRMATION_INVALID');
+          await held(t0, DECLINED, A);
+          assert.strictEqual(confirm.userWindow().count('requestTimeout'), 0);
+          // the form's kind alone
+          await t0.set('maxOutputBytes', '2MiB', 'settings tool', at(A));
+          assert.strictEqual((await t0.set('maxOutputBytes', '8MiB', 'settings tool', at(A))).new, 8 * MiB);
+        });
+
+        it('held by a decline that comes after the latch', async () => {
+          openSession(L, NO);
+          const t0 = noForm();
+          await lower(t0);
+          confirm.confirmations(L).decline('requestTimeout');
+          await held(t0, DECLINED);
+        });
+
+        // the limit: which of the two a lock across a restart was is not known
+        it('held by a lock restored across a restart, before or after a fresh "no"', async () => {
+          const t0 = noForm();
+          confirm.confirmations(A).restore({locks: ['requestTimeout'], formsLeft: 3});
+          await lower(t0, A);
+          await held(t0, RESTORED, A);
+          sources[A].emit('client', NO);
+          assert.deepStrictEqual([confirm.confirmations(A).restoredFor('requestTimeout'), confirm.confirmations(A).latchedFor('requestTimeout')], [false, true], 'the latch\'s now');
+          await held(t0, RESTORED, A);
+          // restored after its latch: held too
+          openSession(L, NO);
+          confirm.confirmations(L).restore({locks: ['requestTimeout'], formsLeft: 3});
+          await lower(t0);
+          await held(t0, RESTORED);
+        });
+
+        it('a decline after a restored lock is said as the decline it is', async () => {
+          const t0 = noForm();
+          confirm.confirmations(A).restore({locks: ['requestTimeout'], formsLeft: 3});
+          await lower(t0, A);
+          confirm.confirmations(A).decline('requestTimeout');
+          await held(t0, DECLINED, A);
+        });
+
+        it('a second "no" changes nothing of it', async () => {
+          openSession(L, NO);
+          const t0 = noForm();
+          await lower(t0);
+          sources[L].emit('client', NO);
+          assert.strictEqual((await t0.set('requestTimeout', '30s', 'settings tool', at(L))).new, 30000);
+        });
+
+        for (const [what, lock] of [['three declines elsewhere', () => { for (let i = 0; i < 3; i++) confirm.userWindow().note('requestTimeout'); }],
+          ['a start with no restore table', () => confirm.userWindow().lockAll()]]) {
+          it(`held by the user's window (${what})`, async () => {
+            openSession(L, NO);
+            const t0 = noForm();
+            await lower(t0);
+            lock();
+            await held(t0, 'changes to it in conversation are paused across your sessions, for up to 30 minutes');
+          });
+        }
+
+        it('held by the ceiling\'s rules, and bounded by its value', async () => {
+          openSession(L, NO);
+          const withCeiling = (c) => tool({sessionClient: () => ({ok: false, why: 'x'}), ceiling: () => c});
+          const off = withCeiling({state: 'trusted', ceiling: {conversation: false, forbid: []}});
+          await lower(off);
+          await held(off, 'the operator\'s ceiling turns changes in conversation off');
+          await refused(withCeiling({state: 'trusted', ceiling: {conversation: true, forbid: ['requestTimeout']}}).set('requestTimeout', '30s', 'settings tool', at(L)), 'SETTING_FORBIDDEN_BY_CEILING');
+          await refused(withCeiling({state: 'untrusted', file: 'ceiling.json', problem: 'x'}).set('requestTimeout', '30s', 'settings tool', at(L)), 'SETTING_CEILING_UNTRUSTED');
+          const below = {state: 'trusted', ceiling: {conversation: true, forbid: [], requestTimeout: 20000}};
+          settings.configure({ceiling: () => below});
+          await refused(withCeiling(below).set('requestTimeout', '30s', 'settings tool', at(L)), 'SETTING_ABOVE_CEILING');
+          assert.strictEqual((await withCeiling(below).set('requestTimeout', '20s', 'settings tool', at(L))).new, 20000);
+        });
+
+        it('a value marked as a confirmed loosening stays on the form\'s route: refused with the latch\'s text', async () => {
+          openSession(L, NO);
+          const t0 = tool();
+          settings.set(L, 'requestTimeout', 40000, {loosening: true, over: 30000});
+          assert.strictEqual(settings.overridesOf(L)[0].loosening, true);
+          options.requestTimeout = 50000;
+          settings.configure({ceiling: () => ({state: 'none'})});
+          await refused(t0.set('requestTimeout', '45s', 'settings tool', ctx(L)), 'SETTING_CLIENT_NOT_CONFIRMED');
+          assert.strictEqual(settings.effective(L, 'requestTimeout'), 40000);
+        });
       });
 
       // (the medium on the undo) the operator's ceiling as for a loosening
@@ -635,13 +792,12 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       assert.deepStrictEqual(history().filter((h) => h.session === B).map((h) => h.change), ['this session', 'not applied']);
     });
 
-    it('the form\'s text says "this session" in both languages', async () => {
+    it('the form\'s text says "this session", for both caps', async () => {
       const en = await tool().set('requestTimeout', '60s', 'settings tool', ctx(A));
       assert.strictEqual(en.inputRequired.inputRequests.approve.params.message,
         'Allow countinghouse tool calls to run for up to 60s in this session (now 30s)? This applies to this session only, until it ends.');
-      options.locale = 'zh-CN';
-      const zh = await tool().set('maxOutputBytes', '16MiB', 'settings tool', ctx(B));
-      assert.strictEqual(zh.inputRequired.inputRequests.approve.params.message, '允许 countinghouse 工具在本会话中每次调用最多返回 16MiB（当前为 8MiB）吗？此设置仅对本会话有效，会话结束即失效。');
+      const caps = await tool().set('maxOutputBytes', '16MiB', 'settings tool', ctx(B));
+      assert.strictEqual(caps.inputRequired.inputRequests.approve.params.message, 'Allow countinghouse tools to return up to 16MiB per call in this session (now 8MiB)? This applies to this session only, until it ends.');
     });
 
     it('a form staged in A answers only in A: retried from B with A\'s state it fails; A\'s form does not replace B\'s; A\'s end counts its form as an expiry (review focus 2)', async () => {

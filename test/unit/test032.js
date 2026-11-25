@@ -5,8 +5,8 @@ const {testPort} = require('../helpers/test-env');
 const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/cross-cutting-matrix.md found that MCP tools/call error responses
-// (lib/mcp/gateway.js's toolCallResult()) dropped err.code -- the locale-
-// independent field CHError/DeviceError carry (see Sprint 4's
+// (lib/mcp/gateway.js's toolCallResult()) dropped err.code -- the stable
+// field CHError/DeviceError carry (see Sprint 4's
 // worker-message.js fix) that HTTP invoke-action responses already
 // exposed. Fixed by adding structuredContent: {code: err.code} to
 // toolCallResult's error branch whenever err.code is present.

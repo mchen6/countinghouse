@@ -70,8 +70,8 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
   };
   const reset = () => { sessions.resetForTests(); settings.resetForTests(); jobSessions.resetForTests(); notices.resetForTests(); settingsTool.resetForTests(); confirm.resetForTests(); };
   beforeEach(() => {
-    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout, locale: options.locale};
-    Object.assign(options, {maxOutputBytes: 16 * MiB, requestTimeout: 30000, locale: 'en-US'});
+    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout};
+    Object.assign(options, {maxOutputBytes: 16 * MiB, requestTimeout: 30000});
     reset();
     settings.configure({ceiling: () => ({state: 'none'})});
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s12-'));
@@ -278,15 +278,12 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
       assert.deepStrictEqual(notices.take(null, A), ['maxOutputBytes raised from 16MiB to 32MiB for all sessions (confirmed in claude-code)']);
     });
 
-    it('the form\'s text in both languages, for both caps', async () => {
+    it('the form\'s text, for both caps', async () => {
       const en = await tool().set('requestTimeout', '60s', 'settings tool', ctx(A));
       assert.strictEqual(en.inputRequired.inputRequests.approve.params.message,
         'Allow countinghouse tool calls in all your sessions to run for up to 60s (now 30s)? This changes the setting for every session, now and after a restart.');
-      options.locale = 'zh-CN';
-      const zh = await tool().set('maxOutputBytes', '32MiB', 'settings tool', ctx(B));
-      assert.strictEqual(zh.inputRequired.inputRequests.approve.params.message, '允许 countinghouse 工具在你的所有会话中每次调用最多返回 32MiB（当前为 16MiB）吗？此更改对所有会话生效，重启后仍然有效。');
-      const zh2 = await tool().set('requestTimeout', '60s', 'settings tool', ctx(C));
-      assert.strictEqual(zh2.inputRequired.inputRequests.approve.params.message, '允许 countinghouse 工具在你的所有会话中每次调用最长运行 60s（当前为 30s）吗？此更改对所有会话生效，重启后仍然有效。');
+      const caps = await tool().set('maxOutputBytes', '32MiB', 'settings tool', ctx(B));
+      assert.strictEqual(caps.inputRequired.inputRequests.approve.params.message, 'Allow countinghouse tools in all your sessions to return up to 32MiB per call (now 16MiB)? This changes the setting for every session, now and after a restart.');
     });
 
     it('it is judged against the default in force: a value above it needs the form though the asking session runs higher by its own', async () => {
@@ -470,7 +467,7 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
       fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 16 * MiB}}));
       const before = fs.readFileSync(file);
       // (a module's on/off is every session's, whatever the scope: sessions 37)
-      for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['locale', 'zh'], ['autoUpgrade', 'off'], ['upgradeCheck', 'never']]) {
+      for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['autoUpgrade', 'off'], ['upgradeCheck', 'never']]) {
         const e = await refused(tool().set(name, value, 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
         assert.match(e.message, /ch-local settings set/);
       }

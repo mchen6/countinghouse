@@ -61,8 +61,8 @@ describe('sessions 25: the settings history, per session (shared runtime B5, Tas
   const reset = () => { sessions.resetForTests(); settings.resetForTests(); jobSessions.resetForTests(); notices.resetForTests(); settingsTool.resetForTests(); confirm.resetForTests(); };
 
   beforeEach(() => {
-    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout, locale: options.locale, settingsFile: options.settingsFile};
-    Object.assign(options, {maxOutputBytes: 8 * MiB, requestTimeout: 30000, locale: 'en-US'});
+    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout, settingsFile: options.settingsFile};
+    Object.assign(options, {maxOutputBytes: 8 * MiB, requestTimeout: 30000});
     reset();
     settings.configure({ceiling: () => ({state: 'none'})});
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s25-'));
