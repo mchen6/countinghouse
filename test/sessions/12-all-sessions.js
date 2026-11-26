@@ -250,7 +250,8 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
       // its latest value, never "asked again"
       const past = history().filter((h) => /past this session's 32/.test(String(h.change)));
       // (applied: said as `new`, never `asked`, which says a change not made)
-      assert.deepStrictEqual(past.map((h) => [h.change.split(',')[0], h.new, h.asked]), [['all sessions: tightened', 4 * MiB, undefined]], JSON.stringify(past));
+      // (its label says it is not stored, as the answer does)
+      assert.deepStrictEqual(past.map((h) => [h.change, h.new, h.asked]), [['all sessions, until the runtime restarts: tightened, past this session\'s 32 changes recorded one by one', 4 * MiB, undefined]], JSON.stringify(past));
       // every session reads it, not only the one that asked
       const seenByB = (await t0.get(ctx(B))).history.filter((h) => /past this session's 32/.test(String(h.change)));
       assert.strictEqual(seenByB.length, 1, JSON.stringify(seenByB));
@@ -260,6 +261,24 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
       t0.writeCounts();
       const counted = history().filter((h) => /past this session's 32/.test(String(h.change)) && h.count != null);
       assert.deepStrictEqual(counted.map((h) => [h.count, h.latest, /asked again/.test(h.change)]), [[1, 2 * MiB, false]], JSON.stringify(counted));
+    });
+
+    // past the budget, a stored raise awaiting the next start is not taken
+    // back in conversation: that changes nothing in force (no tightening of
+    // what runs), and it can't be stored; the terminal's, as a loosening is
+    it('past the budget, cancelling a stored raise is refused, naming the terminal command; the file keeps it', async () => {
+      const t0 = tool();
+      for (let i = 0; i < 32; i++) await t0.set('requestTimeout', String(30000 - 1 - i), 'settings tool', ctx(A));
+      const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+      raw.values.maxOutputBytes = 64 * MiB;   // ch-local settings set, for the next start
+      fs.writeFileSync(file, JSON.stringify(raw));
+      const before = fs.readFileSync(file, 'utf8');
+      sent.length = 0;
+      await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
+      assert.strictEqual(fs.readFileSync(file, 'utf8'), before, 'settings.json unchanged');
+      assert.strictEqual(options.maxOutputBytes, 16 * MiB);
+      assert.deepStrictEqual(sent, [], 'nothing in force changed');
+      assert.deepStrictEqual(history().filter((h) => h.setting === 'maxOutputBytes').map((h) => [h.asked, h.change, h.scope]), [[16 * MiB, 'refused, terminal only (32 changes made in this session)', 'all-sessions']]);
     });
   });
 
