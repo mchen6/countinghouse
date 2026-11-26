@@ -1264,9 +1264,9 @@ is:
   file ahead of the history would read as an edit made outside the tools.
   It lasts until the runtime restarts, and the answer and its history line
   say so. A tightening the user wants kept is made at a terminal. Past the
-  budget, a raise stored for the next start is not taken back in
-  conversation (that changes nothing in force, and could not be stored): it
-  is refused, naming the terminal command.
+  budget, taking back a raise stored for the next start changes nothing now
+  and is answered the same way: the stored raise still applies at the next
+  start.
 
 A tightening needs no dialog. A loosening always needs one: the asking
 session's own (it spends one of that session's three and counts in the

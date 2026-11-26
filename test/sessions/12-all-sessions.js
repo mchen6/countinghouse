@@ -263,10 +263,11 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
       assert.deepStrictEqual(counted.map((h) => [h.count, h.latest, /asked again/.test(h.change)]), [[1, 2 * MiB, false]], JSON.stringify(counted));
     });
 
-    // past the budget, a stored raise awaiting the next start is not taken
-    // back in conversation: that changes nothing in force (no tightening of
-    // what runs), and it can't be stored; the terminal's, as a loosening is
-    it('past the budget, cancelling a stored raise is refused, naming the terminal command; the file keeps it', async () => {
+    // past the budget, taking back a raise stored for the next start is a
+    // tightening like any other, never refused: nothing changes now, the
+    // answer says until the runtime restarts (the stored raise still applies
+    // at the next start), and it is recorded as the others past the budget
+    it('past the budget, a stored raise taken back changes nothing now, is answered as until the runtime restarts, and is recorded past the budget', async () => {
       const t0 = tool();
       for (let i = 0; i < 32; i++) await t0.set('requestTimeout', String(30000 - 1 - i), 'settings tool', ctx(A));
       const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -274,11 +275,11 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
       fs.writeFileSync(file, JSON.stringify(raw));
       const before = fs.readFileSync(file, 'utf8');
       sent.length = 0;
-      await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
-      assert.strictEqual(fs.readFileSync(file, 'utf8'), before, 'settings.json unchanged');
+      assert.deepStrictEqual(await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), {name: 'maxOutputBytes', old: 64 * MiB, new: 16 * MiB, applies: 'all sessions, until the runtime restarts'});
+      assert.strictEqual(fs.readFileSync(file, 'utf8'), before, 'settings.json unchanged: the raise still applies at the next start');
       assert.strictEqual(options.maxOutputBytes, 16 * MiB);
       assert.deepStrictEqual(sent, [], 'nothing in force changed');
-      assert.deepStrictEqual(history().filter((h) => h.setting === 'maxOutputBytes').map((h) => [h.asked, h.change, h.scope]), [[16 * MiB, 'refused, terminal only (32 changes made in this session)', 'all-sessions']]);
+      assert.deepStrictEqual(history().filter((h) => h.setting === 'maxOutputBytes').map((h) => [h.new, h.change, h.scope]), [[16 * MiB, 'all sessions, until the runtime restarts: tightened, past this session\'s 32 changes recorded one by one', 'all-sessions']]);
     });
   });
 
