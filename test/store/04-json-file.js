@@ -692,6 +692,7 @@ const onDisk = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 
 describe('store 04: a reader never costs a write (R-win-ledger-rename)', function() {
   this.timeout(120000);
+  const winIt = process.platform === 'win32' ? it : it.skip;
   let file = null;
   let f = null;
   let r = null;
@@ -770,8 +771,7 @@ describe('store 04: a reader never costs a write (R-win-ledger-rename)', functio
   // update()'s deadline, then the change fails with the refusal's code, the
   // store's file named and the wait said, the file as it was and no new file
   // left beside it -- told to its caller, never lost silently
-  it('a rename still refused at update()\'s deadline fails the change with its code and the wait, the file as it was (Windows)', async function() {
-    if (process.platform !== 'win32') this.skip();
+  winIt('a rename still refused at update()\'s deadline fails the change with its code and the wait, the file as it was (Windows)', async () => {
     r = await reader(`
       const fd = require('fs').openSync(${JSON.stringify(file)}, 'r');
       process.stdout.write('open\\n');
@@ -782,7 +782,7 @@ describe('store 04: a reader never costs a write (R-win-ledger-rename)', functio
     assert.deepStrictEqual(await r.end(), {code: 0, signal: null});
     assert.ok(err != null && (err.code === 'EPERM' || err.code === 'EBUSY'), `refused with its code: ${err != null ? `${err.code} ${err.message}` : 'no error'}`);
     assert.strictEqual(err.path, file, 'the store\'s file named, not the new one');
-    assert.match(err.message, /still refused after 10000 ms/);
+    assert.match(err.message, /still refused at update\(\)'s deadline, 10000 ms/);
     assert.deepStrictEqual(onDisk(file), {k: {n: 0}}, 'the file as it was');
     assert.deepStrictEqual(fs.readdirSync(path.dirname(file)).filter((e) => e.includes('.tmp-')), [], 'no new file left');
   });
