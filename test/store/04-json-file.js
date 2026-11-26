@@ -706,33 +706,17 @@ describe('store 04: a reader never costs a write (R-win-ledger-rename)', functio
     f.close();
   });
 
-  // The file held open by another process while the change is made. The
-  // lock is free, so update() writes the new file and renames it at once
-  // (synchronously); the other process sees the new file appear and closes
-  // its handle a quarter second later, or when its input ends. On Windows
-  // the rename meets the open handle and is refused until it closes: the
-  // change must still be made, once. (Time sets only how the two overlap:
-  // a quarter second is far more than writing the new file takes, so the
-  // rename is made while the handle is open, and far less than a refused
-  // rename is tried for, so the close comes inside that.)
+  // The file held open by another process while the change is made, until
+  // the test ends its input. On Windows the rename meets the open handle
+  // and is refused: update() must try it again without blocking (the test
+  // ends the reader's input while the change waits), and make it once the
+  // handle is closed. Elsewhere the change is made at once.
   it('a change made while another process has the file open is not refused', async () => {
     r = await reader(`
-      const fs = require('fs');
-      const fd = fs.openSync(${JSON.stringify(file)}, 'r');
-      const nap = new Int32Array(new SharedArrayBuffer(4));
-      let closed = false;
-      const close = () => { if (!closed) { closed = true; fs.closeSync(fd); } };
+      const fd = require('fs').openSync(${JSON.stringify(file)}, 'r');
       process.stdout.write('open\\n');
       process.stdin.resume();
-      process.stdin.once('end', close);
-      const dir = ${JSON.stringify(path.dirname(file))};
-      const tmp = ${JSON.stringify(`${path.basename(file)}.tmp-`)};
-      const watch = () => {
-        if (closed) return;
-        if (fs.readdirSync(dir).some((e) => e.startsWith(tmp))) { Atomics.wait(nap, 0, 0, 250); return close(); }
-        setImmediate(watch);
-      };
-      watch();
+      process.stdin.once('end', () => { require('fs').closeSync(fd); });
     `);
     const done = update(f, 'k', add);
     assert.deepStrictEqual(await r.end(), {code: 0, signal: null});
@@ -780,6 +764,27 @@ describe('store 04: a reader never costs a write (R-win-ledger-rename)', functio
     assert.ok(atEnd > atReady, `the reader read on while the changes were made (${r.said()})`);
     assert.deepStrictEqual(failed, [], `${failed.length} of ${changes} refused (the reader: ${r.said()})`);
     assert.deepStrictEqual(onDisk(file), {k: {n: changes}});
+  });
+
+  // (Windows) a handle never closed: the refused rename is tried again until
+  // update()'s deadline, then the change fails with the refusal's code, the
+  // store's file named and the wait said, the file as it was and no new file
+  // left beside it -- told to its caller, never lost silently
+  it('a rename still refused at update()\'s deadline fails the change with its code and the wait, the file as it was (Windows)', async function() {
+    if (process.platform !== 'win32') this.skip();
+    r = await reader(`
+      const fd = require('fs').openSync(${JSON.stringify(file)}, 'r');
+      process.stdout.write('open\\n');
+      process.stdin.resume();
+      process.stdin.once('end', () => { require('fs').closeSync(fd); });
+    `);
+    const {err} = await update(f, 'k', add);
+    assert.deepStrictEqual(await r.end(), {code: 0, signal: null});
+    assert.ok(err != null && (err.code === 'EPERM' || err.code === 'EBUSY'), `refused with its code: ${err != null ? `${err.code} ${err.message}` : 'no error'}`);
+    assert.strictEqual(err.path, file, 'the store\'s file named, not the new one');
+    assert.match(err.message, /still refused after 10000 ms/);
+    assert.deepStrictEqual(onDisk(file), {k: {n: 0}}, 'the file as it was');
+    assert.deepStrictEqual(fs.readdirSync(path.dirname(file)).filter((e) => e.includes('.tmp-')), [], 'no new file left');
   });
 
   openDirs.hooks();
