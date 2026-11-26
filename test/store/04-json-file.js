@@ -706,17 +706,33 @@ describe('store 04: a reader never costs a write (R-win-ledger-rename)', functio
     f.close();
   });
 
-  // The file held open by another process while the change is made: the
-  // lock is free, so update() writes and renames at once, before the other
-  // process closes the file. Nothing in update() or writeAtomic tries a
-  // refused rename again, so a refusal (Windows) is this test failing with
-  // its code: the probe's answer, not a timing fault of the test's.
+  // The file held open by another process while the change is made. The
+  // lock is free, so update() writes the new file and renames it at once
+  // (synchronously); the other process sees the new file appear and closes
+  // its handle a quarter second later, or when its input ends. On Windows
+  // the rename meets the open handle and is refused until it closes: the
+  // change must still be made, once. (Time sets only how the two overlap:
+  // a quarter second is far more than writing the new file takes, so the
+  // rename is made while the handle is open, and far less than a refused
+  // rename is tried for, so the close comes inside that.)
   it('a change made while another process has the file open is not refused', async () => {
     r = await reader(`
-      const fd = require('fs').openSync(${JSON.stringify(file)}, 'r');
+      const fs = require('fs');
+      const fd = fs.openSync(${JSON.stringify(file)}, 'r');
+      const nap = new Int32Array(new SharedArrayBuffer(4));
+      let closed = false;
+      const close = () => { if (!closed) { closed = true; fs.closeSync(fd); } };
       process.stdout.write('open\\n');
       process.stdin.resume();
-      process.stdin.once('end', () => { require('fs').closeSync(fd); });
+      process.stdin.once('end', close);
+      const dir = ${JSON.stringify(path.dirname(file))};
+      const tmp = ${JSON.stringify(`${path.basename(file)}.tmp-`)};
+      const watch = () => {
+        if (closed) return;
+        if (fs.readdirSync(dir).some((e) => e.startsWith(tmp))) { Atomics.wait(nap, 0, 0, 250); return close(); }
+        setImmediate(watch);
+      };
+      watch();
     `);
     const done = update(f, 'k', add);
     assert.deepStrictEqual(await r.end(), {code: 0, signal: null});
