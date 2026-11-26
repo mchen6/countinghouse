@@ -1257,7 +1257,13 @@ is:
   the history line names the asking session and, unlike a session's own
   lines, is every session's to read (no session's id is ever shown). A
   request for all sessions that was not made is the asking session's line,
-  and says what it was for.
+  and says what it was for;
+- past the asking session's 32 recorded changes, a tightening for all
+  sessions still applies at once to every session, but is not written to
+  `settings.json`: its history is one line and a count written later, and a
+  file ahead of the history would read as an edit made outside the tools.
+  It lasts until the runtime restarts, and the answer says so. A tightening
+  the user wants kept is made at a terminal.
 
 A tightening needs no dialog. A loosening always needs one: the asking
 session's own (it spends one of that session's three and counts in the
