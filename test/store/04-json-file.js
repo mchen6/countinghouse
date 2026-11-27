@@ -1262,19 +1262,17 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
     const file = path.join(dir, 'm.json');
     const f = openJsonFile(file, {debounceMs: 60000});
-    const link = fs.linkSync;
     const copy = fs.copyFileSync;
     try {
       f.set('a', 1); f.flush();
       fs.writeFileSync(file, '{"broken": ');
-      fs.linkSync = () => { throw Object.assign(new Error('ENOSPC: no space left on device, link'), {code: 'ENOSPC', syscall: 'link'}); };
       fs.copyFileSync = () => { throw Object.assign(new Error('ENOSPC: no space left on device, copyfile'), {code: 'ENOSPC', syscall: 'copyfile'}); };
       f.set('b', 2); f.flush();
     } finally {
-      fs.linkSync = link; fs.copyFileSync = copy;
+      fs.copyFileSync = copy;
       f.close();
     }
-    assert.ok(fs.linkSync === link && fs.copyFileSync === copy, 'the stubs are gone');
+    assert.ok(fs.copyFileSync === copy, 'the stub is gone');
     assert.deepStrictEqual(onDisk(file), {a: 1, b: 2});
     assert.strictEqual(aside(dir, 'm.json').length, 0);
     assert.ok(logged.some((l) => l.includes(file) && /no copy (of it )?was kept/.test(l) && l.includes('ENOSPC')), `the warning says no copy was kept, and why (${JSON.stringify(logged)})`);
@@ -1493,11 +1491,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     fs.writeFileSync(file, '{"broken": ');
     const used = require('../../lib/store').createStore({store: 'local', storePath: dir}).usedNonces;
     let got = null;
-    try {
-      got = await used.use(nonce, until).then((first) => ({first}), (err) => ({err}));
-    } finally {
-      require('../../lib/store/json-file').flushAll();
-    }
+    got = await used.use(nonce, until).then((first) => ({first}), (err) => ({err}));
     assert.strictEqual(got.first, undefined, 'never answered as a first use');
     assert.ok(got.err != null && got.err.message.includes(file), String(got.err && got.err.message));
     assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"broken": ');
