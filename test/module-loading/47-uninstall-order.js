@@ -65,7 +65,7 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
     for (const p of chmodded.splice(0)) { try { fs.chmodSync(p, 0o700); } catch (e) { /* gone */ } }
   });
 
-  const uninstall = (name, keepData = false) => new Promise((resolve) => new ModuleManager().uninstallModule(name, keepData, (e, r) => resolve({e, r})));
+  const uninstall = (name, keepData = false, mm = new ModuleManager()) => new Promise((resolve) => mm.uninstallModule(name, keepData, (e, r) => resolve({e, r})));
   const dataRoot = () => { options.moduleDataPath = trees.mkdtemp('ch-ml47-'); return options.moduleDataPath; };
   const lock = (p, mode) => { fs.chmodSync(p, mode); chmodded.push(p); };
   // (chmod refusing anything: POSIX, and not as root)
@@ -104,13 +104,16 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
     onPurge = (prefix) => {
       if (prefix.startsWith('ms:')) throw Object.assign(new Error('READONLY You cannot write against a read only replica. key ms:half-mod:secret-key-name'), {code: 'READONLY'});
     };
-    const first = await uninstall('half-mod');
+    const mm = new ModuleManager();
+    mm.lastSettings.set('half-mod', {values: {}});
+    const first = await uninstall('half-mod', false, mm);
     assert.strictEqual(first.e && first.e.code, 'MODULE_KEYS_NOT_PURGED', String(first.e && first.e.message));
     assert.ok(first.e.message.startsWith(CODES.MODULE_KEYS_NOT_PURGED.en.replace('{code}', 'READONLY')), first.e.message);
     assert.ok(!first.e.message.includes('secret-key-name') && !first.e.message.includes('read only replica'), first.e.message);
     assert.deepStrictEqual(calls, ['purge m:half-mod:', 'purge ms:half-mod:']);
     assert.ok(fs.existsSync(path.join(root, 'half-mod', 'data')));
     assert.strictEqual(CODES.MODULE_KEYS_NOT_PURGED.retryable, true);
+    assert.ok(mm.lastSettings.has('half-mod'), 'a refused uninstall keeps the last settings');
     calls = [];
     onPurge = null;
     const second = await uninstall('half-mod');
@@ -122,8 +125,13 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
     const root = dataRoot();
     fs.mkdirSync(path.join(root, 'rowfail-mod', 'data'), {recursive: true});
     registryFails = true;
-    const {e} = await uninstall('rowfail-mod');
+    const mm = new ModuleManager();
+    mm.lastSettings.set('rowfail-mod', {values: {}});
+    const {e} = await uninstall('rowfail-mod', false, mm);
     assert.strictEqual(e && e.code, 'REMOVE_MODULE_INFO_FAIL', String(e && e.message));
+    // (the registry's own message is the log's, never the answer's)
+    assert.ok(!e.message.includes('read-only'), e.message);
+    assert.ok(mm.lastSettings.has('rowfail-mod'), 'a refused uninstall keeps the last settings');
     assert.deepStrictEqual(calls, ['purge m:rowfail-mod:', 'purge ms:rowfail-mod:', 'registry rowfail-mod']);
     assert.ok(fs.existsSync(path.join(root, 'rowfail-mod', 'data')));
     assert.strictEqual(CODES.REMOVE_MODULE_INFO_FAIL.retryable, true);
@@ -192,6 +200,22 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
     const scoped = await uninstall('@shut/p');
     assert.strictEqual(scoped.e && scoped.e.code, 'MODULE_DATA_UNREADABLE', String(scoped.e && scoped.e.message));
     assert.ok(scoped.e.message.includes('(EACCES)'), scoped.e.message);
+    assert.deepStrictEqual(calls, []);
+  });
+
+  it('a sessions/ or a <name>/ that can\'t be written in, or a parent its rmdir needs that can\'t be: refused before any key goes', async function() {
+    if (!permissionsBite) return this.skip();
+    const root = dataRoot();
+    fs.mkdirSync(path.join(root, 'rosess-mod', 'sessions'), {recursive: true});
+    lock(path.join(root, 'rosess-mod', 'sessions'), 0o500);
+    const sess = await uninstall('rosess-mod');
+    assert.strictEqual(sess.e && sess.e.code, 'MODULE_DATA_UNREADABLE', String(sess.e && sess.e.message));
+    assert.ok(sess.e.message.startsWith(unreadableText(path.join(root, 'rosess-mod', 'sessions'), 'EACCES')), sess.e.message);
+    fs.mkdirSync(path.join(root, '@ro', 'p', 'data'), {recursive: true});
+    lock(path.join(root, '@ro'), 0o500);
+    const parent = await uninstall('@ro/p');
+    assert.strictEqual(parent.e && parent.e.code, 'MODULE_DATA_UNREADABLE', String(parent.e && parent.e.message));
+    assert.ok(parent.e.message.startsWith(unreadableText(path.join(root, '@ro'), 'EACCES')), parent.e.message);
     assert.deepStrictEqual(calls, []);
   });
 

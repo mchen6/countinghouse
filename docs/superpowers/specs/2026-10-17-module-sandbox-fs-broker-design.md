@@ -479,12 +479,12 @@ paths:
 `POST /uninstall-module {name, keepData}`, admin key required. It:
 - validates `name` against npm package-name rules before building any path;
 - refuses while the module is loaded, restarting or suspended;
-- removes the registry entry (`lib/device-db.js` `removeModuleInfo`, which has
-  no caller today), first *(amended 2026-11-04)*: if that fails nothing has been deleted
-  (`REMOVE_MODULE_INFO_FAIL`), and `registryEntryRemoved` is reported true
-  only when an entry existed. *(Amended 2026-11-27: every refusal now comes
-  before anything is removed, the data directory's checks included, then the
-  module's keys, then the registry entry, then the data directory. A store
+- removes the registry entry (`lib/device-db.js` `removeModuleInfo`), and
+  `registryEntryRemoved` is reported true only when an entry existed.
+  *(Amended 2026-11-27, replacing 2026-11-04's "first; if that fails nothing
+  has been deleted": every check of the data directory now comes before
+  anything is removed, then the module's keys, then the registry entry, then
+  the data directory, whose checks are made again at the delete. A store
   that can't be reached leaves the registry entry and the data directory
   (`MODULE_KEYS_NOT_PURGED`; some keys may already be gone, and a retry
   deletes the rest); a

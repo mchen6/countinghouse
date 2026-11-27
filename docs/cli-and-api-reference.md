@@ -195,13 +195,14 @@ refused with `INVALID_MODULE_PATH` before anything is unloaded.
 
 **`POST /uninstall-module`** takes `{name, keepData}` and answers
 `{uninstalled: true, name, dataDeleted, keysDeleted, registryEntryRemoved, kept}`.
-It removes the module's registry entry (when the server uses the registry,
-that is when no `--loadModule` is given), then, unless `keepData` is `true`,
-deletes the module's `ctx.redis` keys (every key under its
-`m:<name, URI-encoded>:` namespace; `keysDeleted` says how many, `null`
-with `keepData`) and
+Every check comes first, the data directory's included, while nothing has
+been removed. Then, unless `keepData` is `true`, it deletes the module's
+`ctx.redis` keys (every key under its `m:<name, URI-encoded>:` namespace;
+`keysDeleted` says how many, `null` with `keepData`); then it removes the
+module's registry entry (when the server uses the registry, that is when no
+`--loadModule` is given); then, unless `keepData` is `true`, it deletes
 `<moduleDataPath>/<name>`, never following links. A reload or an upgrade
-keeps both. It never removes the module's
+keeps the keys and the data. It never removes the module's
 code under `--modulePath`. It removes only directories the runtime made
 (the security model's ["Only what the runtime made is deleted"](security-model.md)):
 `kept` lists, as paths under `--moduleDataPath`, each one it found there but
