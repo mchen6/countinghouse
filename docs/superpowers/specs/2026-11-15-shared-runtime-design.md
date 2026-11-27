@@ -164,7 +164,7 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
     ```json
     {"jsonrpc":"2.0","id":<id>,"error":{"code":-32603,"message":"the answer is larger than this connection carries","data":{"countinghouse/code":"OUTPUT_TOO_LARGE","retryable":false}}}
     ```
-  - The shim streams an `M` payload to stdout as it reads it. It never has to hold one whole.
+  - The shim streams an `M` payload to stdout as it reads it. It never has to hold one whole, with one exception: the answer to its own replayed `initialize` (section 6), which it holds whole, at most 64 KiB, to read the lists it declares, and then drops.
 - **A malformed `M` closes the connection:**
   - a payload under 2 bytes;
   - a header length greater than the payload's remaining bytes;
@@ -190,7 +190,7 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 - **Runtime to client.** The answer to a request or a batch has the header `{"seq": n}`, the `n` it came with. A notification, or a message the runtime sends of its own, has no header.
   - The shim writes the bytes after the header, then one newline. It never parses a result body, which can be up to 256 MiB.
   - **Ids are matched by `seq`, never by comparing ids.** So `7`, `7.0`, `1e2` and integers past 2^53 need no rule here. The reply's own `id` is what the runtime writes, as stdio does today.
-  - **A reply whose `seq` the shim doesn't hold** (already answered, or sent to an earlier connection) is written to the client anyway, and nothing is recorded. Since `seq` never repeats in a shim's life, it never clears a newer request. The exception is the shim's own initialize replay, whose answer it drops.
+  - **A reply whose `seq` the shim doesn't hold** (already answered, or sent to an earlier connection) is written to the client anyway, and nothing is recorded. Since `seq` never repeats in a shim's life, it never clears a newer request. The exception is the shim's own initialize replay, whose answer it drops (after reading it, section 6).
 - **So a client can't produce a `C` frame,** and traffic stays byte-exact: nothing is re-stringified or parsed twice.
 
 **Control (`C`).** An unknown `op` is ignored, so either side can add one within a contract version.
@@ -584,7 +584,7 @@ The handoff goes on the new daemon's fd 3, as a 4-byte length and `{v: 1, sessio
 1. reattaches, starting the daemon if needed;
 2. resumes with its resume token, or, on `RESUME_REFUSED`, opens a new session and sends `replay`;
 3. sends the `client` frame again, from a fresh run of the `conditions` child;
-4. on a legacy session only (the client sent `initialize`): replays that line with the id `"ch-shim-replay-<n>"`, drops its answer (the client already has one), sends `notifications/initialized`, then sends the client `notifications/tools/list_changed`;
+4. on a legacy session only (the client sent `initialize`), when it replays that line: sends the client `notifications/tools/list_changed`, then replays the line with the id `"ch-shim-replay-<n>"` and sends `notifications/initialized`. The replay's answer is dropped (the client already has one), but read first, at most 64 KiB: for each of `prompts` and `resources` whose `result.capabilities.<list>.listChanged` is `true`, the client is sent `notifications/prompts/list_changed` or `notifications/resources/list_changed`. (A 2025-11-25 client is told when its prompts and resources lists change, as its tools; a runtime that doesn't declare it is told nothing more for them.) An answer past that size, one that doesn't parse, an error answer, or one without an object `result` or without the field tells nothing more, silently; nothing is told once the session has closed or been handed on; an answer cut short ends the connection, as any cut message does;
 5. on a modern session, sends nothing of its own. The client's listen stream ended, and the client opens it again.
 
 ### Crash of the runtime or the daemon
@@ -614,7 +614,7 @@ A daemon that gave up says so in `<home>/run/daemon/failed.json`, so the shims f
     - it says on stderr: `the shared runtime failed (<reason>), and this session's tightened settings can't move to a runtime of its own: restart the session`;
     - then it exits non-zero.
   - **With no record**, the per-session runtime it starts has never seen this client's `initialize`, so the shim:
-    1. replays its recorded `initialize` line, then `notifications/initialized`, and drops that `initialize`'s answer, since the client already has one;
+    1. replays its recorded `initialize` line, then `notifications/initialized`, and drops that `initialize`'s answer, since the client already has one. Once that answer comes with an object `result`, the client is sent `notifications/tools/list_changed`, and `notifications/prompts/list_changed` and `notifications/resources/list_changed` for each list whose `result.capabilities.<list>.listChanged` is `true` (its lists may be others than the shared runtime's); the answer is looked for among at most 64 lines of the runtime's output, each held only up to 1 MiB;
     2. then sends the lines it held, then relays stdin as it comes.
 
     The per-session runtime needs nothing new. The replay, and dropping its answer, are the shim's.
