@@ -372,7 +372,7 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
   it('MODULE_DATA_NOT_REMOVED is in the catalogue, an operator\'s and not retryable, its text word for word', () => {
     const c = CODES.MODULE_DATA_NOT_REMOVED;
     assert.deepStrictEqual([c.kind, c.retryable, c.httpStatus], ['operator', false, 500]);
-    assert.strictEqual(c.en, 'The module\'s stored data and registry entry were removed, but its data directory {path} could not be removed ({code}), so it is kept, perhaps only in part -- fix the cause (a full or read-only disk, its permissions), then uninstall again to remove it, or remove it by hand');
+    assert.strictEqual(c.en, 'The module\'s stored data and its registry entry, if any, are gone, but its data directory {path} could not be removed ({code}), so it is kept, perhaps only in part -- fix the cause (a full or read-only disk, its permissions), then uninstall again to remove it, or remove it by hand');
   });
 
   trees.hooks();
