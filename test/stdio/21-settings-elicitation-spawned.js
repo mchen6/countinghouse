@@ -99,7 +99,7 @@ describe('stdio 21: the confirmation round trip, spawned (part 3 P2)', function(
     const via = await io.request({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'countinghouse_call_tool', _meta: META,
       arguments: {name: 'countinghouse_settings', arguments: {action: 'set', name: 'requestTimeout', value: '60s'}}}});
     assert.strictEqual(via.result, undefined, JSON.stringify(via));
-    assert.deepStrictEqual(via.error, {code: -32602, message: 'unknown tool: countinghouse_call_tool'});
+    assert.deepStrictEqual(via.error, {code: -32602, message: 'unknown tool: countinghouse_call_tool; countinghouse_overview shows what is installed here and which tools you can use'});
     const mimic = await io.request({jsonrpc: '2.0', id: 3, method: 'tools/call', params: {name: 'input_required_probe_probeservice_mimic', arguments: {}, _meta: META}});
     assert.strictEqual(mimic.result.resultType, 'complete', JSON.stringify(mimic));
     assert.ok(Array.isArray(mimic.result.content));

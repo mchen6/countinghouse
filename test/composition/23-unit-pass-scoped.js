@@ -14,6 +14,9 @@ LOG.createLogger();
 const DeviceManager = require('../../lib/device-manager');
 const WorkerMessage = require('../../lib/worker-message');
 const callAddress = require('../../lib/call-address');
+const callTokens = require('../../lib/call-tokens');
+const cli = require('../../lib/cli-options');
+const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
 
 describe('composition 23: a unit\'s pass, scoped to the modules it added and their callers', () => {
   // a worker proxy for module `name`, hosting the device named `name`, that
@@ -75,6 +78,47 @@ describe('composition 23: a unit\'s pass, scoped to the modules it added and the
     dm.verifyModules(['q']);
     assert.deepStrictEqual(rec.cleared, ['q']);
     assert.deepStrictEqual(rec.relayed, [['q', 'unbound']]);
+  });
+
+  // A module loaded after the start that fails its first verification is never purged (a re-verification never purges): it serves
+  // its own actions. It is given its verdict, unbound, so a call to it is not held for one that never comes (each would wait out the
+  // hold and answer CTX_CALL_NOT_READY), and a call already held goes on.
+  describe('a module first verified after the start, failing', () => {
+    let kept = null;
+    before(() => { kept = optionsNow(); cli.setOptions({workerThread: true, requestTimeout: 30}); });
+    after(() => restoreOptions(kept));
+    it('gets its verdict, unbound, and a call held for it goes on', async () => {
+      const {dm} = manager({modules: {'late': ['gone/svc.act']}, fails: ['late']});
+      dm.clearBinding = DeviceManager.prototype.clearBinding;
+      const deviceID = callAddress.deviceIDForName('late');
+      const wm = dm.deviceMap[deviceID];
+      delete wm.bindings[deviceID];
+      let held = null;
+      dm.untilVerdict(deviceID, null, (state) => { held = state; });
+      assert.strictEqual(held, null, 'held: no verdict yet');
+      dm.verifyModules(['late']);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.ok(callTokens.hasVerdict(wm, deviceID), 'a verdict');
+      assert.strictEqual(wm.bindings[deviceID].identity, null, 'unbound');
+      assert.strictEqual(held, 'landed');
+    });
+
+    // (the module reloaded while a call was held for its first verdict: the verdict lands on the new copy)
+    it('a call held on a copy a reload replaced is answered not ready at once when the new copy\'s verdict lands, never sent to the old', async () => {
+      const {dm} = manager({modules: {'late': []}, fails: []});
+      const deviceID = callAddress.deviceIDForName('late');
+      const old = dm.deviceMap[deviceID];
+      delete old.bindings[deviceID];
+      let held = null;
+      dm.untilVerdict(deviceID, null, (state) => { held = state; });
+      const fresh = proxy('late').wm;
+      delete fresh.bindings[deviceID];
+      dm.deviceMap[deviceID] = fresh;
+      dm.verifyModules(['late']);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.ok(callTokens.hasVerdict(fresh, deviceID) && !callTokens.hasVerdict(old, deviceID), 'the new copy has the verdict, the old none');
+      assert.strictEqual(held, 'bound', 'answered now (CTX_CALL_NOT_READY), not at the bound');
+    });
   });
 
   it('before the start\'s own pass, nothing: the start\'s pass verifies what there is', () => {

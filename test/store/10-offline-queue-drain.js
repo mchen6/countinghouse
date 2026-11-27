@@ -1,5 +1,5 @@
 'use strict';
-// R-redis-drop-spin: node_redis 3.1.2 drains its offline queue in on_ready
+// node_redis 3.1.2 drains its offline queue in on_ready
 // (send_offline_queue) before it emits 'ready'. A command it sends there while
 // the stream is not writable (Redis closed the connection as it answered the
 // ready check) is pushed back onto the same queue while the queue is on, so
@@ -66,7 +66,7 @@ server.listen(0, '127.0.0.1', () => {
 });
 `;
 
-describe('store 10: a resilient client whose stream closes as it becomes ready answers its queued commands (R-redis-drop-spin)', function() {
+describe('store 10: a resilient client whose stream closes as it becomes ready answers its queued commands', function() {
   this.timeout(BOUND_MS + 10000);
 
   // (the child stopped on every path: its process group, or the child

@@ -41,7 +41,7 @@ describe('store 02: the store is the only place a Redis client or a job queue is
   });
 
   // Every node_redis client the repo makes is a lib/redis-resilient one, whose
-  // offline-queue drain can't spin (R-redis-drop-spin): outside lib/ (the
+  // offline-queue drain can't spin: outside lib/ (the
   // runtime, its CLIs, scripts and tools; not tests or examples) nothing
   // requires or imports node_redis, or a file inside it.
   it('outside lib/, the runtime, its CLIs, scripts and tools never require node_redis themselves', () => {
