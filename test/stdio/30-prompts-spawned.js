@@ -91,6 +91,22 @@ describe('stdio 30: a legacy client hears its prompts change (R-cold-prompts)', 
     fs.writeFileSync(path.join(dir, 'handlers', svc, `${action}.js`), 'module.exports = async () => ({output: {}});\n');
     return dir;
   }
+  // a pack whose one action is a resource: a static one (resources/list) or,
+  // with a variable in its URI, a template (resources/templates/list)
+  function resourcePack(home, name, uriTemplate) {
+    const dir = path.join(home, 'packs', name, '1.0.0', 'node_modules', name);
+    // (an action name of its own: a pack's tool name may not be another's, a built-in's included)
+    const action = `${name.replace(/[^a-z]/g, '')}_status`;
+    fs.mkdirSync(path.join(dir, 'handlers', 'packService'), {recursive: true});
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name, version: '1.0.0', license: 'Apache-2.0', countinghouse: {role: 'scenario'}}));
+    fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: name, manufacturer: 'countinghouse-test', modelDescription: name,
+      serviceList: {'urn:countinghouse-test:serviceID:packService': {actionList: [{name: action, description: `the status of ${name}`,
+        input: {schema: `/packService/${action}/input`}, output: {schema: `/packService/${action}/output`}, resource: {uriTemplate, name: action}}]}}}}));
+    fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
+      packService: {[action]: {input: {type: 'object', properties: {id: {type: 'string'}}}, output: {type: 'object'}}}}));
+    fs.writeFileSync(path.join(dir, 'handlers', 'packService', `${action}.js`), 'module.exports = async () => ({output: {ok: true}});\n');
+    return dir;
+  }
   async function started() {
     const home = tmp.mkdtemp('ch-stdio-30-cold-');
     const base = pack(home, 'ch-pack-base', false);
@@ -125,6 +141,29 @@ describe('stdio 30: a legacy client hears its prompts change (R-cold-prompts)', 
     // (anything the change sent is written before this answer)
     await io.request({jsonrpc: '2.0', id: 3, method: 'tools/list', params: {}}, 30000);
     assert.deepStrictEqual(told('notifications/prompts/list_changed'), []);
+  });
+
+  // each of its resources' lists told on its own: a template's change, then a
+  // static resource's (one notice for both lists, so each change by itself
+  // pins the list it moves: lib/route-manager.js names each list's field)
+  it('a client that listed its resources and their templates is told resources/list_changed for a template, and again for a static resource', async () => {
+    const home = await started();
+    const RES = 'notifications/resources/list_changed';
+    const resources = async (id) => (await io.request({jsonrpc: '2.0', id, method: 'resources/list', params: {}}, 30000)).result.resources.map((r) => r.uri);
+    const templates = async (id) => (await io.request({jsonrpc: '2.0', id, method: 'resources/templates/list', params: {}}, 30000)).result.resourceTemplates.map((r) => r.uriTemplate);
+    assert.deepStrictEqual([await resources(2), await templates(3)], [[], []]);
+    const loadPack = async (name, uriTemplate) => {
+      const r = await io.control({type: 'load', name, dirs: dirsOf(resourcePack(home, name, uriTemplate))});
+      assert.strictEqual(r.ok, true, `${JSON.stringify(r)}\n${io.err.slice(-2000)}`);
+    };
+    await loadPack('ch-pack-tpl', 'notes/{id}');
+    assert.ok(await until(() => told(RES).length > 0), `no resources/list_changed for the template\n${io.err.slice(-1500)}`);
+    assert.ok((await templates(4)).some((u) => /notes/.test(u)), 'the template is listed');
+    const after = told(RES).length;
+    await loadPack('ch-pack-res', 'about');
+    assert.ok(await until(() => told(RES).length > after), `no resources/list_changed for the static resource\n${io.err.slice(-1500)}`);
+    assert.ok((await resources(5)).some((u) => /about/.test(u)), 'the static resource is listed');
+    for (const n of told(RES)) assert.deepStrictEqual(n, {jsonrpc: '2.0', method: RES}, 'the plain frame');
   });
 
   // (a client that sent initialize, then a well-formed 2026-07-28 request,
