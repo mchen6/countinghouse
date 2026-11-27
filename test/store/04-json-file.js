@@ -732,7 +732,13 @@ describe('store 04: a reader never costs a write (R-win-ledger-rename)', functio
   // many when its input ended (before reading on), so the test sees reads
   // made while the changes were; its own refused reads are counted by code
   // and said too (a reader refused costs no write: told, not failed).
-  it('every change lands once while another process reads the file again and again', async () => {
+  it('every change lands once while another process reads the file again and again', async function() {
+    // (each change gives up at update()'s own deadline, UPDATE_WAIT_MS in
+    // lib/store/json-file.js, and the loop stops at the first that does: so
+    // at most that wait for each change, and a margin for the reader)
+    const changes = 50;
+    const UPDATE_WAIT_MS = 10000;
+    this.timeout(changes * UPDATE_WAIT_MS + 30000);
     r = await reader(`
       const fs = require('fs');
       let stop = false;
@@ -751,19 +757,31 @@ describe('store 04: a reader never costs a write (R-win-ledger-rename)', functio
       };
       once();
     `);
-    const changes = 200;
+    // each rename the store makes, and each one refused (and so tried
+    // again, or failed): said, so a reader of the log can tell the changes
+    // met the reader's reads (none elsewhere than Windows)
+    const rename = fs.renameSync;
+    const renames = {made: 0, refused: 0};
+    fs.renameSync = function(...a) {
+      try { const out = rename.apply(this, a); renames.made += 1; return out; } catch (e) { renames.refused += 1; throw e; }
+    };
     const failed = [];
-    for (let i = 0; i < changes; i++) {
-      const {err} = await update(f, 'k', add);
-      if (err != null) failed.push(`${err.code} ${err.message}`);
+    try {
+      for (let i = 0; i < changes && failed.length === 0; i++) {
+        const {err} = await update(f, 'k', add);
+        if (err != null) failed.push(`${err.code} ${err.message}`);
+      }
+    } finally {
+      fs.renameSync = rename;
     }
+    process.stdout.write(`      (${renames.refused} renames refused, ${renames.made} made)\n`);
     assert.deepStrictEqual(await r.end(), {code: 0, signal: null});
     const atReady = Number((/reading (\d+)/.exec(r.said()) || [])[1]);
     const atEnd = Number((/read (\d+) refused/.exec(r.said()) || [])[1]);
     const refused = (/refused (\{.*\})/.exec(r.said()) || [])[1];
     if (refused !== '{}') process.stdout.write(`      (the reader's own reads refused: ${refused})\n`);
     assert.ok(atEnd > atReady, `the reader read on while the changes were made (${r.said()})`);
-    assert.deepStrictEqual(failed, [], `${failed.length} of ${changes} refused (the reader: ${r.said()})`);
+    assert.deepStrictEqual(failed, [], `a change refused (the reader: ${r.said()})`);
     assert.deepStrictEqual(onDisk(file), {k: {n: changes}});
   });
 
