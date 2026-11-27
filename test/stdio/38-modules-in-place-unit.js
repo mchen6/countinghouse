@@ -24,7 +24,11 @@ function writeModule(dir, {name, version = '1.0.0', role, calls, service = 'svc'
   return dir;
 }
 
-describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
+// (its hooks and cases write modules to disk: a slow Windows runner took
+// the before hook over mocha's 2 s default, master's run 46040609989; each
+// ends with its own work, 30 s at most)
+describe('stdio 38: modules in place, server-free (M4 Task 2)', function() {
+  this.timeout(30000);
   const cli = require('../../lib/cli-options');
   const settingsTool = require('../../lib/settings-tool');
   let mip = null;

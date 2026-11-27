@@ -207,13 +207,14 @@ refused with `INVALID_MODULE_PATH` before anything is unloaded.
 
 **`POST /uninstall-module`** takes `{name, keepData}` and answers
 `{uninstalled: true, name, dataDeleted, keysDeleted, registryEntryRemoved, kept}`.
-It removes the module's registry entry (when the server uses the registry,
-that is when no `--loadModule` is given), then, unless `keepData` is `true`,
-deletes the module's `ctx.redis` keys (every key under its
-`m:<name, URI-encoded>:` namespace; `keysDeleted` says how many, `null`
-with `keepData`) and
+Every check comes first, the data directory's included, while nothing has
+been removed. Then, unless `keepData` is `true`, it deletes the module's
+`ctx.redis` keys (every key under its `m:<name, URI-encoded>:` namespace;
+`keysDeleted` says how many, `null` with `keepData`); then it removes the
+module's registry entry (when the server uses the registry, that is when no
+`--loadModule` is given); then, unless `keepData` is `true`, it deletes
 `<moduleDataPath>/<name>`, never following links. A reload or an upgrade
-keeps both. It never removes the module's
+keeps the keys and the data. It never removes the module's
 code under `--modulePath`. It removes only directories the runtime made
 (the security model's ["Only what the runtime made is deleted"](security-model.md)):
 `kept` lists, as paths under `--moduleDataPath`, each one it found there but
@@ -225,10 +226,11 @@ when `<moduleDataPath>/<name>` is gone. Errors:
 |---|---|
 | `MODULE_NAME_INVALID` | `name` is not a valid npm package name |
 | `MODULE_LOADED` | the module is loaded, restarting or suspended: unload it first |
-| `REMOVE_MODULE_INFO_FAIL` | the registry entry could not be removed; nothing was deleted |
+| `REMOVE_MODULE_INFO_FAIL` | the registry entry could not be removed; the data directory was kept, and the module's keys were deleted unless `keepData` was set; uninstall again to finish |
 | `MODULE_STORE_CORRUPT` | the local store file that holds the module's data (`kv.json`) is corrupt and this runtime holds no copy of it: nothing was removed, the registry entry included; repair the store (the runtime's log says how), then uninstall again. Not retryable as it is |
-| `MODULE_KEYS_NOT_PURGED` | the module's keys could not be deleted (the store did not answer within 30 s); its data directory was kept, its registry entry already removed |
+| `MODULE_KEYS_NOT_PURGED` | the module's keys could not all be deleted (the store did not answer within 30 s, or answered an error; its code is named); the registry entry and the data directory are kept, and some keys may already be deleted: uninstall again to delete what is left |
 | `MODULE_DATA_NOT_DIRECTORY` | the data directory is a link or a file; it is left alone, remove it by hand |
+| `MODULE_DATA_UNREADABLE` | the data directory (or its `sessions/`, or a directory on the way to it) could not be read, or the uninstall could not write in it; its errno code is named and nothing was removed: make it readable, then uninstall again |
 
 Every device-scoped route above (everything under `/devices/:deviceID/...`)
 goes through the same `AuthProvider` check `tools/call` does. For exactly

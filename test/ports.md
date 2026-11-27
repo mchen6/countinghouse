@@ -210,6 +210,7 @@ one) as well as the ports it binds.
 | `test/sandbox/66-no-late-runtime-loads.js` | 9775–9776 |
 | `test/sandbox/68-runtime-isolation.js` | 9759 |
 | `test/sandbox/69-compatibility-table.js` | 9777 |
+| `test/sandbox/73-uninstall-store-down.js` | 9834, 9835 (its Redis proxy) |
 | `test/single-thread/01-facade.js` | 9636 |
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |
