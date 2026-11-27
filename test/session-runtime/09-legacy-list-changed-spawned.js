@@ -18,14 +18,16 @@ const FRAMEWORK = path.join(ROOT, 'framework.js');
 const MODERN = {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {}};
 const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
 
-function scenario(dir, name) {
+function scenario(dir, name, {prompt = false} = {}) {
   // a service of its own per pack, so two packs' devices never collide
   const svc = `${name.replace(/[^a-z]/g, '')}Service`;
   const action = `${name.replace(/[^a-z]/g, '')}_hello`;
   fs.mkdirSync(path.join(dir, 'handlers', svc), {recursive: true});
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name, version: '1.0.0', license: 'Apache-2.0', countinghouse: {role: 'scenario'}}));
+  // (a prompt of its own, declared as test/fixtures/declares-everything declares one, when asked)
+  const prompts = prompt ? {promptList: [{name: 'greet', title: 'Greet', description: `a greeting of ${name}`, messages: [{role: 'user', text: 'Say hello.'}]}]} : {};
   fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: name, manufacturer: 'countinghouse-test', modelDescription: name,
-    serviceList: {[`urn:countinghouse-test:serviceID:${svc}`]: {actionList: [{name: action, description: `hello of ${name}`, input: {schema: `/${svc}/${action}/input`}, output: {schema: `/${svc}/${action}/output`}}]}}}}));
+    serviceList: {[`urn:countinghouse-test:serviceID:${svc}`]: {actionList: [{name: action, description: `hello of ${name}`, input: {schema: `/${svc}/${action}/input`}, output: {schema: `/${svc}/${action}/output`}}]}}, ...prompts}}));
   fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object', [svc]: {[action]: {input: {type: 'object'}, output: {type: 'object'}}}}));
   fs.writeFileSync(path.join(dir, 'handlers', svc, `${action}.js`), 'module.exports = async () => ({output: {}});\n');
   return dir;
@@ -131,6 +133,35 @@ describe('session-runtime 09: a 2025-11-25 session of a shared runtime hears its
     assert.strictEqual(changes(rm), 0, 'a 2026-07-28 session with no listen is told nothing unasked');
     legacy.c.end();
     modern.c.end();
+  });
+
+  // R-cold-prompts: a cold start, as Claude Code meets it -- the session fell
+  // back to 2025-11-25 and listed its prompts before the pack had loaded; the
+  // pack's prompts must reach its menu, so their list's change is told too
+  it('declares prompts and resources listChanged on initialize; a session that listed its prompts before a pack loaded is told prompts/list_changed, in the plain frame', async() => {
+    const packs = path.join(home, 'packs');
+    r = runtime(home, packs);
+    const end = Date.now() + 30000;
+    while (!(fs.existsSync(path.join(r.run, 'secret')) && fs.existsSync(r.socket)) && Date.now() < end) await tick(100);
+    await tick(300);
+    const secret = handshake.parseSecret(fs.readFileSync(path.join(r.run, 'secret'), 'utf8'));
+    const legacy = await shim.session(r.socket, secret);
+    const rl = reader(legacy.c);
+    const init = await ask(legacy.c, rl, 'initialize', {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'test', version: '1'}});
+    assert.deepStrictEqual([init.result.capabilities.prompts, init.result.capabilities.resources], [{listChanged: true}, {listChanged: true}], JSON.stringify(init.result.capabilities));
+    shim.message(legacy.c, null, JSON.stringify({jsonrpc: '2.0', method: 'notifications/initialized'}));
+    const prompts = async() => (await ask(legacy.c, rl, 'prompts/list')).result.prompts.map((x) => x.name);
+    assert.ok(!(await prompts()).some((n) => /greet/.test(n)), 'no prompt of the pack yet');
+    const told = () => rl.notes.filter((n) => n.method === 'notifications/prompts/list_changed');
+    const three = scenario(path.join(packs, 'ch-pack-three', '1.0.0', 'node_modules', 'ch-pack-three'), 'ch-pack-three', {prompt: true});
+    const loaded = await r.control({type: 'load', name: 'ch-pack-three', dirs: dirsOf(three)});
+    assert.strictEqual(loaded.ok, true, `${JSON.stringify(loaded)}\n${r.err.slice(-1500)}`);
+    await until(() => told().length > 0);
+    assert.ok(told().length > 0, `told prompts/list_changed: ${JSON.stringify(rl.notes)}`);
+    // (one for each settled change: a load may make more than one)
+    for (const n of told()) assert.deepStrictEqual(n, {jsonrpc: '2.0', method: 'notifications/prompts/list_changed'}, 'the plain frame');
+    assert.ok((await prompts()).some((n) => /greet/.test(n)), 'the pack\'s prompt is listed');
+    legacy.c.end();
   });
 
   it('Claude Code\'s probe, then an initialize and a tools/list written together as the shim forwards them: the list counts because initialize is answered as it is read, and the probe does not end the following', async() => {
