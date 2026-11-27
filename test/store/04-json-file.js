@@ -1868,5 +1868,120 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     });
   });
 
+  // (the overview) the store files this
+  // process can answer nothing from: corrupt, and no map here saw it whole.
+  // Read only: never a reload, which would ask for a write.
+  describe('heldNoCopy: a corrupt store file this process holds no copy of', () => {
+    const {heldNoCopy} = require('../../lib/store/json-file');
+    const NAMES = ['metering.json', 'used-nonces.json', 'kv.json'];
+
+    it('none there, or good: none; corrupt with no map open on it: named, in the order asked', () => {
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      assert.deepStrictEqual(heldNoCopy(dir, NAMES), []);
+      assert.deepStrictEqual(heldNoCopy(path.join(dir, 'none'), NAMES), []);
+      fs.writeFileSync(path.join(dir, 'metering.json'), '{}');
+      fs.writeFileSync(path.join(dir, 'kv.json'), '[]');
+      fs.writeFileSync(path.join(dir, 'used-nonces.json'), '{"broken": ');
+      assert.deepStrictEqual(heldNoCopy(dir, NAMES), ['used-nonces.json', 'kv.json']);
+      assert.deepStrictEqual(heldNoCopy(dir, ['kv.json']), ['kv.json'], 'only the names asked');
+    });
+
+    it('a map opened on the corrupt file holds no copy: named, until the file is good or moved away; the file never written by asking', () => {
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      const file = path.join(dir, 'kv.json');
+      fs.writeFileSync(file, '{"broken": ');
+      const unknown = openJsonFile(file, {debounceMs: 60000});
+      try {
+        assert.ok(unknown.isUnknownCorrupt());
+        assert.deepStrictEqual(heldNoCopy(dir, NAMES), ['kv.json']);
+        assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"broken": ');
+        fs.renameSync(file, `${file}.moved-by-the-user`);
+        assert.deepStrictEqual(heldNoCopy(dir, NAMES), [], 'moved away');
+        fs.writeFileSync(file, '{"a": 1}');
+        assert.deepStrictEqual(heldNoCopy(dir, NAMES), [], 'good again (another process replaced it)');
+      } finally {
+        unknown.close();
+      }
+    });
+
+    it('a map that saw the file whole holds its copy: not named, though the file is corrupt now', () => {
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      const file = path.join(dir, 'metering.json');
+      fs.writeFileSync(file, '{"a": 1}');
+      const known = openJsonFile(file, {debounceMs: 60000});
+      let knownOpen = true;
+      const unknownToo = (() => { fs.writeFileSync(file, 'not json'); return openJsonFile(file, {debounceMs: 60000}); })();
+      try {
+        assert.deepStrictEqual(heldNoCopy(dir, NAMES), [], 'one map here saw it whole');
+        known.close();
+        knownOpen = false;
+        assert.deepStrictEqual(heldNoCopy(dir, NAMES), ['metering.json'], 'closed, only the one that never saw it is left');
+      } finally {
+        if (knownOpen) known.close();
+        unknownToo.close();
+      }
+    });
+
+    it('a file is parsed again only when it changed; a change is seen at once, the same size or not', () => {
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      const file = path.join(dir, 'kv.json');
+      fs.writeFileSync(file, '{"broken":}');
+      assert.deepStrictEqual(heldNoCopy(dir, NAMES), ['kv.json']);
+      const parse = JSON.parse;
+      let parsed = 0;
+      JSON.parse = function(...a) { parsed++; return parse.apply(this, a); };
+      try {
+        assert.deepStrictEqual(heldNoCopy(dir, NAMES), ['kv.json']);
+        assert.strictEqual(parsed, 0, 'unchanged: not parsed again');
+        fs.writeFileSync(`${file}.next`, '{"fixed":1}');   // the same size, a new inode, as a writer's rename makes
+        fs.renameSync(`${file}.next`, file);
+        assert.deepStrictEqual(heldNoCopy(dir, NAMES), []);
+        assert.strictEqual(parsed, 1);
+      } finally {
+        JSON.parse = parse;
+      }
+      fs.unlinkSync(file);
+      assert.deepStrictEqual(heldNoCopy(dir, NAMES), []);
+      fs.writeFileSync(file, 'nope');
+      assert.deepStrictEqual(heldNoCopy(dir, NAMES), ['kv.json'], 'there again, corrupt');
+    });
+
+    it('a map opened under another spelling of its folder (a link) is found: its copy counts', function() {
+      if (process.platform === 'win32') this.skip();
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      const real = path.join(dir, 'real');
+      fs.mkdirSync(real);
+      const link = path.join(dir, 'link');
+      fs.symlinkSync(real, link, 'dir');
+      fs.writeFileSync(path.join(real, 'kv.json'), '{"a": 1}');
+      const known = openJsonFile(path.join(link, 'kv.json'), {debounceMs: 60000});
+      try {
+        fs.writeFileSync(path.join(real, 'kv.json'), 'broken');
+        assert.deepStrictEqual(heldNoCopy(real, NAMES), [], 'the map opened through the link saw it whole');
+      } finally {
+        known.close();
+      }
+      assert.deepStrictEqual(heldNoCopy(real, NAMES), ['kv.json']);
+    });
+
+    it('a store file that is a folder, or can\'t be read for another reason, is not named', function() {
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      fs.mkdirSync(path.join(dir, 'kv.json'));
+      assert.deepStrictEqual(heldNoCopy(dir, NAMES), []);
+      if (process.platform === 'win32') return;
+      const file = path.join(dir, 'used-nonces.json');
+      fs.writeFileSync(file, '{bad');
+      fs.chmodSync(file, 0o000);
+      try {
+        let readable = true;
+        try { fs.readFileSync(file); } catch (e) { readable = false; }
+        if (readable) this.skip();
+        assert.deepStrictEqual(heldNoCopy(dir, NAMES), []);
+      } finally {
+        fs.chmodSync(file, 0o600);
+      }
+    });
+  });
+
   lockedDirs.hooks();
 });
