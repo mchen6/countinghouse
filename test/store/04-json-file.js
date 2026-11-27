@@ -1323,7 +1323,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     assert.strictEqual(logged.filter((l) => l.includes(file) && l.includes('EACCES')).length, 1, JSON.stringify(logged));
   });
 
-  it('a balance asked for while the ledger can\'t be read is the one uniform refusal, never a throw', async () => {
+  it('a balance asked for while the ledger can\'t be read is the one uniform refusal (RUNTIME_BUSY, as the per-key gate answers), never a throw', async () => {
     const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
     const LocalMeteringProvider = require('../../lib/metering/local-provider');
     const provider = new LocalMeteringProvider({meter: true, storePath: dir});
@@ -1344,7 +1344,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     }
     assert.ok(fs.readFileSync === read, 'the stub is gone');
     assert.strictEqual(got.thrown, undefined, 'never thrown');
-    assert.strictEqual(got.err && got.err.code, 'SYSTEM_ERROR');
+    assert.strictEqual(got.err && got.err.code, 'RUNTIME_BUSY');
     assert.strictEqual(got.r, undefined);
   });
 
@@ -1376,7 +1376,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     assert.deepStrictEqual(kept, ['{"first": ', '{"second": ']);
   });
 
-  it('a corrupt ledger is a balance that can\'t be told: SYSTEM_ERROR, never the one in memory', async () => {
+  it('a corrupt ledger is a balance that can\'t be told: RUNTIME_BUSY, never the one in memory', async () => {
     const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
     const LocalMeteringProvider = require('../../lib/metering/local-provider');
     const apiKey = `k-${require('crypto').randomBytes(8).toString('hex')}`;
@@ -1390,7 +1390,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     } finally {
       provider.close();
     }
-    assert.strictEqual(got.err && got.err.code, 'SYSTEM_ERROR');
+    assert.strictEqual(got.err && got.err.code, 'RUNTIME_BUSY');
   });
 
   it('a copy aside whose first name is taken gets another: the copy is kept', () => {
@@ -1534,7 +1534,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     assert.deepStrictEqual([onDisk(file).counter.v, onDisk(file).other.v], ['57', 'x']);
   });
 
-  it('metering: a call is refused before it runs while the ledger is corrupt and this process never saw it whole (the per-key gate answers an error)', async () => {
+  it('metering: a call is refused before it runs while the ledger is corrupt and this process never saw it whole (the per-key gate answers RUNTIME_BUSY, as checkBalance does)', async () => {
     const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
     const LocalMeteringProvider = require('../../lib/metering/local-provider');
     const file = path.join(dir, 'metering.json');
@@ -1552,7 +1552,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     } finally {
       fresh.close(); known.close();
     }
-    assert.strictEqual(before.err && before.err.code, 'SYSTEM_ERROR');
+    assert.strictEqual(before.err && before.err.code, 'RUNTIME_BUSY');
     assert.deepStrictEqual(after, {err: null, r: {limited: false}});
   });
 
