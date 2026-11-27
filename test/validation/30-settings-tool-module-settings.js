@@ -225,6 +225,33 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       assert.deepStrictEqual(stored(), {'module.@acme/weather-tool.units': 'imperial', 'other.kept': 1}, 'nothing written');
     });
 
+    // The server's instructions (lib/mcp/instructions.js, pinned by
+    // mcp-contract 41) say a text value is set only by the user. That holds
+    // by the shipped tested-client list, not by code: a string goes to the
+    // form, and the form is shown only to a tested client. A tested range
+    // makes the sentence false, so this pin fails until it is reworded.
+    it('the shipped tested-client list has no tested range: a string setting asked by a client whose own conditions are met is the terminal\'s', async () => {
+      const clients = require('../../lib/elicitation-clients');
+      const REVISIT = 'a tested client makes the instructions\' text-value sentence false (lib/mcp/instructions.js, mcp-contract 41): reword it, then move this pin';
+      const list = clients.ALLOWLIST;
+      assert.strictEqual(clients.noClientTested(list), true, REVISIT);
+      // (ch-local's answer on the client's configuration taken as yes: only
+      // the list stands between this client and a form)
+      const tool = make({allowlist: list, mayElicit: async (ctx) => {
+        const c = clients.clientMayElicit(ctx, list);
+        return c.ok ? {ok: true, client: c.client} : c;
+      }});
+      const ctx = {session: 'text-value-pin', clientInfo: {name: clients.CLAUDE_CODE, version: '2.1.332'}, capabilities: {elicitation: {}}};
+      let answer = null;
+      try {
+        answer = await tool.set('module.@acme/weather-tool.defaultRepo', 'acme/repo', 'settings tool', ctx);
+      } catch (e) {
+        assert.strictEqual(e.code, 'SETTING_MODULE_NEEDS_CONFIRMATION', e.message);
+      }
+      assert.strictEqual(answer, null, `${REVISIT} (answered ${JSON.stringify(answer).slice(0, 200)})`);
+      assert.strictEqual(stored()['module.@acme/weather-tool.defaultRepo'], undefined, REVISIT);
+    });
+
     it('the ceiling: fixed refuses every change; conversation off is the terminal\'s; one that cannot be trusted refuses', async () => {
       ceiling = trusted({moduleSettings: {'@acme/weather-tool.units': {fixed: 'metric'}}});
       await refused(make().set('module.@acme/weather-tool.units', 'metric'), 'SETTING_FIXED_BY_CEILING');
