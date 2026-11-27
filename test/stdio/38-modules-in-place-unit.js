@@ -31,7 +31,11 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
   let root = null;
   let outside = null;
   let dirs = null;
-  before(() => {
+  // (three modules written and modules-in-place loaded for the first time,
+  // all synchronous: over mocha's 2 s default on a slow Windows runner,
+  // master's run 46040609989; the hook ends with the work, 30 s at most)
+  before(function() {
+    this.timeout(30000);
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-38-'));
     outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-38o-'));
     const store = path.join(root, 'module-store');

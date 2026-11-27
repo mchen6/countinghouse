@@ -96,7 +96,11 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
     assert.deepStrictEqual(applied, []);
   });
 
-  it('declined, cancelled or not strictly true: nothing changes, and that kind is not asked again this start', async () => {
+  // (six rounds of stage, confirm and a history line on disk, each awaited:
+  // over mocha's 2 s default on a slow Windows runner, master's run
+  // 46040609989; the bound is the work's own end, 20 s at most)
+  it('declined, cancelled or not strictly true: nothing changes, and that kind is not asked again this start', async function() {
+    this.timeout(20000);
     for (const [i, answer] of [{action: 'decline'}, {action: 'cancel'}, {action: 'accept', content: {approve: false}},
       {action: 'accept', content: {approve: 'true'}}, {action: 'accept', content: {approve: 1}}, {action: 'accept'}].entries()) {
       confirmModule.resetForTests();
