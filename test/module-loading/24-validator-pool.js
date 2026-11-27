@@ -382,7 +382,7 @@ describe('module-loading 24: the validator pool', function() {
       assert.match(dm, /const caller = \(message != null && typeof\(message\.caller\) === 'string'\) \? sessionsLib\(\)\.validationCallerOf\(message\.caller, session\) : null;/);
       assert.strictEqual((dm.match(/\bsendCounted\(/g) || []).length, 4, 'its definition and three sends');
       // each send's session: the hop's token's, the job run's, the call's
-      for (const tail of [/\}, tokenEntry\.session, this\.deadline, settingsDM\);/, /\}, runSession, \(timeoutMs != null\)/, /\}, this\.sessionId, this\.deadline, settingsDM\);/]) assert.match(dm, tail);
+      for (const tail of [/\}, tokenEntry\.session, this\.deadline, settingsDM\);/, /\}, runSession, \(fullMs != null\)/, /\}, this\.sessionId, this\.deadline, settingsDM\);/]) assert.match(dm, tail);
       assert.match(lib('peer-channel-broker.js'), /const caller = sessionsLib\(\)\.validationCallerOf\(deviceManagerLib\(\)\.hopCallerOf\(entry\.callerWM, tokenEntry\.billingKey\), tokenEntry\.session\);/);
       const gw = lib('mcp', 'gateway.js');
       assert.match(gw, /promptsLib\.checkArguments\(entry, args, sessionsLib\(\)\.validationCallerOf\(caller, session\)\)/);
