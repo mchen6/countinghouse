@@ -430,8 +430,10 @@ checked for the whole declared call graph before the outer call runs, so a
 top-level module never swallows a part's missing setting. The message:
 
 > weather-tool needs a setting: defaultRepo (Default repository). Ask the
-> user for the value (do not guess), then set it, or run
-> `ch-local settings set weather-tool.defaultRepo`.
+> user to run `ch-local settings set weather-tool.defaultRepo` in their own
+> terminal; it asks for the value. Do not guess it.
+
+(Changed 11-26: a text value is set at a terminal while no client is tested.)
 
 The error's `_meta` carries the setting names (`missingSettings`). For a
 part, whose settings are never named to the client, the message says only
