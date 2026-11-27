@@ -9,7 +9,8 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const {spawnSync} = require('child_process');
+const net = require('net');
+const {spawn, spawnSync} = require('child_process');
 const {LocalMeteringProvider} = require('../../lib/metering');
 const {meterId} = require('../../lib/key-fingerprint');
 
@@ -20,6 +21,49 @@ function meter(args, env) {
   const base = Object.assign({}, process.env);
   delete base.COUNTINGHOUSE_SEED_KEY;
   return spawnSync(process.execPath, [BIN].concat(args), {encoding: 'utf8', timeout: 30000, env: Object.assign(base, env)});
+}
+
+// The CLI run without blocking this process (a fake Redis here must answer
+// it): {status, stdout, stderr}; its process group killed at 30 s.
+function meterAsync(args, env) {
+  const base = Object.assign({}, process.env);
+  delete base.COUNTINGHOUSE_SEED_KEY;
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [BIN].concat(args), {env: Object.assign(base, env), stdio: ['ignore', 'pipe', 'pipe'], detached: true});
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => { stdout += c; });
+    child.stderr.on('data', (c) => { stderr += c; });
+    const timer = setTimeout(() => {
+      try { process.kill(-child.pid, 'SIGKILL'); } catch (e) { try { child.kill('SIGKILL'); } catch (e2) { /* gone */ } }
+    }, 30000);
+    child.on('close', (status) => { clearTimeout(timer); resolve({status, stdout, stderr}); });
+  });
+}
+
+// A fake Redis on an ephemeral port (nothing else can hold it): answers the
+// ready check (INFO) and SELECT; HSET with :1 only when `answerHset`; never
+// QUIT. -> Promise of {port, close}.
+function fakeRedis(answerHset) {
+  const sockets = new Set();
+  const server = net.createServer((sock) => {
+    sockets.add(sock);
+    sock.on('error', () => {});
+    sock.on('data', (d) => {
+      const text = String(d).toLowerCase();
+      if (text.includes('info')) {
+        const body = '# Server\r\nredis_version:7.0.0\r\n';
+        sock.write(`$${Buffer.byteLength(body)}\r\n${body}\r\n`);
+      }
+      if (text.includes('select')) sock.write('+OK\r\n');
+      if (text.includes('hset') && answerHset) sock.write(':1\r\n');
+    });
+  });
+  const close = () => {
+    for (const sock of sockets) sock.destroy();
+    server.close();
+  };
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({port: server.address().port, close})));
 }
 
 describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function() {
@@ -141,5 +185,44 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
     // the runtime's default, which this test never touches)
     assert.strictEqual(meter(['set', '--store', 'local', '--balance', '5'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
   });
+  // The CLI's client is a lib/redis-resilient one, which
+  // emits no 'error' for a refused connection (node_redis with a
+  // retry_strategy): a Redis that can't be reached is still said as such,
+  // exit 2, its cause named (the refused connect's own code), within its
+  // first-connect bound (spawnSync's timeout bounds a hang)
+  it('a Redis that can\'t be reached is said, with exit 2, and no success line', () => {
+    const run = meter(['set', '--redisUrl', 'redis://127.0.0.1:1', '--balance', '50'], {COUNTINGHOUSE_SEED_KEY: KEY});   // run-local: not the shared Redis
+    assert.strictEqual(run.status, 2, `${run.status} ${run.stdout} ${run.stderr}`);
+    assert.ok(/Redis could not be reached \(ECONNREFUSED\)/.test(run.stderr), run.stderr);
+    assert.ok(!/set balance/.test(run.stdout), run.stdout);
+    assert.ok(!run.stderr.includes(KEY), run.stderr);
+  });
+  // (the Fable read on #572, N4) an HSET sent but never answered may have
+  // been applied: said so, with the full key and where to look, and never
+  // the URL; exit 2. Words passed by business.
+  it('an HSET that Redis never answers is said as maybe set, with the key to check, exit 2', async () => {
+    const redisFake = await fakeRedis(false);
+    try {
+      const run = await meterAsync(['set', '--redisUrl', `redis://127.0.0.1:${redisFake.port}`, '--balance', '50'], {COUNTINGHOUSE_SEED_KEY: KEY});   // run-local: not the shared Redis
+      assert.strictEqual(run.status, 2, `${run.status} ${run.stdout} ${run.stderr}`);
+      assert.strictEqual(run.stderr, `countinghouse-meter: the balance was sent, but Redis did not answer within 10 s, so it may or may not be set: check field \`balance\` of key ${meterId(KEY)} on the Redis your --redisUrl names, or run this command again (it sets the balance to the value you gave; it does not add to it)\n`);
+      assert.ok(!/set balance/.test(run.stdout), run.stdout);
+    } finally {
+      redisFake.close();
+    }
+  });
+
+  // (N4) after the success line, a QUIT that is never answered changes nothing
+  it('a balance set, then a QUIT never answered: the success line stands, exit 0', async () => {
+    const redisFake = await fakeRedis(true);
+    try {
+      const run = await meterAsync(['set', '--redisUrl', `redis://127.0.0.1:${redisFake.port}`, '--balance', '50'], {COUNTINGHOUSE_SEED_KEY: KEY});   // run-local: not the shared Redis
+      assert.strictEqual(run.status, 0, `${run.status} ${run.stdout} ${run.stderr}`);
+      assert.ok(run.stdout.includes(`set balance 50 for ${meterId(KEY)}`), run.stdout);
+    } finally {
+      redisFake.close();
+    }
+  });
+
   trees.hooks();
 });

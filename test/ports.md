@@ -24,6 +24,7 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9790–9799 | B (2026-11-14) |
 | 9800–9809 | A: kind caller, usage 24 (2026-11-19) |
 | 9820–9829 | B (2026-11-20) |
+| 9834–9839 | B (2026-11-27): validation 38, sandbox 73 |
 | 10840–10849 | C: run-local with CH_TEST_PORT_BASE=10840, its servers and its private Redis (10849) (2026-11-16) |
 
 ## By file
@@ -209,6 +210,7 @@ one) as well as the ports it binds.
 | `test/sandbox/66-no-late-runtime-loads.js` | 9775–9776 |
 | `test/sandbox/68-runtime-isolation.js` | 9759 |
 | `test/sandbox/69-compatibility-table.js` | 9777 |
+| `test/sandbox/73-uninstall-store-down.js` | 9834, 9835 (its Redis proxy) |
 | `test/single-thread/01-facade.js` | 9636 |
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |
@@ -256,3 +258,4 @@ one) as well as the ports it binds.
 | `test/validation/20-output-not-json-hop.js` | 9577 |
 | `test/validation/20-output-not-json-hop.js` | 9578 |
 | `test/validation/35-rate-limit-options.js` | 9829 (a start that exits 2 before it listens) |
+| `test/validation/38-no-server-outlives-its-file.js` | 9837, 9838 (its fixture's servers) |
