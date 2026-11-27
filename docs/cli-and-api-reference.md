@@ -214,7 +214,7 @@ when `<moduleDataPath>/<name>` is gone. Errors:
 | `MODULE_NAME_INVALID` | `name` is not a valid npm package name |
 | `MODULE_LOADED` | the module is loaded, restarting or suspended: unload it first |
 | `REMOVE_MODULE_INFO_FAIL` | the registry entry could not be removed; nothing was deleted |
-| `MODULE_STORE_CORRUPT` | the local store file that holds the module's keys (`kv.json`) is corrupt and this runtime holds no copy of it: nothing was removed, the registry entry included; repair the store (the runtime's log says how), then uninstall again. Not retryable as it is |
+| `MODULE_STORE_CORRUPT` | the local store file that holds the module's data (`kv.json`) is corrupt and this runtime holds no copy of it: nothing was removed, the registry entry included; repair the store (the runtime's log says how), then uninstall again. Not retryable as it is |
 | `MODULE_KEYS_NOT_PURGED` | the module's keys could not be deleted (the store did not answer within 30 s); its data directory was kept, its registry entry already removed |
 | `MODULE_DATA_NOT_DIRECTORY` | the data directory is a link or a file; it is left alone, remove it by hand |
 
