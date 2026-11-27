@@ -73,11 +73,14 @@ describe('metering 06: a key\'s own record fault, on a real Redis', function() {
     });
   }
 
-  it('a balance asked of a record whose balance isn\'t a number: LEDGER_RECORD_INVALID, as its charged calls are', async () => {
-    const r = await new Promise((resolve) => provider.checkBalance(KEYS.balance, (err, b) => resolve({err, b})));
-    assert.strictEqual(r.err && r.err.code, 'LEDGER_RECORD_INVALID', JSON.stringify(r.b));
-    assert.strictEqual((await ask(KEYS.balance)).code, 'LEDGER_RECORD_INVALID');
-  });
+  for (const shown of ['abc', '1e-5000']) {
+    it(`a balance asked of a record whose balance the scripts refuse (${shown}): LEDGER_RECORD_INVALID, as its charged calls are`, async () => {
+      await cmd('hset', meterId(KEYS.balance), 'balance', shown);
+      const r = await new Promise((resolve) => provider.checkBalance(KEYS.balance, (err, b) => resolve({err, b})));
+      assert.strictEqual(r.err && r.err.code, 'LEDGER_RECORD_INVALID', JSON.stringify(r.b));
+      assert.strictEqual((await ask(KEYS.balance)).code, 'LEDGER_RECORD_INVALID');
+    });
+  }
 
   it('a free-call record Redis decodes but won\'t encode (a count of 1e999): BADRECORD, that key\'s alone, the provider unmarked', async () => {
     await cmd('hset', meterId(KEYS.json), 'toolPriceRecord', '{"tool-a":{"count":1e999}}');

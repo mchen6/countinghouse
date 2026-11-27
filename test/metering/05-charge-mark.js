@@ -263,6 +263,31 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       assert.strictEqual(again.err && again.err.code, 'LEDGER_RECORD_INVALID', 'the failed probe\'s mark was orphaned');
     });
 
+    it('a stale record probe that the store fails, a newer mark in its place: its asker is answered by the probe\'s own error, retryably', async () => {
+      const client = fakeClient();
+      const provider = make(client);
+      const {meterId} = require('../../lib/key-fingerprint');
+      const wrong = () => Object.assign(new Error('WRONGTYPE Operation against a key holding the wrong kind of value'), {code: 'WRONGTYPE'});
+      const readonly = () => Object.assign(new Error('READONLY You can\'t write against a read only replica.'), {code: 'READONLY'});
+      client.evalErr = (key) => (key === meterId(KEY) ? wrong() : null);
+      await charge(provider);
+      clock += 1000;
+      // (the probe answers READONLY, later; meanwhile a paid charge clears the
+      // mark and a balance asked finds the record bad again: a newer mark)
+      client.evalErr = (key, probe) => ((key === meterId(KEY) && probe) ? readonly() : null);
+      const evalNow = client.eval;
+      client.eval = (script, n, key, ...rest) => {
+        const cb = rest.pop();
+        const later = /ARGV\[1\]/.test(script) ? cb : (e, r) => setTimeout(cb, 5, e, r);
+        return evalNow(script, n, key, ...rest, later);
+      };
+      const during = ask(provider, true);
+      assert.strictEqual((await charge(provider)).err, null);
+      client.hmget = (id, f, cb) => process.nextTick(cb, null, ['abc']);
+      await new Promise((resolve) => provider.checkBalance(KEY, resolve));
+      assert.strictEqual((await during).err.code, 'LEDGER_UNREACHABLE', 'answered from the stale mark\'s old code');
+    });
+
     it('a client not yet connected the first time refuses a billed call, retryably, with no outage marked or said; once ready, served at once', async () => {
       const client = fakeClient();
       client.ready = false;
@@ -398,6 +423,30 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
     throws = false;
     clock += 1000;
     assert.strictEqual(await check(), null);
+  });
+
+  it('with no clock given, the mark keeps time by a monotonic clock: the wall clock stepped back an hour still probes a second later', async () => {
+    const {chargeMark} = require('../../lib/metering/charge-mark');
+    const {CountinghouseError} = require('../../lib/countinghouse-error');
+    const realNow = Date.now;
+    const realPerf = performance.now;
+    let mono = 5000000;
+    let wall = realNow();
+    Date.now = () => wall;
+    performance.now = () => mono;
+    try {
+      let probes = 0;
+      const m = chargeMark({probe: (cb) => { probes++; setImmediate(cb, null); },
+        refusal: () => new CountinghouseError('LEDGER_UNREACHABLE'), marked: () => 'marked', cleared: () => 'cleared'});
+      m.mark({code: 'NR_CLOSED'});
+      wall -= 3600000;
+      mono += 1000;
+      assert.strictEqual(await new Promise((resolve) => m.check(resolve)), null, 'refused: the mark kept the wall clock');
+      assert.strictEqual(probes, 1);
+    } finally {
+      Date.now = realNow;
+      performance.now = realPerf;
+    }
   });
 
   it('a charge lost mid-call is logged with the key\'s fingerprint, the tool and the amount, never the key or the store\'s message', () => {
