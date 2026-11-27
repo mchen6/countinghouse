@@ -121,7 +121,7 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
     assert.deepStrictEqual(calls, ['purge m:half-mod:', 'purge ms:half-mod:', 'registry half-mod']);
   });
 
-  it('a registry row that can\'t be removed: the keys are gone, the data directory kept, and the code is retryable', async () => {
+  it('a registry row that can\'t be removed: the keys are gone, the data directory kept; not retryable (the operator uninstalls again once the registry is fixed)', async () => {
     const root = dataRoot();
     fs.mkdirSync(path.join(root, 'rowfail-mod', 'data'), {recursive: true});
     registryFails = true;
@@ -134,7 +134,7 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
     assert.ok(mm.lastSettings.has('rowfail-mod'), 'a refused uninstall keeps the last settings');
     assert.deepStrictEqual(calls, ['purge m:rowfail-mod:', 'purge ms:rowfail-mod:', 'registry rowfail-mod']);
     assert.ok(fs.existsSync(path.join(root, 'rowfail-mod', 'data')));
-    assert.strictEqual(CODES.REMOVE_MODULE_INFO_FAIL.retryable, true);
+    assert.strictEqual(CODES.REMOVE_MODULE_INFO_FAIL.retryable, false);
   });
 
   it('no data directory: the keys and the row go, and the answer is a success', async () => {
