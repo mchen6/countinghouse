@@ -59,18 +59,15 @@ describe('store 04: the persisted maps (LM1 B2)', function() {
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {b: 2});
   });
 
-  it('a corrupt file at open: the map starts empty, and the first write keeps a copy of it aside and replaces it', () => {
+  it('a corrupt file at open: the map starts empty, and it holds no copy, so it never replaces the file (R-store-aside-locked)', () => {
     const dir = tmpStore();
     const file = path.join(dir, 'm.json');
     fs.writeFileSync(file, '{"half": ');
     const f = openJsonFile(file);
     assert.deepStrictEqual(f.data, {});
-    assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"half": ', 'open moves nothing');
     f.close();
-    const aside = fs.readdirSync(dir).filter((e) => e.startsWith('m.json.corrupt-'));
-    assert.strictEqual(aside.length, 1);
-    assert.strictEqual(fs.readFileSync(path.join(dir, aside[0]), 'utf8'), '{"half": ');
-    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {});
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"half": ', 'neither moved nor replaced');
+    assert.strictEqual(fs.readdirSync(dir).filter((e) => e.startsWith('m.json.corrupt-')).length, 0);
   });
 
   it('two processes writing disjoint keys to one store end with both sets on disk', async () => {
@@ -1351,6 +1348,201 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     assert.strictEqual(got.thrown, undefined, 'never thrown');
     assert.strictEqual(got.err && got.err.code, 'SYSTEM_ERROR');
     assert.strictEqual(got.r, undefined);
+  });
+
+  // (the medium on cb7b5528)
+  it('a good read ends the copy kept for a corruption: a later corruption gets a copy of its own', async () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const file = path.join(dir, 'm.json');
+    const f = openJsonFile(file, {debounceMs: 60000});
+    const rename = fs.renameSync;
+    try {
+      f.set('a', 1); f.flush();
+      fs.writeFileSync(file, '{"first": ');
+      let failed = 0;
+      fs.renameSync = function(from, to) {
+        if (failed === 0 && to === file && String(from).startsWith(`${file}.tmp-`)) { failed += 1; throw Object.assign(new Error('EIO: i/o error, rename'), {code: 'EIO', syscall: 'rename'}); }
+        return rename.apply(this, arguments);
+      };
+      assert.strictEqual((await update(f, 'a', (v) => v + 1)).err.code, 'EIO');
+      fs.renameSync = rename;
+      fs.writeFileSync(file, JSON.stringify({a: 1, good: true}));
+      f.reload();
+      fs.writeFileSync(file, '{"second": ');
+      f.set('z', 9); f.flush();
+    } finally {
+      fs.renameSync = rename;
+      f.close();
+    }
+    const kept = aside(dir, 'm.json').map((e) => fs.readFileSync(path.join(dir, e), 'utf8')).sort();
+    assert.deepStrictEqual(kept, ['{"first": ', '{"second": ']);
+  });
+
+  it('a corrupt ledger is a balance that can\'t be told: SYSTEM_ERROR, never the one in memory', async () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const LocalMeteringProvider = require('../../lib/metering/local-provider');
+    const apiKey = `k-${require('crypto').randomBytes(8).toString('hex')}`;
+    const file = path.join(dir, 'metering.json');
+    fs.writeFileSync(file, JSON.stringify({[require('../../lib/key-fingerprint').meterId(apiKey)]: {balance: 10, toolPriceRecord: {}}}));
+    const provider = new LocalMeteringProvider({meter: true, storePath: dir});
+    let got = null;
+    try {
+      fs.writeFileSync(file, '{"broken": ');
+      got = await new Promise((resolve) => provider.checkBalance(apiKey, (err, r) => resolve({err, r})));
+    } finally {
+      provider.close();
+    }
+    assert.strictEqual(got.err && got.err.code, 'SYSTEM_ERROR');
+  });
+
+  it('a copy aside whose first name is taken gets another: the copy is kept', () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const file = path.join(dir, 'm.json');
+    const f = openJsonFile(file, {debounceMs: 60000});
+    const now = Date.now;
+    try {
+      f.set('a', 1); f.flush();
+      fs.writeFileSync(file, '{"broken": ');
+      Date.now = () => 1234567890123;
+      fs.writeFileSync(`${file}.corrupt-1234567890123`, 'an older copy');
+      f.set('b', 2); f.flush();
+    } finally {
+      Date.now = now;
+      f.close();
+    }
+    const kept = aside(dir, 'm.json').map((e) => fs.readFileSync(path.join(dir, e), 'utf8')).sort();
+    assert.deepStrictEqual(kept, ['an older copy', '{"broken": ']);
+  });
+
+  it('a read error with no code is logged once, and once when it clears', () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const file = path.join(dir, 'm.json');
+    const f = openJsonFile(file, {debounceMs: 60000});
+    const read = fs.readFileSync;
+    try {
+      f.set('a', 1); f.flush();
+      fs.readFileSync = function(p) { if (p === file) throw new Error('it broke'); return read.apply(this, arguments); };
+      for (let i = 0; i < 2; i++) { try { f.reload(); } catch (e) { /* said */ } }
+      fs.readFileSync = read;
+      f.reload();
+    } finally {
+      fs.readFileSync = read;
+      f.close();
+    }
+    const mine = logged.filter((l) => l.includes(file));
+    assert.strictEqual(mine.filter((l) => l.includes('it broke')).length, 1, JSON.stringify(mine));
+    assert.strictEqual(mine.filter((l) => /can be read again/.test(l)).length, 1, JSON.stringify(mine));
+  });
+
+  it('a close with only the corrupt file left to replace says that, not "0 changes"', () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const file = path.join(dir, 'm.json');
+    const f = openJsonFile(file, {debounceMs: 60000});
+    const rename = fs.renameSync;
+    try {
+      f.set('a', 1); f.flush();
+      fs.writeFileSync(file, '{"broken": ');
+      f.reload();
+      fs.renameSync = function(from, to) {
+        if (to === file && String(from).startsWith(`${file}.tmp-`)) throw Object.assign(new Error('EIO: i/o error, rename'), {code: 'EIO', syscall: 'rename'});
+        return rename.apply(this, arguments);
+      };
+      f.close();
+    } finally {
+      fs.renameSync = rename;
+    }
+    const closed = logged.filter((l) => l.includes(file) && l.includes('closed'));
+    assert.strictEqual(closed.length, 1, JSON.stringify(logged));
+    assert.ok(!/0 change/.test(closed[0]) && /corrupt file not replaced/.test(closed[0]), closed[0]);
+  });
+
+  // (the Reviewer's ruling (A) on cb7b5528's medium, 3: only a map that saw
+  // a good copy of the file may replace a corrupt one; every store the same)
+  it('metering: a map that never saw a good copy refuses to replace the corrupt ledger; a charge is refused until a map that did replaces it', async () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const LocalMeteringProvider = require('../../lib/metering/local-provider');
+    const apiKey = `k-${require('crypto').randomBytes(8).toString('hex')}`;
+    const id = require('../../lib/key-fingerprint').meterId(apiKey);
+    const file = path.join(dir, 'metering.json');
+    fs.writeFileSync(file, JSON.stringify({[id]: {balance: 10, toolPriceRecord: {t: {count: 1}}}, other: {balance: 3, toolPriceRecord: {}}}));
+    const known = openJsonFile(file, {debounceMs: 60000});
+    fs.writeFileSync(file, '{"broken": ');
+    const fresh = new LocalMeteringProvider({meter: true, storePath: dir});
+    const charge = () => new Promise((resolve) => fresh.recordCall(apiKey, 't', 5, (err, a) => resolve({err, a})));
+    let refused = null;
+    let after = null;
+    try {
+      refused = await charge();
+      assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"broken": ', 'not replaced by a map that never saw it whole');
+      known.reload(); known.flush();
+      after = await charge();
+    } finally {
+      fresh.close(); known.close();
+    }
+    assert.ok(refused.err != null && refused.err.message.includes(file), String(refused.err && refused.err.message));
+    assert.deepStrictEqual(after, {err: null, a: {tool: 't', charged: 0, balance: 10, remainingFreeCalls: 0}});
+    assert.deepStrictEqual(onDisk(file), {[id]: {balance: 10, toolPriceRecord: {t: {count: 0}}}, other: {balance: 3, toolPriceRecord: {}}});
+  });
+
+  it('used nonces: a store that never saw the file whole refuses a use while it is corrupt (fail closed), never a first use', async () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const file = path.join(dir, 'used-nonces.json');
+    const nonce = require('crypto').randomBytes(16).toString('hex');
+    const until = Date.now() + 60000;
+    fs.writeFileSync(file, JSON.stringify({[nonce]: {until: until, by: 'someone'}}));
+    fs.writeFileSync(file, '{"broken": ');
+    const used = require('../../lib/store').createStore({store: 'local', storePath: dir}).usedNonces;
+    let got = null;
+    try {
+      got = await used.use(nonce, until).then((first) => ({first}), (err) => ({err}));
+    } finally {
+      require('../../lib/store/json-file').flushAll();
+    }
+    assert.strictEqual(got.first, undefined, 'never answered as a first use');
+    assert.ok(got.err != null && got.err.message.includes(file), String(got.err && got.err.message));
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"broken": ');
+  });
+
+  it('kv: an unknown map\'s change is kept, and goes over the file once a map that saw it whole replaced it', async () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const LocalKv = require('../../lib/local-kv');
+    const run = (kv, ...a) => new Promise((resolve, reject) => kv[a[0]](...a.slice(1), (e, r) => (e ? reject(e) : resolve(r))));
+    const a = new LocalKv({storePath: dir});
+    const file = path.join(dir, 'kv.json');
+    let b = null;
+    try {
+      await run(a, 'set', 'ak', '1'); a.file.flush();
+      fs.writeFileSync(file, '{"broken": ');
+      b = new LocalKv({storePath: dir});
+      await run(b, 'set', 'bk', '2'); b.file.flush();
+      assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"broken": ', 'the unknown map wrote nothing');
+      a.reload(); a.file.flush();
+      b.file.flush();
+    } finally {
+      if (b != null) b.close();
+      a.close();
+    }
+    assert.deepStrictEqual(Object.keys(onDisk(file)).sort(), ['ak', 'bk']);
+    assert.strictEqual(logged.filter((l) => l.includes(file) && /holds no copy/.test(l)).length, 1, `said once (${JSON.stringify(logged)})`);
+  });
+
+  it('the user moves the corrupt file away: a map opened on the missing file writes at once, and so does one that never saw it whole', () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const file = path.join(dir, 'm.json');
+    fs.writeFileSync(file, '{"broken": ');
+    const unknown = openJsonFile(file, {debounceMs: 60000});
+    try {
+      unknown.set('u', 1); unknown.flush();
+      assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"broken": ');
+      fs.renameSync(file, `${file}.moved-by-the-user`);
+      const fresh = openJsonFile(file, {debounceMs: 60000});
+      fresh.set('f', 2); fresh.close();
+      assert.deepStrictEqual(onDisk(file), {f: 2});
+      unknown.flush();
+    } finally {
+      unknown.close();
+    }
+    assert.deepStrictEqual(onDisk(file), {f: 2, u: 1});
   });
 
   lockedDirs.hooks();
