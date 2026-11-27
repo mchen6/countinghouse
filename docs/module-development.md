@@ -1399,13 +1399,15 @@ whole, so its code and message reach the client in either mode, and a
 composing module's `ctx.call` gets its details too. The callee's structured `.fault`
 reaches neither.
 
-**A short startup window remains, but it now says so.** A device appears in
-`tools/list` and can serve its own actions before composition verification
-has finished — that verification is asynchronous and runs after all modules
-are discovered. A call landing in that window is refused with
-`CTX_CALL_NOT_READY`, whose message says to retry, rather than being blamed
-on an auth config that is in fact correct. Treat that code as retryable and
-every other `CTX_CALL_*` code as a configuration bug.
+**A short startup window remains, and it is waited out.** A device appears in
+`tools/list` before composition verification has finished — that
+verification is asynchronous and runs after all modules are discovered. A
+call to it in that window is held until its verification is decided, and a
+`ctx.call` waits for it too, each for at most 25 s and 2 s inside the
+request's own timer. Past that, or when the module fails its verification,
+the call is refused with `CTX_CALL_NOT_READY`, whose message says to retry;
+nothing was done. Treat that code as retryable and every other `CTX_CALL_*`
+code as a configuration bug.
 `examples/repo-review/token-comparison.js` waits for the server's "all
 module discovered" log line plus a settle buffer to stay out of the window
 entirely — see its comment on `waitForAllModulesDiscovered` for the full
