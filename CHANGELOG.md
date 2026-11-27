@@ -30,8 +30,9 @@ the auth config.
   ledger's write just failed), 503 with Retry-After 5 s and "retry shortly"
   in the text. Before, with Redis down a billed call ran and was never
   charged. An unbilled call is limited in memory and served, as before.
-- One key whose own usage record can't be charged (of the wrong type, or
-  a free-call record that isn't JSON) has its billed calls refused with
+- One key whose own usage record can't be charged (of the wrong type, a
+  free-call record that isn't JSON, or a balance that isn't a number Redis
+  can add to) has its billed calls refused with
   `LEDGER_RECORD_INVALID` (not retryable) until the operator repairs it;
   other keys are served. The log names the record by the key's
   fingerprint.
