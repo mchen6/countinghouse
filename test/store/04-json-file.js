@@ -1685,6 +1685,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
       kv.sweep = () => { throw new Error('a bug in the sweep'); };
       try { kv.tick(); } catch (e) { thrown = e; }
     } finally {
+      delete kv.sweep;   // (the prototype's again: close() sweeps)
       kv.close();
     }
     assert.strictEqual(thrown && thrown.message, 'a bug in the sweep');
