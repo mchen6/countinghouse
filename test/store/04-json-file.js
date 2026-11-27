@@ -1308,6 +1308,26 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     assert.strictEqual(mine.filter((l) => /read again|readable again/.test(l)).length, 1, `once when it clears (${JSON.stringify(mine)})`);
   });
 
+  it('local-kv\'s interval while kv.json can\'t be read: no throw out of it, and one line for the code', () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const LocalKv = require('../../lib/local-kv');
+    const kv = new LocalKv({storePath: dir});
+    const file = path.join(dir, 'kv.json');
+    const read = fs.readFileSync;
+    try {
+      fs.readFileSync = function(p) {
+        if (p === file) throw Object.assign(new Error(`EACCES: permission denied, open '${p}'`), {code: 'EACCES', syscall: 'open'});
+        return read.apply(this, arguments);
+      };
+      for (let i = 0; i < 3; i++) kv.tick();
+    } finally {
+      fs.readFileSync = read;
+      kv.close();
+    }
+    assert.ok(fs.readFileSync === read, 'the stub is gone');
+    assert.strictEqual(logged.filter((l) => l.includes(file) && l.includes('EACCES')).length, 1, JSON.stringify(logged));
+  });
+
   it('a balance asked for while the ledger can\'t be read is the one uniform refusal, never a throw', async () => {
     const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
     const LocalMeteringProvider = require('../../lib/metering/local-provider');
