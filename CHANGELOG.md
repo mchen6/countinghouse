@@ -10,6 +10,9 @@ the auth config.
 
 ## 8.0.0
 
+- A call that reaches a runtime while it is still starting, before its module's composition check is decided (a shared runtime lists a module while its parts still load), is now held until the check is decided, for at most 25 s and 2 s inside its request timer, then sent with the module's verdict. It used to be sent at once and fail with `DEVICE_INVOKE_EXCEPTION` once its handler's `ctx.call` ran; a task created in that window failed the same way. Past the bound it answers `CTX_CALL_NOT_READY` (retryable), never sent. A held call whose module fails its check, ends, or is turned off meanwhile is never sent: over MCP it gets the answer a new call would get then, and on the REST routes the route's one answer for a device the caller can't use (`MODULE_NOT_LISTED`, 404). A cancelled or timed-out held call is never sent either.
+- `CTX_CALL_NOT_READY` now reads "Not ready yet: the runtime is still checking a module this call needs, so the call to it was not run; retry in a few seconds."
+- The answer to a tool a caller can't use now ends "; countinghouse_overview shows what is installed here and which tools you can use", the same words for every caller (the code, -32602, is unchanged).
 - In a shared runtime, a session's tightening of a cap for all sessions past its 32 recorded changes still applies at once to every session, but is no longer written to `settings.json`: it lasts until the runtime restarts, and the answer's `applies` and its history line say `all sessions, until the runtime restarts`. Past the budget, taking back a raise stored for the next start changes nothing now and is answered the same way, since the stored raise still applies at the next start. Its history was one line and a count written later, so the stored value was ahead of the history, and ch-local's next start reported the runtime's own change as one made outside. A tightening made at a terminal is stored as before.
 - The runtime, its shipped packages and its docs are in English only. `--locale` and the `locale` setting are removed: passing `--locale` has no effect, and every message is in English. `echo-device-client-module`'s service and action are now `x` and `API`; its tool name is unchanged.
 - A shared runtime's 2025-11-25 session now hears `notifications/tools/list_changed`, as a `--stdio` client does: declared on its `initialize`, and sent once it has listed, whenever the tool set changes (it may leave that session's list the same, which costs one re-list). Claude Code (2.1.330) falls back to 2025-11-25 when its 3 s `server/discover` probe times out. A slow cold start of the shared runtime does that; a fast one doesn't. A session on 2025-11-25 never heard a tool added or removed.
@@ -853,6 +856,14 @@ configuration). None of it is available to a hosted server.
 - **`POST /uninstall-module` deletes the module's `ctx.redis` keys** with its
   data (unless `keepData`), so a later module of the same name inherits none;
   the answer gains `keysDeleted`. A reload or an upgrade keeps them.
+- **`POST /uninstall-module` checks everything before it removes anything**,
+  then deletes the keys, then the registry entry, then the data directory. A
+  store that can't be reached now keeps the registry entry and the data
+  (`MODULE_KEYS_NOT_PURGED`, naming the store's error code; a retry deletes
+  what is left). A data directory the uninstall couldn't read or write in
+  (its permissions, a link that loops) is refused first with the new
+  `MODULE_DATA_UNREADABLE`, with nothing removed. A failed registry removal (`REMOVE_MODULE_INFO_FAIL`) now
+  says the keys may already be deleted.
 
 ### Added — `ctx.usage()`: the current call's counts so far
 

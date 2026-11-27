@@ -185,7 +185,7 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
     // the runtime's default, which this test never touches)
     assert.strictEqual(meter(['set', '--store', 'local', '--balance', '5'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
   });
-  // (R-redis-drop-spin) the CLI's client is a lib/redis-resilient one, which
+  // The CLI's client is a lib/redis-resilient one, which
   // emits no 'error' for a refused connection (node_redis with a
   // retry_strategy): a Redis that can't be reached is still said as such,
   // exit 2, its cause named (the refused connect's own code), within its

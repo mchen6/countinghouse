@@ -35,7 +35,10 @@ describe('sessions 34: a call that cannot be sent to its worker is answered once
   const cloneError = () => Object.assign(new Error('could not be cloned'), {name: 'DataCloneError'});
   // a worker whose post throws; with spec, a call to d1 svc/act has its
   // input checked (the asynchronous path), else it is sent at once
-  const device = (workerId, withSpec) => Object.assign({workerId: workerId, sendInvokeActionMessage: () => { throw cloneError(); }},
+  // (a device whose composition verdict has been decided, as every device's is once startup's verifications are: one without is held
+  // for it on the main thread, composition 18 and 19)
+  const decided = () => ({d1: {identity: 'k', module: 'm', targets: new Set()}});
+  const device = (workerId, withSpec) => Object.assign({workerId: workerId, bindings: decided(), sendInvokeActionMessage: () => { throw cloneError(); }},
     withSpec ? {moduleSpec: {deviceID: 'd1', key: 'k', names: {svc: new Set(['act'])}}} : {});
   const tick = () => new Promise((r) => setImmediate(r));
 
@@ -74,7 +77,7 @@ describe('sessions 34: a call that cannot be sent to its worker is answered once
   });
 
   // the review of #416's medium round
-  const endedDevice = (workerId, withSpec) => Object.assign({workerId: workerId,
+  const endedDevice = (workerId, withSpec) => Object.assign({workerId: workerId, bindings: decided(),
     // a worker that has ended answers at once, from inside the send
     sendInvokeActionMessage: (m, cb) => cb(Object.assign(new Error('ended'), {code: 'MODULE_UNLOADED'}), null)},
   withSpec ? {moduleSpec: {deviceID: 'd1', key: 'k', names: {svc: new Set(['act'])}}} : {});

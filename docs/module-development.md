@@ -1401,13 +1401,39 @@ whole, so its code and message reach the client in either mode, and a
 composing module's `ctx.call` gets its details too. The callee's structured `.fault`
 reaches neither.
 
-**A short startup window remains, but it now says so.** A device appears in
-`tools/list` and can serve its own actions before composition verification
-has finished — that verification is asynchronous and runs after all modules
-are discovered. A call landing in that window is refused with
-`CTX_CALL_NOT_READY`, whose message says to retry, rather than being blamed
-on an auth config that is in fact correct. Treat that code as retryable and
-every other `CTX_CALL_*` code as a configuration bug.
+**A short startup window remains, and it is waited out.** A device appears in
+`tools/list` before composition verification has finished — that
+verification is asynchronous and runs after all modules are discovered. A
+call to it in that window is held until its verification is decided, and a
+`ctx.call` waits for it too, each for at most 25 s and 2 s inside the
+request's own timer. Past that, the call is refused with
+`CTX_CALL_NOT_READY`, whose message says to retry. Treat that code as
+retryable and every other `CTX_CALL_*` code as a configuration bug. The
+code says the call to the module that is not ready was not run. A held call
+is never sent until its module's verdict is decided, but the same code also
+reaches a client through a composing module that passes on its own
+`ctx.call`'s refusal, maybe after doing work of its own: such a module
+should say so in its answer.
+
+A module that fails its verification at startup is removed and never
+listed: a call held for it is answered as a call to any tool the caller
+can't use (on MCP, `unknown tool: <name>`, the same answer for every
+reason; on the REST routes, the route's one answer for a device the caller
+can't use, `MODULE_NOT_LISTED` (404); `DEVICE_NOT_FOUND` for a task's run). A
+module loaded later that fails its verification keeps serving its own
+actions, unbound: a call held for it goes on, and its `ctx.call` is refused.
+A module that ends while a call to it is held (an unload, a crash, a
+restart) answers that call at once, and the call is never sent. Over MCP,
+the answer is the one a new call to the tool would get at that moment: gone,
+the same `unknown tool` answer; restarting, `MODULE_RESTARTING`, retryable.
+On the REST routes, a held call that ends gone gets the route's one answer
+for a device the caller can't use, `MODULE_NOT_LISTED` (404). When a
+new version serves the tool after a retry (the module reloaded, in place or
+not), the held call gets `CTX_CALL_NOT_READY` and the client's retry is
+served. A module turned off or hidden while a call to it is held never runs
+that call: it gets the same `unknown tool` answer a new call gets. A held
+call whose client cancelled it, or whose request timer ran out, is never
+sent either.
 `examples/repo-review/token-comparison.js` waits for the server's "all
 module discovered" log line plus a settle buffer to stay out of the window
 entirely — see its comment on `waitForAllModulesDiscovered` for the full

@@ -433,7 +433,7 @@ says how to write a module for this.
 ## What MCP clients will notice
 
 - **A tool outside your key's grants is an unknown tool.** `tools/call` of
-  one now answers `-32602 unknown tool: <name>`, as a name never registered
+  one now answers `-32602 unknown tool: <name>; countinghouse_overview shows what is installed here and which tools you can use`, as a name never registered
   does, where it answered `-32603` "This apiKey does not have access to this
   device". So is a runtime tool your key isn't listed: an authoring tool
   for a key that is no admin's (it answered `ADMIN_REQUIRED`), and in the

@@ -60,7 +60,8 @@ describe('sandbox 73: an uninstall whose store is down removes nothing', functio
   const keys = [`${ns.prefixFor(NAME)}a`, `${ns.prefixFor(NAME)}b`];
 
   before(async () => {
-    direct = redis.createClient(redisUrlFor(), {db: KV_DB});
+    // (the server's own db: KV_DB, whatever db the test's URL names)
+    direct = redis.createClient(redisConnectionFor(KV_DB));
     direct.on('error', () => {});
   });
   after(async () => {

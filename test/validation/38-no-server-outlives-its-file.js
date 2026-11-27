@@ -1,6 +1,6 @@
 'use strict';
 // A server a test starts through test/helpers/sandbox-server.js never
-// outlives its file (R-redis-drop-spin, 11-27): auth 42's before() failed
+// outlives its file: auth 42's before() failed
 // with Redis unreachable while its start was still pending, so the file never
 // had the server object, its after() stopped nothing, and the server (its own
 // process group) ran on, holding the file's port for every later file. The

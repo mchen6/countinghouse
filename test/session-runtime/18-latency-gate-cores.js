@@ -37,6 +37,35 @@ describe('session-runtime 18: the latency gate\'s machine: 4 or more CPUs, else 
     }
   });
 
+  // (a crash's stack, then its message as the last line: the workflow's
+  // summary says the last stderr line as the reason, never a stack frame)
+  it('a crash\'s reason: its message\'s first line (the runtime\'s output after it left out), else its code, its first inner error\'s, or the value', () => {
+    assert.strictEqual(gate.crashReason(new Error('the runtime never listened: \n  at Module._load (x)\nsome log line')), 'the runtime never listened:');
+    assert.strictEqual(gate.crashReason(Object.assign(new AggregateError([], ''), {code: 'ECONNREFUSED'})), 'ECONNREFUSED');
+    assert.strictEqual(gate.crashReason(new AggregateError([new Error('connect ECONNREFUSED 127.0.0.1:1')], '')), 'connect ECONNREFUSED 127.0.0.1:1');
+    assert.strictEqual(gate.crashReason({why: 'x'}), "{ why: 'x' }");
+    assert.strictEqual(gate.crashReason('plain text\nmore'), 'plain text');
+    assert.strictEqual(gate.crashReason(undefined), 'undefined');
+    const text = gate.crashText(new Error('boom\ntail'));
+    assert.ok(text.endsWith('\nlatency gate: boom\n') && /\n\s+at /.test(text), text);
+  });
+
+  it('a crash ends with one line, "latency gate: <message>", after its stack; a usage error is that one line alone (exit 2 each)', function() {
+    this.timeout(60000);   // (two cold node starts)
+    if (process.platform === 'win32') this.skip();   // (refused there before any shim is looked for)
+    const {spawnSync} = require('child_process');
+    const missing = path.join(__dirname, 'no-such-dir', 'ch-shim');
+    const run = (argv) => spawnSync(process.execPath, [GATE, ...argv], {encoding: 'utf8', timeout: 30000});
+    const crash = run(['--shim', missing, '--allowFewerCores']);
+    assert.strictEqual(crash.status, 2, crash.stderr);
+    const lines = crash.stderr.split('\n').filter((l) => l !== '');
+    assert.strictEqual(lines[lines.length - 1], `latency gate: no ch-shim at ${missing}`);
+    assert.ok(lines.some((l) => /^\s+at /.test(l)), `the stack is kept before it: ${crash.stderr}`);
+    const usage = run(['--shim', missing, '--mode', 'nope']);
+    assert.strictEqual(usage.status, 2);
+    assert.strictEqual(usage.stderr, 'latency gate: --mode must be closed or open\n');
+  });
+
   it('--allowFewerCores is a flag; Windows is refused with the harness\'s own reason', () => {
     assert.strictEqual(gate.args(['--shim', '/x', '--allowFewerCores']).allowFewerCores, true);
     assert.strictEqual(gate.args(['--shim', '/x']).allowFewerCores, false);

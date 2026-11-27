@@ -290,7 +290,29 @@ async function main() {
   process.exitCode = exitCode;
 }
 
-// (run only when executed: session-runtime 18 requires it)
-if (require.main === module) main().catch((e) => { process.stderr.write(e instanceof Usage ? `latency gate: ${e.message}\n` : `${e.stack || e}\n`); process.exitCode = 2; });
+// A usage error is its one line; a crash is its stack, then its reason as
+// the last line, "latency gate: <reason>" (the workflow's summary says the
+// last stderr line as the reason, never a stack frame). The reason is the
+// message's first non-empty line (a message may carry the runtime's output
+// after it), else its code, its first inner error's, or the value itself.
+function crashReason(e) {
+  const first = (t) => String(t == null ? '' : t).split(/\r?\n/).map((l) => l.trim()).find((l) => l !== '') || null;
+  if (e == null || typeof(e) !== 'object') return first(e) || String(e);
+  return first(e.message) || (typeof(e.code) === 'string' ? e.code : null) ||
+    (Array.isArray(e.errors) && e.errors.length > 0 ? crashReason(e.errors[0]) : null) || first(require('util').inspect(e, {depth: 1, breakLength: Infinity})) || 'an error with no message';
+}
+function crashText(e) {
+  if (e instanceof Usage) return `latency gate: ${e.message}\n`;
+  return `${(e != null && e.stack) || require('util').inspect(e)}\nlatency gate: ${crashReason(e)}\n`;
+}
+// (run only when executed: session-runtime 18 requires it; a crash outside
+// main's promise -- an emitter's unheard error, a rejection no one awaits --
+// ends the same way)
+if (require.main === module) {
+  const crashed = (e) => { process.stderr.write(crashText(e)); process.exitCode = 2; };
+  process.on('uncaughtException', (e) => { crashed(e); process.exit(2); });
+  process.on('unhandledRejection', (e) => { crashed(e); process.exit(2); });
+  main().catch(crashed);
+}
 
-module.exports = {args, machineCondition, verdictOf, WINDOWS_REFUSAL, GATE_CPUS};
+module.exports = {args, machineCondition, verdictOf, crashReason, crashText, WINDOWS_REFUSAL, GATE_CPUS};
