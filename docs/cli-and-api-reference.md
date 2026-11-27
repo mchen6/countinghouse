@@ -215,8 +215,9 @@ when `<moduleDataPath>/<name>` is gone. Errors:
 | `MODULE_LOADED` | the module is loaded, restarting or suspended: unload it first |
 | `REMOVE_MODULE_INFO_FAIL` | the registry entry could not be removed; the data directory was kept, and the module's keys were deleted unless `keepData` was set; uninstall again to finish |
 | `MODULE_STORE_CORRUPT` | the local store file that holds the module's data (`kv.json`) is corrupt and this runtime holds no copy of it: nothing was removed, the registry entry included; repair the store (the runtime's log says how), then uninstall again. Not retryable as it is |
-| `MODULE_KEYS_NOT_PURGED` | the module's keys could not be deleted (the store did not answer within 30 s); nothing was removed: the registry entry and the data directory are kept |
+| `MODULE_KEYS_NOT_PURGED` | the module's keys could not all be deleted (the store did not answer within 30 s, or answered an error; its code is named); the registry entry and the data directory are kept, and some keys may already be deleted: uninstall again to delete what is left |
 | `MODULE_DATA_NOT_DIRECTORY` | the data directory is a link or a file; it is left alone, remove it by hand |
+| `MODULE_DATA_UNREADABLE` | the data directory (or its `sessions/`, or a directory on the way to it) could not be read, or the uninstall could not write in it; its errno code is named and nothing was removed: make it readable, then uninstall again |
 
 Every device-scoped route above (everything under `/devices/:deviceID/...`)
 goes through the same `AuthProvider` check `tools/call` does. For exactly

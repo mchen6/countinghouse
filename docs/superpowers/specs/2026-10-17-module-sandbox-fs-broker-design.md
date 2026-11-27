@@ -482,7 +482,14 @@ paths:
 - removes the registry entry (`lib/device-db.js` `removeModuleInfo`, which has
   no caller today), first *(amended 2026-11-04)*: if that fails nothing has been deleted
   (`REMOVE_MODULE_INFO_FAIL`), and `registryEntryRemoved` is reported true
-  only when an entry existed;
+  only when an entry existed. *(Amended 2026-11-27: every refusal now comes
+  before anything is removed, the data directory's checks included, then the
+  module's keys, then the registry entry, then the data directory. A store
+  that can't be reached leaves the registry entry and the data directory
+  (`MODULE_KEYS_NOT_PURGED`; some keys may already be gone, and a retry
+  deletes the rest); a
+  registry entry that can't be removed leaves the data directory, the keys
+  already gone (`REMOVE_MODULE_INFO_FAIL`).)*
 - deletes `<moduleDataPath>/<name>` unless `keepData`, never following links,
   under the per-name lifecycle lock (`MODULE_DATA_NOT_DIRECTORY` if it is a
   link or a file, which is left alone).

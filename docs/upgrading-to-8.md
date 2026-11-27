@@ -792,7 +792,8 @@ says how to write a module for this.
   keys are under `m:%40acme%2Ftool:`), so a later module of the same name inherits
   neither; the answer gives `keysDeleted`. The keys go first, then the
   registry entry, then the data: a purge that fails answers
-  `MODULE_KEYS_NOT_PURGED` with nothing removed. It never removes the
+  `MODULE_KEYS_NOT_PURGED` with the registry entry and the data kept (a
+  retry deletes the keys that are left). It never removes the
   module's code. Unload the
   module first ([reference](cli-and-api-reference.md)). A reload or an
   upgrade keeps the keys.
