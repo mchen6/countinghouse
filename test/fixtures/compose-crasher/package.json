@@ -1,0 +1,10 @@
+{
+  "name": "compose-crasher",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "countinghouse": {
+    "calls": [
+      "compose-callee/calleeService.double"
+    ]
+  }
+}
