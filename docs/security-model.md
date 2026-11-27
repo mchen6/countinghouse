@@ -1091,6 +1091,13 @@ beyond any ceiling, as they are beyond the runtime itself.
 
 ### Confirming a loosening in the client's dialog
 
+In this release no client is on the tested-client list, so no dialog is
+shown: a loosening asked for in conversation is refused with the `ch-local`
+command the user runs at a terminal, and a raised `maxOutputBytes` or
+`requestTimeout` above what the runtime started with takes effect when it
+next starts. The rest of this section describes the dialog as it is built;
+it is not shown while no client is on the list.
+
 A loosening asked for in conversation could come from a prompt injected
 through a tool's result, not from the user. So `countinghouse_settings`
 never applies one on the model's word. A raised `maxOutputBytes` or
