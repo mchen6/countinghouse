@@ -138,13 +138,18 @@ describe('ctx.call refusals carry a code an MCP client can branch on', () => {
   it('gives each code a head message that is actionable without the detail', () => {
     const CountinghouseError = require('../../lib/countinghouse-error').CountinghouseError;
 
-    for (const code of ['CTX_CALL_NOT_READY', 'CTX_CALL_UNBOUND',
+    for (const code of ['CTX_CALL_UNBOUND',
                         'CTX_CALL_UNDECLARED', 'CTX_CALL_BAD_ADDRESS',
                         'CTX_CALL_UNRESOLVED']) {
       const head = new CountinghouseError(code).message;
       assert.notStrictEqual(head, code, `${code} has no entry in the error catalogue`);
       assert.ok(/ctx\.call/.test(head), `${code}'s head should name ctx.call: ${head}`);
     }
+    // CTX_CALL_NOT_READY also answers a client's call held before its module's verdict (never sent), so its head names no ctx.call.
+    // Its words are true at every raise site: the call to the module not ready was not run (a composing handler that passes it on may
+    // have done work of its own, so it never says nothing was done), whenever the check runs (not only after the start)
+    const notReady = new CountinghouseError('CTX_CALL_NOT_READY').message;
+    assert.strictEqual(notReady, 'Not ready yet: the runtime is still checking a module this call needs, so the call to it was not run; retry in a few seconds.');
   });
 });
 
