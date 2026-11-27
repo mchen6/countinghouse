@@ -1404,10 +1404,22 @@ reaches neither.
 verification is asynchronous and runs after all modules are discovered. A
 call to it in that window is held until its verification is decided, and a
 `ctx.call` waits for it too, each for at most 25 s and 2 s inside the
-request's own timer. Past that, or when the module fails its verification,
-the call is refused with `CTX_CALL_NOT_READY`, whose message says to retry;
-nothing was done. Treat that code as retryable and every other `CTX_CALL_*`
-code as a configuration bug.
+request's own timer. Past that, the call is refused with
+`CTX_CALL_NOT_READY`, whose message says to retry. Treat that code as
+retryable and every other `CTX_CALL_*` code as a configuration bug. A held
+call is never sent to the module until its verdict is decided, so a client
+that gets this code for its own call knows the handler did not run; a
+composing module that passes on its `ctx.call`'s refusal after doing work of
+its own should say so in its answer.
+
+A module that fails its verification at startup is removed and never
+listed: a call held for it is answered as a call to any tool the caller
+can't use (on MCP, `unknown tool: <name>`, the same answer for every
+reason; `DEVICE_NOT_FOUND` on the REST routes and for a task's run). A
+module loaded later that fails its verification keeps serving its own
+actions, unbound: a call held for it goes on, and its `ctx.call` is refused.
+A module unloaded or restarted while a call to it is held answers that call
+at once, as a call to it would be answered then.
 `examples/repo-review/token-comparison.js` waits for the server's "all
 module discovered" log line plus a settle buffer to stay out of the window
 entirely — see its comment on `waitForAllModulesDiscovered` for the full
