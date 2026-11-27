@@ -53,6 +53,53 @@ describe('local-kv 02: LocalKv answers as Redis does (differential)', function()
   });
 });
 
+// R-localkv-inf-scores: a sorted-set score of inf or -inf, written to
+// kv.json and read back (the store's own write, then another LocalKv on the
+// file, as a restart reads it): JSON has no Infinity, so it came back null,
+// sorted as 0, said "null" by WITHSCORES and compared as 0 by GT, LT and INCR.
+// Redis keeps it. Every reply after the read-back as Redis's.
+describe('local-kv 02: inf and -inf scores read back from kv.json as Redis keeps them', function() {
+  this.timeout(30000);
+  let redisClient = null;
+  before(async function() {
+    const redis = require('redis');
+    redisClient = redis.createClient(redisUrlFor(), {db: 13});
+    redisClient.on('error', () => {});
+    const ok = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), 1000);
+      redisClient.ping((err) => { clearTimeout(timer); resolve(err == null); });
+    });
+    if (!ok) { redisClient.quit(); redisClient = null; return this.skip(); }
+    await new Promise((resolve) => redisClient.flushdb(resolve));
+  });
+  after(() => { if (redisClient != null) redisClient.quit(); });
+
+  it('zrange WITHSCORES, GT, LT and INCR after the read-back answer as Redis does', async () => {
+    const storePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-local-kv-02-inf-'));
+    const before = [['zadd', 'zi', 'inf', 'top', '-inf', 'bottom', 1, 'mid'], ['zadd', 'zj', '+inf', 'x']];
+    const after = [['zrange', 'zi', 0, -1, 'WITHSCORES'], ['zrange', 'zi', 0, 0], ['zadd', 'zi', 'GT', 5, 'top'], ['zadd', 'zi', 'LT', 5, 'bottom'],
+      ['zadd', 'zi', 'INCR', 1, 'top'], ['zadd', 'zi', 'INCR', 1, 'bottom'], ['zrange', 'zi', 0, -1, 'WITHSCORES'], ['zrange', 'zj', 0, -1, 'WITHSCORES']];
+    const first = new LocalKv({storePath});
+    for (const [cmd, ...args] of before) {
+      assert.deepStrictEqual(await run(first, cmd, ...args), await run(redisClient, cmd, ...args), cmd);
+    }
+    first.close();
+    const kv = new LocalKv({storePath});
+    const diffs = [];
+    try {
+      for (const [cmd, ...args] of after) {
+        const expected = await run(redisClient, cmd, ...args);
+        const actual = await run(kv, cmd, ...args);
+        try { assert.deepStrictEqual(actual, expected); } catch (e) { diffs.push({step: [cmd, ...args], redis: expected, local: actual}); }
+      }
+    } finally {
+      kv.close();
+      fs.rmSync(storePath, {recursive: true, force: true});
+    }
+    assert.deepStrictEqual(diffs, []);
+  });
+});
+
 describe('local-kv 02: multi/exec as node_redis and Redis answer it', function() {
   this.timeout(30000);
   let redisClient = null;
