@@ -2968,6 +2968,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     const authPath = require.resolve('../../lib/user-auth');
     // (identities whose grant on the callee user-auth refuses)
     const denied = new Set();
+    // (when a list: each access check parked there, to be answered by the case)
+    let parked = null;
     let kept = null;
     let savedAuth = null;
     before(() => {
@@ -2977,10 +2979,11 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: (a, b, deviceID, appKey, s, act, localCB, cb) => {
         if (denied.has(appKey)) return cb(Object.assign(new Error('no grant'), {code: 'DEVICE_ACCESS_DENIED'}));
         const session = {appKey: appKey, callback: localCB, setDeviceTimer(d, f) { return f.call(session, null, d, null); }};
+        if (parked != null) return parked.push(() => cb(null, session));
         return cb(null, session);
       }};
     });
-    beforeEach(() => { denied.clear(); cli.setOptions({workerThread: true, requestTimeout: 30}); });
+    beforeEach(() => { denied.clear(); parked = null; cli.setOptions({workerThread: true, requestTimeout: 30}); });
     after(() => {
       restoreOptions(kept);
       if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
@@ -3078,18 +3081,41 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.deepStrictEqual([sent.length, replies[0].errCode !== 'CTX_CALL_NOT_READY'], [0, true]);
     });
 
-    it('at its bound, a callee decided but not yet delivered: the hop runs, with the callee\'s identity', async () => {
-      cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
-      const {dm, caller, sent, token} = setup((cb) => cb(null, {identity: 'callee-id', allowed: null, targets: []}));
+    // its bound reached as its timer reaches it (DeviceManager.atBoundOnForTests), in the turn its callee is decided: before its
+    // poll could see the decision, so the bound's own final pass is what runs it
+    it('at its bound, a callee decided in that same turn (its poll not yet run): the final pass runs it, with the callee\'s identity', async () => {
+      const {dm, caller, callee, sent, replies, token} = setup((cb) => cb(null, {identity: 'callee-id', allowed: null, targets: []}));
       dm.relayComposition = () => {};   // never acknowledged: decided, never delivered
       try {
         dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm7', caller, token);
         await turns();
+        assert.strictEqual(DeviceManager.heldDeadlinesOn(callee).length, 1, 'not held');
         dm.verificationPass(null);
-        await until(() => sent.length > 0, 5000, 'sent at its bound');
-        assert.strictEqual(tokens().identityOf(tokens().resolve(sent[0].args.token, {workerId: dm.deviceMap[CALLEE].workerId})), 'callee-id');
+        assert.ok(tokens().hasVerdict(callee, CALLEE), 'not decided in this turn');
+        DeviceManager.atBoundOnForTests(callee);
+        await until(() => sent.length + replies.length > 0, 2000, 'answered at its bound');
+        assert.deepStrictEqual([sent.length, replies.length], [1, 0]);
+        assert.strictEqual(tokens().identityOf(tokens().resolve(sent[0].args.token, {workerId: callee.workerId})), 'callee-id');
       } finally {
         for (const m of sent) tokens().drop(m.args.token);
+        tokens().drop(token);
+      }
+    });
+
+    it('a final pass whose callee stops serving during its access check: the missing-device answer, never not ready', async () => {
+      const {dm, caller, callee, sent, replies, token} = setup(() => {});
+      try {
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm7b', caller, token);
+        await turns();
+        assert.strictEqual(DeviceManager.heldDeadlinesOn(callee).length, 1, 'not held');
+        parked = [];
+        DeviceManager.atBoundOnForTests(callee);
+        await until(() => parked.length === 1, 2000, 'the final pass at its access check');
+        callee.exited = true;   // (as the exit handler marks it; the map still holds it, so the pick is this copy)
+        parked[0]();
+        await until(() => replies.length > 0, 2000, 'answered');
+        assert.deepStrictEqual([sent.length, replies[0].errCode], [0, dm.missingDeviceErrorForHop(CALLEE).code]);
+      } finally {
         tokens().drop(token);
       }
     });
