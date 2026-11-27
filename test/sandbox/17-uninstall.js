@@ -185,6 +185,41 @@ describe('sandbox 17: POST /uninstall-module', function() {
     assert.deepStrictEqual({removed: second.body.registryEntryRemoved, deleted: second.body.dataDeleted}, {removed: false, deleted: false});
   });
 
+  // (R-store-aside-locked) a local kv.json this process never saw whole: its
+  // keys can't be purged, so the uninstall is refused before anything is
+  // removed -- the registry row, the data and the file stay
+  it('registry mode, a corrupt kv.json this runtime never saw whole: refused with MODULE_STORE_CORRUPT (not retryable), the registry row, the data and the file as they were', async function() {
+    let sqlite3 = null;
+    try { sqlite3 = require('sqlite3'); } catch (e) { return this.skip(); }
+    base = mkdtemp('uninstall-');
+    const modulesDir = path.join(base, 'modules');
+    fs.mkdirSync(modulesDir);
+    const kvDir = path.join(base, 'kvstore');
+    fs.mkdirSync(kvDir);
+    fs.writeFileSync(path.join(kvDir, 'kv.json'), '{"broken": ');
+    const dbFile = path.join(modulesDir, 'countinghouse-modules.db');
+    const db = new sqlite3.Database(dbFile);
+    await new Promise((resolve, reject) => db.run("CREATE TABLE IF NOT EXISTS module_info(name TEXT PRIMARY KEY, version TEXT, path TEXT, deviceList TEXT)",
+      (e) => (e ? reject(e) : db.run("INSERT INTO module_info(name, version, path, deviceList) VALUES ('ghost-mod', '1.0.0', '/nonexistent', '[]')",
+        (e2) => (e2 ? reject(e2) : resolve())))));
+    await new Promise((resolve) => db.close(resolve));
+    fs.mkdirSync(path.join(store(), 'ghost-mod', 'data'), {recursive: true});
+    server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleSandbox', 'audit', '--store', 'local', '--storePath', kvDir,
+      '--modulePath', modulesDir, '--moduleDataPath', store(), '--moduleRegistry']);
+    const r = await uninstall({name: 'ghost-mod'});
+    const {CODES} = require('../../lib/error-catalogue');
+    assert.deepStrictEqual([r.status, CODES.MODULE_STORE_CORRUPT.retryable], [500, false], 'not retryable, 500');
+    assert.deepStrictEqual(r.body && [r.body.code, r.body.kind, r.body.message], ['MODULE_STORE_CORRUPT', 'operator',
+      'The module was not uninstalled: the store file that holds its data is corrupt, and this runtime holds no copy of it, so nothing was removed -- repair the store (the runtime\'s log says how), then uninstall again'], JSON.stringify(r.body));
+    const rows = await new Promise((resolve, reject) => {
+      const d = new sqlite3.Database(dbFile);
+      d.all("SELECT name FROM module_info WHERE name = 'ghost-mod'", (e, got) => d.close(() => (e ? reject(e) : resolve(got))));
+    });
+    assert.strictEqual(rows.length, 1, 'the registry row is still there');
+    assert.ok(fs.existsSync(path.join(store(), 'ghost-mod', 'data')), 'the data is still there');
+    assert.strictEqual(fs.readFileSync(path.join(kvDir, 'kv.json'), 'utf8'), '{"broken": ');
+  });
+
   it('needs an admin key', async () => {
     base = mkdtemp('uninstall-');
     const auth = path.join(base, 'auth.json');

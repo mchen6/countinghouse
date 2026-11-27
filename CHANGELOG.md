@@ -35,8 +35,9 @@ answered as the limit on keys that don't resolve already was: the JSON-RPC
 error -32000, the catalogue's message, and `countinghouse/code`, `kind` and
 `retryAfter` in its data. A single request's answer is HTTP 429 with
 `Retry-After`, or 503 when the runtime itself is at its limit
-(`RUNTIME_BUSY`: a module resource read at `--globalRateLimit`, or every
-subscription the runtime may hold open). A legacy batch stays 200, with
+(`RUNTIME_BUSY`: a module resource read at `--globalRateLimit`) or has as
+many subscriptions open as it allows (the new code `SUBSCRIPTIONS_FULL`,
+retried once one closes). A legacy batch stays 200, with
 `Retry-After` the longest hint. `subscriptions/listen` over a key's or a
 session's open subscriptions is the new code `TOO_MANY_SUBSCRIPTIONS` (429).
 `tools/call` still answers a limit as a tool error result. A client that read
