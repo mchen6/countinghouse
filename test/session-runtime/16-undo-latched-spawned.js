@@ -9,7 +9,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {runtime, listening, request, shim} = require('./helpers/per-session');
+const {until, runtime, listening, request, shim} = require('./helpers/per-session');
 // (under os.tmpdir(): the socket's path is short there)
 const trees = require('../helpers/test-tmp').forFile(['ch-sr16-'], {base: os.tmpdir()});
 
@@ -17,8 +17,10 @@ describe('session-runtime 16: a latched session\'s own lowering, undone', functi
   this.timeout(120000);
   if (process.platform === 'win32') return;   // the named pipe is C2's
   let r = null;
-  after(async () => {
+  // (after each: two runtimes never at once)
+  afterEach(async () => {
     if (r != null && r.code === undefined) { r.child.kill('SIGKILL'); await r.exited; }
+    r = null;
   });
 
   it('client frame "no" at connect: lowered, undone and recorded, its client asked nothing; above the value for all sessions refused as before', async () => {
@@ -34,10 +36,12 @@ describe('session-runtime 16: a latched session\'s own lowering, undone', functi
     const value = async () => (await request(s.c, 'tools/call', {name: 'countinghouse_settings', arguments: {action: 'get'}}))
       .result.structuredContent.settings.find((x) => x.name === 'requestTimeout').value;
     assert.deepStrictEqual((await set('10s')).result.structuredContent, {name: 'requestTimeout', old: 30000, new: 10000, applies: 'this session'});
-    // the latch is there: a loosening is refused with its text
+    // a loosening is refused as any session's is where no form can be shown
+    // (no tested client): the latch's own reason is not said
     const above = await set('45s');
-    assert.strictEqual(above.result._meta['countinghouse/code'], 'SETTING_CLIENT_NOT_CONFIRMED', JSON.stringify(above));
-    assert.match(above.result.content[0].text, /client settings unreadable/);
+    assert.strictEqual(above.result._meta['countinghouse/code'], 'SETTING_NEEDS_CONFIRMATION', JSON.stringify(above));
+    assert.match(above.result.content[0].text, /^Changing requestTimeout to 45s loosens/);
+    assert.doesNotMatch(above.result.content[0].text, /unreadable|configuration/);
     assert.strictEqual(await value(), 10000);
     const undone = await set('30s');
     assert.deepStrictEqual(undone.result.structuredContent, {name: 'requestTimeout', old: 10000, new: 30000, applies: 'this session'}, JSON.stringify(undone));
@@ -50,6 +54,42 @@ describe('session-runtime 16: a latched session\'s own lowering, undone', functi
     const lines = fs.readFileSync(path.join(home, 'history.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     assert.deepStrictEqual(lines.filter((l) => l.change === 'this session: its own lowering undone').map((l) => [l.setting, l.old, l.new]), [['requestTimeout', 10000, 30000]]);
     s.c.end();
+  });
+
+  // R-undo-after-restart: the lock comes back with no cause, and with no
+  // tested client (production's list) it doesn't hold the undo
+  it('lowered, the runtime restarted, the session resumed with "no" again: still undone', async () => {
+    const home = trees.mkdtemp('ch-sr16-');
+    const settingsFile = path.join(home, 'settings.json');
+    const no = {status: 'ok', conditions: 'no', repo: null, token: null, why: {reason: 'client settings unreadable'}};
+    const set = async (s, value) => request(s.c, 'tools/call', {name: 'countinghouse_settings', arguments: {action: 'set', name: 'requestTimeout', value}});
+    r = runtime(home, ['--settingsFile', settingsFile]);
+    const first = await shim.session(r.socket, await listening(r), no);
+    assert.ok(first.welcome != null, r.log().slice(-2000));
+    const id = first.welcome.session;
+    assert.strictEqual((await set(first, '10s')).result.structuredContent.new, 10000);
+    // the daemon's row for it, as last told: its locks and its own value
+    const row = () => r.told.filter((m) => m.type === 'session-state' && m.session === id).pop();
+    await until(async () => row() != null && row().state.overrides.length === 1);
+    assert.deepStrictEqual(row().state.locks, ['enabled', 'maxOutputBytes', 'module', 'requestTimeout']);
+    const resume = r.told.filter((m) => m.type === 'session-resume' && m.session === id).pop().hash;
+    const state = row().state;
+    r.child.kill('SIGKILL');
+    await r.exited;
+    r = runtime(home, ['--settingsFile', settingsFile], {restore: {id: 'restore-1', type: 'restore', sessions: [{session: id, resume, state}], declines: [], reset: []}});
+    // its client first says "yes": the locks are the restored ones, with their own refusal
+    const back = await shim.session(r.socket, await listening(r), undefined, {resume: first.welcome.resumeToken});
+    assert.strictEqual(back.welcome != null && back.welcome.session, id, JSON.stringify(back.refused));
+    const code = async () => (await set(back, '45s')).result._meta['countinghouse/code'];
+    assert.strictEqual(await code(), 'SETTING_LOCKED_THIS_SESSION');
+    // then "no" again: the latch's
+    back.c.send('C', Object.assign({op: 'client'}, no));
+    let last;
+    for (let i = 0; i < 100 && (last = await code()) === 'SETTING_LOCKED_THIS_SESSION'; i++) await new Promise((done) => setTimeout(done, 50));
+    assert.strictEqual(last, 'SETTING_NEEDS_CONFIRMATION');
+    const undone = await set(back, '30s');
+    assert.deepStrictEqual(undone.result.structuredContent, {name: 'requestTimeout', old: 10000, new: 30000, applies: 'this session'}, JSON.stringify(undone));
+    back.c.end();
   });
 
   trees.hooks();

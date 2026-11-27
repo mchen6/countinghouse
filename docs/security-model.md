@@ -977,7 +977,10 @@ and what the runtime runs with, is refused (`SETTING_ABOVE_CEILING`): it
 would put a value above the ceiling in `settings.json` for the next start.
 For the two caps the settings tool reports, and judges a change against,
 what the runtime runs with (with nothing stored, what it started with: the
-ceiling may have bounded the start), not the stored default. What it
+ceiling may have bounded the start), not the stored default. For
+`moduleSandbox` it reports the mode this runtime runs, from its start (`off`
+where it runs without workers), with the stored value beside it as `stored`
+where the two differ. What it
 writes to `settings.json` without the user's confirmation never exceeds
 what the file yields already (its stored value, else the default), and is
 above the ceiling only when it lowers what the file yields: a
@@ -1088,6 +1091,13 @@ beyond any ceiling, as they are beyond the runtime itself.
 
 ### Confirming a loosening in the client's dialog
 
+In this release no client is on the tested-client list, so no dialog is
+shown: a loosening asked for in conversation is refused with the `ch-local`
+command the user runs at a terminal, and a raised `maxOutputBytes` or
+`requestTimeout` above what the runtime started with takes effect when it
+next starts. The rest of this section describes the dialog as it is built;
+it is not shown while no client is on the list.
+
 A loosening asked for in conversation could come from a prompt injected
 through a tool's result, not from the user. So `countinghouse_settings`
 never applies one on the model's word. A raised `maxOutputBytes` or
@@ -1105,12 +1115,11 @@ A dialog is shown only when all of these hold:
 - **A tested client.** The client's name and version are inside a range on
   the tested-client list (`lib/elicitation-clients.json`). A range names
   exactly the versions tested, with no open range, so a new version gets no
-  dialog until it is re-tested. The list ships empty: until the
-  maintainer's hand test before release
+  dialog until it is re-tested. The list ships empty, so no client is shown a
+  dialog in this version. A maintainer's hand test
   ([`docs/development/elicitation-hand-test.md`](development/elicitation-hand-test.md))
-  adds the first range, no client sees a dialog. After that, the automated
-  re-test of each new Claude Code version (not built yet) will open the pull
-  request that adds its range.
+  adds the first range. After that, the automated re-test of each new Claude
+  Code version (not built yet) will open the pull request that adds its range.
 - **The request declares form elicitation.** The capability is read from
   the request itself, never inferred from earlier ones.
 - **Nothing in the client's own configuration could answer the dialog.**
@@ -1206,15 +1215,25 @@ sessions) all of this is each session's own, for the two caps:
   client has loaded can be deleted from disk and still answer). The lock is
   on dialogs. A session's own lowering shows none when it is undone, so it
   can still be undone. After a runtime restart a lock's cause isn't known, so
-  any lock kept from before it holds the undo. Every frame
-  is seen as it arrives, also one that answers late or that nobody asked
-  for. A latched session is told `SETTING_CLIENT_NOT_CONFIRMED`, never that
-  the user declined, with why its client said so when the client line gives
-  it (contract 2's conditionsWhy: a reason from a closed set and a place
-  under the home as "~/...", checked again by the runtime, so no user name
-  and no path outside the home reaches the agent), and the terminal
-  command. A session locked by a decline, or by two dialogs left
-  unanswered, is told `SETTING_DECLINED_THIS_SESSION`. A confirmed raise of
+  with a client on the tested list, or a list that can't be read whole, any
+  lock kept from before it holds the undo. With none, no dialog is shown that
+  could be declined, and such a lock doesn't hold it; nor does a decline made
+  under a later version that had one, after going back from it. Nothing is
+  raised above the value for all sessions by either. Every frame is seen as it
+  arrives, also one that answers late or that nobody asked for. While no client
+  is on the tested list no dialog is shown to anyone, so a latched session gets
+  the answer every session gets, the terminal command
+  (`SETTING_NEEDS_CONFIRMATION`); one resumed after a runtime restart is told
+  `SETTING_LOCKED_THIS_SESSION` until its client again reports that its
+  configuration could answer a dialog by itself. With one listed, or a list
+  that can't be read whole, a latched session is told
+  `SETTING_CLIENT_NOT_CONFIRMED`, never that the user declined, with why its
+  client said so when the client line gives it (contract 2's conditionsWhy: a
+  reason from a closed set and a place under the home as "~/...", checked
+  again by the runtime, so no user name and no path outside the home reaches
+  the agent), and the terminal command. A session locked by a decline, or by
+  two dialogs left unanswered, is told
+  `SETTING_DECLINED_THIS_SESSION`. A confirmed raise of
   the output cap waits for the validators to grow; the session, its lock,
   the ceiling and its value are checked again after that wait, and a change
   made meanwhile wins.
@@ -1248,7 +1267,16 @@ is:
   the history line names the asking session and, unlike a session's own
   lines, is every session's to read (no session's id is ever shown). A
   request for all sessions that was not made is the asking session's line,
-  and says what it was for.
+  and says what it was for;
+- past the asking session's 32 recorded changes, a tightening for all
+  sessions still applies at once to every session, but is not written to
+  `settings.json`: its history is one line and a count written later, and a
+  file ahead of the history would read as an edit made outside the tools.
+  It lasts until the runtime restarts, and the answer and its history line
+  say so. A tightening the user wants kept is made at a terminal. Past the
+  budget, taking back a raise stored for the next start changes nothing now
+  and is answered the same way: the stored raise still applies at the next
+  start.
 
 A tightening needs no dialog. A loosening always needs one: the asking
 session's own (it spends one of that session's three and counts in the
@@ -1551,7 +1579,7 @@ and every one is bounded.
   one never registered, and the runtime's own `countinghouse_*` tools,
   enabled or not. A known key: a name never registered, a tool outside its
   grants (an unlisted part's too) and one hidden while its module goes on
-  or off all answer `unknown tool: <name>`, byte for byte, and so does a
+  or off all answer `unknown tool: <name>; countinghouse_overview shows what is installed here and which tools you can use`, byte for byte, and so does a
   runtime tool not listed to it: an authoring tool for a key that is no
   admin's (whatever `--authoringTools` says), and in the single-identity
   profile the built-ins it hides (outside it, `countinghouse_settings`). A

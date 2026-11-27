@@ -1,5 +1,5 @@
 // ctx.usage() (the reviewer, 2026-11-13, the pack receipt): read-only, the
-// current call's counts so far -- its server calls, the lines and bytes they
+// current call's counts so far -- its server calls, the bytes they
 // returned and the tokens that estimates, inner hops' calls included --
 // never a key, an id or a caller. The call's own output is measured when it
 // returns, so it is not among them. A worker's query is its claim, checked
@@ -16,7 +16,7 @@ require('../../lib/logger').createLogger();
 describe('usage 14: ctx.usage(), the current call\'s counts so far', () => {
   const W = 51;
   let u = null;
-  const recordIn = (call, server, bytes, lines, extra) => u.recordIn(call, Object.assign({server, module: 'access', tool: 'get', bytes, lines, ms: 3, outcome: 'ok', credential: 'GH_TOKEN'}, extra));
+  const recordIn = (call, server, bytes, extra) => u.recordIn(call, Object.assign({server, module: 'access', tool: 'get', bytes, ms: 3, outcome: 'ok', credential: 'GH_TOKEN'}, extra));
   const tokenFor = (workerId) => callTokens.issue({billingKey: 'k-14', module: 'scenario', workerId: workerId, deviceID: 'd-14'});
   beforeEach(() => {
     u = createUsage({usageDir: null, pid: 1, startMs: 1});
@@ -27,42 +27,42 @@ describe('usage 14: ctx.usage(), the current call\'s counts so far', () => {
   describe('the recorder', () => {
     it('sums the call\'s server calls so far, by server, with the bytes/4 token estimate, and nothing else', () => {
       const call = u.beginCall({scenario: 'p', module: 'scenario', tool: 't', caller: 'u_secret'});
-      assert.deepStrictEqual(u.soFar(call), {calls: 0, linesIn: 0, bytesIn: 0, tokensInEst: 0, servers: {}, sentence: 'no server was called'});
-      recordIn(call, 'github', 4000, 120);
-      recordIn(call, 'github', 1001, 3);
-      recordIn(call, 'linear', 10, 1);
-      assert.deepStrictEqual(u.soFar(call), {calls: 3, linesIn: 124, bytesIn: 5011, tokensInEst: 1253, servers: {github: 2, linear: 1},
-        sentence: 'read 124 lines (4.9 KB) in 2 calls to github and 1 to linear'});
+      assert.deepStrictEqual(u.soFar(call), {calls: 0, bytesIn: 0, tokensInEst: 0, servers: {}, sentence: 'no server was called'});
+      recordIn(call, 'github', 4000);
+      recordIn(call, 'github', 1001);
+      recordIn(call, 'linear', 10);
+      assert.deepStrictEqual(u.soFar(call), {calls: 3, bytesIn: 5011, tokensInEst: 1253, servers: {github: 2, linear: 1},
+        sentence: 'read 4.9 KB in 2 calls to github and 1 to linear'});
     });
 
     it('names the servers a stand-in answered, as the receipt does', () => {
       const call = u.beginCall({tool: 't'});
-      recordIn(call, 'github', 8, 1, {mapped: true});
+      recordIn(call, 'github', 8, {mapped: true});
       assert.deepStrictEqual(u.soFar(call).standIn, ['github']);
-      assert.strictEqual(u.soFar(call).sentence, 'read 1 line (8 B) in 1 call to github (acceptance stand-in)');
+      assert.strictEqual(u.soFar(call).sentence, 'read 8 B in 1 call to github (acceptance stand-in)');
     });
 
     it('is a copy: changing it changes nothing recorded', () => {
       const call = u.beginCall({tool: 't'});
-      recordIn(call, 'github', 8, 1);
+      recordIn(call, 'github', 8);
       const seen = u.soFar(call);
       seen.calls = 99;
       seen.servers.github = 99;
-      assert.deepStrictEqual(u.soFar(call), {calls: 1, linesIn: 1, bytesIn: 8, tokensInEst: 2, servers: {github: 1}, sentence: 'read 1 line (8 B) in 1 call to github'});
+      assert.deepStrictEqual(u.soFar(call), {calls: 1, bytesIn: 8, tokensInEst: 2, servers: {github: 1}, sentence: 'read 8 B in 1 call to github'});
     });
 
     it('its sentence is the first half of the receipt\'s, word for word', () => {
       const call = u.beginCall({tool: 't'});
-      recordIn(call, 'github', 4000, 120);
-      recordIn(call, 'linear', 10, 1);
+      recordIn(call, 'github', 4000);
+      recordIn(call, 'linear', 10);
       const half = u.soFar(call).sentence;
-      u.recordOut(call, {tool: 't', bytes: 10, lines: 1, ms: 1, outcome: 'ok'});
+      u.recordOut(call, {tool: 't', bytes: 10, ms: 1, outcome: 'ok'});
       assert.ok(u.receiptSentenceOf(call).startsWith(`${half}; `), u.receiptSentenceOf(call));
     });
 
     it('is null for a call that has finished or was never begun', () => {
       const call = u.beginCall({tool: 't'});
-      u.recordOut(call, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+      u.recordOut(call, {tool: 't', bytes: 1, ms: 1, outcome: 'ok'});
       assert.strictEqual(u.soFar(call), null);
       assert.strictEqual(u.soFar(call + 1), null);
       assert.strictEqual(u.soFar('1'), null);
@@ -73,9 +73,9 @@ describe('usage 14: ctx.usage(), the current call\'s counts so far', () => {
     it('a call the worker was given, with its token: the counts, inner hops\' calls included', () => {
       const call = u.beginCall({tool: 't'});
       const release = u.grantCall(call, W);
-      recordIn(call, 'github', 40, 2);
-      recordIn(call, 'github', 60, 3, {module: 'a-part-two-hops-in'});
-      assert.deepStrictEqual(answerUsageQuery({usageCall: call, token: tokenFor(W)}, W), {calls: 2, linesIn: 5, bytesIn: 100, tokensInEst: 25, servers: {github: 2}, sentence: 'read 5 lines (100 B) in 2 calls to github'});
+      recordIn(call, 'github', 40);
+      recordIn(call, 'github', 60, {module: 'a-part-two-hops-in'});
+      assert.deepStrictEqual(answerUsageQuery({usageCall: call, token: tokenFor(W)}, W), {calls: 2, bytesIn: 100, tokensInEst: 25, servers: {github: 2}, sentence: 'read 100 B in 2 calls to github'});
       release();
     });
 
@@ -85,7 +85,7 @@ describe('usage 14: ctx.usage(), the current call\'s counts so far', () => {
       recordIn(other, 'github', 40, 2);
       const done = u.beginCall({tool: 't'});
       u.grantCall(done, W + 1);
-      u.recordOut(done, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+      u.recordOut(done, {tool: 't', bytes: 1, ms: 1, outcome: 'ok'});
       const token = tokenFor(W);
       assert.strictEqual(answerUsageQuery({usageCall: other, token}, W), null);
       assert.strictEqual(answerUsageQuery({usageCall: done, token}, W), null);
@@ -96,7 +96,7 @@ describe('usage 14: ctx.usage(), the current call\'s counts so far', () => {
       const open = u.beginCall({tool: 't'});
       u.grantCall(open, W);
       const done = u.beginCall({tool: 't'});
-      u.recordOut(done, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+      u.recordOut(done, {tool: 't', bytes: 1, ms: 1, outcome: 'ok'});
       for (const token of [tokenFor(W + 1), 'f'.repeat(32), null, undefined]) {
         for (const usageCall of [open, done, done + 1000, undefined]) {
           assert.throws(() => answerUsageQuery({usageCall, token}, W), {code: 'CALL_TOKEN_INVALID'}, `${token} ${usageCall}`);
@@ -108,7 +108,7 @@ describe('usage 14: ctx.usage(), the current call\'s counts so far', () => {
       assert.strictEqual(answerUsageQuery({token: tokenFor(W)}, W), null);
       const call = u.beginCall({tool: 't'});
       u.grantCall(call, W);
-      u.recordOut(call, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+      u.recordOut(call, {tool: 't', bytes: 1, ms: 1, outcome: 'ok'});
       assert.strictEqual(answerUsageQuery({usageCall: call, token: tokenFor(W)}, W), null);
     });
   });
@@ -120,9 +120,9 @@ describe('usage 14: ctx.usage(), the current call\'s counts so far', () => {
 
     it('on the main thread (single-thread mode): the call\'s counts, read from the recorder', async () => {
       const call = u.beginCall({tool: 't'});
-      recordIn(call, 'github', 12, 1);
+      recordIn(call, 'github', 12);
       const ctx = handlerCtx.buildCtx(device, argsOf(call));
-      assert.deepStrictEqual(await ctx.usage(), {calls: 1, linesIn: 1, bytesIn: 12, tokensInEst: 3, servers: {github: 1}, sentence: 'read 1 line (12 B) in 1 call to github'});
+      assert.deepStrictEqual(await ctx.usage(), {calls: 1, bytesIn: 12, tokensInEst: 3, servers: {github: 1}, sentence: 'read 12 B in 1 call to github'});
       assert.strictEqual(await handlerCtx.buildCtx(device, argsOf(null)).usage(), null, 'a call with no usage id (not a tools/call)');
     });
 
@@ -130,7 +130,7 @@ describe('usage 14: ctx.usage(), the current call\'s counts so far', () => {
       const CHUtil = require('../../lib/countinghouse-util');
       const saved = CHUtil.dm;
       let sent = null;
-      CHUtil.dm = {workerMessage: {sendUsageQueryToParent: (d, cb) => { sent = d; cb(null, {calls: 4, linesIn: 9, bytesIn: 90, tokensInEst: 23, servers: {github: 4}}); }}};
+      CHUtil.dm = {workerMessage: {sendUsageQueryToParent: (d, cb) => { sent = d; cb(null, {calls: 4, bytesIn: 90, tokensInEst: 23, servers: {github: 4}}); }}};
       Object.defineProperty(wt, 'isMainThread', {value: false, configurable: true, writable: true});
       let answer;
       try {

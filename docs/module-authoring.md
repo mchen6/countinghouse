@@ -196,19 +196,18 @@ a module is listed as it always was.
 ## The receipt and the usage report
 
 Every `tools/call` on a listed module is counted at the runtime's boundary.
-- **In:** each call to a declared server, as lines and bytes read.
-- **Out:** the lines and bytes of the tool's own text result, and the
-  decoded bytes of its image, audio and inline resource blocks (`inlineBytesOut`),
-  and the bytes behind its resource links (`linkedBytesOut`).
+- **In:** each call to a declared server, as bytes of text read.
+- **Out:** the bytes of the tool's own text result, the decoded bytes of its
+  image, audio and inline resource blocks (`inlineBytesOut`), and the bytes
+  behind its resource links (`linkedBytesOut`).
 
 A scenario's result also carries a receipt. `_meta['countinghouse/receipt']`
-holds `{calls, linesIn, bytesIn, linesOut, bytesOut, servers}`, and a second
-text block holds its sentence, for example `read 48,210 lines (3.1 MB) in 14
-calls to github; 35 lines (2.4 KB) reached the model.`. `structuredContent` is
-your output exactly as validated, except that an image or audio value is
-replaced by its reference (see module-development), so a closed output schema
-stays the guarantee. A scenario's top-level output field named `receipt` is refused
-`RECEIPT_RESERVED`, because there the name is the runtime's. Any other module's
+holds `{calls, bytesIn, bytesOut, servers}`, and a second text block holds its
+sentence, for example `read 3.1 MB in 14 calls to github; 2.4 KB reached the
+model.`. `structuredContent` is your output exactly as validated, except that
+an image or audio value is replaced by its reference (see module-development),
+so a closed output schema stays the guarantee. A scenario's top-level output
+field named `receipt` is refused `RECEIPT_RESERVED`, because there the name is the runtime's. Any other module's
 `receipt` field (a payments receipt, say) passes through untouched: the
 runtime adds no receipt to it.
 A task-augmented call (`tools/call` with `task`) is counted the same way: the
@@ -236,12 +235,11 @@ tool, server, scenario (the top-level module a call was made to) or module. A ke
 caller by opaque id. `since` and `until` set the window (`since: "all"`: from
 the first record; with no `since`, a plain key's window is the last 31 days
 and an admin's is everything). The headline is the period's totals, with the
-tokens kept out of the model's context: an upper-bound estimate, `{estimate,
-method, bound: "upper"}`, per tool call `max(0, bytes its server calls read -
+tokens of what the tools read that did not reach the model: an estimate,
+`{estimate, method}`, per tool call `max(0, bytes its server calls read -
 bytes its result returned) / 4`, rounded per tool call so that the day rows
-add up to the total. It is an upper bound because it takes the model to have
-read, without the tool, every byte the tool read. Below it come one row
-per day with activity (at most 366) and a profile: call and server-call time,
+add up to the total. It counts all of what the tools read as if the model
+would have read it. Below it come one row per day with activity (at most 366) and a profile: call and server-call time,
 errors by code, and server calls per call.
 
 ## When `tools/list` changes
@@ -257,8 +255,13 @@ the client can hear it:
   `notifications/tools/list_changed` on it;
 - a 2025-11-25 client of a `--stdio` runtime, or of a shared runtime's
   session, gets it unasked, once it has listed
-  (`capabilities.tools.listChanged`); a session is told of any change to the
-  tool set, which may leave its own list the same;
+  (`capabilities.tools.listChanged`); its prompts and resources are told the
+  same way, with `notifications/prompts/list_changed` and
+  `notifications/resources/list_changed`, once it has listed them
+  (`capabilities.prompts.listChanged`, `capabilities.resources.listChanged`);
+  a session is told of any change to the module set, which may leave its own
+  lists the same; a client that goes on in 2026-07-28 after its initialize is
+  told nothing unasked;
 - a 2025-11-25 client over HTTP has no stream to hear it on, and lists again.
 
 The loop does not wait for the notice: `load_module` returns the names it made

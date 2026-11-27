@@ -36,8 +36,8 @@ function assertReceipt(result) {
   assert.strictEqual(result.content.length, 2);
   assert.deepStrictEqual(JSON.parse(result.content[0].text), OUTPUT);
   const text = JSON.stringify(OUTPUT);
-  assert.deepStrictEqual(result._meta['countinghouse/receipt'], {calls: 0, linesIn: 0, bytesIn: 0, linesOut: 1, bytesOut: Buffer.byteLength(text), servers: []});
-  assert.strictEqual(result.content[1].text, `no server was called; 1 line (${Buffer.byteLength(text)} B) reached the model.`);
+  assert.deepStrictEqual(result._meta['countinghouse/receipt'], {calls: 0, bytesIn: 0, bytesOut: Buffer.byteLength(text), servers: []});
+  assert.strictEqual(result.content[1].text, `no server was called; ${Buffer.byteLength(text)} B reached the model.`);
 }
 
 describe('usage 07: the receipt on a running server, direct and task-augmented', function() {

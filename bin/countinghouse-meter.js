@@ -30,6 +30,7 @@ const minimist = require('minimist');
 // the runtime's default Redis, as lib/cli-options.js has it (kept here: that
 // file exports nothing of it, being loaded in workers)
 const DEFAULT_REDIS_URL = 'redis://127.0.0.1:6379';
+const CLI_CONNECT_MS = 10000;
 const USAGE = 'usage: COUNTINGHOUSE_SEED_KEY=<key> countinghouse-meter set (--storePath <dir> | [--store redis] [--redisUrl <url>]) --balance <n>';
 
 function fail(message) {
@@ -82,18 +83,39 @@ if (store === 'local') {
     toolPriceRecord: (current != null && current.toolPriceRecord != null) ? current.toolPriceRecord : {}}), (err) => {
     file.close();
     // (the error's code only: a path can name the operator's directories)
+    // (a corrupt ledger this command never saw whole: never replaced by it,
+    // R-store-aside-locked; what to do, said)
+    if (err != null && err.code === 'ECORRUPT') fail('the ledger (metering.json in the --storePath you gave) is corrupt, and this command holds no copy of it: let a runtime that had it open before it became corrupt replace it, or move metering.json away to start an empty ledger (every balance and free count starts from nothing; the file you moved is kept as it was)');
     if (err) fail(`the balance could not be written (${err.code || 'error'})`);
     process.stdout.write(`set balance ${balance} for ${id}\n`);
   });
 } else {
   // (db 0, the ledger's, as lib/store.js's metering opens it; one field of
-  // the hash set, its free-call counts kept)
-  const client = require('redis').createClient(argv.redisUrl != null ? argv.redisUrl : DEFAULT_REDIS_URL, {db: 0});
-  // (the error's code only: a connection string can hold a password)
-  client.on('error', (err) => fail(`Redis could not be reached (${err.code || 'error'})`));
+  // the hash set, its free-call counts kept; a lib/redis-resilient client,
+  // as every node_redis client)
+  // An operator's command waits longer for a first connect than the runtime
+  // does (a Redis still loading its data), and no longer than that for the
+  // write's answer. A resilient client emits no 'error' for a refused
+  // connection: its queued write is answered NR_CLOSED at the bound.
+  const client = require('../lib/redis-resilient').createClient(argv.redisUrl != null ? argv.redisUrl : DEFAULT_REDIS_URL, {db: 0},
+    CLI_CONNECT_MS, {commandDeadlineMs: CLI_CONNECT_MS});
+  // (the error's code only: a connection string can hold a password; a
+  // refused connect is named by its own code, which 'reconnecting' carries)
+  let connectError = null;
+  client.on('reconnecting', (info) => { if (info != null && info.error != null && info.error.code != null) connectError = info.error.code; });
+  let done = false;
+  client.on('error', (err) => { if (!done) fail(`Redis could not be reached (${err.code || 'error'})`); });
   client.hset(id, 'balance', String(balance), (err) => {
+    if (err != null && err.code === 'NR_CLOSED') fail(`Redis could not be reached (${connectError || err.code})`);
+    // (sent, but never answered: it may have been applied. The key the HSET
+    // wrote, in full; never the URL, which can hold a password, nor a
+    // redis-cli line, which would check another Redis. Words passed by
+    // business.)
+    if (err != null && err.code === 'REDIS_COMMAND_TIMEOUT') fail(`the balance was sent, but Redis did not answer within ${CLI_CONNECT_MS / 1000} s, so it may or may not be set: check field \`balance\` of key ${id} on the Redis your --redisUrl names, or run this command again (it sets the balance to the value you gave; it does not add to it)`);
     if (err) fail(`the balance could not be set (${err.code || 'error'})`);
     process.stdout.write(`set balance ${balance} for ${id}\n`);
-    client.quit();
+    // (the balance is set: a QUIT that is never answered changes nothing)
+    done = true;
+    client.quit(() => process.exit(0));
   });
 }

@@ -31,19 +31,21 @@ describe('countinghouse-usage', function() {
   it('prints text by default and CSV with --csv, the token columns marked as estimates', async () => {
     const text = run('--usageDir', dir, '--groupBy', 'server');
     assert.strictEqual(text.status, 0, text.stderr);
-    assert.match(text.stdout, /github: \d+ calls, \d+ server calls/);
+    assert.match(text.stdout, / github: \d+ calls, \d+ server calls; read [\d,]+ B, returned [\d,]+ B; about /m);
+    assert.match(text.stdout, /^total: \d+ calls, \d+ server calls; read [\d,]+ B, returned [\d,]+ B; about /m);
+    assert.doesNotMatch(text.stdout, /\blines?\b/i);
     assert.match(text.stdout, /estimate \(utf8 bytes \/ 4\)/);
     assert.doesNotMatch(text.stdout, /saved/i);
     const csv = run('--usageDir', dir, '--csv');
-    assert.strictEqual(csv.stdout.split('\n')[0], 'caller,tool,server,scenario,module,calls,server_calls,bytes_in,lines_in,bytes_out,lines_out,tokens_in_est,tokens_out_est');
+    assert.strictEqual(csv.stdout.split('\n')[0], 'caller,tool,server,scenario,module,calls,server_calls,bytes_in,bytes_out,tokens_in_est,tokens_out_est');
   });
 
-  it('--since all --until a day: the window\'s days first, then the period\'s totals with the upper-bound estimate', async () => {
+  it('--since all --until a day: the window\'s days first, then the period\'s totals with the estimate', async () => {
     const r = run('--usageDir', dir, '--since', 'all', '--until', '2026-11-10');
     assert.strictEqual(r.status, 0, r.stderr);
     const lines = r.stdout.split('\n');
     assert.match(lines[0], /^usage from 2026-11-09 to 2026-11-10 \(window: all records to 2026-11-10T23:59:59\.999Z\)/);
-    assert.match(lines[1], /^period: 2 calls, 3 server calls; about [\d,]+ fewer tokens: kept out of the model's context, an upper-bound estimate/);
+    assert.match(lines[1], /^period: 2 calls, 3 server calls; about [\d,]+ tokens of what the tools read did not reach the model \(an estimate: bytes \/ 4, counting all of it as if the model would have read it\)$/);
     assert.match(r.stdout, /^by day:$/m);
     assert.match(r.stdout, /^profile: /m);
     assert.doesNotMatch(r.stdout, /sav(e|ed|ing)|lower bill|cost/i);
@@ -52,7 +54,7 @@ describe('countinghouse-usage', function() {
   it('the shell\'s report lists every group: the 500-row bound is the tool\'s', async () => {
     const {createUsage} = require('../../lib/usage');
     const u = createUsage({usageDir: null, pid: 3, startMs: 1, now: () => Date.parse('2026-11-13T10:00:00Z')});
-    for (let i = 0; i < 510; i++) u.recordOut(u.beginCall({scenario: 'p', tool: `t${i}`, caller: 'u_a'}), {tool: `t${i}`, bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+    for (let i = 0; i < 510; i++) u.recordOut(u.beginCall({scenario: 'p', tool: `t${i}`, caller: 'u_a'}), {tool: `t${i}`, bytes: 1, ms: 1, outcome: 'ok'});
     const who = {caller: null, isAdmin: true};
     assert.strictEqual((await usageReport({}, who, {usage: u, usageDir: null})).groups.length, 500);
     const all = (await usageReport({}, who, {usage: u, usageDir: null, maxGroups: Infinity}));

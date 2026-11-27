@@ -284,7 +284,17 @@ itself.
 **No limit, or a limit that can't be checked.** With the flag unset or no
 metering provider there is no limit: requests pass. A limiter that can't
 answer fails closed: the request is refused `RUNTIME_BUSY` (503), never let
-through as "not limited" (CLAUDE.md's invariants). Redis down is neither:
+through as "not limited" (CLAUDE.md's invariants). A local usage ledger
+(`--store local --meter`) that can't be used refuses with its own code
+instead: `LEDGER_UNREADABLE` (503, retryable) when its last read failed,
+`LEDGER_CORRUPT` (500, not retryable) when it is corrupt and this runtime
+never saw it whole; a corrupt ledger this runtime saw whole is not refused
+(calls are charged from its map, which replaces the file at its next
+write). If that write fails (a full disk), or the ledger stops being readable
+before any read has found it so, the calls already let through run, and their
+charges are written to the log but lost from the ledger; work that never meets
+the per-key check (a job's runs, a call's hops already under way) is handled
+the same way. Redis down is neither:
 each check is also counted in memory (`lib/redis-resilient.js`
 `rateLimiter`), so a key at its limit stays limited when Redis stops
 answering, and the larger count wins. The in-memory count is per process:

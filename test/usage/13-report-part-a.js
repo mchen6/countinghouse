@@ -1,6 +1,6 @@
 // countinghouse_usage_report, Part A (maintainer's decision, 2026-11-13;
-// #158): `until` and `since: "all"`, by-day rows, the tokens kept out of the model's context as
-// an upper-bound estimate ({estimate, method, bound: "upper"}), and
+// #158): `until` and `since: "all"`, by-day rows, the tokens that did not reach the model as
+// an estimate ({estimate, method}), and
 // profiling (call time, errors by code, server calls per call). The headline
 // is the period's totals. Pure over an in-memory recorder (and a fixture
 // directory for "all").
@@ -28,11 +28,11 @@ function recorder() {
     t = Date.parse(at);
     const c = u.beginCall({scenario: pack, tool, caller});
     for (const i of ins) {
-      u.recordIn(c, {server: i.server || 'github', module: 'ch-access-github', tool: 'get_logs', bytes: i.bytes || 0, lines: 1, ms: i.ms === undefined ? 1 : i.ms,
+      u.recordIn(c, {server: i.server || 'github', module: 'ch-access-github', tool: 'get_logs', bytes: i.bytes || 0, ms: i.ms === undefined ? 1 : i.ms,
         outcome: i.outcome || 'ok', credential: 'GITHUB_TOKEN', mapped: i.mapped === true});
       t += 1;
     }
-    if (out !== null) u.recordOut(c, {tool, bytes: out.bytes || 0, lines: 1, inlineBytes: out.inline || 0, ms: out.ms === undefined ? 5 : out.ms, outcome: out.outcome || 'ok', code: out.code});
+    if (out !== null) u.recordOut(c, {tool, bytes: out.bytes || 0, inlineBytes: out.inline || 0, ms: out.ms === undefined ? 5 : out.ms, outcome: out.outcome || 'ok', code: out.code});
     return c;
   };
   return u;
@@ -91,18 +91,18 @@ describe('countinghouse_usage_report, Part A', () => {
     });
   });
 
-  describe('kept out of the model\'s context: an upper-bound estimate', () => {
-    it('per tool call max(0, bytes read from servers - bytes returned) / 4, summed; method and bound named', async () => {
+  describe('what the tools read that did not reach the model: an estimate', () => {
+    it('per tool call max(0, bytes read from servers - bytes returned) / 4, summed; method named', async () => {
       const u = recorder();
       u.call({at: '2026-11-13T10:00:00.000Z', ins: [{bytes: 600}, {bytes: 400}], out: {bytes: 200}});   // 800 / 4 = 200
       u.call({at: '2026-11-13T11:00:00.000Z', ins: [{bytes: 100}], out: {bytes: 400}});                 // never negative: 0
       u.call({at: '2026-11-14T09:00:00.000Z', ins: [{bytes: 41}], out: null});                          // no result: 41 / 4 = 10
       u.call({at: '2026-11-14T09:30:00.000Z', ins: [{bytes: 4000, mapped: true}], out: {bytes: 0}});    // a stand-in's: not counted
       const out = (await report(u, {since: 'all'}));
-      assert.deepStrictEqual(out.totals.keptOut, {estimate: 210, method: KEPT_OUT_METHOD, bound: 'upper'});
+      assert.deepStrictEqual(out.totals.keptOut, {estimate: 210, method: KEPT_OUT_METHOD});
       assert.deepStrictEqual(out.days.map((d) => [d.day, d.keptOut.estimate]), [['2026-11-13', 200], ['2026-11-14', 10]]);
       assert.strictEqual(out.days.reduce((s, d) => s + d.keptOut.estimate, 0), out.totals.keptOut.estimate);
-      for (const d of out.days) assert.deepStrictEqual([d.keptOut.method, d.keptOut.bound], [KEPT_OUT_METHOD, 'upper']);
+      for (const d of out.days) assert.deepStrictEqual(Object.keys(d.keptOut), ['estimate', 'method']);
     });
 
     // A report's until can fall between a call's server calls and its
@@ -120,7 +120,9 @@ describe('countinghouse_usage_report, Part A', () => {
       const text = reportText((await report(u, {since: 'all'})));
       const lines = text.split('\n');
       assert.match(lines[0], /^usage from 2026-11-13 to 2026-11-13 /);
-      assert.match(lines[1], /^period: 1 calls, 1 server calls; about 900 fewer tokens: kept out of the model's context, an upper-bound estimate \(/);
+      assert.strictEqual(lines[1], 'period: 1 calls, 1 server calls; about 900 tokens of what the tools read did not reach the model (an estimate: bytes / 4, counting all of it as if the model would have read it)');
+      assert.ok(lines.includes('  2026-11-13: 1 calls, 1 server calls; about 900 tokens of what the tools read did not reach the model (the same estimate)'), text);
+      assert.doesNotMatch(text, /upper|fewer tokens|kept out/);
       assert.doesNotMatch(text, /sav(e|ed|ing)|lower bill|cost/i);
     });
   });
@@ -184,7 +186,7 @@ describe('countinghouse_usage_report, Part A', () => {
       try {
         fs.mkdirSync(path.join(dir, '2026-11-13'));
         fs.writeFileSync(path.join(dir, '2026-11-13', '5-1.jsonl'),
-          `${JSON.stringify({t: '2026-11-13T10:00:00.000Z', call: 1, pack: 'p', tool: 'x', bytesOut: 1, linesOut: 1, ms: 3, outcome: 'error', caller: 'u_a'})}\n`);
+          `${JSON.stringify({t: '2026-11-13T10:00:00.000Z', call: 1, pack: 'p', tool: 'x', bytesOut: 1, ms: 3, outcome: 'error', caller: 'u_a'})}\n`);
         assert.deepStrictEqual((await usageReport({since: 'all'}, ADMIN, {usage: null, usageDir: dir, now: () => NOW})).profile.errors.calls, {UNRECORDED: 1});
       } finally {
         fs.rmSync(dir, {recursive: true, force: true});

@@ -8,13 +8,19 @@ This project follows [semantic versioning](https://semver.org/), where the
 public surface is the CLI flags, the MCP contract, the module format, and
 the auth config.
 
-## Unreleased
+## 8.0.0
 
 - A pause of the main thread no longer counts as a validator's stall: a check that was answered meanwhile passes, with no strike against its module.
 - A call whose validator stopped or missed its deadline is refused, even when no validator can be started in its place; before, such a call could wait for its own time limit instead.
+- A call that reaches a runtime while it is still starting, before its module's composition check is decided (a shared runtime lists a module while its parts still load), is now held until the check is decided, for at most 25 s and 2 s inside its request timer, then sent with the module's verdict. It used to be sent at once and fail with `DEVICE_INVOKE_EXCEPTION` once its handler's `ctx.call` ran; a task created in that window failed the same way. Past the bound it answers `CTX_CALL_NOT_READY` (retryable), never sent. A held call whose module fails its check, ends, or is turned off meanwhile is never sent: over MCP it gets the answer a new call would get then, and on the REST routes the route's one answer for a device the caller can't use (`MODULE_NOT_LISTED`, 404). A cancelled or timed-out held call is never sent either.
+- `CTX_CALL_NOT_READY` now reads "Not ready yet: the runtime is still checking a module this call needs, so the call to it was not run; retry in a few seconds."
+- The answer to a tool a caller can't use now ends "; countinghouse_overview shows what is installed here and which tools you can use", the same words for every caller (the code, -32602, is unchanged).
+- In a shared runtime, a session's tightening of a cap for all sessions past its 32 recorded changes still applies at once to every session, but is no longer written to `settings.json`: it lasts until the runtime restarts, and the answer's `applies` and its history line say `all sessions, until the runtime restarts`. Past the budget, taking back a raise stored for the next start changes nothing now and is answered the same way, since the stored raise still applies at the next start. Its history was one line and a count written later, so the stored value was ahead of the history, and ch-local's next start reported the runtime's own change as one made outside. A tightening made at a terminal is stored as before.
 - The runtime, its shipped packages and its docs are in English only. `--locale` and the `locale` setting are removed: passing `--locale` has no effect, and every message is in English. `echo-device-client-module`'s service and action are now `x` and `API`; its tool name is unchanged.
 - A shared runtime's 2025-11-25 session now hears `notifications/tools/list_changed`, as a `--stdio` client does: declared on its `initialize`, and sent once it has listed, whenever the tool set changes (it may leave that session's list the same, which costs one re-list). Claude Code (2.1.330) falls back to 2025-11-25 when its 3 s `server/discover` probe times out. A slow cold start of the shared runtime does that; a fast one doesn't. A session on 2025-11-25 never heard a tool added or removed.
+- A 2025-11-25 client of a `--stdio` runtime or of a shared runtime's session is now told `notifications/prompts/list_changed` and `notifications/resources/list_changed` too, declared on its `initialize` (`capabilities.prompts.listChanged`, `capabilities.resources.listChanged`): once it has listed its prompts or its resources, when that list changes. Before, a cold start's client listed its prompts before the packs had loaded, so the packs' prompts never reached its menu. A client that goes on in 2026-07-28 after its initialize is told none of these unasked, its tools' included.
 - `countinghouse_usage_report` in a session's own runtime (ch-local's per-session profile) covers that session's calls since its runtime started, not every earlier session's: as on the shared runtime, each session's usage is its own. `countinghouse-usage --usageDir <dir>` still covers every session that writes there.
+- `countinghouse_overview` names each local store file that is corrupt and that this runtime holds no copy of, in a new `store` field, with what is refused and, under ch-local, the command that says what to do. It is shown only to an admin or in the user's own runtime, and `metering.json` only with `--meter`.
 
 ### Changed — a module's name maps to one data folder on every system
 
@@ -35,8 +41,9 @@ answered as the limit on keys that don't resolve already was: the JSON-RPC
 error -32000, the catalogue's message, and `countinghouse/code`, `kind` and
 `retryAfter` in its data. A single request's answer is HTTP 429 with
 `Retry-After`, or 503 when the runtime itself is at its limit
-(`RUNTIME_BUSY`: a module resource read at `--globalRateLimit`, or every
-subscription the runtime may hold open). A legacy batch stays 200, with
+(`RUNTIME_BUSY`: a module resource read at `--globalRateLimit`) or has as
+many subscriptions open as it allows (the new code `SUBSCRIPTIONS_FULL`,
+retried once one closes). A legacy batch stays 200, with
 `Retry-After` the longest hint. `subscriptions/listen` over a key's or a
 session's open subscriptions is the new code `TOO_MANY_SUBSCRIPTIONS` (429).
 `tools/call` still answers a limit as a tool error result. A client that read
@@ -580,9 +587,18 @@ all) wait on a question at once, past which `ctx.ask` is
   as "project plugin or marketplace" and a place under the home as
   "~/..."), or "this client could not be confirmed". It was
   `SETTING_DECLINED_THIS_SESSION`, whose text read as if the user had
-  declined.
+  declined. While the tested list, read whole, has no client, so that no session
+  can be shown a dialog, such a session gets the answer every session gets
+  (`SETTING_NEEDS_CONFIRMATION`, with the terminal command), and a lock kept
+  across a runtime restart doesn't hold the undo of a session's own lowering.
 - **`SETTING_DECLINED_THIS_SESSION`** is a decline's, or two dialogs left
   unanswered: its text no longer speaks of the client's configuration.
+- **A session's own lowering is undone in conversation**, with no dialog, up to
+  the value for all sessions, also where its client locked its dialogs.
+  `SETTING_SESSION_OWN_VALUE_HELD` (new) says what holds it: the user's own
+  lock, the ceiling, a lock kept across a restart or one across the user's
+  sessions. A loosening in a session whose lock was kept across a restart is
+  told `SETTING_LOCKED_THIS_SESSION`.
 
 ### Changed — `countinghouse-validate` fails a `schema.json` the load refuses as unsafe
 
@@ -692,8 +708,8 @@ all) wait on a question at once, past which `ctx.ask` is
   their client's own dialog (an MCP elicitation form), for this start only:
   `settings.json` is never written, and the change ends when the client
   restarts countinghouse. A dialog is shown only to a client inside a tested
-  version range (`lib/elicitation-clients.json`, shipped empty until the
-  maintainer's hand test before release), on a request that declares form
+  version range (`lib/elicitation-clients.json`, shipped empty until
+  the maintainer's hand test adds the first range), on a request that declares form
   elicitation, and when ch-local finds nothing in the client's own
   configuration that could answer it. Otherwise the terminal command is
   given, as before. New codes: `SETTING_CONFIRMATION_INVALID`,
@@ -732,7 +748,7 @@ configuration). None of it is available to a hosted server.
 - **`--settingsFile <path>`** (ch-local's `<home>/settings.json`) lists
   **`countinghouse_settings`**, to the one local user only, never through
   `ctx.call`. `get` returns each setting's value, default, bounds, whether
-  it guards, when it applies, and the last 50 changes, without ch-local's
+  it guards, when it applies, and the last 50 entries of its history, without ch-local's
   host or pid. `set` changes one setting within its bounds and never
   loosens a guarding one:
   - `SETTING_UNKNOWN`, `SETTING_OUT_OF_BOUNDS` and `SETTING_LOOSENS_A_GUARD`
@@ -842,11 +858,19 @@ configuration). None of it is available to a hosted server.
 - **`POST /uninstall-module` deletes the module's `ctx.redis` keys** with its
   data (unless `keepData`), so a later module of the same name inherits none;
   the answer gains `keysDeleted`. A reload or an upgrade keeps them.
+- **`POST /uninstall-module` checks everything before it removes anything**,
+  then deletes the keys, then the registry entry, then the data directory. A
+  store that can't be reached now keeps the registry entry and the data
+  (`MODULE_KEYS_NOT_PURGED`, naming the store's error code; a retry deletes
+  what is left). A data directory the uninstall couldn't read or write in
+  (its permissions, a link that loops) is refused first with the new
+  `MODULE_DATA_UNREADABLE`, with nothing removed. A failed registry removal (`REMOVE_MODULE_INFO_FAIL`) now
+  says the keys may already be deleted.
 
 ### Added — `ctx.usage()`: the current call's counts so far
 
 - `ctx.usage()` resolves with the current tools/call's counts so far,
-  read-only: `{calls, linesIn, bytesIn, tokensInEst, servers, sentence}`
+  read-only: `{calls, bytesIn, tokensInEst, servers, sentence}`
   (and `standIn` when a stand-in answered). `sentence` is the first half of
   the receipt's sentence, word for word. Every remote server call made under
   the call is counted, its parts' included. The call's own output is not
@@ -1133,7 +1157,7 @@ configuration). None of it is available to a hosted server.
   `--hardened` exited 2, unable to read it.
 - Each remote call is a usage record under the `tools/call` it was made
   for, so the receipt and `countinghouse_usage_report` count it as a
-  server call: the remote's name, the tool, the text content's lines and
+  server call: the remote's name, the tool, the text content's
   bytes (other blocks are passed on, not counted), the time, the outcome
   (`ok`, `isError` or the rejection's code) and the credential's variable
   name. No content and no credential value is recorded. The call id rides
@@ -1166,13 +1190,13 @@ configuration). None of it is available to a hosted server.
 ### Added — usage records, the receipt and `countinghouse_usage_report` (local mode, part C)
 
 - Every `tools/call` on a listed module is counted at the runtime's
-  boundary: each call to a declared server (lines and bytes read) and the
-  tool's own text result (lines and bytes out). A task-augmented call is
-  counted the same way, under its own call id.
+  boundary: each call to a declared server (bytes read) and the tool's own
+  text result (bytes out). A task-augmented call is counted the same way,
+  under its own call id.
 - A scenario's successful result carries a receipt:
-  `_meta['countinghouse/receipt']` = `{calls, linesIn, bytesIn, linesOut,
-  bytesOut, servers}`, and a second text block with its sentence.
-  `structuredContent` is the module's output exactly as validated.
+  `_meta['countinghouse/receipt']` = `{calls, bytesIn, bytesOut, servers}`,
+  and a second text block with its sentence. `structuredContent` is the
+  module's output exactly as validated.
   `tasks/result` carries the same receipt.
 - A scenario's output may not have a top-level `receipt` field
   (`RECEIPT_RESERVED`): there the name is the runtime's. Any other module's

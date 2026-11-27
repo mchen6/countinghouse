@@ -442,7 +442,7 @@ describe('mcp-contract 26: module resources (M7)', function() {
     const off = await run(false);
     const on = await run(true);
     assert.deepStrictEqual(on, off);
-    assert.deepStrictEqual(off.r.error, {code: -32602, message: 'unknown tool: countinghouse_validate_module'});
+    assert.deepStrictEqual(off.r.error, {code: -32602, message: 'unknown tool: countinghouse_validate_module; countinghouse_overview shows what is installed here and which tools you can use'});
   });
 
   // #458's third high round: ONE cancellation for every name and one

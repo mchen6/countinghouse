@@ -41,6 +41,14 @@ on:
         description: 'The ch-local ref ch-shim is built from'
         default: 'main'
         required: true
+      runner:
+        description: 'The runner: ubuntu-latest (Linux x64, 4 cores) or macos-26-intel (macOS x64, 4 cores); macos-latest (arm64, 3 cores) is below the gate''s 4'
+        type: choice
+        options:
+          - ubuntu-latest
+          - macos-26-intel
+        default: ubuntu-latest
+        required: true
 
 permissions:
   contents: read
@@ -61,7 +69,7 @@ jobs:
 
   gate:
     needs: plan
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -86,9 +94,9 @@ jobs:
         run: cargo build --release --locked
       - name: The machine
         run: |
-          nproc
+          if command -v nproc >/dev/null; then nproc; else sysctl -n hw.ncpu; fi
           uptime
-          free -m
+          if command -v free >/dev/null; then free -m; else sysctl -n hw.memsize; vm_stat | head -5; fi
       - name: Measure
         env:
           MODES: ${{ inputs.modes }}
@@ -108,30 +116,34 @@ jobs:
           case "$MODES" in closed|open|closed,open|open,closed) ;; *) echo "modes must be closed, open or closed,open"; exit 2 ;; esac
           shim=ch-local/shim/target/release/ch-shim
           rc=0
-          # a gate's exit as 0, 1 or 2: a FAIL verdict is 1 only with its
-          # result written (a crash also exits 1, with none); a signal or any
-          # other code is the harness failing
-          code() { if [ "$1" = 0 ]; then echo 0; elif [ "$1" = 1 ] && [ -s "$2" ]; then echo 1; else echo 2; fi; }
-          word() { case "$1" in 0) echo PASS ;; 1) echo FAIL ;; *) echo "the harness failed" ;; esac; }
+          # a gate's exit as 0, 1, 2 or 3: a FAIL verdict is 1 and no gate
+          # verdict 3 (--allowFewerCores on fewer than 4 CPUs), each only with
+          # its result written (a crash also exits 1, with none); a signal or
+          # any other code is the harness failing, 2. 2 and 3 fail the job in
+          # either mode; a refusal's reason (gate.js's last stderr line) is
+          # said in the summary
+          code() { if [ "$1" = 0 ]; then echo 0; elif { [ "$1" = 1 ] || [ "$1" = 3 ]; } && [ -s "$2" ]; then echo "$1"; else echo 2; fi; }
+          word() { case "$1" in 0) echo PASS ;; 1) echo FAIL ;; 3) echo "no gate verdict" ;; *) echo "the harness failed" ;; esac; }
+          why() { if [ "$1" = 2 ] && [ -s "$2" ]; then printf ': %s' "$(tail -n 1 "$2" | cut -c1-300)"; fi; }
           say() { if [ -n "$GITHUB_STEP_SUMMARY" ]; then echo "- $1" >> "$GITHUB_STEP_SUMMARY"; fi; }
           case ",$MODES," in *,closed,*)
             node perf/latency-gate/gate.js --shim "$shim" --mode closed \
-              --sessions "$CLOSED_SESSIONS" --rounds "$CLOSED_ROUNDS" --calls "$CLOSED_CALLS" --json gate-closed.json
-            c=$?; c=$(code "$c" gate-closed.json); echo "closed: gate exit $c (0 PASS, 1 FAIL, 2 the harness failed)"
-            say "closed (back to back): $(word "$c"), recorded only, not the release gate"
-            [ "$c" = 2 ] && rc=2 ;;
+              --sessions "$CLOSED_SESSIONS" --rounds "$CLOSED_ROUNDS" --calls "$CLOSED_CALLS" --json gate-closed.json 2> gate-closed.err
+            c=$?; cat gate-closed.err >&2; c=$(code "$c" gate-closed.json); echo "closed: gate exit $c (0 PASS, 1 FAIL, 2 the harness failed, 3 no gate verdict)"
+            say "closed (back to back): $(word "$c")$(why "$c" gate-closed.err), recorded only, not the release gate"
+            { [ "$c" = 2 ] || [ "$c" = 3 ]; } && rc=$c ;;
           esac
           case ",$MODES," in *,open,*)
             node perf/latency-gate/gate.js --shim "$shim" --mode open \
-              --sessions "$OPEN_SESSIONS" --rounds 1 --calls "$OPEN_CALLS" --seed "$RUN" --json gate-open.json
-            c=$?; c=$(code "$c" gate-open.json); echo "open: gate exit $c (0 PASS, 1 FAIL, 2 the harness failed)"
-            say "open (realistic load): $(word "$c"), the release gate"
+              --sessions "$OPEN_SESSIONS" --rounds 1 --calls "$OPEN_CALLS" --seed "$RUN" --json gate-open.json 2> gate-open.err
+            c=$?; cat gate-open.err >&2; c=$(code "$c" gate-open.json); echo "open: gate exit $c (0 PASS, 1 FAIL, 2 the harness failed, 3 no gate verdict)"
+            say "open (realistic load): $(word "$c")$(why "$c" gate-open.err), the release gate"
             [ "$c" -gt "$rc" ] && rc=$c ;;
           esac
           exit "$rc"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: latency-gate-run-${{ matrix.run }}
+          name: latency-gate-${{ inputs.runner }}-run-${{ matrix.run }}
           path: gate-*.json
           if-no-files-found: warn

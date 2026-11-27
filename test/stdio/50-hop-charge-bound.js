@@ -13,6 +13,7 @@ const path = require('path');
 const {spawn} = require('child_process');
 const {startStdio, INITIALIZE} = require('../helpers/stdio-client');
 const {toolOutput} = require('../helpers/tool-result');
+const {withStoreLock} = require('../../lib/store/json-file');
 const tmp = require('../helpers/test-tmp').forFile(['ch-stdio-50-'], {base: require('os').tmpdir()});
 
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -35,7 +36,6 @@ function writeModule(dir, {name, role, calls, service, actions}) {
   return dir;
 }
 
-// another process holding the store lock for ms, once it has it
 // another process holding the store lock until the test releases it (a
 // file appears), never past 30 s (so a test that fails can't wedge it):
 // the lock is held until what the test observes, never for a fixed time
@@ -60,35 +60,40 @@ function holdLock(dir) {
   return new Promise((resolve) => holder.stdout.once('data', () => resolve({holder, free})));
 }
 
-// the store's metering records: meterId -> balance
-const balances = (store) => {
-  try {
-    const m = JSON.parse(fs.readFileSync(path.join(store, 'metering.json'), 'utf8'));
-    return Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r != null ? r.balance : null]));
-  } catch (e) {
-    return {};
-  }
+// How many charges have landed: one unit a charge, from nothing. Read under
+// the store lock, so never while the runtime renames a new ledger into
+// place: on Windows a rename over a file another process has open can be
+// refused, and a charge whose write fails is not tried again -- the test's
+// own read would lose the charge it looks for. What withStoreLock throws is
+// the lock's (still busy after its wait: read again); a ledger that can't
+// be read or counted is thrown marked {ledger: true}, never taken as busy.
+const landedIn = (store) => {
+  let bad = null;
+  const n = withStoreLock(store, () => {
+    try {
+      let m = {};
+      try {
+        m = JSON.parse(fs.readFileSync(path.join(store, 'metering.json'), 'utf8'));
+      } catch (e) {
+        if (e.code !== 'ENOENT') throw e;
+      }
+      let landed = 0;
+      for (const [k, r] of Object.entries(m)) {
+        if (r == null || typeof r.balance !== 'number') throw new Error(`metering record ${k} has no numeric balance: ${JSON.stringify(r)}`);
+        landed -= r.balance;
+      }
+      return landed;
+    } catch (e) {
+      bad = e;
+      return null;
+    }
+  });
+  if (bad != null) throw Object.assign(bad, {ledger: true});
+  return n;
 };
-const total = (store) => Object.values(balances(store)).reduce((a, b) => a + (Number(b) || 0), 0);
-// the balance once it has settled -- the same over three reads a half
-// second apart, the store lock free -- never polled for the value expected
-// (async metering: test/README, CLAUDE.md)
-async function settled(store, ms = 20000) {
-  const end = Date.now() + ms;
-  let last = null;
-  let same = 0;
-  while (Date.now() < end) {
-    const now = total(store);
-    same = (now === last) ? same + 1 : 0;
-    last = now;
-    if (same >= 2) return now;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error(`the balance did not settle in ${ms} ms (last ${last})`);
-}
 async function eventually(check, ms = 15000) {
   const until = Date.now() + ms;
-  while (Date.now() < until) { if (check()) return true; await new Promise((resolve) => setTimeout(resolve, 50)); }
+  while (Date.now() < until) { if (check()) return true; await new Promise((resolve) => setTimeout(resolve, 100)); }
   return false;
 }
 
@@ -98,7 +103,34 @@ describe('stdio 50: a routed hop waits for its charge at most METER_PENDING_MS (
   let store = null;
   let io = null;
   let nextId = 10;
-  const call = (name, args = {}) => io.request({jsonrpc: '2.0', id: nextId++, method: 'tools/call', params: {name, arguments: args}}, 60000);
+  // every charge issued so far: two a successful call, the outer call's and
+  // its hop's, each issued before its call is answered (lib/mcp/gateway.js
+  // respond, lib/device-manager.js boundedCharge)
+  let issued = 0;
+  const landedLines = () => (io.err.match(/the pending billing landed/g) || []).length;
+  // the ledger once it has settled: every charge issued has landed, each a
+  // write of its own -- seen, never timed: a charge that met a busy lock
+  // retries on a timer of its own (lib/store/json-file.js update), so a
+  // balance that stands still for a while may be between two of them. The
+  // wait is for a lower bound (charges landed), never for the value the
+  // case asserts (async metering: CLAUDE.md): after it, two requests are
+  // answered by the runtime's main thread and the ledger is read again and
+  // compared as an equality, so one too many that has landed by then fails
+  // as one too few does. A charge made twice that lands later still is
+  // caught by the last case, which reads the ledger once nothing writes it.
+  async function settled() {
+    let n = 0;
+    let busy = null;   // (a store lock still busy after the read's own wait: read again)
+    const all = await eventually(() => {
+      try { n = landedIn(store); } catch (e) { if (e.ledger === true) throw e; busy = e; return false; }
+      return n >= issued;
+    }, 30000);
+    assert.ok(all, `${n} of ${issued} charges landed (${busy != null ? busy.message : 'the lock was free'})\n${io.err.slice(-1500)}`);
+    for (let i = 0; i < 2; i++) await io.request({jsonrpc: '2.0', id: nextId++, method: 'tools/list'}, 30000);
+    return landedIn(store);
+  }
+  const call = (name, args = {}) => io.request({jsonrpc: '2.0', id: nextId++, method: 'tools/call', params: {name, arguments: args}}, 60000)
+    .then((r) => { if (r.result != null && r.result.isError !== true) issued += 2; return r; });
 
   before(async () => {
     home = tmp.mkdtemp('ch-stdio-50-');
@@ -132,12 +164,11 @@ describe('stdio 50: a routed hop waits for its charge at most METER_PENDING_MS (
     const out = toolOutput(r.result);
     assert.strictEqual(out.part, 'own');
     assert.ok(out.metering != null && out.metering.billingPending !== true && out.metering.charged === 1, JSON.stringify(out));
+    assert.strictEqual(await settled(), issued, 'the outer call\'s charge and the hop\'s, each once');
   });
 
   it('a charge held by a busy store lock: the hop answers at the bound, billing pending, and the charges land once each when it is free', async () => {
-    // (the first case's two charges settled first)
-    assert.ok(await eventually(() => Object.keys(balances(store)).length > 0), 'a metering record');
-    const before = await settled(store);
+    const lines = landedLines();
     const {holder, free} = await holdLock(store);
     let out = null;
     try {
@@ -151,8 +182,9 @@ describe('stdio 50: a routed hop waits for its charge at most METER_PENDING_MS (
     }
     assert.deepStrictEqual([out.part, out.metering], ['own', {billingPending: true}]);
     // once the lock is free: the outer call's charge and the hop's, each once
-    assert.strictEqual(await settled(store), before - 2, 'charged exactly twice, once the lock was free: never again');
-    assert.match(io.err, /the pending billing landed/);
+    assert.strictEqual(await settled(), issued, 'charged exactly twice, once the lock was free: never again');
+    assert.ok(await eventually(() => landedLines() > lines), `the pending hop's outcome is logged\n${io.err.slice(-1500)}`);
+    assert.strictEqual(landedLines(), lines + 1, 'once');
   });
 
   // (the reviewer's ruling on #496) a stall allows a caller only a few
@@ -162,7 +194,7 @@ describe('stdio 50: a routed hop waits for its charge at most METER_PENDING_MS (
     // (the allowance, 4: checked against the lib's own after the behaviour)
     const MAX_PENDING_PER_KEY = 4;
     const n = MAX_PENDING_PER_KEY + 1;
-    const before = await settled(store);
+    const lines = landedLines();
     const {holder, free} = await holdLock(store);
     const outs = [];
     let all = null;
@@ -188,8 +220,18 @@ describe('stdio 50: a routed hop waits for its charge at most METER_PENDING_MS (
     const waited = outs.filter((o) => o.metering != null && o.metering.charged === 1).length;
     assert.deepStrictEqual([pending, waited], [MAX_PENDING_PER_KEY, 1], JSON.stringify(outs.map((o) => o.metering)));
     // once the lock is free: each outer call's charge and each hop's, once
-    assert.strictEqual(await settled(store), before - 2 * n, 'charged exactly once each, once the lock was free: never again');
+    assert.strictEqual(await settled(), issued, 'charged exactly once each, once the lock was free: never again');
+    assert.ok(await eventually(() => landedLines() >= lines + MAX_PENDING_PER_KEY), `${landedLines() - lines} pending charges logged\n${io.err.slice(-1500)}`);
+    assert.strictEqual(landedLines(), lines + MAX_PENDING_PER_KEY, 'each pending charge\'s outcome is logged, once');
     assert.strictEqual(require('../../lib/metering/charge-bound').MAX_PENDING_PER_KEY, MAX_PENDING_PER_KEY);
+  });
+
+  // (nothing writes the ledger any more: what it holds is final)
+  it('the whole ledger once the runtime has exited: two charges a call, none lost and none twice', async () => {
+    const ended = await io.stop(30000);
+    // (the ledger first: a slow exit is told apart from a lost or double charge)
+    assert.strictEqual(landedIn(store), issued, `the ledger (the runtime ended ${JSON.stringify(ended)})`);
+    assert.strictEqual(ended.code, 0, `${JSON.stringify(ended)}\n${io.err.slice(-1500)}`);
   });
 
   tmp.hooks();

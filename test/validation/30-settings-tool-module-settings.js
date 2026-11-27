@@ -103,9 +103,16 @@ describe('validation 30: countinghouse_settings and module settings', () => {
         type: 'enum', value: 'imperial', default: 'metric', bounds: {enum: ['metric', 'imperial']}, changes: 'on request',
         byTheModule: {title: 'Units'}});
       assert.deepStrictEqual(rows['module.@acme/weather-tool.maxResults'].bounds, {min: 1, max: 100});
-      assert.strictEqual(rows['module.@acme/weather-tool.shareStats'].changes, 'needs your confirmation');
+      // (no client is on the tested list: no form can confirm one)
+      assert.strictEqual(rows['module.@acme/weather-tool.shareStats'].changes, 'at a terminal only');
+      const {listFrom} = require('../../lib/elicitation-clients');
+      const label = async (allowlist) => (await make({allowlist}).get()).settings.filter((x) => /shareStats|defaultRepo|units/.test(x.name)).map((x) => x.changes).sort();
+      const client = (tested) => ({name: 'claude-code', conditions: 'claude-code', tested});
+      assert.deepStrictEqual(await label(listFrom({clients: [client([{from: '2.1.1', before: '2.1.2'}])]})), ['needs your confirmation', 'needs your confirmation', 'on request']);
+      assert.deepStrictEqual(await label(listFrom(null)), ['needs your confirmation', 'needs your confirmation', 'on request'], 'a list that could not be read says nothing of forms');
+      assert.deepStrictEqual(await label(listFrom({clients: [client([])]})), ['at a terminal only', 'at a terminal only', 'on request']);
       const repo = rows['module.@acme/weather-tool.defaultRepo'];
-      assert.strictEqual(repo.changes, 'needs your confirmation');
+      assert.strictEqual(repo.changes, 'at a terminal only');
       assert.strictEqual(repo.value, undefined, 'unset: no value');
       assert.deepStrictEqual(repo.byTheModule, {title: 'Default repository', description: 'Used when you name none'});
       assert.deepStrictEqual(repo.bounds, {format: 'repo', maxLength: 256});
@@ -216,6 +223,33 @@ describe('validation 30: countinghouse_settings and module settings', () => {
         assert.ok(!err.message.includes('acme/repo'), err.message);
       }
       assert.deepStrictEqual(stored(), {'module.@acme/weather-tool.units': 'imperial', 'other.kept': 1}, 'nothing written');
+    });
+
+    // The server's instructions (lib/mcp/instructions.js, pinned by
+    // mcp-contract 41) say a text value is set only by the user. That holds
+    // by the shipped tested-client list, not by code: a string goes to the
+    // form, and the form is shown only to a tested client. A tested range
+    // makes the sentence false, so this pin fails until it is reworded.
+    it('the shipped tested-client list has no tested range: a string setting asked by a client whose own conditions are met is the terminal\'s', async () => {
+      const clients = require('../../lib/elicitation-clients');
+      const REVISIT = 'a tested client makes the instructions\' text-value sentence false (lib/mcp/instructions.js, mcp-contract 41), the module guide\'s `confirm` row (docs/module-development.md), the two settings design specs\' 11-26 notes and lib/module-settings.js\'s header: reword them, then move this pin';
+      const list = clients.ALLOWLIST;
+      assert.strictEqual(clients.noClientTested(list), true, REVISIT);
+      // (ch-local's answer on the client's configuration taken as yes: only
+      // the list stands between this client and a form)
+      const tool = make({allowlist: list, mayElicit: async (ctx) => {
+        const c = clients.clientMayElicit(ctx, list);
+        return c.ok ? {ok: true, client: c.client} : c;
+      }});
+      const ctx = {session: 'text-value-pin', clientInfo: {name: clients.CLAUDE_CODE, version: '2.1.332'}, capabilities: {elicitation: {}}};
+      let answer = null;
+      try {
+        answer = await tool.set('module.@acme/weather-tool.defaultRepo', 'acme/repo', 'settings tool', ctx);
+      } catch (e) {
+        assert.strictEqual(e.code, 'SETTING_MODULE_NEEDS_CONFIRMATION', e.message);
+      }
+      assert.strictEqual(answer, null, `${REVISIT} (answered ${JSON.stringify(answer).slice(0, 200)})`);
+      assert.strictEqual(stored()['module.@acme/weather-tool.defaultRepo'], undefined, REVISIT);
     });
 
     it('the ceiling: fixed refuses every change; conversation off is the terminal\'s; one that cannot be trusted refuses', async () => {

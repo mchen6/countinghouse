@@ -51,7 +51,9 @@ describe('session-runtime 15: the latency gate workflow: the open run fails the 
       'for a in "$@"; do [ "$prev" = "--mode" ] && mode="$a"; [ "$prev" = "--json" ] && json="$a"; prev="$a"; done',
       'echo "stub node: $mode" >&2',
       'case "$mode" in closed) c="${STUB_CLOSED:-0}" ;; open) c="${STUB_OPEN:-0}" ;; *) exit 9 ;; esac',
-      '[ "$c" = 1 ] && [ "$STUB_CRASH" != "$mode" ] && echo \'{"verdict":"FAIL"}\' > "$json"',
+      '{ [ "$c" = 1 ] || [ "$c" = 3 ]; } && [ "$STUB_CRASH" != "$mode" ] && echo \'{"verdict":"FAIL"}\' > "$json"',
+      // (a refusal says its reason on stderr, last, as gate.js does)
+      '[ "$c" = 2 ] && echo "latency gate: this machine has 2 CPUs (stub, $mode)" >&2',
       'exit "$c"'
     ].join('\n')}\n`, {mode: 0o755});
     fs.writeFileSync(path.join(dir, 'measure.sh'), measureScript());
@@ -103,6 +105,25 @@ describe('session-runtime 15: the latency gate workflow: the open run fails the 
     assert.match(killed.stdout, /open: gate exit 2 /);
     // and it wins over an open FAIL
     assert.strictEqual(step({MODES: 'closed,open', STUB_CLOSED: '2', STUB_OPEN: '1'}).status, 2);
+  });
+
+  it('no gate verdict (3, a result written) is named and fails the job in either mode; 3 with no result is the harness failing', () => {
+    const closed = step({MODES: 'closed,open', STUB_CLOSED: '3'});
+    assert.strictEqual(closed.status, 3, closed.stdout);
+    assert.match(closed.stdout, /closed: gate exit 3 \(0 PASS, 1 FAIL, 2 the harness failed, 3 no gate verdict\)/);
+    assert.match(closed.summary, /- closed \(back to back\): no gate verdict, recorded only, not the release gate/);
+    const open = step({MODES: 'open', STUB_OPEN: '3'});
+    assert.strictEqual(open.status, 3, open.stdout);
+    assert.match(open.summary, /- open \(realistic load\): no gate verdict, the release gate/);
+    assert.strictEqual(step({MODES: 'open', STUB_OPEN: '3', STUB_CRASH: 'open'}).status, 2);
+  });
+
+  it('a refusal\'s reason, gate.js\'s last stderr line, is said in the summary; its stderr still reaches the log', () => {
+    const r = step({MODES: 'closed,open', STUB_CLOSED: '2', STUB_OPEN: '2'});
+    assert.strictEqual(r.status, 2);
+    assert.match(r.summary, /- closed \(back to back\): the harness failed: latency gate: this machine has 2 CPUs \(stub, closed\), recorded only/);
+    assert.match(r.summary, /- open \(realistic load\): the harness failed: latency gate: this machine has 2 CPUs \(stub, open\), the release gate/);
+    assert.match(r.stderr, /this machine has 2 CPUs \(stub, open\)/);
   });
 
   it('modes it does not know are refused as before', () => {

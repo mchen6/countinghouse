@@ -33,7 +33,11 @@
 // CPUs. It isn't run again: much of that load is the harness's own previous
 // run, which a 1-minute average still holds. See README.md.
 //
-// node perf/latency-gate/gate.js --shim <ch-shim> [--mode closed|open] [--sessions 1,2,4] [--rounds 5] [--calls 300] [--seed 1] [--json <file>]
+// The gate is measured on an idle machine with 4 or more CPUs. Fewer is
+// refused (exit 2, the harness's own); --allowFewerCores runs it anyway, and
+// the result is then "not a gate verdict" (exit 3), never PASS or FAIL.
+//
+// node perf/latency-gate/gate.js --shim <ch-shim> [--mode closed|open] [--sessions 1,2,4] [--rounds 5] [--calls 300] [--seed 1] [--json <file>] [--allowFewerCores]
 // node perf/latency-gate/gate.js --ch-local <ch-local checkout>   (builds ch-shim with cargo first)
 const {spawn, spawnSync} = require('child_process');
 const fs = require('fs');
@@ -60,6 +64,22 @@ const LOADED_PER_CPU = 0.75;
 // shared and perSession, each {ms, p90Ms, p95Ms, rounds}); 1 was flat
 // (separateMs, sharedMs, ...)
 const SCHEMA = 2;
+// the gate's machine: 4 or more CPUs (README.md)
+const GATE_CPUS = 4;
+const WINDOWS_REFUSAL = 'this harness runs on Linux and macOS only (it uses a Unix socket and a POSIX script)';
+// -> {gated: true} | {gated: false} (allowed, no gate verdict) | {gated: false, refused: why}
+function machineCondition(cpus, allowFewer) {
+  if (cpus >= GATE_CPUS) return {gated: true};
+  if (allowFewer === true) return {gated: false};
+  return {gated: false, refused: `this machine has ${cpus} CPUs; the gate is measured on ${GATE_CPUS} or more (--allowFewerCores runs it anyway, with no gate verdict)`};
+}
+// rows' passes -> {verdict, exitCode}: PASS 0 or FAIL 1 only where the gate
+// holds; otherwise no gate verdict, exit 3 (never read as a pass or a fail)
+function verdictOf(rows, condition, cpus) {
+  if (condition.gated !== true) return {verdict: `not a gate verdict (${cpus} CPUs, fewer than the gate's ${GATE_CPUS})`, exitCode: 3};
+  const pass = rows.every((r) => r.pass);
+  return {verdict: pass ? 'PASS' : 'FAIL', exitCode: pass ? 0 : 1};
+}
 // mulberry32: a small seeded RNG, so an open-mode schedule repeats
 function rng(seed) {
   let a = seed >>> 0;
@@ -80,9 +100,8 @@ function int(name, text, lo, hi) {
   return n;
 }
 
-function args() {
-  const o = {shim: null, chLocal: null, mode: 'closed', sessions: null, rounds: null, calls: null, seed: 1, json: null};
-  const a = process.argv.slice(2);
+function args(a = process.argv.slice(2)) {
+  const o = {shim: null, chLocal: null, mode: 'closed', sessions: null, rounds: null, calls: null, seed: 1, json: null, allowFewerCores: false};
   for (let i = 0; i < a.length; i++) {
     const v = a[i + 1];
     if (a[i] === '--shim') { o.shim = path.resolve(v); i++; }
@@ -96,6 +115,7 @@ function args() {
     else if (a[i] === '--calls') { o.calls = int('--calls', v, 10, 2000); i++; }
     else if (a[i] === '--seed') { o.seed = int('--seed', v, 0, 999999); i++; }
     else if (a[i] === '--json') { o.json = path.resolve(v); i++; }
+    else if (a[i] === '--allowFewerCores') o.allowFewerCores = true;
     else throw new Usage(`unknown option ${a[i]}`);
   }
   if (o.shim == null && o.chLocal == null) throw new Usage('--shim <ch-shim binary> or --ch-local <ch-local checkout> is needed');
@@ -216,10 +236,15 @@ async function shared(n, calls, shim, plan, perSession = false) {
 
 async function main() {
   const o = args();
-  if (process.platform === 'win32') throw new Error('the shared runtime does not run on Windows yet (each session runs its own there)');
+  if (process.platform === 'win32') throw new Usage(WINDOWS_REFUSAL);
+  // (the CPUs this process may run on, an affinity limit's included: read
+  // once, for the condition, the verdict and the result alike)
+  const cpus = typeof(os.availableParallelism) === 'function' ? os.availableParallelism() : os.cpus().length;
+  const condition = machineCondition(cpus, o.allowFewerCores);
+  if (condition.refused != null) throw new Usage(condition.refused);
   const shim = shimOf(o);
   if (!fs.existsSync(shim)) throw new Error(`no ch-shim at ${shim}`);
-  const machine = {cpus: os.cpus().length, model: (os.cpus()[0] || {}).model, node: process.version, platform: `${os.platform()} ${os.release()}`, loadavgAtStart: os.loadavg()};
+  const machine = {cpus, hostCpus: os.cpus().length, model: (os.cpus()[0] || {}).model, node: process.version, platform: `${os.platform()} ${os.release()}`, loadavgAtStart: os.loadavg()};
   process.stdout.write(`latency gate (${o.mode}): ${machine.cpus} CPUs (${machine.model}), node ${machine.node}, load ${machine.loadavgAtStart.map((x) => x.toFixed(2)).join('/')}; ${o.rounds} rounds of ${o.calls} calls per session${o.mode === 'open' ? `, 1-5 s gaps, seed ${o.seed}` : ''}\n`);
   const rows = [];
   const fig = (x) => x.toFixed(2);
@@ -257,12 +282,37 @@ async function main() {
       perSession: Object.assign(summary('perSession'), {overMs: P - A, pass: pass.perSession}), roundsMeta, pass: pass.shared && pass.perSession});
     process.stdout.write(`N=${n}: separate ${fig(A)} ms (p90 ${fig(median(per.separate.p90))}); shared ${fig(S)} ms, ${over(S - A)} (p90 ${fig(median(per.shared.p90))}); per-session ${fig(P)} ms, ${over(P - A)} (p90 ${fig(median(per.perSession.p90))}); gate <= +${allowanceMs(n)} ms: shared ${pass.shared ? 'PASS' : 'FAIL'}, per-session ${pass.perSession ? 'PASS' : 'FAIL'}\n`);
   }
-  const verdict = rows.every((r) => r.pass) ? 'PASS' : 'FAIL';
+  const {verdict, exitCode} = verdictOf(rows, condition, machine.cpus);
   process.stdout.write(`verdict: ${verdict}${loadedRuns > 0 ? ` (${loadedRuns} layout run(s) started loaded, above ${fig(loadedAbove)}: see the JSON's roundsMeta)` : ''}\n`);
-  const result = {schema: SCHEMA, when: new Date().toISOString(), mode: o.mode, seed: o.mode === 'open' ? o.seed : null, machine, calls: o.calls, rounds: o.rounds, rows, verdict,
+  const result = {schema: SCHEMA, when: new Date().toISOString(), mode: o.mode, seed: o.mode === 'open' ? o.seed : null, machine, gated: condition.gated, calls: o.calls, rounds: o.rounds, rows, verdict,
     loadedAbove, loadedRuns, loadavgAtEnd: os.loadavg()};
   if (o.json != null) fs.writeFileSync(o.json, `${JSON.stringify(result, null, 2)}\n`);
-  process.exitCode = verdict === 'PASS' ? 0 : 1;
+  process.exitCode = exitCode;
 }
 
-main().catch((e) => { process.stderr.write(e instanceof Usage ? `latency gate: ${e.message}\n` : `${e.stack || e}\n`); process.exitCode = 2; });
+// A usage error is its one line; a crash is its stack, then its reason as
+// the last line, "latency gate: <reason>" (the workflow's summary says the
+// last stderr line as the reason, never a stack frame). The reason is the
+// message's first non-empty line (a message may carry the runtime's output
+// after it), else its code, its first inner error's, or the value itself.
+function crashReason(e) {
+  const first = (t) => String(t == null ? '' : t).split(/\r?\n/).map((l) => l.trim()).find((l) => l !== '') || null;
+  if (e == null || typeof(e) !== 'object') return first(e) || String(e);
+  return first(e.message) || (typeof(e.code) === 'string' ? e.code : null) ||
+    (Array.isArray(e.errors) && e.errors.length > 0 ? crashReason(e.errors[0]) : null) || first(require('util').inspect(e, {depth: 1, breakLength: Infinity})) || 'an error with no message';
+}
+function crashText(e) {
+  if (e instanceof Usage) return `latency gate: ${e.message}\n`;
+  return `${(e != null && e.stack) || require('util').inspect(e)}\nlatency gate: ${crashReason(e)}\n`;
+}
+// (run only when executed: session-runtime 18 requires it; a crash outside
+// main's promise -- an emitter's unheard error, a rejection no one awaits --
+// ends the same way)
+if (require.main === module) {
+  const crashed = (e) => { process.stderr.write(crashText(e)); process.exitCode = 2; };
+  process.on('uncaughtException', (e) => { crashed(e); process.exit(2); });
+  process.on('unhandledRejection', (e) => { crashed(e); process.exit(2); });
+  main().catch(crashed);
+}
+
+module.exports = {args, machineCondition, verdictOf, crashReason, crashText, WINDOWS_REFUSAL, GATE_CPUS};

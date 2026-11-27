@@ -15,6 +15,12 @@ const confirm = require('../../lib/settings-confirm');
 const MiB = 1024 * 1024;
 const MIN = 60 * 1000;
 
+// a list with a tested client (production's has none yet): the latch's own
+// refusal, and a restored lock that may be a decline's
+const TESTED = require('../../lib/elicitation-clients').listFrom({clients: [{name: 'claude-code', conditions: 'claude-code', tested: [{from: '2.1.323', before: '2.1.324'}]}]});
+// and one with none, as production's is now
+const NONE = require('../../lib/elicitation-clients').listFrom({clients: [{name: 'claude-code', conditions: 'claude-code', tested: []}]});
+
 describe('sessions 10: confirmations per session, a window per user (shared runtime B2, Task 5)', () => {
   const A = 'a'.repeat(32);
   const B = 'b'.repeat(32);
@@ -396,6 +402,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
     const ctx = (id) => ({shared: true, session: id, clientInfo: CLIENT, capabilities: {elicitation: {form: {}}}});
     const tool = (o = {}) => settingsTool.create(Object.assign({file, lockWaitMs: 200, ceiling: () => ({state: 'none'}),
       // the tested-client list is the tool's own concern (stdio 18, 20): any client here
+      allowlist: TESTED,
       sessionClient: (c) => ({ok: true, client: c.clientInfo}),
       growValidators: async (bytes) => { grown.push(bytes); }}, o));
     const history = () => (fs.existsSync(path.join(home, 'history.jsonl'))
@@ -878,6 +885,177 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       const none = await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(B)), 'SETTING_CLIENT_NOT_CONFIRMED');
       assert.match(none.message, /this client could not be confirmed/);
       assert.doesNotMatch(none.message, /\/home\/x/);
+    });
+
+    // R-latched-refusal-text: with no tested client no session can be shown a
+    // form, so that one could be answered for the user is no reason: a
+    // latched session gets exactly the answer an unlatched one gets
+    describe('with no tested client (production\'s list), a latched session\'s refusals', () => {
+      const {ALLOWLIST, noClientTested, listFrom} = require('../../lib/elicitation-clients');
+      const NO = {status: 'ok', conditions: 'no', repo: null, why: {reason: 'client settings unreadable'}};
+      const production = (o = {}) => tool(Object.assign({allowlist: NONE, sessionClient: undefined}, o));
+      const said = async (p) => { try { await p; } catch (e) { return {code: e.code, message: e.message}; } return assert.fail('not refused'); };
+      const L = '3'.repeat(32);
+      beforeEach(() => { openSession(L, NO); assert.strictEqual(confirm.confirmations(L).latched(), true); });
+
+      it('the condition: a list read whole, with no tested range; what could not be read is not "none"', () => {
+        assert.strictEqual(noClientTested(ALLOWLIST), true, 'a tested range listed: move this line, and sessions 09\'s and session-runtime 16\'s pins with it');
+        assert.strictEqual(noClientTested(NONE), true);
+        assert.strictEqual(noClientTested(TESTED), false);
+        const entry = (tested) => ({name: 'claude-code', conditions: 'claude-code', tested});
+        for (const data of [null, undefined, {}, {clients: 'x'}, {clients: [null]}, {clients: [{name: 1, conditions: 'x', tested: []}]}, {clients: [{name: 'claude-code', conditions: 'x'}]},
+          {clients: [entry('x')]}, {clients: [entry([{from: '2.1.3', before: '2.1.1'}])]}, {clients: [entry([null])]}, {clients: [entry([{from: '2.1.1', before: '2.1.2', to: 1}])]},
+          {clients: [entry([]), null]}]) {
+          assert.strictEqual(noClientTested(listFrom(data)), false, JSON.stringify(data));
+        }
+        // (a list not made here says nothing of how it was read)
+        assert.strictEqual(noClientTested([]), false);
+      });
+
+      it('a list that could not be read: the latch\'s own refusal, and a restored lock holds the undo, as with a tested client', async () => {
+        const unread = {allowlist: listFrom(null), sessionClient: undefined};
+        assert.strictEqual((await said(tool(unread).set('requestTimeout', '60s', 'settings tool', ctx(L)))).code, 'SETTING_CLIENT_NOT_CONFIRMED');
+        confirm.confirmations(A).restore({locks: ['requestTimeout'], formsLeft: 3});
+        await tool(unread).set('requestTimeout', '10s', 'settings tool', ctx(A));
+        assert.strictEqual((await said(tool(unread).set('requestTimeout', '30s', 'settings tool', ctx(A)))).code, 'SETTING_SESSION_OWN_VALUE_HELD');
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+      });
+
+      for (const [name, value] of [['requestTimeout', '60s'], ['requestTimeout', '30001'], ['maxOutputBytes', '16MiB'], ['maxOutputBytes', '8388609']]) {
+        for (const scope of [undefined, 'all-sessions']) {
+          it(`${name} ${value}${scope != null ? ', for all sessions' : ''}: the unlatched session's answer, word for word; its client not asked`, async () => {
+            const at = (id) => Object.assign(ctx(id), scope != null ? {scope} : {});
+            const latched = await said(production().set(name, value, 'settings tool', at(L)));
+            assert.deepStrictEqual(latched, await said(production().set(name, value, 'settings tool', at(A))));
+            assert.strictEqual(latched.code, 'SETTING_NEEDS_CONFIRMATION');
+            assert.match(latched.message, new RegExp(`^Changing ${name} to ${value === '30001' ? '30001ms' : value === '8388609' ? '8388609B' : value} loosens`));
+            assert.deepStrictEqual(asked, []);
+            // what is kept: the latch, its locks, and the history's own line
+            assert.strictEqual(confirm.confirmations(L).latchedFor(name), true);
+            assert.deepStrictEqual(confirm.confirmations(L).locks(), ['enabled', 'maxOutputBytes', 'module', 'requestTimeout']);
+            assert.strictEqual(history().find((h) => h.session === L).change, 'not confirmed (locked in this session)');
+          });
+        }
+      }
+
+      // (the kinds module and enabled answer a locked session with their own
+      // terminal text: the same before and after, whatever the list)
+      it('a module turned on, and a module setting that needs confirmation: the unlatched session\'s answer too', async () => {
+        const ms = require('../../lib/module-settings');
+        const pkg = {name: '@acme/weather-tool', version: '1.2.0', countinghouse: {settings: {shareStats: {type: 'boolean', default: false, confirm: true}}}};
+        fs.writeFileSync(path.join(home, 'modules.json'), JSON.stringify({modules: {'@acme/weather-tool': {version: '1.2.0', role: 'scenario'}}, packs: {p: {modules: {'@acme/weather-tool': '1.2.0'}}}}));
+        fs.writeFileSync(file, JSON.stringify({version: 1, values: {'enabled.@acme/weather-tool': false}}));
+        const stub = {loadedTops: () => [], loadingTops: () => [], startingUp: () => false,
+          moduleStates: () => [{name: pkg.name, version: pkg.version, pkg, part: false, state: ms.stateFor(pkg.name, pkg, {operator: false, net: []})}]};
+        for (const [name, value, code] of [['enabled.@acme/weather-tool', 'on', 'SETTING_NEEDS_CONFIRMATION'], ['module.@acme/weather-tool.shareStats', true, 'SETTING_MODULE_NEEDS_CONFIRMATION']]) {
+          const latched = await said(production(stub).set(name, value, 'settings tool', ctx(L)));
+          assert.deepStrictEqual(latched, await said(production(stub).set(name, value, 'settings tool', ctx(A))), name);
+          assert.strictEqual(latched.code, code);
+        }
+      });
+
+      it('a value of its own above the default is judged the same, latched after it', async () => {
+        settings.set(B, 'requestTimeout', 40000, {loosening: true, over: 30000});
+        settings.set(L, 'requestTimeout', 40000, {loosening: true, over: 30000});
+        assert.deepStrictEqual(await said(production().set('requestTimeout', '45s', 'settings tool', ctx(L))), await said(production().set('requestTimeout', '45s', 'settings tool', ctx(B))));
+      });
+
+      it('a tested client listed: the latch\'s own refusal, as before', async () => {
+        assert.strictEqual((await said(tool().set('requestTimeout', '60s', 'settings tool', ctx(L)))).code, 'SETTING_CLIENT_NOT_CONFIRMED');
+        assert.strictEqual((await said(tool().set('requestTimeout', '60s', 'settings tool', Object.assign(ctx(L), {scope: 'all-sessions'})))).code, 'SETTING_CLIENT_NOT_CONFIRMED');
+      });
+
+      it('a decline keeps its answer, and a restored lock its own; a fresh "no" on that one is the latch\'s', async () => {
+        confirm.confirmations(A).decline('requestTimeout');
+        assert.strictEqual((await said(production().set('requestTimeout', '60s', 'settings tool', ctx(A)))).code, 'SETTING_DECLINED_THIS_SESSION');
+        sources[A].emit('client', NO);
+        assert.strictEqual((await said(production().set('requestTimeout', '60s', 'settings tool', ctx(A)))).code, 'SETTING_DECLINED_THIS_SESSION', 'a kind declined before the latch stays the user\'s');
+        confirm.confirmations(B).restore({locks: ['requestTimeout'], formsLeft: 3});
+        assert.strictEqual((await said(production().set('requestTimeout', '60s', 'settings tool', ctx(B)))).code, 'SETTING_LOCKED_THIS_SESSION');
+        sources[B].emit('client', NO);
+        assert.strictEqual((await said(production().set('requestTimeout', '60s', 'settings tool', ctx(B)))).code, 'SETTING_NEEDS_CONFIRMATION');
+      });
+
+      it('the ceiling first, as before', async () => {
+        const off = {ceiling: () => ({state: 'trusted', ceiling: {conversation: true, forbid: ['requestTimeout']}})};
+        assert.strictEqual((await said(production(off).set('requestTimeout', '60s', 'settings tool', ctx(L)))).code, 'SETTING_FORBIDDEN_BY_CEILING');
+      });
+    });
+
+    // R-undo-after-restart: a restored lock may be a decline's only where a
+    // form could have been shown; with no tested client none is, so it
+    // doesn't hold the undo of the session's own lowering
+    describe('with no tested client, a lock restored across a restart and the undo of a session\'s own lowering', () => {
+      const NO = {status: 'ok', conditions: 'no', repo: null, why: {reason: 'client settings unreadable'}};
+      const production = (o = {}) => tool(Object.assign({allowlist: NONE, sessionClient: undefined}, o));
+      const lower = async (t0, id) => { await t0.set('requestTimeout', '10s', 'settings tool', ctx(id)); notices.take(null, id); };
+      const ALL_KINDS = ['enabled', 'maxOutputBytes', 'module', 'requestTimeout'];
+
+      for (const fresh of [false, true]) {
+        it(`a latched session resumed after a restart${fresh ? ', its client saying "no" again' : ''}: undone with no tested client, held with one`, async () => {
+          // as the restart leaves it: the locks and its own value, replayed
+          confirm.confirmations(A).restore({locks: ALL_KINDS, formsLeft: 3});
+          if (fresh) sources[A].emit('client', NO);
+          await lower(production(), A);
+          const held = await refused(tool().set('requestTimeout', '30s', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
+          assert.match(held.message, /\(it may have been locked before the runtime restarted\)/);
+          assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+          assert.strictEqual((await production().set('requestTimeout', '20s', 'settings tool', ctx(A))).new, 20000);
+          assert.strictEqual((await production().set('requestTimeout', '30s', 'settings tool', ctx(A))).new, 30000);
+          assert.deepStrictEqual(settings.overridesOf(A), []);
+          // the lock itself is as it was
+          assert.deepStrictEqual(confirm.confirmations(A).locks(), ALL_KINDS);
+          assert.strictEqual(confirm.confirmations(A).userLockOf('requestTimeout'), 'restored');
+        });
+      }
+
+      // the other order of a resume: its client's frame latches it before the
+      // daemon's row is applied
+      it('latched first, then its locks restored: the latch\'s refusal, and the undo as a restored lock\'s', async () => {
+        sources[A].emit('client', NO);
+        confirm.confirmations(A).restore({locks: ALL_KINDS, formsLeft: 3});
+        assert.strictEqual(confirm.confirmations(A).latchedFor('requestTimeout'), true);
+        assert.strictEqual(confirm.confirmations(A).userLockOf('requestTimeout'), 'restored');
+        await refused(production().set('requestTimeout', '45s', 'settings tool', ctx(A)), 'SETTING_NEEDS_CONFIRMATION');
+        await refused(tool().set('requestTimeout', '45s', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
+        await lower(production(), A);
+        await refused(tool().set('requestTimeout', '30s', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
+        assert.strictEqual((await production().set('requestTimeout', '30s', 'settings tool', ctx(A))).new, 30000);
+        // (a decline after it all is the user's)
+        confirm.confirmations(A).decline('requestTimeout');
+        assert.strictEqual(confirm.confirmations(A).userLockOf('requestTimeout'), 'user');
+      });
+
+      it('a loosening above the value for all sessions is refused all the same, changing nothing', async () => {
+        confirm.confirmations(A).restore({locks: ALL_KINDS, formsLeft: 3});
+        await lower(production(), A);
+        await refused(production().set('requestTimeout', '45s', 'settings tool', ctx(A)), 'SETTING_LOCKED_THIS_SESSION');
+        await refused(production().set('requestTimeout', '30001', 'settings tool', ctx(A)), 'SETTING_LOCKED_THIS_SESSION');
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+      });
+
+      it('the user\'s own lock in this runtime holds it: a decline, also after a restored lock; a form up when the latch fell', async () => {
+        confirm.confirmations(A).restore({locks: ['requestTimeout'], formsLeft: 3});
+        confirm.confirmations(A).decline('requestTimeout');
+        await lower(production(), A);
+        const e = await refused(production().set('requestTimeout', '30s', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD');
+        assert.match(e.message, /declined or left unanswered in this session/);
+        await lower(production(), B);
+        const t0 = tool();
+        await t0.set('requestTimeout', '45s', 'settings tool', ctx(B));
+        sources[B].emit('client', NO);
+        await refused(production().set('requestTimeout', '30s', 'settings tool', ctx(B)), 'SETTING_SESSION_OWN_VALUE_HELD');
+      });
+
+      it('the user\'s window and the ceiling hold it', async () => {
+        confirm.confirmations(A).restore({locks: ALL_KINDS, formsLeft: 3});
+        await lower(production(), A);
+        const off = {ceiling: () => ({state: 'trusted', ceiling: {conversation: false, forbid: []}})};
+        assert.match((await refused(production(off).set('requestTimeout', '30s', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD')).message, /ceiling turns changes in conversation off/);
+        confirm.userWindow().lockAll();
+        assert.match((await refused(production().set('requestTimeout', '30s', 'settings tool', ctx(A)), 'SETTING_SESSION_OWN_VALUE_HELD')).message, /paused across your sessions/);
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+      });
     });
 
     // The reviewer's ruling (c) on #337: a lock restored from the daemon's row has an unknown origin (a

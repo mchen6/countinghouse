@@ -101,6 +101,46 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       }
     });
 
+    // R-store-aside-locked: a local ledger that can't be used answers its own
+    // code through both per-key gates (never RUNTIME_BUSY's "retry shortly"):
+    // LEDGER_CORRUPT not retryable, LEDGER_UNREADABLE retryable; any other
+    // error of the check is still RUNTIME_BUSY
+    it('the per-key gates pass a ledger refusal through as itself; any other error of the check is RUNTIME_BUSY', (done) => {
+      const CdifInterface = require('../../lib/countinghouse-interface');
+      const {check: rateLimitGate} = require('../../lib/rate-limit-gate');
+      const told = [];
+      const session = {appKey: 'k', callbackWithoutTimer: (err) => told.push(err)};
+      const failing = (err) => ({rateLimiter: null, rateLimit: (k, cb) => cb(err), deviceManager: {emit() { throw new Error('dispatched'); }}});
+      const errs = [new CountinghouseError('LEDGER_CORRUPT'), new CountinghouseError('LEDGER_UNREADABLE'), new Error('a limiter fault')];
+      for (const e of errs) CdifInterface.prototype.invokeDeviceAction.call(failing(e), LISTED, SERVICE, 'act', null, session);
+      const gated = [];
+      let n = 0;
+      for (const e of errs) {
+        rateLimitGate(failing(e), 'k', (limited, err) => {
+          gated.push([limited, err && err.code]);
+          if (++n === errs.length) {
+            assert.deepStrictEqual(told.map((x) => [x.code, CODES[x.code].retryable]), [['LEDGER_CORRUPT', false], ['LEDGER_UNREADABLE', true], ['RUNTIME_BUSY', true]]);
+            assert.deepStrictEqual(gated, [[true, 'LEDGER_CORRUPT'], [true, 'LEDGER_UNREADABLE'], [true, 'RUNTIME_BUSY']]);
+            done();
+          }
+        });
+      }
+    });
+
+    // (the Fable high on #559, 2) /mcp's gates (the lists, tasks/*,
+    // prompts/get, completion, resources/read) answer a ledger refusal with
+    // its catalogue status (500 corrupt, 503 unreadable), never HTTP 200:
+    // LIMIT_CODES lists both
+    it('/mcp answers a ledger refusal with its catalogue status (500 corrupt, 503 unreadable), and no Retry-After of its own', () => {
+      const ed = require('../../lib/mcp/error-data');
+      for (const [code, status] of [['LEDGER_CORRUPT', 500], ['LEDGER_UNREADABLE', 503]]) {
+        const headers = {};
+        const res = {set: (k, v) => { headers[k] = v; }, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; }};
+        assert.strictEqual(ed.answerLimit(res, ed.limitAnswer(7, new CountinghouseError(code))), true, code);
+        assert.deepStrictEqual([res.code, res.body.error.code, res.body.error.data[ed.ERROR_CODE_META_KEY], headers['Retry-After']], [status, -32000, code, undefined], code);
+      }
+    });
+
     // #482's high, 1: the limiters say what they are
     it('invoke-action\'s limiters: a key over its budget is RATE_LIMIT_EXCEEDED 429; the runtime at its limit is RUNTIME_BUSY 503 with Retry-After', () => {
       const CdifInterface = require('../../lib/countinghouse-interface');
@@ -193,6 +233,9 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
           delete dm.deviceMap[GONE_LATE];
           return session.callbackWithoutTimer(new CountinghouseError('DEVICE_NOT_FOUND', deviceID));
         }
+        // a call held for its module's verdict and released without running (the main thread's own mark, from its one maker),
+        // the device still in the map (its module stays loaded)
+        if (actionName === 'held-gone') return session.callbackWithoutTimer(require('../../lib/device-manager').prototype.heldAnswerNow.call({listedNow: () => false}, deviceID));
         if (actionName === 'named-missing') return session.callbackWithoutTimer(new CountinghouseError('ACTION_NOT_FOUND', actionName));
         if (actionName === 'crossed-missing') return session.callbackWithoutTimer(new CountinghouseError('ACTION_NOT_FOUND'));
         // a missing service (named, as countinghouse-device raises it)
@@ -391,6 +434,11 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
     it('invoke-action: a device gone between the check and the dispatch answers the same one answer', async () => {
       const late = await call(ROUTES[0], GONE_LATE);
       assert.strictEqual(late, JSON.stringify({status: 404, body: {code: 'MODULE_NOT_LISTED', message: CODES.MODULE_NOT_LISTED.en, kind: 'caller'}}));
+    });
+
+    it('invoke-action: a call held for its module\'s verdict and released gone answers the same one answer, its device still listed', async () => {
+      const held = await call(ROUTES[0], LISTED, {serviceID: SERVICE, actionName: 'held-gone', input: {}});
+      assert.strictEqual(held, JSON.stringify({status: 404, body: {code: 'MODULE_NOT_LISTED', message: CODES.MODULE_NOT_LISTED.en, kind: 'caller'}}));
     });
 
     it('invoke-action: an action its declared text leaves unusable answers as a missing one, byte for byte, however the missing one was raised', async () => {

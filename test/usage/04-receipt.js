@@ -17,14 +17,14 @@ describe('the receipt on a tools/call result', () => {
   it('a scenario\'s result gains the receipt in _meta and its sentence, structuredContent unchanged', () => {
     const u = usage();
     const call = u.beginCall({scenario: 'ch-pack-ci-failure-triage', tool: 'ci_failure_triage', caller: 'u_a'});
-    for (let i = 0; i < 3; i++) u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 1000, lines: 100, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+    for (let i = 0; i < 3; i++) u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 1000, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     const output = {summary: 'x', coverage: {logsFetched: 3}};
     const r = finishToolCall({usage: u, call, result: result(output), role: 'scenario', tool: 'ci_failure_triage', startedMs: t - 5, now: () => t});
     assert.deepStrictEqual(r.structuredContent, output);
     assert.strictEqual(r.content.length, 2);
     assert.strictEqual(r.content[0].text, JSON.stringify(output));
-    assert.match(r.content[1].text, /^read 300 lines \(2\.9 KB\) in 3 calls to github; 1 line \(\d+ B\) reached the model\.$/);
-    assert.deepStrictEqual(r._meta['countinghouse/receipt'], {calls: 3, linesIn: 300, bytesIn: 3000, linesOut: 1, bytesOut: Buffer.byteLength(JSON.stringify(output)), servers: ['github']});
+    assert.match(r.content[1].text, /^read 2\.9 KB in 3 calls to github; \d+ B reached the model\.$/);
+    assert.deepStrictEqual(r._meta['countinghouse/receipt'], {calls: 3, bytesIn: 3000, bytesOut: Buffer.byteLength(JSON.stringify(output)), servers: ['github']});
   });
 
   it('the Out record counts the module\'s text only, not the sentence', () => {
@@ -33,7 +33,8 @@ describe('the receipt on a tools/call result', () => {
     const text = JSON.stringify({a: 'line1\nline2'});
     finishToolCall({usage: u, call, result: result({a: 'line1\nline2'}), role: 'scenario', tool: 't', startedMs: t, now: () => t});
     const out = u.records().find((r) => r.server === undefined || r.server === null);
-    assert.deepStrictEqual([out.bytesOut, out.linesOut], [Buffer.byteLength(text), 1]);
+    assert.strictEqual(out.bytesOut, Buffer.byteLength(text));
+    assert.ok(!Object.keys(out).some((k) => /line/i.test(k)), JSON.stringify(out));
   });
 
   // M4: an image or audio block's decoded bytes are counted as inlineBytesOut
@@ -57,7 +58,7 @@ describe('the receipt on a tools/call result', () => {
   it('a scenario\'s receipt carries the inline bytes and its sentence says so', () => {
     const u = usage();
     const call = u.beginCall({scenario: 'p', tool: 't', caller: 'u_a'});
-    u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 1000, lines: 10, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+    u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 1000, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     const r = {isError: false, structuredContent: {img: {mimeType: 'image/png', bytes: 2048, block: 1}},
       content: [{type: 'text', text: '{"img":1}'}, {type: 'image', data: Buffer.alloc(2048).toString('base64'), mimeType: 'image/png'}]};
     const out = finishToolCall({usage: u, call, result: r, role: 'scenario', tool: 't', startedMs: t, now: () => t});
@@ -70,7 +71,7 @@ describe('the receipt on a tools/call result', () => {
   it('M6: an inline resource block counts as inline, a link\'s size as linkedBytesOut, and the sentence says both', () => {
     const u = usage();
     const call = u.beginCall({scenario: 'p', tool: 't', caller: 'u_a'});
-    u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 1000, lines: 10, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+    u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 1000, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     const r = {isError: false, structuredContent: {},
       content: [{type: 'text', text: '{}'},
         {type: 'resource', resource: {uri: 'countinghouse://r/R', mimeType: 'application/pdf', blob: Buffer.alloc(1024).toString('base64')}},

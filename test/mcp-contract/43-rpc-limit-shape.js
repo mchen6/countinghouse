@@ -4,7 +4,7 @@
 // don't resolve does (lib/unauth-limit.js): a JSON-RPC error -32000, the
 // catalogue's message, data {countinghouse/code, countinghouse/kind,
 // countinghouse/retryAfter}; a single request is sent with its code's
-// catalogue status (429, or 503 for RUNTIME_BUSY) and Retry-After from its own
+// catalogue status (429, or 503 for RUNTIME_BUSY and SUBSCRIPTIONS_FULL) and Retry-After from its own
 // hint; a batch stays 200, with Retry-After the longest hint. Before: -32603,
 // 'rate limit exceeded', 200, no Retry-After. In process: the /mcp route on
 // an Express app of its own, the key resolved by --debug (no debug key), the
@@ -99,14 +99,14 @@ describe('mcp-contract 43: one rate-limit shape on /mcp (A-rpc429)', () => {
   });
 
   // (#494's high, 1 and 4) subscriptions/listen with as many open as it may
-  // have: the caller's limit, 429; the runtime's total, RUNTIME_BUSY's 503,
+  // have: the caller's limit, 429; the runtime's total, SUBSCRIPTIONS_FULL's 503,
   // through the route
-  it('subscriptions/listen at its limits: a key\'s is TOO_MANY_SUBSCRIPTIONS 429, the runtime\'s total RUNTIME_BUSY 503, -32000 each', async () => {
+  it('subscriptions/listen at its limits: a key\'s is TOO_MANY_SUBSCRIPTIONS 429, the runtime\'s total SUBSCRIPTIONS_FULL 503, -32000 each', async () => {
     const {createHub} = require('../../lib/mcp/subscriptions');
     const V = '2026-07-28';
     const meta = {'io.modelcontextprotocol/protocolVersion': V, 'io.modelcontextprotocol/clientCapabilities': {}, 'io.modelcontextprotocol/clientInfo': {name: 'limit-test', version: '0'}};
     const free = {rateLimit: (k, cb) => cb(null, {limited: false})};
-    for (const [limits, status, code, kind] of [[{maxPerKey: 0}, 429, 'TOO_MANY_SUBSCRIPTIONS', 'caller'], [{maxTotal: 0}, 503, 'RUNTIME_BUSY', 'runtime']]) {
+    for (const [limits, status, code, kind] of [[{maxPerKey: 0}, 429, 'TOO_MANY_SUBSCRIPTIONS', 'caller'], [{maxTotal: 0}, 503, 'SUBSCRIPTIONS_FULL', 'runtime']]) {
       const hub = createHub({listTools: async() => [], settleMs: 5, ...limits});
       const a = express();
       a.use(express.json());
@@ -142,7 +142,7 @@ describe('mcp-contract 43: one rate-limit shape on /mcp (A-rpc429)', () => {
     // that left a module handler -- CountinghouseError.answerable, and that
     // copy across a worker's reply -- is the module's, kind module, and the
     // read's error; the runtime's own refusal is the limit's.)
-    for (const code of ['RATE_LIMIT_EXCEEDED', 'RUNTIME_BUSY', 'UNAUTH_RATE_LIMITED']) {
+    for (const code of ['RATE_LIMIT_EXCEEDED', 'RUNTIME_BUSY', 'SUBSCRIPTIONS_FULL', 'UNAUTH_RATE_LIMITED']) {
       const issued = setRetryAfter(new CountinghouseError(code), 1000, 60000);
       const left = CountinghouseError.answerable(issued, {module: 'm'});
       const crossed = CountinghouseError.fromReply(CountinghouseError.fromReplyFields(CountinghouseError.replyFields(left)));
@@ -171,6 +171,8 @@ describe('mcp-contract 43: one rate-limit shape on /mcp (A-rpc429)', () => {
     const {isLimitData} = require('../../lib/mcp/error-data');
     assert.strictEqual(isLimitData({'countinghouse/code': 'RATE_LIMIT_EXCEEDED', 'countinghouse/kind': 'caller'}), true);
     assert.strictEqual(isLimitData({'countinghouse/code': 'RUNTIME_BUSY', 'countinghouse/kind': 'runtime'}), true);
+    assert.strictEqual(isLimitData({'countinghouse/code': 'SUBSCRIPTIONS_FULL', 'countinghouse/kind': 'runtime'}), true);
+    assert.strictEqual(isLimitData({'countinghouse/code': 'SUBSCRIPTIONS_FULL', 'countinghouse/kind': 'module'}), false, 'a module\'s passed-on one');
     assert.strictEqual(isLimitData({'countinghouse/code': 'RATE_LIMIT_EXCEEDED', 'countinghouse/kind': 'module'}), false, 'a module\'s own code');
     // (the kind its catalogue row gives: #494's high, 2)
     assert.strictEqual(isLimitData({'countinghouse/code': 'RATE_LIMIT_EXCEEDED', 'countinghouse/kind': 'runtime'}), false);

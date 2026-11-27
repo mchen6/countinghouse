@@ -59,14 +59,14 @@ name and the fix. A module never half-loads.
 | `ctx.device` | `{deviceID, friendlyName}` — this device |
 | `ctx.serviceID`, `ctx.actionName` | the action being served |
 | `ctx.settings` | your module's settings for this call: frozen, no prototype, an unset setting absent ([Module settings](#module-settings)) |
-| `ctx.settingRequired(name)` | return (or throw) it when the call needs a setting the user has not set: the client is told, in the runtime's words, to ask the user for it ([A missing setting](#a-missing-setting)) |
+| `ctx.settingRequired(name)` | return (or throw) it when the call needs a setting the user has not set: the client is told, in the runtime's words, to ask the user to set it in their own terminal (on a hosted runtime: that its operator sets it) ([A missing setting](#a-missing-setting)) |
 | `ctx.log(entry)` | device log, already bound to this device |
 | `ctx.serviceClient(opts, cb)` | call another module by deviceID, as `ctx.call` authorizes (no `as`) — see below |
 | `ctx.call(address, input, opts)` | call another module by name — see below |
 | `ctx.job` | `{id, progress(n), info(cb)}`. Inside a task: the job's id; `progress(n)` (0–100) updates the job; `info` reads it. Outside a task: `id` is `null`; `progress(n)` (0–100) is the call's own progress, sent to a client that asked for it (at most one every 250 ms, the latest winning, none after the answer; a composite's parts' reports are dropped); `info` calls back with an error. Ask `ctx.job.id == null`, not `ctx.job == null`, to tell a call that is not a task |
 | `ctx.redis` | your module's own key-value space, in node_redis v3's callback style: Redis db 5 under `--store redis`, a local store with the same commands and answers under `--store local`. Every key you name is your module's alone: the runtime stores it as `m:<module name, URI-encoded>:<key>`, by the name it loaded your module under, so another module's `get('x')` never sees your `x`, and you never see the runtime's own keys. You write and read the key as you named it. The commands are `del`, `get`, `hdel`, `hget`, `hgetall`, `hmget`, `hmset` (fields as pairs or one `{field: value}` object), `hset`, `llen`, `lpush`, `lrange`, `ltrim`, `mget`, `pexpire`, `rpush`, `set`, `zadd`, `zrange` and `zrem`; there is no `multi`/`exec` |
 | `ctx.recordUsage(tool, cost, cb)` | app-layer bookkeeping; never touches balance; answers `{id, tool, cost, ts}` |
-| `ctx.usage()` | a promise of the current tools/call's counts so far, read-only: `{calls, linesIn, bytesIn, tokensInEst, servers: {name: calls}, sentence}`, plus `standIn: [names]` when an acceptance stand-in answered (`--remoteOriginMap`). They are the call's remote server calls, its parts' included, and the lines and bytes of text those calls returned; `tokensInEst` is bytes/4, an estimate; `sentence` is the first half of the runtime's receipt sentence, word for word (`read 48,210 lines (3.1 MB) in 14 calls to github`, or `no server was called`). The call's own output is measured when it returns, so it is not counted here. `null` when the call is not a counted one (not a tools/call, or one that has already answered). In a worker the query carries the call's token and is refused `CALL_TOKEN_INVALID` without it (a direct peer channel's call has none, and a call's token ends when it answers). Never a key, an id or a caller. A scenario writes its receipt sentence from it |
+| `ctx.usage()` | a promise of the current tools/call's counts so far, read-only: `{calls, bytesIn, tokensInEst, servers: {name: calls}, sentence}`, plus `standIn: [names]` when an acceptance stand-in answered (`--remoteOriginMap`). They are the call's remote server calls, its parts' included, and the bytes of text those calls returned; `tokensInEst` is bytes/4, an estimate; `sentence` is the first half of the runtime's receipt sentence, word for word (`read 3.1 MB in 14 calls to github`, or `no server was called`). The call's own output is measured when it returns, so it is not counted here. `null` when the call is not a counted one (not a tools/call, or one that has already answered). In a worker the query carries the call's token and is refused `CALL_TOKEN_INVALID` without it (a direct peer channel's call has none, and a call's token ends when it answers). Never a key, an id or a caller. A scenario writes its receipt sentence from it |
 | `ctx.ask(name, values)` | a promise of the user's answer to one of this action's declared questions: the form's content, or `null` when the user declined — see [Asking the user](#asking-the-user-ctxask) |
 | `ctx.httpHeaders` | request headers, when the call arrived over HTTP, minus `X-CH-Key`, `X-App-Key` and `Authorization` |
 
@@ -678,7 +678,7 @@ The vocabulary is small and closed. It is not JSON Schema.
 | `format` | For a `string`, optional: `slug`, `repo` (`owner/name`, GitHub's grammar), `email`, `hostname` or `url` (https only, no user info, kept in canonical form). There is no `pattern` and no `path`. |
 | `default` | Optional; it must be a valid value. A setting with no default and no value is **unset**, and so is an empty string. |
 | `required` | `true`: a call while the setting is unset fails before your handler runs. |
-| `confirm` | `true`: a change in conversation needs the user's own confirmation. Mark a setting that sends data somewhere, costs money, or acts for the user. Every `string` setting needs it anyway. |
+| `confirm` | `true`: a change in conversation needs the user's own confirmation. Mark a setting that sends data somewhere, costs money, or acts for the user. Every `string` setting needs it anyway. While no client is on countinghouse's tested list for that confirmation, such a setting is set at a terminal only (unless the operator sets a fixed value for it). |
 | `title`, `description` | Shown to the user and the agent: at most 64 and 512 characters. |
 
 - **The declaration is at most 16 KiB**, and a module that declares settings
@@ -744,7 +744,9 @@ module.exports = async function forecast(input, ctx) {
   The check covers every module the call can reach through its declared
   calls, so a part's missing setting fails the outer call too. The client is
   told which setting (`_meta["countinghouse/missingSettings"]`) and to ask
-  the user for it; for a part's, only that a module the tool calls needs a
+  the user to run the command that sets it in their own terminal, which asks
+  for the value (on a hosted runtime: that its operator sets it); for a
+  part's, only that a module the tool calls needs a
   setting made at a terminal (a part's settings are never named to a
   client).
 - **Needed only as a fallback** (most settings are a default for an input,
@@ -1399,13 +1401,39 @@ whole, so its code and message reach the client in either mode, and a
 composing module's `ctx.call` gets its details too. The callee's structured `.fault`
 reaches neither.
 
-**A short startup window remains, but it now says so.** A device appears in
-`tools/list` and can serve its own actions before composition verification
-has finished — that verification is asynchronous and runs after all modules
-are discovered. A call landing in that window is refused with
-`CTX_CALL_NOT_READY`, whose message says to retry, rather than being blamed
-on an auth config that is in fact correct. Treat that code as retryable and
-every other `CTX_CALL_*` code as a configuration bug.
+**A short startup window remains, and it is waited out.** A device appears in
+`tools/list` before composition verification has finished — that
+verification is asynchronous and runs after all modules are discovered. A
+call to it in that window is held until its verification is decided, and a
+`ctx.call` waits for it too, each for at most 25 s and 2 s inside the
+request's own timer. Past that, the call is refused with
+`CTX_CALL_NOT_READY`, whose message says to retry. Treat that code as
+retryable and every other `CTX_CALL_*` code as a configuration bug. The
+code says the call to the module that is not ready was not run. A held call
+is never sent until its module's verdict is decided, but the same code also
+reaches a client through a composing module that passes on its own
+`ctx.call`'s refusal, maybe after doing work of its own: such a module
+should say so in its answer.
+
+A module that fails its verification at startup is removed and never
+listed: a call held for it is answered as a call to any tool the caller
+can't use (on MCP, `unknown tool: <name>`, the same answer for every
+reason; on the REST routes, the route's one answer for a device the caller
+can't use, `MODULE_NOT_LISTED` (404); `DEVICE_NOT_FOUND` for a task's run). A
+module loaded later that fails its verification keeps serving its own
+actions, unbound: a call held for it goes on, and its `ctx.call` is refused.
+A module that ends while a call to it is held (an unload, a crash, a
+restart) answers that call at once, and the call is never sent. Over MCP,
+the answer is the one a new call to the tool would get at that moment: gone,
+the same `unknown tool` answer; restarting, `MODULE_RESTARTING`, retryable.
+On the REST routes, a held call that ends gone gets the route's one answer
+for a device the caller can't use, `MODULE_NOT_LISTED` (404). When a
+new version serves the tool after a retry (the module reloaded, in place or
+not), the held call gets `CTX_CALL_NOT_READY` and the client's retry is
+served. A module turned off or hidden while a call to it is held never runs
+that call: it gets the same `unknown tool` answer a new call gets. A held
+call whose client cancelled it, or whose request timer ran out, is never
+sent either.
 `examples/repo-review/token-comparison.js` waits for the server's "all
 module discovered" log line plus a settle buffer to stay out of the window
 entirely — see its comment on `waitForAllModulesDiscovered` for the full

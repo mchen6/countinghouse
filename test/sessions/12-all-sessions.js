@@ -26,6 +26,10 @@ const NO_MODULES = {modules: {}};
 
 const MiB = 1024 * 1024;
 
+// a list with a tested client (production's has none yet): the latch's own
+// refusal, and a restored lock that may be a decline's
+const TESTED = require('../../lib/elicitation-clients').listFrom({clients: [{name: 'claude-code', conditions: 'claude-code', tested: [{from: '2.1.323', before: '2.1.324'}]}]});
+
 describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', () => {
   const A = 'a'.repeat(32);
   const B = 'b'.repeat(32);
@@ -55,7 +59,7 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
     return s;
   };
   const ctx = (id, over = {}) => Object.assign({shared: true, session: id, clientInfo: CLIENT, capabilities: {elicitation: {form: {}}}, scope: 'all-sessions'}, over);
-  const tool = (o = {}) => settingsTool.create(Object.assign({mm: NO_MODULES, file, lockWaitMs: 200, ceiling: () => ({state: 'none'}),
+  const tool = (o = {}) => settingsTool.create(Object.assign({mm: NO_MODULES, file, lockWaitMs: 200, ceiling: () => ({state: 'none'}), allowlist: TESTED,
     sessionClient: (c) => ({ok: true, client: c.clientInfo}),
     growValidators: async (bytes) => { grown.push(bytes); }}, o));
   const stored = () => JSON.parse(fs.readFileSync(file, 'utf8')).values;
@@ -227,27 +231,55 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
     });
 
     // (A5: past the session's 32 recorded changes a tightening for all
-    // sessions still applies, recorded as one line and a count)
-    it('each is one of the asking session\'s 32 recorded changes; past them a tightening still applies', async () => {
+    // sessions still applies, recorded as one line and a count; it is not
+    // stored, so settings.json is never ahead of the history: it lasts until
+    // the runtime restarts, and the answer says so)
+    it('each is one of the asking session\'s 32 recorded changes; past them a tightening still applies, until the runtime restarts', async () => {
       const t0 = tool();
       for (let i = 0; i < 32; i++) await t0.set('requestTimeout', String(30000 - 1 - i), 'settings tool', ctx(A));
-      assert.strictEqual((await t0.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A))).new, 4 * MiB);
+      const stored = fs.readFileSync(file, 'utf8');
+      assert.deepStrictEqual(await t0.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A)), {name: 'maxOutputBytes', old: 16 * MiB, new: 4 * MiB, applies: 'all sessions, until the runtime restarts'});
       assert.strictEqual(options.maxOutputBytes, 4 * MiB);
-      assert.ok(JSON.parse(fs.readFileSync(file, 'utf8')).values.maxOutputBytes === 4 * MiB, 'stored');
+      assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 4 * MiB, 'every session at once');
+      assert.strictEqual(fs.readFileSync(file, 'utf8'), stored, 'settings.json unchanged');
+      // another session, within its own budget: stored, as before
       assert.strictEqual((await t0.set('maxOutputBytes', '3MiB', 'settings tool', ctx(B))).new, 3 * MiB, 'another session too');
+      assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).values.maxOutputBytes, 3 * MiB);
       // (#526's high, L3) recorded as every session's line, never the asking
       // session's private one; and a second past the budget is counted with
       // its latest value, never "asked again"
       const past = history().filter((h) => /past this session's 32/.test(String(h.change)));
       // (applied: said as `new`, never `asked`, which says a change not made)
-      assert.deepStrictEqual(past.map((h) => [h.change.split(',')[0], h.new, h.asked]), [['all sessions: tightened', 4 * MiB, undefined]], JSON.stringify(past));
+      // (its label says it is not stored, as the answer does)
+      assert.deepStrictEqual(past.map((h) => [h.change, h.new, h.asked]), [['all sessions, until the runtime restarts: tightened, past this session\'s 32 changes recorded one by one', 4 * MiB, undefined]], JSON.stringify(past));
       // every session reads it, not only the one that asked
       const seenByB = (await t0.get(ctx(B))).history.filter((h) => /past this session's 32/.test(String(h.change)));
       assert.strictEqual(seenByB.length, 1, JSON.stringify(seenByB));
-      await t0.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
+      const fileNow = fs.readFileSync(file, 'utf8');
+      assert.strictEqual((await t0.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A))).applies, 'all sessions, until the runtime restarts');
+      assert.strictEqual(fs.readFileSync(file, 'utf8'), fileNow, 'the second past the budget is not stored either');
       t0.writeCounts();
       const counted = history().filter((h) => /past this session's 32/.test(String(h.change)) && h.count != null);
       assert.deepStrictEqual(counted.map((h) => [h.count, h.latest, /asked again/.test(h.change)]), [[1, 2 * MiB, false]], JSON.stringify(counted));
+    });
+
+    // past the budget, taking back a raise stored for the next start is a
+    // tightening like any other, never refused: nothing changes now, the
+    // answer says until the runtime restarts (the stored raise still applies
+    // at the next start), and it is recorded as the others past the budget
+    it('past the budget, a stored raise taken back changes nothing now, is answered as until the runtime restarts, and is recorded past the budget', async () => {
+      const t0 = tool();
+      for (let i = 0; i < 32; i++) await t0.set('requestTimeout', String(30000 - 1 - i), 'settings tool', ctx(A));
+      const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+      raw.values.maxOutputBytes = 64 * MiB;   // ch-local settings set, for the next start
+      fs.writeFileSync(file, JSON.stringify(raw));
+      const before = fs.readFileSync(file, 'utf8');
+      sent.length = 0;
+      assert.deepStrictEqual(await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), {name: 'maxOutputBytes', old: 64 * MiB, new: 16 * MiB, applies: 'all sessions, until the runtime restarts'});
+      assert.strictEqual(fs.readFileSync(file, 'utf8'), before, 'settings.json unchanged: the raise still applies at the next start');
+      assert.strictEqual(options.maxOutputBytes, 16 * MiB);
+      assert.deepStrictEqual(sent, [], 'nothing in force changed');
+      assert.deepStrictEqual(history().filter((h) => h.setting === 'maxOutputBytes').map((h) => [h.new, h.change, h.scope]), [[16 * MiB, 'all sessions, until the runtime restarts: tightened, past this session\'s 32 changes recorded one by one', 'all-sessions']]);
     });
   });
 

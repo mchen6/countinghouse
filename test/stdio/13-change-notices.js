@@ -42,7 +42,7 @@ describe('stdio 13: pack change notices', () => {
   });
 
   // #449's high review, round 3, R: the runtime's own off notice (its
-  // callers bounded, both ways back) is said whole, still one line, at most
+  // callers bounded, the way back) is said whole, still one line, at most
   // OWN_NOTICE_MAX; a module's text keeps the 200 bound
   it('the runtime\'s own text may take a larger bound, at most OWN_NOTICE_MAX, still one line', () => {
     notices.add('ch-pack-x', `own\n${'o'.repeat(900)}`, {max: 1000});

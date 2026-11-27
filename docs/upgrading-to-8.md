@@ -340,7 +340,7 @@ you have to do. What the sandbox does and does not protect is in
   a `SharedArrayBuffer`, now fails the `ctx.call` there. A
   `SharedArrayBuffer` used to be shared between two modules' workers.
 - **New: `ctx.usage()`** resolves with the current `tools/call`'s counts so
-  far (`{calls, linesIn, bytesIn, tokensInEst, servers, sentence}`). A
+  far (`{calls, bytesIn, tokensInEst, servers, sentence}`). A
   scenario can put its receipt sentence in its own summary. It's `null`
   outside a counted call, and never carries a key or a caller.
 - **A scenario module may not have a top-level `receipt` output field**
@@ -433,7 +433,7 @@ says how to write a module for this.
 ## What MCP clients will notice
 
 - **A tool outside your key's grants is an unknown tool.** `tools/call` of
-  one now answers `-32602 unknown tool: <name>`, as a name never registered
+  one now answers `-32602 unknown tool: <name>; countinghouse_overview shows what is installed here and which tools you can use`, as a name never registered
   does, where it answered `-32603` "This apiKey does not have access to this
   device". So is a runtime tool your key isn't listed: an authoring tool
   for a key that is no admin's (it answered `ADMIN_REQUIRED`), and in the
@@ -514,6 +514,12 @@ says how to write a module for this.
   `countinghouse://m/<module>/<path>`, to the keys that may reach its module.
   `resources/read` runs the action as a `tools/call` would: authorized,
   validated, rate limited and billed.
+- **Change notices without a listen.** A 2025-11-25 client of a `--stdio`
+  runtime or of a shared runtime's session has no listen. Once it has listed
+  its prompts or resources, it is told `notifications/prompts/list_changed`
+  or `notifications/resources/list_changed` unasked, as it is told of its
+  tools, and initialize declares `listChanged` for both. A client that goes on
+  in 2026-07-28 after its initialize is told nothing unasked.
 - **Change notices on a listen.** `subscriptions/listen` also agrees to
   `resourcesListChanged`, `promptsListChanged` and `resourceSubscriptions`,
   on HTTP, stdio and a shared runtime's session.
@@ -601,7 +607,7 @@ says how to write a module for this.
 - **A scenario's result carries a receipt**
   ([module-authoring.md](module-authoring.md#the-receipt-and-the-usage-report)):
   `_meta['countinghouse/receipt']` holds the counts, and a second text block
-  holds its sentence (`read 48,210 lines (3.1 MB) in 14 calls to github; …`).
+  holds its sentence (`read 3.1 MB in 14 calls to github; …`).
   `structuredContent` is unchanged; a client that reads only
   `content[0].text` is unaffected.
 - **Different error codes from the bundled modules and examples:**
@@ -784,8 +790,13 @@ says how to write a module for this.
   module's data under `--moduleDataPath` and its `ctx.redis` keys (its
   namespace, `m:` plus the URI-encoded module name plus `:`, so `@acme/tool`'s
   keys are under `m:%40acme%2Ftool:`), so a later module of the same name inherits
-  neither; the answer gives `keysDeleted`. A purge that fails answers
-  `MODULE_KEYS_NOT_PURGED`. It never removes the module's code. Unload the
+  neither; the answer gives `keysDeleted`. The keys go first, then the
+  registry entry, then the data: a purge that fails answers
+  `MODULE_KEYS_NOT_PURGED` with the registry entry and the data kept (a
+  retry deletes the keys that are left); one that fails at the data, after
+  the keys and the entry are gone, answers `MODULE_DATA_NOT_REMOVED` with
+  the data kept, and a retry finishes it. It never removes the
+  module's code. Unload the
   module first ([reference](cli-and-api-reference.md)). A reload or an
   upgrade keeps the keys.
 - **For ch-local's single-identity runtime:**
@@ -793,7 +804,9 @@ says how to write a module for this.
     built-in **`countinghouse_settings`**. An agent reads the settings and
     tightens them within bounds. Raising a cap or a timeout, or turning a
     pack on, needs the user's own confirmation
-    (`SETTING_NEEDS_CONFIRMATION`, which names the terminal command); the
+    (`SETTING_NEEDS_CONFIRMATION`, which names the terminal command; made
+    there, a raised cap or timeout above what the runtime started with takes
+    effect when it next starts); the
     sandbox and automatic upgrades are loosened only from a terminal
     (`SETTING_LOOSENS_A_GUARD`). It works only in the single-identity profile:
     anywhere else, a hosted server or a start with `--authConfigPath` or

@@ -430,7 +430,7 @@
         "id": 1,
         "error": {
           "code": -32602,
-          "message": "unknown tool: error_shape_module_shapeservice_nope"
+          "message": "unknown tool: error_shape_module_shapeservice_nope; countinghouse_overview shows what is installed here and which tools you can use"
         }
       }
     },
@@ -442,7 +442,7 @@
           "id": 1,
           "error": {
             "code": -32602,
-            "message": "unknown tool: error_shape_module_shapeservice_nope"
+            "message": "unknown tool: error_shape_module_shapeservice_nope; countinghouse_overview shows what is installed here and which tools you can use"
           }
         }
       }
@@ -2783,7 +2783,7 @@
         "id": 1,
         "error": {
           "code": -32602,
-          "message": "unknown tool: error_shape_module_shapeservice_ok"
+          "message": "unknown tool: error_shape_module_shapeservice_ok; countinghouse_overview shows what is installed here and which tools you can use"
         }
       }
     },
@@ -2795,7 +2795,7 @@
           "id": 1,
           "error": {
             "code": -32602,
-            "message": "unknown tool: error_shape_module_shapeservice_ok"
+            "message": "unknown tool: error_shape_module_shapeservice_ok; countinghouse_overview shows what is installed here and which tools you can use"
           }
         }
       }
@@ -3033,7 +3033,7 @@
         "id": 1,
         "error": {
           "code": -32602,
-          "message": "unknown tool: error_shape_module_shapeservice_nope"
+          "message": "unknown tool: error_shape_module_shapeservice_nope; countinghouse_overview shows what is installed here and which tools you can use"
         }
       }
     },
@@ -3890,7 +3890,7 @@
         "id": 1,
         "error": {
           "code": -32602,
-          "message": "unknown tool: error_shape_module_shapeservice_ok"
+          "message": "unknown tool: error_shape_module_shapeservice_ok; countinghouse_overview shows what is installed here and which tools you can use"
         }
       }
     },

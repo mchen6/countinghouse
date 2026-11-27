@@ -161,12 +161,18 @@
         "notice": {
           "type": "string"
         },
+        "store": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "scenarios": {
           "type": "string"
         },
         "update": {
           "type": "string",
-          "description": "The last update check you asked for (ch-local upgrade --check), as it was left on this machine: countinghouse itself never checks for updates."
+          "description": "The last update check you asked for (ch-local upgrade --check), as it was left on this machine: the runtime itself never checks for updates; ch-local checks when you ask, or when automatic upgrades are on."
         }
       },
       "required": [
@@ -179,7 +185,7 @@
   },
   {
     "name": "countinghouse_usage_report",
-    "description": "What this countinghouse has done for you: per tool, server, scenario or module, the calls, the server calls made for them, and the lines and bytes read from servers and returned to the model, from this process and, where a usage directory is kept, earlier ones that wrote to it. On a shared runtime, the calls of this session only; in a session's own ch-local runtime, this session's calls since that runtime started. `countinghouse-usage --usageDir <the usage directory>` in a terminal covers every session that writes there. Token columns are an estimate (utf8 bytes / 4).",
+    "description": "What this countinghouse has done for you: per tool, server, scenario or module, the calls, the server calls made for them, and the bytes read from servers and returned to the model, from this process and, where a usage directory is kept, earlier ones that wrote to it. On a shared runtime, the calls of this session only; in a session's own ch-local runtime, this session's calls since that runtime started. `countinghouse-usage --usageDir <the usage directory>` in a terminal covers every session that writes there. Token columns are an estimate (utf8 bytes / 4).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -310,15 +316,7 @@
                 "type": "integer",
                 "minimum": 0
               },
-              "linesIn": {
-                "type": "integer",
-                "minimum": 0
-              },
               "bytesOut": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "linesOut": {
                 "type": "integer",
                 "minimum": 0
               },
@@ -337,9 +335,7 @@
               "calls",
               "serverCalls",
               "bytesIn",
-              "linesIn",
               "bytesOut",
-              "linesOut",
               "tokensInEst",
               "tokensOutEst"
             ],
@@ -367,15 +363,7 @@
               "type": "integer",
               "minimum": 0
             },
-            "linesIn": {
-              "type": "integer",
-              "minimum": 0
-            },
             "bytesOut": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "linesOut": {
               "type": "integer",
               "minimum": 0
             },
@@ -390,7 +378,7 @@
               "minimum": 0
             },
             "keptOut": {
-              "title": "tokens kept out of the model's context: an upper-bound estimate, not a measurement",
+              "title": "tokens of what the tools read that did not reach the model (an estimate: bytes / 4, counting all of it as if the model would have read it)",
               "type": "object",
               "properties": {
                 "estimate": {
@@ -400,17 +388,11 @@
                 "method": {
                   "type": "string",
                   "const": "utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), rounded per tool call; a call that asked is counted from its final pass only"
-                },
-                "bound": {
-                  "title": "upper: it takes the model to have read, without the tool, every byte the tool read",
-                  "type": "string",
-                  "const": "upper"
                 }
               },
               "required": [
                 "estimate",
-                "method",
-                "bound"
+                "method"
               ],
               "additionalProperties": false
             }
@@ -419,9 +401,7 @@
             "calls",
             "serverCalls",
             "bytesIn",
-            "linesIn",
             "bytesOut",
-            "linesOut",
             "tokensInEst",
             "tokensOutEst",
             "keptOut"
@@ -467,7 +447,7 @@
                 "minimum": 0
               },
               "keptOut": {
-                "title": "tokens kept out of the model's context: an upper-bound estimate, not a measurement",
+                "title": "tokens of what the tools read that did not reach the model (an estimate: bytes / 4, counting all of it as if the model would have read it)",
                 "type": "object",
                 "properties": {
                   "estimate": {
@@ -477,17 +457,11 @@
                   "method": {
                     "type": "string",
                     "const": "utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), rounded per tool call; a call that asked is counted from its final pass only"
-                  },
-                  "bound": {
-                    "title": "upper: it takes the model to have read, without the tool, every byte the tool read",
-                    "type": "string",
-                    "const": "upper"
                   }
                 },
                 "required": [
                   "estimate",
-                  "method",
-                  "bound"
+                  "method"
                 ],
                 "additionalProperties": false
               }
@@ -713,9 +687,6 @@
             "bytesIn": {
               "type": "integer"
             },
-            "linesIn": {
-              "type": "integer"
-            },
             "tokensInEst": {
               "type": "integer"
             },
@@ -733,7 +704,6 @@
           "required": [
             "serverCalls",
             "bytesIn",
-            "linesIn",
             "tokensInEst",
             "servers"
           ],

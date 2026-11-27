@@ -90,6 +90,6 @@ describe('stdio 42: a module going on or off is hidden (M4 Task 1)', function() 
     // job paths' refusal of a hidden module: sessions 35's bridge cases)
     const again = await io.control({type: 'load', name: 'ch-pack-kept', dirs: dirsOf(path.join(home, 'packs', 'ch-pack-kept', '1.0.0', 'node_modules', 'ch-pack-kept'))});
     assert.deepStrictEqual([again.ok, again.code], [false, 'CONTROL_FAILED'], JSON.stringify(again));
-    assert.ok(/ch-step-kept is still being unloaded; restart your client/.test(again.message), again.message);
+    assert.ok(/^ch-step-kept is still being unloaded, until countinghouse restarts$/.test(again.message), again.message);
   });
 });
