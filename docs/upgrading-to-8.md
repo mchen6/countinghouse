@@ -790,8 +790,13 @@ says how to write a module for this.
   module's data under `--moduleDataPath` and its `ctx.redis` keys (its
   namespace, `m:` plus the URI-encoded module name plus `:`, so `@acme/tool`'s
   keys are under `m:%40acme%2Ftool:`), so a later module of the same name inherits
-  neither; the answer gives `keysDeleted`. A purge that fails answers
-  `MODULE_KEYS_NOT_PURGED`. It never removes the module's code. Unload the
+  neither; the answer gives `keysDeleted`. The keys go first, then the
+  registry entry, then the data: a purge that fails answers
+  `MODULE_KEYS_NOT_PURGED` with the registry entry and the data kept (a
+  retry deletes the keys that are left); one that fails at the data, after
+  the keys and the entry are gone, answers `MODULE_DATA_NOT_REMOVED` with
+  the data kept, and a retry finishes it. It never removes the
+  module's code. Unload the
   module first ([reference](cli-and-api-reference.md)). A reload or an
   upgrade keeps the keys.
 - **For ch-local's single-identity runtime:**

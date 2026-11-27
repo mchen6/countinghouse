@@ -1,6 +1,7 @@
 {
   "require": [
     "test/helpers/require-thread-flag.js",
-    "test/helpers/port-guard.js"
+    "test/helpers/port-guard.js",
+    "test/helpers/stop-servers.js"
   ]
 }
