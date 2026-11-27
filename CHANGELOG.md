@@ -856,6 +856,16 @@ configuration). None of it is available to a hosted server.
 - **`POST /uninstall-module` deletes the module's `ctx.redis` keys** with its
   data (unless `keepData`), so a later module of the same name inherits none;
   the answer gains `keysDeleted`. A reload or an upgrade keeps them.
+- **`POST /uninstall-module` checks everything before it removes anything**,
+  then deletes the keys, then the registry entry, then the data directory. A
+  store that can't be reached now keeps the registry entry and the data
+  (`MODULE_KEYS_NOT_PURGED`, naming the store's error code; a retry deletes
+  what is left). A data directory the uninstall couldn't read or write in
+  (its permissions, a link that loops) is refused first with the new
+  `MODULE_DATA_UNREADABLE`, with nothing removed; one it would have kept as
+  someone else's is refused the same way, where before it was kept and
+  named in `kept`. A failed registry removal (`REMOVE_MODULE_INFO_FAIL`) now
+  says the keys may already be deleted.
 
 ### Added — `ctx.usage()`: the current call's counts so far
 

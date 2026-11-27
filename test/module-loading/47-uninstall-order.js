@@ -227,6 +227,16 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
     const sess = await uninstall('sess-mod');
     assert.strictEqual(sess.e && sess.e.code, 'MODULE_DATA_UNREADABLE', String(sess.e && sess.e.message));
     assert.ok(sess.e.message.startsWith(unreadableText(path.join(root, 'sess-mod', 'sessions'), 'EACCES')), sess.e.message);
+    fs.mkdirSync(path.join(root, 'nolist-mod', 'data'), {recursive: true});
+    lock(path.join(root, 'nolist-mod'), 0o300);
+    const nolist = await uninstall('nolist-mod');
+    assert.strictEqual(nolist.e && nolist.e.code, 'MODULE_DATA_UNREADABLE', String(nolist.e && nolist.e.message));
+    assert.ok(nolist.e.message.startsWith(unreadableText(path.join(root, 'nolist-mod'), 'EACCES')), nolist.e.message);
+    fs.mkdirSync(path.join(root, 'rodata-mod', 'data'), {recursive: true});
+    lock(path.join(root, 'rodata-mod', 'data'), 0o500);
+    const rodata = await uninstall('rodata-mod');
+    assert.strictEqual(rodata.e && rodata.e.code, 'MODULE_DATA_UNREADABLE', String(rodata.e && rodata.e.message));
+    assert.ok(rodata.e.message.startsWith(unreadableText(path.join(root, 'rodata-mod', 'data'), 'EACCES')), rodata.e.message);
     fs.mkdirSync(path.join(root, 'ro-mod', 'data'), {recursive: true});
     lock(path.join(root, 'ro-mod'), 0o500);
     const ro = await uninstall('ro-mod');
