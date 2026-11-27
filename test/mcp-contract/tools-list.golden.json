@@ -161,6 +161,12 @@
         "notice": {
           "type": "string"
         },
+        "store": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "scenarios": {
           "type": "string"
         },

@@ -129,7 +129,8 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
 
     // (the Fable high on #559, 2) /mcp's gates (the lists, tasks/*,
     // prompts/get, completion, resources/read) answer a ledger refusal with
-    // its catalogue status, 503, never HTTP 200: LIMIT_CODES lists both
+    // its catalogue status (500 corrupt, 503 unreadable), never HTTP 200:
+    // LIMIT_CODES lists both
     it('/mcp answers a ledger refusal with its catalogue status (500 corrupt, 503 unreadable), and no Retry-After of its own', () => {
       const ed = require('../../lib/mcp/error-data');
       for (const [code, status] of [['LEDGER_CORRUPT', 500], ['LEDGER_UNREADABLE', 503]]) {

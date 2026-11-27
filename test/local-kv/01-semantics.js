@@ -107,6 +107,25 @@ describe('local-kv 01: the review of B3', () => {
     kv.close();
   });
 
+  // (R-localkv-inf-scores) a sorted set's stored scores are numbers, or
+  // "inf" and "-inf" as kv.json keeps them: any other (null, as an older
+  // writer left Infinity, or text) is a malformed entry, dropped
+  it('a sorted set whose stored score is not a number, "inf" or "-inf" is malformed and dropped; "inf" and "-inf" read as themselves', async () => {
+    const tmp = require('../helpers/test-tmp');
+    const storePath = tmp.mkdtemp('ch-local-kv-01-inf-');
+    fs.writeFileSync(path.join(storePath, 'kv.json'), JSON.stringify({
+      nul: {t: 'zset', v: {a: null}}, txt: {t: 'zset', v: {a: 'high'}}, ok: {t: 'zset', v: {a: 'inf', b: '-inf', c: 2}}}));
+    const kv = new LocalKv({storePath});
+    try {
+      assert.deepStrictEqual(await run(kv, 'zrange', 'nul', 0, -1, 'WITHSCORES'), []);
+      assert.deepStrictEqual(await run(kv, 'zrange', 'txt', 0, -1, 'WITHSCORES'), []);
+      assert.deepStrictEqual(await run(kv, 'zrange', 'ok', 0, -1, 'WITHSCORES'), ['b', '-inf', 'c', '2', 'a', 'inf']);
+    } finally {
+      kv.close();
+      tmp.remove(storePath);
+    }
+  });
+
   it('multi: an arity error aborts the whole transaction (EXECABORT), and nothing is written', async () => {
     const kv = new LocalKv({storePath: tmpStore()});
     const err = await new Promise((resolve) => kv.multi().set('m', '1').get().exec((e) => resolve(e)));

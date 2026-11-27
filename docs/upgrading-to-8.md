@@ -799,7 +799,9 @@ says how to write a module for this.
     built-in **`countinghouse_settings`**. An agent reads the settings and
     tightens them within bounds. Raising a cap or a timeout, or turning a
     pack on, needs the user's own confirmation
-    (`SETTING_NEEDS_CONFIRMATION`, which names the terminal command); the
+    (`SETTING_NEEDS_CONFIRMATION`, which names the terminal command; made
+    there, a raised cap or timeout above what the runtime started with takes
+    effect when it next starts); the
     sandbox and automatic upgrades are loosened only from a terminal
     (`SETTING_LOOSENS_A_GUARD`). It works only in the single-identity profile:
     anywhere else, a hosted server or a start with `--authConfigPath` or
