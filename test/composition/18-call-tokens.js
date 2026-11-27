@@ -2527,6 +2527,56 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.deepStrictEqual(answered, ['CTX_CALL_NOT_READY']);
     });
 
+    it('a held run whose stored limits are malformed is held and run with the defaults, as an unheld run is', async () => {
+      const sent = [];
+      const answered = [];
+      const dev = proxy('d-h32', sent);
+      const dm = manager({'d-h32': dev}, bound, [], {n: 0});
+      DeviceManager.prototype.invokeJobs.call(dm, dev, 'd-h32', 'svc', 'act', {}, 'job-h32', (err) => answered.push(err && err.code), {ownerKey: `owner-${hex()}`, limits: {requestTimeout: 'soon', maxOutputBytes: -1}});
+      await turns();
+      assert.deepStrictEqual([sent.length, answered], [0, []], 'refused instead of held');
+      dm.verificationPass(null);
+      await turns();
+      await turns();
+      assert.deepStrictEqual([sent.length, answered], [1, []]);
+      tokens().drop(sent[0].args.token);
+    });
+
+    // a release only to the copy still serving: never into a worker that ended in the release's own turn, nor into a copy replaced since
+    // (sent: what reached the worker, so nothing sent means no handler ran)
+    it('a release whose target exits in the release\'s own turn sends nothing, answered as a fresh call then (gone)', async () => {
+      const sent = [];
+      const dev = proxy('d-h33', sent);
+      const dm = manager({'d-h33': dev}, bound, [], {n: 0});
+      const errs = [];
+      const s = session([]);
+      s.callback = (e) => errs.push(e);
+      DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h33', 'svc', 'act', {input: {}}, s);
+      dm.verificationPass(null);   // the relay acknowledged at once: the release queued
+      dev.exited = true;           // and the worker exits in that same turn (the exit handler marks it, then releases)
+      DeviceManager.releaseHeldOn(dev);
+      await turns();
+      await turns();
+      assert.deepStrictEqual([sent.length, ...uniform(errs)], [0, 1, 'DEVICE_NOT_FOUND', true]);
+    });
+
+    it('a release on a late ack from a copy replaced since sends nothing to it, answered not ready (the retry reaches the new copy)', async () => {
+      const sent = [];
+      const devA = proxy('d-h34', sent);
+      const devB = proxy('d-h34', []);
+      const dm = manager({'d-h34': devA}, bound, [], {n: 0});
+      let ack = null;
+      dm.relayComposition = (d, msg, cb) => { ack = cb; };
+      const answers = [];
+      DeviceManager.prototype.invokeAction.call(dm, devA, 'd-h34', 'svc', 'act', {input: {}}, session(answers));
+      dm.verificationPass(null);
+      dm.deviceMap['d-h34'] = devB;   // a reload (not in place) replaced A while A's relay was in flight
+      ack(null);
+      await turns();
+      await turns();
+      assert.deepStrictEqual([sent.length, answers], [0, ['CTX_CALL_NOT_READY']]);
+    });
+
     it('a held call never keeps the process alive: its timer and its poll are unref\'d', () => {
       const child = `
         const W = process.argv[1];

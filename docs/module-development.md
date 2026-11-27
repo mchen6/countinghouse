@@ -1415,7 +1415,8 @@ its own should say so in its answer.
 A module that fails its verification at startup is removed and never
 listed: a call held for it is answered as a call to any tool the caller
 can't use (on MCP, `unknown tool: <name>`, the same answer for every
-reason; `DEVICE_NOT_FOUND` on the REST routes and for a task's run). A
+reason; on the REST routes, the route's one answer for a device it doesn't
+list, `MODULE_NOT_LISTED` (404); `DEVICE_NOT_FOUND` for a task's run). A
 module loaded later that fails its verification keeps serving its own
 actions, unbound: a call held for it goes on, and its `ctx.call` is refused.
 A module that ends while a call to it is held (an unload, a crash, a
