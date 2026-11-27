@@ -29,10 +29,6 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {spawn} = require('child_process');
-const request = require('supertest');
-const {startServer, stopServer} = require('../helpers/sandbox-server');
-const {testPort} = require('../helpers/test-env');
-const {deviceIDForName} = require('../../lib/call-address');
 
 const ENTRY = path.join(__dirname, '..', '..', 'bin', 'countinghouse-stdio.js');
 
@@ -347,30 +343,6 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
       assert.strictEqual(r.error.message, 'unknown tool: compose_wait; countinghouse_overview shows what is installed here and which tools you can use');
     } finally {
       s.stop();
-    }
-  });
-
-  // What a REST call held for a module purged at its verdict is answered: the route's own answer for that device after the purge
-  // (a held call released by the purge goes through the same route answer as a fresh call then; docs/module-development.md says it)
-  it('over REST, a module purged at its verdict is answered with the route\'s answer for it after the purge', async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-composition-19-rest-'));
-    let server = null;
-    try {
-      const port = testPort(9803);
-      const key = `composition-19-${Date.now()}`;
-      const authFile = path.join(root, 'auth.json');
-      fs.writeFileSync(authFile, JSON.stringify({[key]: {userName: 'composition-19', devices: ['*']}}));
-      server = await startServer(port, ['--workerThread', '--store', 'local', '--storePath', path.join(root, 'store'), '--moduleDataPath', path.join(root, 'module_data'),
-        '--modulePath', path.join(root, 'modules'), '--authConfigPath', require('../helpers/private-auth').privateAuth(authFile),
-        '--loadModule', fixture(root, {badCall: true})]);
-      const res = await request(`http://127.0.0.1:${port}`).post(`/devices/${deviceIDForName('compose-wait')}/invoke-action`).set('X-CH-Key', key)
-        .send({serviceID: 'waitService', actionName: 'compose_wait', input: {n: 1}});
-      // (the module is still in the module map, only its device was purged, so the route takes it as listed and passes the device's
-      // own answer through: DEVICE_NOT_FOUND, 404)
-      assert.deepStrictEqual([res.status, res.body.code], [404, 'DEVICE_NOT_FOUND'], JSON.stringify(res.body));
-    } finally {
-      if (server != null) await stopServer(server);
-      fs.rmSync(root, {recursive: true, force: true});
     }
   });
 });

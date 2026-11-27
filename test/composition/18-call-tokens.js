@@ -2034,15 +2034,23 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     let logged = [];
     // user-auth, as the main thread reads it at a release (from require.cache on each use): a key in `revoked` has lost its grant
     const revoked = new Set();
+    // (set by a case: run on the lookup's own later turn, before it answers, as a slow provider's lookup would leave room for)
+    let duringLookup = null;
     const authPath = require.resolve('../../lib/user-auth');
     let savedAuth = null;
     before(() => {
       kept = optionsNow(); savedE = LOG.E; LOG.E = (e) => logged.push(String(e && e.message ? e.message : e));
       savedAuth = require.cache[authPath];
       require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,
-        exports: (a, b, deviceID, appKey, c, d, e, cb) => cb(revoked.has(appKey) ? Object.assign(new Error('no grant'), {code: 'DEVICE_ACCESS_DENIED'}) : null, {appKey: appKey})};
+        exports: (a, b, deviceID, appKey, c, d, e, cb) => {
+          const answer = () => cb(revoked.has(appKey) ? Object.assign(new Error('no grant'), {code: 'DEVICE_ACCESS_DENIED'}) : null, {appKey: appKey});
+          if (duringLookup == null) return answer();
+          const hook = duringLookup;
+          duringLookup = null;
+          return setImmediate(() => { hook(); answer(); });
+        }};
     });
-    beforeEach(() => { logged = []; revoked.clear(); cli.setOptions({workerThread: true, requestTimeout: 30}); });
+    beforeEach(() => { logged = []; revoked.clear(); duringLookup = null; cli.setOptions({workerThread: true, requestTimeout: 30}); });
     after(() => {
       LOG.E = savedE; restoreOptions(kept);
       if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
@@ -2274,13 +2282,14 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
 
     // a task's creation held the same way (untilVerdict): gone, as any tool the caller can't use ('purged'); restarting, created, as a
     // fresh creation is (its run waits for the module, retried by the runner)
-    for (const [what, ended, want] of [['gone', null, ['purged', 'DEVICE_NOT_FOUND']], ['restarting', {code: 'MODULE_RESTARTING', name: 'held'}, ['landed', undefined]]]) {
+    for (const [what, ended, want] of [['gone', null, ['purged', 'DEVICE_NOT_FOUND', undefined]], ['restarting', {code: 'MODULE_RESTARTING', name: 'held'}, ['landed', undefined, true]]]) {
       it(`a task's creation held for a device that ends is answered as a fresh one is then: ${what}`, async () => {
         const dev = proxy('d-h10', []);
         const dm = manager({'d-h10': dev}, () => {}, [], {n: 0});
         dm.moduleManager = {endedStateForDevice: () => ended};
         const decided = [];
-        dm.untilVerdict('d-h10', null, (d, err) => decided.push(d, err && err.code));
+        // (a creation that goes on after a hold is said to have been held: the gateway reads its grant again then)
+        dm.untilVerdict('d-h10', null, (d, err, held) => decided.push(d, err && err.code, held));
         await purging(dm, dev);
         assert.deepStrictEqual(decided, want);
       });
@@ -2738,6 +2747,68 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const r = require('child_process').spawnSync(process.execPath, ['-e', child, ROOT], {encoding: 'utf8', timeout: 30000});
       const out = JSON.parse(r.stdout.trim().split('\n').pop());
       assert.deepStrictEqual([out.checks, out.res && out.res.error && out.res.error.code, out.res && out.res.error && /^unknown tool: held_tool/.test(out.res.error.message)], [2, -32602, true], r.stdout + r.stderr);
+    });
+
+    it('a module turned off while a release reads its caller\'s grant: no handler runs, the uniform answer', async () => {
+      const visibility = require('../../lib/module-visibility');
+      const sent = [];
+      const dev = proxy('d-h42', sent);
+      const dm = manager({'d-h42': dev}, bound, [], {n: 0});
+      const errs = [];
+      const s = session([]);
+      s.callback = (e) => errs.push(e);
+      const before = visibility.configure({moduleOf: (id) => (id === 'd-h42' ? 'held-off-lookup' : null), changed: () => {}});
+      try {
+        DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h42', 'svc', 'act', {input: {}}, s);
+        duringLookup = () => visibility.hide(['held-off-lookup']);   // (listed when the release began; off by the time the lookup answers)
+        dm.verificationPass(null);
+        await turns();
+        await turns();
+        await turns();
+      } finally {
+        visibility.show(['held-off-lookup']);
+        visibility.configure(before);
+      }
+      assert.deepStrictEqual([sent.length, ...uniform(errs)], [0, 1, 'DEVICE_NOT_FOUND', true]);
+    });
+
+    it('over REST, a held call released gone (purged at its verdict, its grant revoked) is the route\'s one answer for a device the caller can\'t use', () => {
+      const {oneAnswerFor} = require('../../lib/routes/invoke-action');
+      const {CountinghouseError} = require('../../lib/countinghouse-error');
+      const gone = new CountinghouseError('DEVICE_NOT_FOUND');
+      Object.defineProperty(gone, 'goneAtVerdict', {value: true, enumerable: false});
+      // (the scope is not even asked: the main thread's own mark decides)
+      const answer = oneAnswerFor(null, 'd-h43')(gone);
+      const fresh = require('../../lib/listing-scope').notAvailable();
+      assert.deepStrictEqual([answer.code, answer.message], [fresh.code, fresh.message]);
+      assert.strictEqual(answer.code, 'MODULE_NOT_LISTED');
+    });
+
+    it('the held-call test hook writes nothing without the suite\'s marker, whatever COUNTINGHOUSE_TEST_HELD_LOG says', async () => {
+      const saved = {marker: process.env.COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG, held: process.env.COUNTINGHOUSE_TEST_HELD_LOG};
+      const savedI = LOG.I;
+      const said = [];
+      LOG.I = (m) => said.push(String(m && m.message ? m.message : m));
+      const put = (k, v) => { if (v == null) delete process.env[k]; else process.env[k] = v; };
+      try {
+        const seen = [];
+        for (const marker of [undefined, '1']) {
+          put('COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG', marker);
+          put('COUNTINGHOUSE_TEST_HELD_LOG', '1');
+          said.length = 0;
+          let ended = false;
+          const dm = manager({'d-h44': proxy('d-h44', [])}, () => {}, [], {n: 0});
+          dm.untilVerdict('d-h44', {requestTimeout: 2100}, () => { ended = true; });   // (a hold of 100 ms)
+          await until(() => ended, 5000, 'the hold ended');
+          seen.push(said.filter((l) => /test hook: a call held for/.test(l)).length);
+        }
+        // (none without the marker; its start and its end with it, the control)
+        assert.deepStrictEqual(seen, [0, 2]);
+      } finally {
+        LOG.I = savedI;
+        put('COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG', saved.marker);
+        put('COUNTINGHOUSE_TEST_HELD_LOG', saved.held);
+      }
     });
 
     it('a held call never keeps the process alive: its timer and its poll are unref\'d', () => {

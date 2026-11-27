@@ -1406,17 +1406,18 @@ call to it in that window is held until its verification is decided, and a
 `ctx.call` waits for it too, each for at most 25 s and 2 s inside the
 request's own timer. Past that, the call is refused with
 `CTX_CALL_NOT_READY`, whose message says to retry. Treat that code as
-retryable and every other `CTX_CALL_*` code as a configuration bug. A held
-call is never sent to the module until its verdict is decided, so a client
-that gets this code for its own call knows the handler did not run; a
-composing module that passes on its `ctx.call`'s refusal after doing work of
-its own should say so in its answer.
+retryable and every other `CTX_CALL_*` code as a configuration bug. The
+code says the call to the module that is not ready was not run. A held call
+is never sent until its module's verdict is decided, but the same code also
+reaches a client through a composing module that passes on its own
+`ctx.call`'s refusal, maybe after doing work of its own: such a module
+should say so in its answer.
 
 A module that fails its verification at startup is removed and never
 listed: a call held for it is answered as a call to any tool the caller
 can't use (on MCP, `unknown tool: <name>`, the same answer for every
-reason; on the REST routes, `DEVICE_NOT_FOUND` (404), the device's own
-answer, since its module stays loaded; `DEVICE_NOT_FOUND` for a task's run). A
+reason; on the REST routes, the route's one answer for a device the caller
+can't use, `MODULE_NOT_LISTED` (404); `DEVICE_NOT_FOUND` for a task's run). A
 module loaded later that fails its verification keeps serving its own
 actions, unbound: a call held for it goes on, and its `ctx.call` is refused.
 A module that ends while a call to it is held (an unload, a crash, a
