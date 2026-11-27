@@ -1,0 +1,6 @@
+{
+  "name": "asks-unusable",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "description": "A long-running action that asks a question no form can show (a hidden character in its enum), so its task's run starts again at once."
+}

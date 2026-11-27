@@ -1,0 +1,49 @@
+{
+  "askService": {
+    "probe": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 32
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "asked": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "runs": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asked"
+        ]
+      },
+      "questions": {
+        "pick": {
+          "type": "object",
+          "properties": {
+            "when": {
+              "type": "string",
+              "enum": [
+                "now\u200b",
+                "later"
+              ]
+            }
+          },
+          "required": [
+            "when"
+          ]
+        }
+      }
+    }
+  }
+}
