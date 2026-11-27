@@ -73,7 +73,7 @@ describe('auth 55: behind a stale grant set, userAuth still refuses a revoked de
       assert.deepStrictEqual({code: stale.error.code, message: stale.error.message}, {code: -32603, message: NO_DEVICE});
       await new Promise((r) => setTimeout(r, 5100));
       const lapsed = await call(extra);
-      assert.deepStrictEqual(lapsed.error, {code: -32602, message: `unknown tool: ${TOOL}`});
+      assert.deepStrictEqual(lapsed.error, {code: -32602, message: `unknown tool: ${TOOL}; countinghouse_overview shows what is installed here and which tools you can use`});
     });
   }
 

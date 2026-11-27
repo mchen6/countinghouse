@@ -233,6 +233,9 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
           delete dm.deviceMap[GONE_LATE];
           return session.callbackWithoutTimer(new CountinghouseError('DEVICE_NOT_FOUND', deviceID));
         }
+        // a call held for its module's verdict and released without running (the main thread's own mark, from its one maker),
+        // the device still in the map (its module stays loaded)
+        if (actionName === 'held-gone') return session.callbackWithoutTimer(require('../../lib/device-manager').prototype.heldAnswerNow.call({listedNow: () => false}, deviceID));
         if (actionName === 'named-missing') return session.callbackWithoutTimer(new CountinghouseError('ACTION_NOT_FOUND', actionName));
         if (actionName === 'crossed-missing') return session.callbackWithoutTimer(new CountinghouseError('ACTION_NOT_FOUND'));
         // a missing service (named, as countinghouse-device raises it)
@@ -431,6 +434,11 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
     it('invoke-action: a device gone between the check and the dispatch answers the same one answer', async () => {
       const late = await call(ROUTES[0], GONE_LATE);
       assert.strictEqual(late, JSON.stringify({status: 404, body: {code: 'MODULE_NOT_LISTED', message: CODES.MODULE_NOT_LISTED.en, kind: 'caller'}}));
+    });
+
+    it('invoke-action: a call held for its module\'s verdict and released gone answers the same one answer, its device still listed', async () => {
+      const held = await call(ROUTES[0], LISTED, {serviceID: SERVICE, actionName: 'held-gone', input: {}});
+      assert.strictEqual(held, JSON.stringify({status: 404, body: {code: 'MODULE_NOT_LISTED', message: CODES.MODULE_NOT_LISTED.en, kind: 'caller'}}));
     });
 
     it('invoke-action: an action its declared text leaves unusable answers as a missing one, byte for byte, however the missing one was raised', async () => {
