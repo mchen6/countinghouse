@@ -38,8 +38,8 @@ ready to tag. If it expires, delete it and create it again.
    match package.json, or a commit not on master) and push the tag:
 
 ```
-git tag v7.2.0 <sha>
-git push origin v7.2.0
+git tag v8.0.0 <sha>
+git push origin v8.0.0
 ```
 
 The workflow checks the npm version (11.5.1 or later is required), prints

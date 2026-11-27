@@ -8,7 +8,7 @@ This project follows [semantic versioning](https://semver.org/), where the
 public surface is the CLI flags, the MCP contract, the module format, and
 the auth config.
 
-## Unreleased
+## 8.0.0
 
 - In a shared runtime, a session's tightening of a cap for all sessions past its 32 recorded changes still applies at once to every session, but is no longer written to `settings.json`: it lasts until the runtime restarts, and the answer's `applies` and its history line say `all sessions, until the runtime restarts`. Past the budget, taking back a raise stored for the next start changes nothing now and is answered the same way, since the stored raise still applies at the next start. Its history was one line and a count written later, so the stored value was ahead of the history, and ch-local's next start reported the runtime's own change as one made outside. A tightening made at a terminal is stored as before.
 - The runtime, its shipped packages and its docs are in English only. `--locale` and the `locale` setting are removed: passing `--locale` has no effect, and every message is in English. `echo-device-client-module`'s service and action are now `x` and `API`; its tool name is unchanged.
