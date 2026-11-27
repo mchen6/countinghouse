@@ -1569,7 +1569,7 @@ and every one is bounded.
   one never registered, and the runtime's own `countinghouse_*` tools,
   enabled or not. A known key: a name never registered, a tool outside its
   grants (an unlisted part's too) and one hidden while its module goes on
-  or off all answer `unknown tool: <name>`, byte for byte, and so does a
+  or off all answer `unknown tool: <name>; countinghouse_overview shows what is installed here and which tools you can use`, byte for byte, and so does a
   runtime tool not listed to it: an authoring tool for a key that is no
   admin's (whatever `--authoringTools` says), and in the single-identity
   profile the built-ins it hides (outside it, `countinghouse_settings`). A

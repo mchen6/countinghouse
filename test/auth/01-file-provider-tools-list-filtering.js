@@ -189,7 +189,7 @@ describe('auth 01: FileAuthProvider drives HTTP invoke-action, /device-list, and
       assert.strictEqual(outside.status, never.status);
       assert.strictEqual(outside.body.result, undefined, JSON.stringify(outside.body));
       assert.strictEqual(JSON.stringify(outside.body).split(TOOL).join('<name>'), JSON.stringify(never.body).split(NEVER).join('<name>'));
-      assert.strictEqual(outside.body.error.message, `unknown tool: ${TOOL}`);
+      assert.strictEqual(outside.body.error.message, `unknown tool: ${TOOL}; countinghouse_overview shows what is installed here and which tools you can use`);
     });
   }
 });

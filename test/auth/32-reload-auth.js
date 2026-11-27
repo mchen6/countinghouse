@@ -198,7 +198,7 @@ describe('auth 32: reloading the auth config without a restart', function() {
       write([]);
       assert.strictEqual((await reloadBy()).status, 200);
       const revoked = await echo();
-      assert.deepStrictEqual(revoked.body.error, {code: -32602, message: 'unknown tool: echo_device_echoservice_echo'});
+      assert.deepStrictEqual(revoked.body.error, {code: -32602, message: 'unknown tool: echo_device_echoservice_echo; countinghouse_overview shows what is installed here and which tools you can use'});
     });
   }
 });

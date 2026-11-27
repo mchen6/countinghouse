@@ -37,7 +37,7 @@ describe('stdio 15: countinghouse_settings, spawned', function() {
     io.notify({jsonrpc: '2.0', method: 'notifications/initialized'});
     assert.ok(!(await listed()).includes('countinghouse_settings'), withoutRedisNoise(io.err));
     const r = await call(2, {action: 'get'});
-    assert.deepStrictEqual(r.error, {code: -32602, message: 'unknown tool: countinghouse_settings'});
+    assert.deepStrictEqual(r.error, {code: -32602, message: 'unknown tool: countinghouse_settings; countinghouse_overview shows what is installed here and which tools you can use'});
   });
 
   it('with --settingsFile: listed; get answers; a tightening set is written; a loosening is refused and changes nothing', async () => {

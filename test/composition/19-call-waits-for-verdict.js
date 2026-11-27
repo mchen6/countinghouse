@@ -281,6 +281,7 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
       assert.ok(waited < 15000, `answered when it was purged (${waited} ms)`);
       assert.strictEqual(created.result, undefined, JSON.stringify(created));
       assert.strictEqual(created.error.code, -32602);
+      assert.strictEqual(created.error.message, 'unknown tool: compose_wait; countinghouse_overview shows what is installed here and which tools you can use');
     } finally {
       s.stop();
     }
@@ -333,6 +334,7 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
       const shape = (x) => ({keys: Object.keys(x).sort(), code: x.error && x.error.code, message: x.error && x.error.message.replace(/never_registered_tool|compose_wait/, '<name>'), data: x.error && x.error.data});
       assert.deepStrictEqual(shape(r), shape(fresh), `${JSON.stringify(r)} / ${JSON.stringify(fresh)}`);
       assert.strictEqual(r.result, undefined);
+      assert.strictEqual(r.error.message, 'unknown tool: compose_wait; countinghouse_overview shows what is installed here and which tools you can use');
     } finally {
       s.stop();
     }
