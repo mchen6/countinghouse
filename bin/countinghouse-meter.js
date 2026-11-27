@@ -90,8 +90,9 @@ if (store === 'local') {
   });
 } else {
   // (db 0, the ledger's, as lib/store.js's metering opens it; one field of
-  // the hash set, its free-call counts kept)
-  const client = require('redis').createClient(argv.redisUrl != null ? argv.redisUrl : DEFAULT_REDIS_URL, {db: 0});
+  // the hash set, its free-call counts kept; a lib/redis-resilient client,
+  // as every node_redis client: R-redis-drop-spin)
+  const client = require('../lib/redis-resilient').createClient(argv.redisUrl != null ? argv.redisUrl : DEFAULT_REDIS_URL, {db: 0});
   // (the error's code only: a connection string can hold a password)
   client.on('error', (err) => fail(`Redis could not be reached (${err.code || 'error'})`));
   client.hset(id, 'balance', String(balance), (err) => {

@@ -39,4 +39,18 @@ describe('store 02: the store is the only place a Redis client or a job queue is
     }
     assert.deepStrictEqual(offenders, []);
   });
+
+  // Every node_redis client the repo makes is a lib/redis-resilient one, whose
+  // offline-queue drain can't spin (R-redis-drop-spin): outside lib/ (the
+  // runtime and its CLIs, not tests or examples) nothing requires 'redis'.
+  it('outside lib/, the runtime and its CLIs never require node_redis themselves', () => {
+    const ROOT = path.resolve(LIB, '..');
+    const own = ['framework.js', ...['bin', 'scripts'].flatMap((d) => files(path.join(ROOT, d)).map((f) => `${d}/${f}`)),
+      ...fs.readdirSync(path.join(ROOT, 'bin')).filter((f) => !f.endsWith('.js')).map((f) => `bin/${f}`)];
+    const offenders = own.filter((f) => {
+      const code = fs.readFileSync(path.join(ROOT, f), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+      return RULES[0].pattern.test(code);
+    });
+    assert.deepStrictEqual(offenders, []);
+  });
 });
