@@ -408,6 +408,45 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
     assert.ok(err != null && err.notRealPath === 'linkp-mod', String(err && err.message));
   });
 
+  it('<name>/\'s own rmdir failing otherwise than not empty (a read-only disk): MODULE_DATA_NOT_REMOVED, never a success with it kept', async () => {
+    const root = dataRoot();
+    fs.mkdirSync(path.join(root, 'rofs-mod'), {recursive: true});
+    const fsp = require('fs/promises');
+    const realRmdir = fsp.rmdir;
+    fsp.rmdir = function(p, ...rest) {
+      if (String(p) === path.join(root, 'rofs-mod')) return Promise.reject(Object.assign(new Error('read-only file system'), {code: 'EROFS'}));
+      return realRmdir.call(this, p, ...rest);
+    };
+    let res;
+    try { res = await uninstall('rofs-mod'); } finally { fsp.rmdir = realRmdir; }
+    assert.strictEqual(res.e && res.e.code, 'MODULE_DATA_NOT_REMOVED', String(res.e && res.e.message));
+    assert.ok(res.e.message.includes('(EROFS)'), res.e.message);
+  });
+
+  it('a newline in an fs message stays escaped in the log line: a module\'s file name writes no line of its own', async () => {
+    const root = dataRoot();
+    fs.mkdirSync(path.join(root, 'nl-mod', 'sessions', 'f'.repeat(32), 'data'), {recursive: true});
+    const partition = require('../../lib/session-partition');
+    const realRemove = partition.remove;
+    partition.remove = () => Promise.reject(Object.assign(new Error('EACCES: open \'data/x\n2026-11-27 module: other: forged\''), {code: 'EACCES'}));
+    const logged = [];
+    const realW = LOG.W;
+    LOG.W = (line) => { logged.push(String(line)); };
+    try { await uninstall('nl-mod'); } finally { partition.remove = realRemove; LOG.W = realW; }
+    const line = logged.find((l) => l.includes('its data directory was not removed'));
+    assert.ok(line != null && !line.includes('\n') && line.includes('\\n'), JSON.stringify(logged));
+  });
+
+  it('session-partition\'s walk that can\'t read a directory on the way is an error with its code, never a link refusal', async function() {
+    if (!permissionsBite) return this.skip();
+    const root = dataRoot();
+    fs.mkdirSync(path.join(root, 'shutp-mod', 'sessions'), {recursive: true});
+    lock(path.join(root, 'shutp-mod'), 0o000);
+    const partition = require('../../lib/session-partition');
+    const err = await partition.remove(root, {}, 'shutp-mod', 'a'.repeat(32), {keys: false}).then(() => null, (e) => e);
+    assert.ok(err != null && err.code === 'EACCES' && err.notRealPath === undefined, String(err && err.message));
+  });
+
   it('MODULE_DATA_NOT_REMOVED is in the catalogue, an operator\'s and not retryable, its text word for word', () => {
     const c = CODES.MODULE_DATA_NOT_REMOVED;
     assert.deepStrictEqual([c.kind, c.retryable, c.httpStatus], ['operator', false, 500]);
