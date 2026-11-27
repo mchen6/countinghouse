@@ -985,5 +985,78 @@ describe('store 04: a write after a corrupt file builds from this process\'s map
     }
   });
 
+  // (the medium on 3a134c1e, 1) local-kv reloads on an interval and a balance
+  // check reloads: a second reload() found no file and took {} as the map
+  it('reload() again and again after the file was found corrupt keeps the map, and the next write is all of it', () => {
+    const file = path.join(corruptDirs.mkdtemp('ch-store-04-corrupt-'), 'm.json');
+    const f = openJsonFile(file, {debounceMs: 60000});
+    try {
+      f.set('a', 1); f.set('z', 9);
+      f.flush();
+      fs.writeFileSync(file, '{"broken": ');
+      f.reload(); f.reload(); f.reload();
+      assert.deepStrictEqual(f.data, {a: 1, z: 9}, 'the map in memory as it was');
+      f.set('b', 2);
+      f.flush();
+      assert.deepStrictEqual(onDisk(file), {a: 1, z: 9, b: 2});
+    } finally {
+      f.close();
+    }
+  });
+
+  // (the medium on 3a134c1e, 5) the file moved aside is removed too, as a
+  // whole store reset removes it: the store is gone, not rebuilt from memory
+  it('once the file moved aside is removed as well, the next write is only the unwritten keys', () => {
+    const dir = corruptDirs.mkdtemp('ch-store-04-corrupt-');
+    const file = path.join(dir, 'm.json');
+    const f = openJsonFile(file, {debounceMs: 60000});
+    try {
+      f.set('a', 1);
+      f.flush();
+      fs.writeFileSync(file, '{"broken": ');
+      f.reload();
+      const aside = fs.readdirSync(dir).filter((e) => e.startsWith('m.json.corrupt-'));
+      assert.strictEqual(aside.length, 1, 'moved aside');
+      fs.unlinkSync(path.join(dir, aside[0]));
+      f.set('c', 3);
+      f.flush();
+      assert.deepStrictEqual(onDisk(file), {c: 3});
+    } finally {
+      f.close();
+    }
+  });
+
+  // (the medium on 3a134c1e, 3) a value set and not yet written is the one
+  // update()'s fn is handed: it was the map's own object, so a refused rename
+  // tried again ran fn on the already-changed record (Windows, as above)
+  winIt('a record set and not yet written, then a charge whose rename is refused once, spends one free call (Windows)', async () => {
+    const dir = corruptDirs.mkdtemp('ch-store-04-corrupt-');
+    const file = path.join(dir, 'metering.json');
+    const apiKey = `k-${require('crypto').randomBytes(8).toString('hex')}`;
+    const id = meterId(apiKey);
+    const provider = new LocalMeteringProvider({meter: true, storePath: dir});
+    const rename = fs.renameSync;
+    let answer = null;
+    try {
+      provider.file.set(id, {balance: 10, toolPriceRecord: {t: {count: 2}}});
+      let refused = 0;
+      fs.renameSync = function(from, to) {
+        if (refused === 0 && to === file && String(from).startsWith(`${file}.tmp-`)) {
+          refused += 1;
+          throw Object.assign(new Error(`EPERM: operation not permitted, rename '${from}' -> '${to}'`), {code: 'EPERM', syscall: 'rename'});
+        }
+        return rename.apply(this, arguments);
+      };
+      answer = await new Promise((resolve, reject) => provider.recordCall(apiKey, 't', 5, (err, a) => (err != null ? reject(err) : resolve(a))));
+      assert.strictEqual(refused, 1, 'the first rename was refused');
+    } finally {
+      fs.renameSync = rename;
+      provider.close();
+    }
+    assert.ok(fs.renameSync === rename, 'the stub is gone');
+    assert.deepStrictEqual(answer, {tool: 't', charged: 0, balance: 10, remainingFreeCalls: 1});
+    assert.deepStrictEqual(onDisk(file), {[id]: {balance: 10, toolPriceRecord: {t: {count: 1}}}});
+  });
+
   corruptDirs.hooks();
 });
