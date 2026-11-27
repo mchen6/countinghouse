@@ -10,8 +10,7 @@ const net = require('net');
 const path = require('path');
 const redis = require('redis');
 const {startServer, stopServer, post} = require('../helpers/sandbox-server');
-const {testPort, redisUrlFor} = require('../helpers/test-env');
-const {mkdtemp} = require('../helpers/test-tmp');
+const {testPort, redisUrlFor, redisConnectionFor} = require('../helpers/test-env');
 const {CODES} = require('../../lib/error-catalogue');
 const ns = require('../../lib/redis-namespace');
 
@@ -19,7 +18,10 @@ const PORT = testPort(9834);
 const PROXY_PORT = testPort(9835);
 const KEY = 'k';
 const KV_DB = require('../../lib/store').KV_REDIS_DB;
-const REAL_REDIS = (() => { const u = new URL(redisUrlFor()); return {host: u.hostname, port: Number(u.port) || 6379}; })();
+// The proxy forwards to the test's own Redis; the server is given the test's
+// URL with only its host and port changed to the proxy's (any userinfo kept)
+const REAL_REDIS = (() => { const c = redisConnectionFor(0); return {host: c.host, port: c.port}; })();
+const PROXIED_URL = (() => { const u = new URL(redisUrlFor()); u.hostname = '127.0.0.1'; u.port = String(PROXY_PORT); u.pathname = ''; return u.toString(); })();
 const NAME = `ghost-mod-${process.pid}`;
 
 function redisProxy() {
@@ -53,6 +55,7 @@ describe('sandbox 73: an uninstall whose store is down removes nothing', functio
   let server = null;
   let base = null;
   let direct = null;
+  const trees = require('../helpers/test-tmp').forFile(['uninstall-down-']);
   const cmd = (name, ...args) => new Promise((resolve, reject) => direct[name](...args, (e, r) => (e ? reject(e) : resolve(r))));
   const keys = [`${ns.prefixFor(NAME)}a`, `${ns.prefixFor(NAME)}b`];
 
@@ -64,12 +67,11 @@ describe('sandbox 73: an uninstall whose store is down removes nothing', functio
     stopServer(server);
     if (proxyUp) await proxy.down();
     if (direct != null) { await cmd('del', keys).catch(() => {}); direct.quit(); }
-    if (base != null) fs.rmSync(base, {recursive: true, force: true});
   });
 
   it('the two texts, word for word', () => {
     assert.strictEqual(CODES.MODULE_KEYS_NOT_PURGED.en,
-      "The module's stored data could not be deleted, so nothing was removed: its registry entry and data directory are kept -- try the uninstall again once the store answers");
+      "The module's stored data could not all be deleted ({code}): its registry entry and data directory are kept, and some of its stored data may already be deleted -- try the uninstall again: it deletes what is left");
     assert.strictEqual(CODES.REMOVE_MODULE_INFO_FAIL.en,
       "Failed to remove the module's registry entry -- its data directory was kept; its stored data was deleted unless the uninstall was asked to keep it; uninstall again to finish; the server log has the reason");
   });
@@ -77,7 +79,7 @@ describe('sandbox 73: an uninstall whose store is down removes nothing', functio
   it('registry mode, the store down: MODULE_KEYS_NOT_PURGED, and the registry row, the data and the keys all as they were', async function() {
     let sqlite3 = null;
     try { sqlite3 = require('sqlite3'); } catch (e) { return this.skip(); }
-    base = mkdtemp('uninstall-down-');
+    base = trees.mkdtemp('uninstall-down-');
     const modulesDir = path.join(base, 'modules');
     const store = path.join(base, 'store');
     fs.mkdirSync(modulesDir);
@@ -92,11 +94,13 @@ describe('sandbox 73: an uninstall whose store is down removes nothing', functio
     await proxy.up();
     proxyUp = true;
     server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleSandbox', 'audit',
-      '--redisUrl', `redis://127.0.0.1:${PROXY_PORT}`, '--modulePath', modulesDir, '--moduleDataPath', store, '--moduleRegistry']);
+      '--redisUrl', PROXIED_URL, '--modulePath', modulesDir, '--moduleDataPath', store, '--moduleRegistry']);
     await proxy.down();
     proxyUp = false;
     const r = await post(PORT, KEY, '/uninstall-module', {name: NAME});
     assert.strictEqual(r.body && r.body.code, 'MODULE_KEYS_NOT_PURGED', JSON.stringify(r.body));
+    // (the store's error code named, and nothing else of its error)
+    assert.ok(/^The module's stored data could not all be deleted \([A-Z][A-Z0-9_]*\): /.test(r.body.message), r.body.message);
     const rows = await new Promise((resolve, reject) => {
       const d = new sqlite3.Database(dbFile);
       d.all('SELECT name FROM module_info WHERE name = ?', [NAME], (e, got) => d.close(() => (e ? reject(e) : resolve(got))));
@@ -105,4 +109,6 @@ describe('sandbox 73: an uninstall whose store is down removes nothing', functio
     assert.ok(fs.existsSync(path.join(store, NAME, 'data')), 'the data is still there');
     assert.deepStrictEqual(await Promise.all(keys.map((k) => cmd('get', k))), ['kept', 'kept'], 'the keys are still there');
   });
+
+  trees.hooks();
 });
