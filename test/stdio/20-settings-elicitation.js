@@ -30,7 +30,11 @@ const SC = '@countinghouse/ch-pack-ci-failure-triage';
 const EN = `enabled.${SC}`;
 const ON_TEXT = (v) => `Turn on ${SC} ${v} in countinghouse for all your sessions? It stays on, now and after a restart, until it is turned off.`;
 
-describe('stdio 20: the settings tool asks the user in a dialog, and applies a confirmed change for this start only (part 3 P2)', () => {
+describe('stdio 20: the settings tool asks the user in a dialog, and applies a confirmed change for this start only (part 3 P2)', function() {
+  // (each case's work -- stages, confirms, history lines on disk -- ends
+  // with itself; a slow Windows runner took over mocha's 2 s default on one,
+  // master's run 46040609989: 20 s at most, as stdio 01's)
+  this.timeout(20000);
   let dir;
   let file;
   let saved;
@@ -96,11 +100,7 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
     assert.deepStrictEqual(applied, []);
   });
 
-  // (six rounds of stage, confirm and a history line on disk, each awaited:
-  // over mocha's 2 s default on a slow Windows runner, master's run
-  // 46040609989; the bound is the work's own end, 20 s at most)
-  it('declined, cancelled or not strictly true: nothing changes, and that kind is not asked again this start', async function() {
-    this.timeout(20000);
+  it('declined, cancelled or not strictly true: nothing changes, and that kind is not asked again this start', async () => {
     for (const [i, answer] of [{action: 'decline'}, {action: 'cancel'}, {action: 'accept', content: {approve: false}},
       {action: 'accept', content: {approve: 'true'}}, {action: 'accept', content: {approve: 1}}, {action: 'accept'}].entries()) {
       confirmModule.resetForTests();
@@ -255,7 +255,11 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
   });
 });
 
-describe('stdio 20b: the review of Tasks 1-3 (part 3 P2)', () => {
+describe('stdio 20b: the review of Tasks 1-3 (part 3 P2)', function() {
+  // (each case's work -- stages, confirms, history lines on disk -- ends
+  // with itself; a slow Windows runner took over mocha's 2 s default on one,
+  // master's run 46040609989: 20 s at most, as stdio 01's)
+  this.timeout(20000);
   const MiB2 = 1024 * 1024;
   let dir;
   let file;
@@ -369,7 +373,11 @@ describe('stdio 20b: the review of Tasks 1-3 (part 3 P2)', () => {
   });
 });
 
-describe('stdio 20c: the security review of #213 (part 3 P2)', () => {
+describe('stdio 20c: the security review of #213 (part 3 P2)', function() {
+  // (each case's work -- stages, confirms, history lines on disk -- ends
+  // with itself; a slow Windows runner took over mocha's 2 s default on one,
+  // master's run 46040609989: 20 s at most, as stdio 01's)
+  this.timeout(20000);
   const M = 1024 * 1024;
   let dir;
   let file;
@@ -482,7 +490,11 @@ describe('stdio 20c: the security review of #213 (part 3 P2)', () => {
   });
 });
 
-describe('stdio 20d: #213\'s nits (part 3 P2, Task 4)', () => {
+describe('stdio 20d: #213\'s nits (part 3 P2, Task 4)', function() {
+  // (each case's work -- stages, confirms, history lines on disk -- ends
+  // with itself; a slow Windows runner took over mocha's 2 s default on one,
+  // master's run 46040609989: 20 s at most, as stdio 01's)
+  this.timeout(20000);
   const M = 1024 * 1024;
   let dir;
   let file;
@@ -554,7 +566,11 @@ describe('stdio 20d: #213\'s nits (part 3 P2, Task 4)', () => {
   });
 });
 
-describe('stdio 20e: Task 4\'s review (part 3 P2)', () => {
+describe('stdio 20e: Task 4\'s review (part 3 P2)', function() {
+  // (each case's work -- stages, confirms, history lines on disk -- ends
+  // with itself; a slow Windows runner took over mocha's 2 s default on one,
+  // master's run 46040609989: 20 s at most, as stdio 01's)
+  this.timeout(20000);
   const M = 1024 * 1024;
   let dir;
   let file;
@@ -594,7 +610,11 @@ describe('stdio 20e: Task 4\'s review (part 3 P2)', () => {
   });
 });
 
-describe('stdio 20f: #216\'s review (part 3 P2)', () => {
+describe('stdio 20f: #216\'s review (part 3 P2)', function() {
+  // (each case's work -- stages, confirms, history lines on disk -- ends
+  // with itself; a slow Windows runner took over mocha's 2 s default on one,
+  // master's run 46040609989: 20 s at most, as stdio 01's)
+  this.timeout(20000);
   it('cacheOnly compares the key only: the Windows 5-minute re-read never makes a fresh pre-lock read look changed', () => {
     settingsTool.resetForTests();
     let t = 1000;
@@ -610,7 +630,11 @@ describe('stdio 20f: #216\'s review (part 3 P2)', () => {
   });
 });
 
-describe('stdio 20g: the confirmed change applied, this start only (part 3 P2, Task 5)', () => {
+describe('stdio 20g: the confirmed change applied, this start only (part 3 P2, Task 5)', function() {
+  // (each case's work -- stages, confirms, history lines on disk -- ends
+  // with itself; a slow Windows runner took over mocha's 2 s default on one,
+  // master's run 46040609989: 20 s at most, as stdio 01's)
+  this.timeout(20000);
   const M = 1024 * 1024;
   let saved;
   beforeEach(() => {
@@ -678,7 +702,11 @@ describe('stdio 20g: the confirmed change applied, this start only (part 3 P2, T
   });
 });
 
-describe('stdio 20h: never silent, for confirmed changes (part 3 P2, Task 6)', () => {
+describe('stdio 20h: never silent, for confirmed changes (part 3 P2, Task 6)', function() {
+  // (each case's work -- stages, confirms, history lines on disk -- ends
+  // with itself; a slow Windows runner took over mocha's 2 s default on one,
+  // master's run 46040609989: 20 s at most, as stdio 01's)
+  this.timeout(20000);
   const M = 1024 * 1024;
   const notices = require('../../lib/notices');
   const LOG = require('../../lib/logger');
@@ -726,7 +754,11 @@ describe('stdio 20h: never silent, for confirmed changes (part 3 P2, Task 6)', (
   });
 });
 
-describe('stdio 20i: Task 5\'s review (part 3 P2)', () => {
+describe('stdio 20i: Task 5\'s review (part 3 P2)', function() {
+  // (each case's work -- stages, confirms, history lines on disk -- ends
+  // with itself; a slow Windows runner took over mocha's 2 s default on one,
+  // master's run 46040609989: 20 s at most, as stdio 01's)
+  this.timeout(20000);
   const M = 1024 * 1024;
   let saved;
   beforeEach(() => {
@@ -788,7 +820,11 @@ describe('stdio 20i: Task 5\'s review (part 3 P2)', () => {
   });
 });
 
-describe('stdio 20j: #222\'s review (part 3 P2)', () => {
+describe('stdio 20j: #222\'s review (part 3 P2)', function() {
+  // (each case's work -- stages, confirms, history lines on disk -- ends
+  // with itself; a slow Windows runner took over mocha's 2 s default on one,
+  // master's run 46040609989: 20 s at most, as stdio 01's)
+  this.timeout(20000);
   const M = 1024 * 1024;
   const notices = require('../../lib/notices');
   let dir;
