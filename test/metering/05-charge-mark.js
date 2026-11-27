@@ -217,7 +217,7 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       assert.ok(logged.some(([w, l]) => w === 'E' && l === 'the usage ledger (Redis) can\'t be reached (NR_CLOSED); charged calls are refused until it answers'), JSON.stringify(logged));
     });
 
-    it('one key\'s record of the wrong type refuses that key alone, LEDGER_UNWRITABLE, until its own probe can charge it; said by its fingerprint', async () => {
+    it('one key\'s record of the wrong type refuses that key alone, LEDGER_RECORD_INVALID (not retryable), until its own probe can charge it; said by its fingerprint', async () => {
       const client = fakeClient();
       const provider = make(client);
       const A = `${KEY}-a`;
@@ -226,18 +226,18 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       let bad = true;
       client.evalErr = (key) => ((bad && key === meterId(A)) ? Object.assign(new Error('WRONGTYPE Operation against a key holding the wrong kind of value'), {code: 'WRONGTYPE'}) : null);
       assert.strictEqual((await chargeAs(provider, A)).code, 'WRONGTYPE');
-      assert.strictEqual((await askAs(provider, A)).code, 'LEDGER_UNWRITABLE');
+      assert.strictEqual((await askAs(provider, A)).code, 'LEDGER_RECORD_INVALID');
       assert.strictEqual(await askAs(provider, B), null, 'another key is not refused');
       assert.strictEqual(provider._chargeMark.marked(), false, 'the provider is not marked');
       clock += 1000;
-      assert.strictEqual((await askAs(provider, A)).code, 'LEDGER_UNWRITABLE');
+      assert.strictEqual((await askAs(provider, A)).code, 'LEDGER_RECORD_INVALID');
       assert.strictEqual(client.recordProbes, 1);
       bad = false;
       clock += 1000;
       assert.strictEqual(await askAs(provider, A), null);
       assert.deepStrictEqual(logged.filter(([, l]) => l.includes('the usage record of')), [
-        ['E', `the usage record of ${keyFingerprint(A)} can't be charged (WRONGTYPE); its charged calls are refused until it can be`],
-        ['I', `the usage record of ${keyFingerprint(A)} can be charged again; its charged calls are served`]]);
+        ['E', `the usage record of ${keyFingerprint(A)} can't be read (WRONGTYPE); its charged calls are refused until it is repaired`],
+        ['I', `the usage record of ${keyFingerprint(A)} can be read again; its charged calls are served`]]);
       assert.ok(!logged.some(([, l]) => l.includes(A) || l.includes(meterId(A))), JSON.stringify(logged));
     });
 
@@ -249,7 +249,7 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       await charge(provider);
       const err = await askAs(provider, KEY);
       assert.strictEqual(err && err.code, 'LEDGER_RECORD_INVALID');
-      assert.strictEqual(CODES.LEDGER_RECORD_INVALID.en, 'This key\'s usage record can\'t be read, so its charged calls are refused until it is repaired; the runtime\'s log names the record');
+      assert.strictEqual(CODES.LEDGER_RECORD_INVALID.en, 'This key\'s usage record can\'t be read, so its charged calls are refused until the operator repairs it; the runtime\'s log names the record');
       assert.deepStrictEqual([CODES.LEDGER_RECORD_INVALID.kind, CODES.LEDGER_RECORD_INVALID.retryable, CODES.LEDGER_RECORD_INVALID.httpStatus], ['operator', false, 500]);
     });
 
