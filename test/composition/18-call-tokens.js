@@ -2116,12 +2116,14 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.deepStrictEqual([sent.length, answered, tokens().size()], [0, ['CTX_CALL_NOT_READY'], before]);
     });
 
-    // the device object a call waits on ends (an unload, a crash, a restart, its worker's exit): answered at once and unsent, with the
-    // one answer to any tool the caller can't use, whatever ended it (DEVICE_NOT_FOUND, marked goneAtVerdict: the gateway answers it
-    // from unknownToolResponse, as notSeen)
+    // the device object a call waits on ends (an unload, a crash, a restart, its worker's exit): answered at once and unsent, with
+    // what a fresh call to the tool gets then: gone, the one answer to any tool the caller can't use (DEVICE_NOT_FOUND, marked
+    // goneAtVerdict: the gateway answers it from unknownToolResponse, as notSeen); restarting, still listed, its retryable code
     const uniform = (errs) => [errs.length, errs[0] && errs[0].code, errs[0] != null && errs[0].goneAtVerdict === true];
-    for (const [what, ended] of [['unloaded', null], ['restarting', {code: 'MODULE_RESTARTING', name: 'held'}]]) {
-      it(`a held call whose device ends is answered at once, unsent, with the uniform answer: ${what}`, async () => {
+    for (const [what, ended, want] of [
+      ['unloaded', null, ['DEVICE_NOT_FOUND', true]],
+      ['restarting', {code: 'MODULE_RESTARTING', name: 'held'}, ['MODULE_RESTARTING', false]]]) {
+      it(`a held call whose device ends is answered at once, unsent, as a fresh call is then: ${what}`, async () => {
         const sent = [];
         const dev = proxy('d-h7', sent);
         const dm = manager({'d-h7': dev}, () => {}, [], {n: 0});
@@ -2131,7 +2133,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         s.callback = (e) => errs.push(e);
         DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h7', 'svc', 'act', {input: {}}, s);
         await purging(dm, dev);
-        assert.deepStrictEqual([sent.length, ...uniform(errs)], [0, 1, 'DEVICE_NOT_FOUND', true]);
+        assert.deepStrictEqual([sent.length, ...uniform(errs)], [0, 1, ...want]);
       });
     }
 
@@ -2250,15 +2252,106 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.deepStrictEqual([sent.length, answers], [0, ['CTX_CALL_NOT_READY']]);
     });
 
-    // a task's creation held the same way (untilVerdict): any end of its device answers it as any tool the caller can't use
-    it('a task\'s creation held for a device that ends is answered as gone (the gateway\'s unknownToolResponse)', async () => {
-      const dev = proxy('d-h10', []);
-      const dm = manager({'d-h10': dev}, () => {}, [], {n: 0});
-      dm.moduleManager = {endedStateForDevice: () => ({code: 'MODULE_RESTARTING', name: 'held'})};
-      const decided = [];
-      dm.untilVerdict('d-h10', null, (d) => decided.push(d));
+    // a task's creation held the same way (untilVerdict): gone, as any tool the caller can't use ('purged'); restarting, refused with
+    // its code, as a fresh creation's run would be
+    for (const [what, ended, want] of [['gone', null, ['purged', 'DEVICE_NOT_FOUND']], ['restarting', {code: 'MODULE_RESTARTING', name: 'held'}, ['refused', 'MODULE_RESTARTING']]]) {
+      it(`a task's creation held for a device that ends is answered as a fresh one is then: ${what}`, async () => {
+        const dev = proxy('d-h10', []);
+        const dm = manager({'d-h10': dev}, () => {}, [], {n: 0});
+        dm.moduleManager = {endedStateForDevice: () => ended};
+        const decided = [];
+        dm.untilVerdict('d-h10', null, (d, err) => decided.push(d, err && err.code));
+        await purging(dm, dev);
+        assert.deepStrictEqual(decided, want);
+      });
+    }
+
+    it('a session worker\'s exit leaves the calls held on its siblings held (an end is of the target a call holds, never a shared verdict)', async () => {
+      cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
+      const {SessionModuleRecord} = require('../../lib/session-module-record');
+      const sent = [];
+      const rec = Object.assign(Object.create(SessionModuleRecord.prototype), {hostModuleName: 'held', deviceList: {'d-h16': {}}, bindings: {}});
+      const wmA = Object.assign(proxy('d-h16', sent), {bindings: rec.bindings});
+      const wmB = Object.assign(proxy('d-h16', sent), {bindings: rec.bindings});
+      const answers = [];
+      DeviceManager.prototype.invokeAction.call(manager({'d-h16': rec}, () => {}, [], {n: 0}), wmA, 'd-h16', 'svc', 'act', {input: {}}, session(answers));
+      DeviceManager.releaseHeldOn(wmB);
+      await turns();
+      assert.deepStrictEqual([sent.length, answers], [0, []], 'released by a sibling worker\'s exit');
+      await until(() => answers.length > 0, 5000, 'answered at its own bound');
+      assert.deepStrictEqual([sent.length, answers], [0, ['CTX_CALL_NOT_READY']]);
+    });
+
+    it('a task\'s run held while its job is given up on never runs: no token, nothing sent, nothing answered', async () => {
+      const sent = [];
+      const answered = [];
+      const dev = proxy('d-h17', sent);
+      const dm = manager({'d-h17': dev}, bound, [], {n: 0});
+      let gaveUp = false;
+      const before = tokens().size();
+      DeviceManager.prototype.invokeJobs.call(dm, dev, 'd-h17', 'svc', 'act', {}, 'job-h17', (err) => answered.push(err && err.code), {ownerKey: `owner-${hex()}`}, () => gaveUp);
+      gaveUp = true;
+      dm.verificationPass(null);
+      await turns();
+      await turns();
+      assert.deepStrictEqual([sent.length, tokens().size(), answered, DeviceManager.verdictHeldOn(dev)], [0, before, [], 0]);
+    });
+
+    // a caller that ended while its call was held (answered at its deadline, cancelled) ends the hold then: no longer a call in flight
+    for (const [what, ends] of [['cancelled', (s) => { s.cancelled = true; }], ['its deadline answered it', (s) => { s.timer = null; }]]) {
+      it(`a held call whose caller ended stops counting for a drain then, not at its verdict or bound: ${what}`, async () => {
+        const dev = Object.assign(proxy('d-h18', []), {msgQueue: {}, inFlight: () => false});
+        const dm = manager({'d-h18': dev}, () => {}, [], {n: 0});
+        const s = session([]);
+        DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h18', 'svc', 'act', {input: {}}, s);
+        assert.strictEqual(DeviceManager.verdictHeldOn(dev), 1);
+        ends(s);
+        await until(() => DeviceManager.verdictHeldOn(dev) === 0, 2000, 'the hold ended with its caller');
+      });
+    }
+
+    it('a held call cancelled meanwhile is answered as a cancel before its send, never with its verdict\'s answer', async () => {
+      const sent = [];
+      const dev = proxy('d-h19', sent);
+      const dm = manager({'d-h19': dev}, (cb) => cb(new Error('a target not declared')), [], {n: 0});
+      const errs = [];
+      const s = session([]);
+      s.callback = (e) => errs.push(e && e.code);
+      DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h19', 'svc', 'act', {input: {}}, s);
+      s.cancelled = true;
+      dm.verificationPass(null);
+      await turns();
+      await turns();
+      // (as send() answers a call cancelled before it was sent: the gateway writes nothing and records it cancelled)
+      assert.deepStrictEqual([sent.length, errs], [0, ['CALL_TOKEN_INVALID']]);
+    });
+
+    it('a held call never keeps the process alive: its timer and its poll are unref\'d', () => {
+      const child = `
+        const W = process.argv[1];
+        require(W + '/lib/cli-options').setOptions({workerThread: true, requestTimeout: 30});
+        const DeviceManager = require(W + '/lib/device-manager');
+        const dm = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {'d-x': {bindings: null, workerId: 1}}});
+        dm.untilVerdict('d-x', null, () => {});
+        console.log('held', DeviceManager.verdictHeldOn(dm.deviceMap['d-x']));`;
+      const t0 = Date.now();
+      const r = require('child_process').spawnSync(process.execPath, ['-e', child, ROOT], {encoding: 'utf8', timeout: 15000});
+      assert.deepStrictEqual([r.status, r.signal, r.stdout.trim()], [0, null, 'held 1'], r.stderr);
+      assert.ok(Date.now() - t0 < 12000, `the process waited out the hold (${Date.now() - t0} ms)`);
+    });
+
+    it('two ends of one held call in the same turn answer it once (a worker\'s exit and its purge)', async () => {
+      const sent = [];
+      const dev = proxy('d-h20', sent);
+      const dm = manager({'d-h20': dev}, () => {}, [], {n: 0});
+      const errs = [];
+      const s = session([]);
+      s.callback = (e) => errs.push(e && e.code);
+      DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h20', 'svc', 'act', {input: {}}, s);
+      DeviceManager.releaseHeldOn(dev);
       await purging(dm, dev);
-      assert.deepStrictEqual(decided, ['purged']);
+      await turns();
+      assert.deepStrictEqual([sent.length, errs.length], [0, 1]);
     });
 
     it('a held call is a call in flight for a drain: an in-place reload\'s and a session worker pool\'s', async () => {
