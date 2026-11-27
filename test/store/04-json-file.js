@@ -889,3 +889,101 @@ describe('store 04: a flush outlasts a reader holding the file (R-exit-flush-ref
 
   flushDirs.hooks();
 });
+
+// R-free-counter-double: a file found corrupt is moved aside, and the write
+// then builds from this process's own map. Two paths built from that map
+// by mistake: (1, Windows) update() tries a refused rename again, and its
+// second attempt found no file (the first had moved it aside), so it built
+// from nothing -- the record's free call counted as never there, the other
+// keys dropped -- and the first attempt's fn had already changed the map's
+// own nested objects (metering's free-call counter); (2, everywhere) a
+// reload() that found the file corrupt moved it aside, and the next write
+// found no file and wrote only the unwritten keys: the map's other keys
+// lost from the file and from memory.
+const corruptDirs = require('../helpers/test-tmp').forFile(['ch-store-04-corrupt-']);
+
+describe('store 04: a write after a corrupt file builds from this process\'s map, once (R-free-counter-double)', function() {
+  this.timeout(60000);
+  const winIt = process.platform === 'win32' ? it : it.skip;
+  const {meterId} = require('../../lib/key-fingerprint');
+  const LocalMeteringProvider = require('../../lib/metering/local-provider');
+
+  // (Windows: only there is a refused rename tried again -- renameRefused in
+  // lib/store/json-file.js -- so the retry this case needs runs nowhere else)
+  winIt('a charge whose rename is refused once, on a file found corrupt, spends one free call and keeps the other keys (Windows)', async () => {
+    const dir = corruptDirs.mkdtemp('ch-store-04-corrupt-');
+    const file = path.join(dir, 'metering.json');
+    const apiKey = `k-${require('crypto').randomBytes(8).toString('hex')}`;
+    const id = meterId(apiKey);
+    const seeded = {other: {balance: 3, toolPriceRecord: {}}};
+    seeded[id] = {balance: 10, toolPriceRecord: {t: {count: 2}}};
+    fs.writeFileSync(file, JSON.stringify(seeded));
+    const provider = new LocalMeteringProvider({meter: true, storePath: dir});
+    const rename = fs.renameSync;
+    let answer = null;
+    try {
+      fs.writeFileSync(file, '{"broken": ');
+      // the first rename of a new file over the store's file refused, as
+      // another process's open handle refuses it; the move-aside goes through
+      let refused = 0;
+      fs.renameSync = function(from, to) {
+        if (refused === 0 && to === file && String(from).startsWith(`${file}.tmp-`)) {
+          refused += 1;
+          throw Object.assign(new Error(`EPERM: operation not permitted, rename '${from}' -> '${to}'`), {code: 'EPERM', syscall: 'rename'});
+        }
+        return rename.apply(this, arguments);
+      };
+      answer = await new Promise((resolve, reject) => provider.recordCall(apiKey, 't', 5, (err, a) => (err != null ? reject(err) : resolve(a))));
+      assert.strictEqual(refused, 1, 'the first rename was refused');
+    } finally {
+      fs.renameSync = rename;
+      provider.close();
+    }
+    assert.ok(fs.renameSync === rename, 'the stub is gone');
+    assert.deepStrictEqual(answer, {tool: 't', charged: 0, balance: 10, remainingFreeCalls: 1});
+    assert.deepStrictEqual(onDisk(file), {other: {balance: 3, toolPriceRecord: {}}, [id]: {balance: 10, toolPriceRecord: {t: {count: 1}}}});
+  });
+
+  it('a reload() that finds the file corrupt loses no key: the next write is this process\'s whole map, an own __proto__ key too', () => {
+    const file = path.join(corruptDirs.mkdtemp('ch-store-04-corrupt-'), 'm.json');
+    const f = openJsonFile(file, {debounceMs: 60000});
+    try {
+      f.set('a', {n: 1});
+      f.set('__proto__', {own: true});
+      f.flush();
+      fs.writeFileSync(file, '{"broken": ');
+      f.reload();
+      f.set('b', {n: 2});
+      f.flush();
+      const disk = onDisk(file);
+      assert.deepStrictEqual(Object.keys(disk).sort(), ['__proto__', 'a', 'b']);
+      assert.deepStrictEqual([disk.a, Object.getOwnPropertyDescriptor(disk, '__proto__').value, disk.b], [{n: 1}, {own: true}, {n: 2}]);
+      assert.deepStrictEqual(Object.keys(f.data).sort(), ['__proto__', 'a', 'b'], 'the map in memory kept them too');
+      assert.deepStrictEqual(Object.getOwnPropertyDescriptor(f.data, '__proto__').value, {own: true});
+      assert.ok(Object.getPrototypeOf(f.data) === Object.prototype, 'an own key, not the prototype');
+    } finally {
+      f.close();
+    }
+  });
+
+  it('once a write has landed, a file removed later is the file as it is now: only the unwritten keys', () => {
+    const file = path.join(corruptDirs.mkdtemp('ch-store-04-corrupt-'), 'm.json');
+    const f = openJsonFile(file, {debounceMs: 60000});
+    try {
+      f.set('a', 1);
+      f.flush();
+      fs.writeFileSync(file, '{"broken": ');
+      f.set('b', 2);
+      f.flush();
+      assert.deepStrictEqual(onDisk(file), {a: 1, b: 2}, 'the corrupt file rewritten from the whole map');
+      fs.unlinkSync(file);
+      f.set('c', 3);
+      f.flush();
+      assert.deepStrictEqual(onDisk(file), {c: 3});
+    } finally {
+      f.close();
+    }
+  });
+
+  corruptDirs.hooks();
+});
