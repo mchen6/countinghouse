@@ -2008,12 +2008,12 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
   lockedDirs.hooks();
 });
 
-// R-store-short-write: writeAtomic wrote the map with one fs.writeSync and
+// writeAtomic once wrote the map with one fs.writeSync and
 // never read its count; a short write (a full disk) left a truncated temp
 // file, renamed over the good one. Each write is now continued until every
 // byte is down, and one that makes no progress fails before the rename.
 const shortDirs = require('../helpers/test-tmp').forFile(['ch-store-04-short-']);
-describe('store 04: a write that stops short (R-store-short-write)', function() {
+describe('store 04: a write that stops short', function() {
   this.timeout(30000);
   const logger = require('../../lib/logger');
   const real = {writeSync: fs.writeSync, openSync: fs.openSync, closeSync: fs.closeSync, W: logger.W};
