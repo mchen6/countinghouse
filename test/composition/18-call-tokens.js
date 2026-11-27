@@ -3017,12 +3017,13 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     });
 
     it('at its bound (its caller\'s time, at most 25 s) answers its caller CTX_CALL_NOT_READY, nothing sent, no token issued', async () => {
-      cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
-      const {dm, caller, sent, replies, token} = setup(() => {});
+      const {dm, caller, callee, sent, replies, token} = setup(() => {});
       const before = tokens().size();
       try {
         dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm2', caller, token);
-        await until(() => replies.length > 0, 5000, 'answered at its bound');
+        await turns();
+        DeviceManager.atBoundOnForTests(callee);   // (its bound, as its timer reaches it)
+        await until(() => replies.length > 0, 2000, 'answered at its bound');
         assert.deepStrictEqual([sent.length, replies[0].errCode, tokens().size()], [0, 'CTX_CALL_NOT_READY', before]);
       } finally {
         for (const m of sent) tokens().drop(m.args.token);
@@ -3033,14 +3034,15 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     // at its bound the hop runs once more as a fresh one would, its own checks with it: the callee's listing, the caller's access,
     // the missing-device path; a callee still undecided then is not ready only for a caller its access check let through
     it('at its bound, a callee turned off during the hold: the answer for a device not listed, nothing sent', async () => {
-      cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
       const visibility = require('../../lib/module-visibility');
-      const {dm, caller, sent, replies, token} = setup(() => {});
+      const {dm, caller, callee, sent, replies, token} = setup(() => {});
       const before = visibility.configure({moduleOf: (id) => (id === CALLEE ? 'hop-off' : null), changed: () => {}});
       try {
         dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm4', caller, token);
+        await turns();
         visibility.hide(['hop-off']);
-        await until(() => replies.length > 0, 5000, 'answered at its bound');
+        DeviceManager.atBoundOnForTests(callee);   // (its bound, as its timer reaches it)
+        await until(() => replies.length > 0, 2000, 'answered at its bound');
       } finally {
         visibility.show(['hop-off']);
         visibility.configure(before);
@@ -3181,6 +3183,45 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         await until(() => deadlineOn(next).length === 1 || replies.length > 0, 2000, 'held on the new copy, or answered');
         assert.deepStrictEqual([replies.map((r) => r.errCode), deadlineOn(next)], [[], first]);
         DeviceManager.releaseHeldOn(next);
+      } finally {
+        dm.workerFor = pick;
+        tokens().drop(token);
+      }
+    });
+
+    // a pick that keeps finding an undecided copy while the map's entry is decided (a session worker whose bindings are not its
+    // record's): held on that copy, never run again at once, pass after pass, until its deadline
+    it('a pick that keeps finding an undecided copy beside a decided map entry: held on that copy, never run pass after pass', async () => {
+      const {dm, caller, callee, replies, token} = setup(() => {});
+      callee.bindings = {[CALLEE]: {identity: 'callee-id', module: 'C', targets: new Set()}};   // (the map's entry: decided)
+      const stray = worker(CALLEE, []);
+      const pick = dm.workerFor;
+      let picks = 0;
+      dm.workerFor = (...a) => { picks++; return a[2](null, stray); };
+      try {
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm18', caller, token);
+        await turns();
+        await turns();
+        assert.deepStrictEqual([picks, DeviceManager.verdictHeldOn(stray), replies.length], [1, 1, 0]);
+        DeviceManager.releaseHeldOn(stray);
+      } finally {
+        dm.workerFor = pick;
+        tokens().drop(token);
+      }
+    });
+
+    // held before its callee is picked: a callee undecided in the map holds the hop with no pick made (none of a session's workers
+    // started for it), and its usage claim checked once it runs
+    it('a callee undecided in the map: held before any pick, none made while it waits', async () => {
+      const {dm, caller, callee, replies, token} = setup(() => {});
+      const pick = dm.workerFor;
+      let picks = 0;
+      dm.workerFor = (...a) => { picks++; return pick.apply(dm, a); };
+      try {
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm19', caller, token);
+        await turns();
+        assert.deepStrictEqual([picks, DeviceManager.verdictHeldOn(callee), replies.length], [0, 1, 0]);
+        DeviceManager.releaseHeldOn(callee);
       } finally {
         dm.workerFor = pick;
         tokens().drop(token);
@@ -3416,9 +3457,15 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm17-other', caller, other);
         await turns();
         assert.deepStrictEqual([DeviceManager.verdictHeldOn(callee), replies.length], [65, 1]);
+        // (a hop's own hops count with its outer call: a token chained to it holds none more)
+        const child = tokens().issue({billingKey: `k-${hex()}`, identityKey: 'caller-id', module: 'S', workerId: caller.workerId, deviceID: CALLER, ttlMs: 60000, parent: token});
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm17-child', caller, child);
+        await until(() => replies.length > 1, 2000, 'the chained one answered');
+        assert.deepStrictEqual(replies.map((r) => [r.msgID, r.errCode])[1], ['m17-child', 'CTX_CALL_NOT_READY']);
+        tokens().drop(child);
         // (its holds ended, its count is free again)
         tokens().drop(token);
-        await until(() => replies.length === 65, 2000, 'its held hops answered once its call went');
+        await until(() => replies.length === 66, 2000, 'its held hops answered once its call went');
         assert.strictEqual(DeviceManager.verdictHeldOn(callee), 1);
       } finally {
         tokens().drop(token);
