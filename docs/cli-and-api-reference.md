@@ -123,11 +123,18 @@ a module passes on from a part's call is the module's answer (kind
 `tools/call` -- a key over its budget (`tools/list`, `prompts/list`,
 `prompts/get`, `completion/complete`, `tasks/*`, a resource read), an
 address over `--unauthRateLimit`, a key or session with as many
-subscriptions open as it may have (`TOO_MANY_SUBSCRIPTIONS`), and the
-runtime at its limit (`RUNTIME_BUSY`) -- is the JSON-RPC error -32000, the
-catalogue's message (or the subscription limit's own), and the same keys in
-its `error.data`. A single request's is sent with its code's HTTP status,
-429 (503 for `RUNTIME_BUSY`), and `Retry-After` when a hint was written. A
+subscriptions open as it may have (`TOO_MANY_SUBSCRIPTIONS`), the
+runtime at its limit (`RUNTIME_BUSY`), and a local usage ledger that can't
+be used (`LEDGER_UNREADABLE`, retryable: it can't be read right now;
+`LEDGER_CORRUPT`, not retryable: it is corrupt and this runtime holds no
+copy of it, so it must be repaired as the runtime's log says) -- is the
+JSON-RPC error -32000, the catalogue's message (or the subscription limit's
+own), and the same keys in its `error.data`. A single request's is sent
+with its code's HTTP status, 429 (503 for `RUNTIME_BUSY` and
+`LEDGER_UNREADABLE`, 500 for `LEDGER_CORRUPT`), and `Retry-After` when a
+hint was written (never for the ledger's two). A `tools/call` refused for
+the ledger is a tool error result with the same code; a balance asked for
+answers the same codes. A
 legacy batch stays 200, with `Retry-After` the longest hint among its
 limited messages.
 
@@ -207,6 +214,7 @@ when `<moduleDataPath>/<name>` is gone. Errors:
 | `MODULE_NAME_INVALID` | `name` is not a valid npm package name |
 | `MODULE_LOADED` | the module is loaded, restarting or suspended: unload it first |
 | `REMOVE_MODULE_INFO_FAIL` | the registry entry could not be removed; nothing was deleted |
+| `MODULE_STORE_CORRUPT` | the local store file that holds the module's keys (`kv.json`) is corrupt and this runtime holds no copy of it: nothing was removed, the registry entry included; repair the store (the runtime's log says how), then uninstall again. Not retryable as it is |
 | `MODULE_KEYS_NOT_PURGED` | the module's keys could not be deleted (the store did not answer within 30 s); its data directory was kept, its registry entry already removed |
 | `MODULE_DATA_NOT_DIRECTORY` | the data directory is a link or a file; it is left alone, remove it by hand |
 
