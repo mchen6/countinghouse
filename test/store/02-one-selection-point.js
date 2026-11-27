@@ -42,14 +42,16 @@ describe('store 02: the store is the only place a Redis client or a job queue is
 
   // Every node_redis client the repo makes is a lib/redis-resilient one, whose
   // offline-queue drain can't spin (R-redis-drop-spin): outside lib/ (the
-  // runtime and its CLIs, not tests or examples) nothing requires 'redis'.
-  it('outside lib/, the runtime and its CLIs never require node_redis themselves', () => {
+  // runtime, its CLIs, scripts and tools; not tests or examples) nothing
+  // requires or imports node_redis, or a file inside it.
+  it('outside lib/, the runtime, its CLIs, scripts and tools never require node_redis themselves', () => {
     const ROOT = path.resolve(LIB, '..');
-    const own = ['framework.js', ...['bin', 'scripts'].flatMap((d) => files(path.join(ROOT, d)).map((f) => `${d}/${f}`)),
-      ...fs.readdirSync(path.join(ROOT, 'bin')).filter((f) => !f.endsWith('.js')).map((f) => `bin/${f}`)];
+    const NODE_REDIS = /require\(\s*['"]redis(\/[^'"]*)?['"]\s*\)|\bfrom\s+['"]redis(\/[^'"]*)?['"]|\bimport\s*\(\s*['"]redis(\/[^'"]*)?['"]/;
+    const all = (d) => fs.readdirSync(path.join(ROOT, d), {withFileTypes: true}).flatMap((e) => (e.isDirectory() ? all(`${d}/${e.name}`) : [`${d}/${e.name}`]));
+    const own = ['framework.js', ...['bin', 'scripts', 'tools'].flatMap(all)].filter((f) => !/\.(md|json)$/.test(f));
     const offenders = own.filter((f) => {
       const code = fs.readFileSync(path.join(ROOT, f), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
-      return RULES[0].pattern.test(code);
+      return NODE_REDIS.test(code);
     });
     assert.deepStrictEqual(offenders, []);
   });

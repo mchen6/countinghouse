@@ -30,6 +30,7 @@ const minimist = require('minimist');
 // the runtime's default Redis, as lib/cli-options.js has it (kept here: that
 // file exports nothing of it, being loaded in workers)
 const DEFAULT_REDIS_URL = 'redis://127.0.0.1:6379';
+const CLI_CONNECT_MS = 10000;
 const USAGE = 'usage: COUNTINGHOUSE_SEED_KEY=<key> countinghouse-meter set (--storePath <dir> | [--store redis] [--redisUrl <url>]) --balance <n>';
 
 function fail(message) {
@@ -92,10 +93,16 @@ if (store === 'local') {
   // (db 0, the ledger's, as lib/store.js's metering opens it; one field of
   // the hash set, its free-call counts kept; a lib/redis-resilient client,
   // as every node_redis client: R-redis-drop-spin)
-  const client = require('../lib/redis-resilient').createClient(argv.redisUrl != null ? argv.redisUrl : DEFAULT_REDIS_URL, {db: 0});
+  // An operator's command waits longer for a first connect than the runtime
+  // does (a Redis still loading its data), and no longer than that for the
+  // write's answer. A resilient client emits no 'error' for a refused
+  // connection: its queued write is answered NR_CLOSED at the bound.
+  const client = require('../lib/redis-resilient').createClient(argv.redisUrl != null ? argv.redisUrl : DEFAULT_REDIS_URL, {db: 0},
+    CLI_CONNECT_MS, {commandDeadlineMs: CLI_CONNECT_MS});
   // (the error's code only: a connection string can hold a password)
   client.on('error', (err) => fail(`Redis could not be reached (${err.code || 'error'})`));
   client.hset(id, 'balance', String(balance), (err) => {
+    if (err != null && (err.code === 'NR_CLOSED' || err.code === 'REDIS_COMMAND_TIMEOUT')) fail(`Redis could not be reached (${err.code})`);
     if (err) fail(`the balance could not be set (${err.code || 'error'})`);
     process.stdout.write(`set balance ${balance} for ${id}\n`);
     client.quit();

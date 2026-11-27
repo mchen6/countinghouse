@@ -141,5 +141,18 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
     // the runtime's default, which this test never touches)
     assert.strictEqual(meter(['set', '--store', 'local', '--balance', '5'], {COUNTINGHOUSE_SEED_KEY: KEY}).status, 2);
   });
+  // (R-redis-drop-spin) the CLI's client is a lib/redis-resilient one, which
+  // emits no 'error' for a refused connection (node_redis with a
+  // retry_strategy): a Redis that can't be reached is still said as such,
+  // exit 2, within its first-connect bound
+  it('a Redis that can\'t be reached is said, with exit 2, and no success line', () => {
+    const t0 = Date.now();
+    const run = meter(['set', '--redisUrl', 'redis://127.0.0.1:1', '--balance', '50'], {COUNTINGHOUSE_SEED_KEY: KEY});   // run-local: not the shared Redis
+    assert.strictEqual(run.status, 2, `${run.status} ${run.stdout} ${run.stderr}`);
+    assert.ok(/Redis could not be reached/.test(run.stderr), run.stderr);
+    assert.ok(!/set balance/.test(run.stdout), run.stdout);
+    assert.ok(!run.stderr.includes(KEY), run.stderr);
+    assert.ok(Date.now() - t0 < 25000, `took ${Date.now() - t0} ms`);
+  });
   trees.hooks();
 });

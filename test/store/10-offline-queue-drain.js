@@ -23,8 +23,11 @@ const BOUND_MS = 10000;
 // (INFO) only after making the client's stream unwritable, as a stream whose
 // peer has closed is; three commands queued before the connect. It prints
 // one line: ANSWERED <codes> once every callback is answered and a later
-// timer has fired (the loop is alive). (Clients here are given a port and a
-// host, never a Redis URL: none of them reaches a Redis.)
+// timer has fired (the loop is alive). argv[1]: a commandDeadlineMs for the
+// client (0: none); with one, the line comes after three deadlines, so a
+// command answered twice (NR_CLOSED, then REDIS_COMMAND_TIMEOUT) shows. (The
+// fake server takes an ephemeral port in the child, so no testPort() row:
+// nothing else can hold it; no client here reaches a Redis.)
 const CHILD = `
 const net = require('net');
 const resilient = require(${JSON.stringify(path.join(ROOT, 'lib/redis-resilient'))});
@@ -39,13 +42,14 @@ const server = net.createServer((sock) => {
   });
 });
 server.listen(0, '127.0.0.1', () => {
-  client = resilient.createClient(server.address().port, {host: '127.0.0.1'}, 60000);   // run-local: not the shared Redis
+  const deadline = Number(process.argv[1]);
+  client = resilient.createClient(server.address().port, {host: '127.0.0.1'}, 60000, {commandDeadlineMs: deadline});   // run-local: not the shared Redis
   client.on('error', () => {});
   const codes = [];
   const answered = (e) => {
     codes.push(e != null ? (e.code || 'error') : 'ok');
     if (codes.length < 3) return;
-    setTimeout(() => { process.stdout.write('ANSWERED ' + codes.join(',') + '\\n'); process.exit(0); }, 50);
+    setTimeout(() => { process.stdout.write('ANSWERED ' + codes.join(',') + '\\n'); process.exit(0); }, deadline > 0 ? deadline * 3 : 50);
   };
   for (const k of ['a', 'b', 'c']) client.get(k, answered);
 });
@@ -54,23 +58,36 @@ server.listen(0, '127.0.0.1', () => {
 describe('store 10: a resilient client whose stream closes as it becomes ready answers its queued commands (R-redis-drop-spin)', function() {
   this.timeout(BOUND_MS + 10000);
 
-  it('every queued command is answered with an error, and the process stays live', async () => {
-    const child = spawn(process.execPath, ['-e', CHILD], {stdio: ['ignore', 'pipe', 'pipe'], detached: true});
+  // (the child stopped on every path: its process group, or the child
+  // itself where there are none, Windows)
+  async function runChild(deadlineMs) {
+    const child = spawn(process.execPath, ['-e', CHILD, String(deadlineMs)], {stdio: ['ignore', 'pipe', 'pipe'], detached: true});
     let out = '';
     child.stdout.on('data', (c) => { out += c; });
     child.stderr.on('data', (c) => { out += c; });
-    const killGroup = () => { try { process.kill(-child.pid, 'SIGKILL'); } catch (e) { /* gone */ } };
+    const stop = () => {
+      try { process.kill(-child.pid, 'SIGKILL'); } catch (e) { try { child.kill('SIGKILL'); } catch (e2) { /* gone */ } }
+    };
     let timer = null;
-    const result = await new Promise((resolve) => {
-      timer = setTimeout(() => { killGroup(); resolve('KILLED: no answer within the bound (the drain spins)'); }, BOUND_MS);
-      child.on('exit', () => resolve(out.trim()));
-    }).finally(() => { clearTimeout(timer); killGroup(); });
-    assert.strictEqual(result, 'ANSWERED NR_CLOSED,NR_CLOSED,NR_CLOSED');
+    return new Promise((resolve) => {
+      timer = setTimeout(() => { stop(); resolve('KILLED: no answer within the bound (the drain spins)'); }, BOUND_MS);
+      // ('close': after the child's output is all read)
+      child.on('close', () => resolve(out.trim()));
+    }).finally(() => { clearTimeout(timer); stop(); });
+  }
+
+  it('every queued command is answered with an error, and the process stays live', async () => {
+    assert.strictEqual(await runChild(0), 'ANSWERED NR_CLOSED,NR_CLOSED,NR_CLOSED');
+  });
+
+  it('with a command deadline, each is answered once (NR_CLOSED, never a later timeout too)', async () => {
+    assert.strictEqual(await runChild(300), 'ANSWERED NR_CLOSED,NR_CLOSED,NR_CLOSED');
   });
 
   // (the fix replaces a node_redis internal: an upgrade must not undo it unseen)
   it('the drain is redis-resilient\'s own, on node_redis 3.1.x', () => {
     const version = require('redis/package.json').version;
+    // (port 1: nothing answers there, and this client sends nothing)
     const client = require('../../lib/redis-resilient').createClient(1, {host: '127.0.0.1'}, 10);   // run-local: not the shared Redis
     client.on('error', () => {});
     try {
