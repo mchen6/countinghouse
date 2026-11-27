@@ -36,6 +36,13 @@ describe('validation 04: the error catalogue (logger-design §5.3)', () => {
     assert.deepStrictEqual(saysPack, []);
   });
 
+  // (the runtime's own subscription total: not its request limit, which
+  // RUNTIME_BUSY says; retried once one closes)
+  it('says the runtime\'s subscription total as it is', () => {
+    assert.deepStrictEqual(CODES.SUBSCRIPTIONS_FULL, {kind: 'runtime', retryable: true, httpStatus: 503, mcpCode: null,
+      en: 'The runtime has as many subscriptions open as it allows; retry once one closes'});
+  });
+
   it('has every code lib/ constructs an error with', () => {
     const raised = new Set();
     const re = /new CountinghouseError\(\s*['"]([A-Z][A-Z0-9_]+)['"]|CountinghouseError\.create\(\s*['"]([A-Z][A-Z0-9_]+)['"]/g;
