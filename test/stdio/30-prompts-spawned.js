@@ -36,7 +36,8 @@ describe('stdio 30: prompts, spawned (M10)', function() {
       io = startStdio([workerThread ? '--workerThread' : '--no-workerThread', '--loadModule', FIXTURE, '--authConfigPath', auth,
         '--moduleDataPath', data, '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`], {env: {COUNTINGHOUSE_API_KEY: KEY}});
       const init = await io.request({...INITIALIZE, id: 1});
-      assert.deepStrictEqual(init.result.capabilities.prompts, {});
+      // (a 2025-11-25 stdio client is told its prompts' list changed, as its tools': R-cold-prompts)
+      assert.deepStrictEqual(init.result.capabilities.prompts, {listChanged: true});
       assert.ok(await waitForTool(io, /notesservice_savenote$/) != null, withoutRedisNoise(io.err));
       const list = await io.request({jsonrpc: '2.0', id: 2, method: 'prompts/list', params: {}});
       assert.deepStrictEqual(list.result, {prompts: [{name: 'declares_everything_summarise', title: 'Summarise a note', description: 'Asks for a summary of one saved note.',
@@ -53,4 +54,100 @@ describe('stdio 30: prompts, spawned (M10)', function() {
       assert.strictEqual(fs.existsSync(data) ? fs.readdirSync(data, {recursive: true}).length : 0, filesBefore, 'no module code ran: nothing was written');
     });
   }
+});
+
+// R-cold-prompts, over real stdio: a client on 2025-11-25 (Claude Code's
+// fall-back when its server/discover probe times out on a cold start) that
+// listed its prompts before a pack loaded is told notifications/prompts/
+// list_changed once the pack's prompt is there; one that never listed its
+// prompts is told only of its tools.
+describe('stdio 30: a legacy client hears its prompts change (R-cold-prompts)', function() {
+  this.timeout(120000);
+  const {dirsOf} = require('../helpers/module-dirs');
+  const tmp = require('../helpers/test-tmp').forFile(['ch-stdio-30-cold-'], {base: os.tmpdir()});
+  let io = null;
+  afterEach(async () => {
+    if (io != null) await io.stop();
+    io = null;
+  });
+  const messages = () => io.lines.map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).filter((m) => m != null);
+  const told = (method) => messages().filter((m) => m.method === method);
+  const until = async (test, ms = 15000) => {
+    const end = Date.now() + ms;
+    while (!test() && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
+    return test();
+  };
+  // a pack as ch-local lays it out, with a prompt of its own when asked
+  function pack(home, name, prompt) {
+    const dir = path.join(home, 'packs', name, '1.0.0', 'node_modules', name);
+    const svc = `${name.replace(/[^a-z]/g, '')}Service`;
+    const action = `${name.replace(/[^a-z]/g, '')}_hello`;
+    fs.mkdirSync(path.join(dir, 'handlers', svc), {recursive: true});
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name, version: '1.0.0', license: 'Apache-2.0', countinghouse: {role: 'scenario'}}));
+    const prompts = prompt ? {promptList: [{name: 'greet', title: 'Greet', description: `a greeting of ${name}`, messages: [{role: 'user', text: 'Say hello.'}]}]} : {};
+    fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: name, manufacturer: 'countinghouse-test', modelDescription: name,
+      serviceList: {[`urn:countinghouse-test:serviceID:${svc}`]: {actionList: [{name: action, description: `hello of ${name}`, input: {schema: `/${svc}/${action}/input`}, output: {schema: `/${svc}/${action}/output`}}]}}, ...prompts}}));
+    fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object', [svc]: {[action]: {input: {type: 'object'}, output: {type: 'object'}}}}));
+    fs.writeFileSync(path.join(dir, 'handlers', svc, `${action}.js`), 'module.exports = async () => ({output: {}});\n');
+    return dir;
+  }
+  async function started() {
+    const home = tmp.mkdtemp('ch-stdio-30-cold-');
+    const base = pack(home, 'ch-pack-base', false);
+    io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
+      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--modulesRoot', path.join(home, 'packs'), '--loadModule', base], {ipc: true});
+    const init = await io.request({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'stdio-30', version: '1.0.0'}}}, 60000);
+    assert.deepStrictEqual([init.result.capabilities.prompts, init.result.capabilities.resources], [{listChanged: true}, {listChanged: true}], `${JSON.stringify(init)}\n${io.err.slice(-1500)}`);
+    assert.ok(await waitForTool(io, /base_hello$/) != null, io.err.slice(-1500));
+    return home;
+  }
+  async function load(home) {
+    const two = pack(home, 'ch-pack-greet', true);
+    const r = await io.control({type: 'load', name: 'ch-pack-greet', dirs: dirsOf(two)});
+    assert.strictEqual(r.ok, true, `${JSON.stringify(r)}\n${io.err.slice(-2000)}`);
+  }
+  const promptNames = async (id) => (await io.request({jsonrpc: '2.0', id, method: 'prompts/list', params: {}}, 30000)).result.prompts.map((x) => x.name);
+
+  it('a client that listed its prompts before the pack loaded is told prompts/list_changed, in the plain frame, and lists the pack\'s prompt', async () => {
+    const home = await started();
+    assert.ok(!(await promptNames(2)).some((n) => /greet/.test(n)), 'no prompt of the pack yet');
+    await load(home);
+    assert.ok(await until(() => told('notifications/prompts/list_changed').length > 0), `no prompts/list_changed\n${io.err.slice(-1500)}`);
+    for (const n of told('notifications/prompts/list_changed')) assert.deepStrictEqual(n, {jsonrpc: '2.0', method: 'notifications/prompts/list_changed'}, 'the plain frame');
+    assert.ok((await promptNames(3)).some((n) => /greet/.test(n)), 'the pack\'s prompt is listed');
+  });
+
+  it('a client that never listed its prompts is told only of its tools', async () => {
+    const home = await started();
+    await io.request({jsonrpc: '2.0', id: 2, method: 'tools/list', params: {}}, 30000);
+    await load(home);
+    assert.ok(await until(() => told('notifications/tools/list_changed').length > 0), `no tools/list_changed\n${io.err.slice(-1500)}`);
+    // (anything the change sent is written before this answer)
+    await io.request({jsonrpc: '2.0', id: 3, method: 'tools/list', params: {}}, 30000);
+    assert.deepStrictEqual(told('notifications/prompts/list_changed'), []);
+  });
+
+  // (a client that sent initialize, then a well-formed 2026-07-28 request,
+  // speaks that revision, which tells nothing unasked: as a shared runtime's
+  // session, session-list-notices.js. Nothing sent can't be seen, so the
+  // check waits well past the change's settle, STDIO_CHANGE_SETTLE_MS in
+  // lib/route-manager.js, once the change is seen in its list: it can miss,
+  // never fail falsely)
+  it('a client that went on in 2026-07-28 after its initialize is told nothing unasked', async () => {
+    const home = await started();
+    const modern = {_meta: {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {}}};
+    const names = async (id) => (await io.request({jsonrpc: '2.0', id, method: 'prompts/list', params: modern}, 30000)).result.prompts.map((x) => x.name);
+    assert.ok(!(await names(2)).some((n) => /greet/.test(n)));
+    await load(home);
+    let id = 3;
+    const end = Date.now() + 15000;
+    let seen = false;
+    while (!seen && Date.now() < end) { seen = (await names(id++)).some((n) => /greet/.test(n)); if (!seen) await new Promise((r) => setTimeout(r, 50)); }
+    assert.ok(seen, 'the pack\'s prompt is listed');
+    await new Promise((r) => setTimeout(r, 2000));
+    await io.request({jsonrpc: '2.0', id: id++, method: 'prompts/list', params: modern}, 30000);
+    assert.deepStrictEqual([told('notifications/prompts/list_changed'), told('notifications/tools/list_changed')], [[], []]);
+  });
+
+  tmp.hooks();
 });

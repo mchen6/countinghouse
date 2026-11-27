@@ -13,6 +13,8 @@ const {createSessionListNotices} = require('../../lib/session-transport/session-
 const gateway = require('../../lib/mcp/gateway');
 
 const LIST_CHANGED = {jsonrpc: '2.0', method: 'notifications/tools/list_changed'};
+const PROMPTS_CHANGED = {jsonrpc: '2.0', method: 'notifications/prompts/list_changed'};
+const RESOURCES_CHANGED = {jsonrpc: '2.0', method: 'notifications/resources/list_changed'};
 const MODERN = {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {}};
 const pause = () => new Promise((r) => setImmediate(r));
 
@@ -33,7 +35,7 @@ function world(opts = {settleMs: 2}) {
     return s;
   };
   w.init = (s) => { notices.initialized(s); };
-  w.list = (s) => { notices.arrived(s, {jsonrpc: '2.0', id: ids++, method: 'tools/list'}); };
+  w.list = (s, method = 'tools/list') => { notices.arrived(s, {jsonrpc: '2.0', id: ids++, method}); };
   w.legacy = (s) => { w.init(s); w.list(s); };
   w.detach = (s) => { s.connected = false; s.emit('detach'); };
   w.attach = (s) => { s.connected = true; s.emit('attach'); };
@@ -58,6 +60,39 @@ describe('session-transport 11: list_changed to a shared runtime\'s legacy sessi
     assert.deepStrictEqual(s.sent, [LIST_CHANGED]);
     await w.change();
     assert.deepStrictEqual(s.sent, [LIST_CHANGED, LIST_CHANGED], 'each settled change is told');
+  });
+
+  // R-cold-prompts: a cold start's client lists its prompts before the packs
+  // have loaded; each list it asked for is told, and only those
+  it('a notice for each list it has asked for: its tools, its prompts, its resources (or their templates)', async() => {
+    const w = world();
+    const tools = w.session('tools');
+    const prompts = w.session('prompts');
+    const all = w.session('all');
+    const templates = w.session('templates');
+    for (const s of [tools, prompts, all, templates]) w.init(s);
+    w.list(tools);
+    w.list(prompts, 'prompts/list');
+    w.list(all);
+    w.list(all, 'prompts/list');
+    w.list(all, 'resources/list');
+    w.list(all, 'resources/list');
+    w.list(templates, 'resources/templates/list');
+    await w.change();
+    assert.deepStrictEqual(tools.sent, [LIST_CHANGED]);
+    assert.deepStrictEqual(prompts.sent, [PROMPTS_CHANGED]);
+    assert.deepStrictEqual(all.sent, [LIST_CHANGED, PROMPTS_CHANGED, RESOURCES_CHANGED], 'each once, whatever it listed twice');
+    assert.deepStrictEqual(templates.sent, [RESOURCES_CHANGED]);
+  });
+
+  it('a prompts/list with no id, or before its initialize, does not count', async() => {
+    const w = world();
+    const s = w.session('s1');
+    w.notices.arrived(s, {jsonrpc: '2.0', id: 1, method: 'prompts/list'});
+    w.init(s);
+    w.notices.arrived(s, {jsonrpc: '2.0', method: 'prompts/list'});
+    await w.change();
+    assert.deepStrictEqual(s.sent, []);
   });
 
   it('a burst makes one notice, once it has settled', () => {
