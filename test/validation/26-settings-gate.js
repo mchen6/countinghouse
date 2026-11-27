@@ -228,8 +228,12 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       const err = gate.requiredRefusal(dm, dm.idOf('weather-tool'), true);
       assert.strictEqual(err.code, 'SETTING_REQUIRED');
       assert.match(err.message, /weather-tool needs a setting: defaultRepo \(Default repository\)/);
-      assert.match(err.message, /Ask the user for the value \(do not guess\)/);
-      assert.match(err.message, /ch-local settings set weather-tool\.defaultRepo/);
+      // (a text value is the user's to set, in their own terminal: no hint
+      // offers the conversation)
+      // (the command carries no value: ch-local asks for it, at the terminal,
+      // and it stays out of the conversation and the shell's history)
+      assert.match(err.message, /Ask the user to run `[^`]*ch-local[^`]* settings set weather-tool\.defaultRepo` in their own terminal; it asks for the value\. Do not guess it\./);
+      assert.doesNotMatch(err.message, /then set it/);
       assert.deepStrictEqual(err.fields.missingSettings, ['defaultRepo']);
     });
 
