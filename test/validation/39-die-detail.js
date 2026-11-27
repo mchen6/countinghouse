@@ -136,6 +136,21 @@ describe('validation 39: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
       assert.strictEqual(callTokens.refusedOf(outer), null);
       callTokens.drop(outer);
     });
+    it('a remote that sends the size marker in its own error: no sentence (the marker is a public string)', () => {
+      const {McpError} = require('@modelcontextprotocol/sdk/types.js');
+      const {TOO_LARGE} = require('../../lib/remote/fetch');
+      const code = require('../../lib/remote/client').codeFor(new McpError(-32000, 'the remote says so', {marker: TOO_LARGE}));
+      assert.strictEqual(code, 'REMOTE_RESULT_TOO_LARGE');
+      const o = issue(); callTokens.noteRefused(o, code, 'remote', W);
+      const said = CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), callTokens.refusedOf(o));
+      assert.strictEqual(said.message, HEAD); callTokens.drop(o);
+    });
+    it('the peer broker\'s denials: a refusal is noted, never the caller\'s own worker as its target, nor a route through the main thread', () => {
+      const {deniedCode} = require('../../lib/peer-channel-broker');
+      assert.strictEqual(deniedCode({errCode: 'DEVICE_ACCESS_ERROR', errMsg: 'x'}), 'DEVICE_ACCESS_ERROR');
+      assert.strictEqual(deniedCode({errCode: 'PEER_SELF_TARGET', errMsg: 'x'}), null);
+      assert.strictEqual(deniedCode({route: 'main', errCode: 'PEER_CHANNEL_DENIED', errMsg: 'x'}), null);
+    });
     it('a later call that failed but was not refused (a callee\'s crash, a code not the catalogue\'s) clears it too', () => {
       for (const [code, to] of [['DEVICE_INVOKE_EXCEPTION', 'module'], ['A_REMOTES_OWN_CODE', 'remote']]) {
         const outer = issue();
@@ -167,11 +182,12 @@ describe('validation 39: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
     });
     it('a remote\'s own failure (unreachable, a timeout) is not the runtime\'s refusal: not kept, and it clears an earlier one', () => {
       // (the runtime's own refusals of a remote call are kept, runtime kind or not)
-      for (const code of ['HOP_IDENTITY_UNRESOLVED', 'REMOTE_RESULT_TOO_LARGE']) {
+      for (const code of ['HOP_IDENTITY_UNRESOLVED']) {
         const o = issue(); callTokens.noteRefused(o, code, 'remote', W);
         assert.deepStrictEqual(callTokens.refusedOf(o), {code, to: 'remote'}, code); callTokens.drop(o);
       }
-      for (const code of ['REMOTE_UNREACHABLE', 'REMOTE_TIMEOUT', 'REMOTE_AUTH_FAILED', 'REMOTE_PROTOCOL']) {
+      // (REMOTE_RESULT_TOO_LARGE among them: a remote can send its marker in its own error, so it is never said as the runtime's)
+      for (const code of ['REMOTE_UNREACHABLE', 'REMOTE_TIMEOUT', 'REMOTE_AUTH_FAILED', 'REMOTE_PROTOCOL', 'REMOTE_RESULT_TOO_LARGE']) {
         const o = issue(); callTokens.noteRefused(o, 'REMOTE_UNDECLARED', 'remote', W); callTokens.noteRefused(o, code, 'remote', W);
         assert.strictEqual(callTokens.refusedOf(o), null, code); callTokens.drop(o);
       }
