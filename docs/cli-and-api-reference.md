@@ -202,7 +202,9 @@ been removed. Then, unless `keepData` is `true`, it deletes the module's
 module's registry entry (when the server uses the registry, that is when no
 `--loadModule` is given); then, unless `keepData` is `true`, it deletes
 `<moduleDataPath>/<name>`, never following links. A reload or an upgrade
-keeps the keys and the data. It never removes the module's
+keeps the keys and the data. A failure in that last step, after the keys
+and the registry entry are gone, answers `MODULE_DATA_NOT_REMOVED` with the
+directory kept; uninstalling again finishes it. It never removes the module's
 code under `--modulePath`. It removes only directories the runtime made
 (the security model's ["Only what the runtime made is deleted"](security-model.md)):
 `kept` lists, as paths under `--moduleDataPath`, each one it found there but
@@ -217,7 +219,8 @@ when `<moduleDataPath>/<name>` is gone. Errors:
 | `REMOVE_MODULE_INFO_FAIL` | the registry entry could not be removed; the data directory was kept, and the module's keys were deleted unless `keepData` was set; uninstall again to finish |
 | `MODULE_STORE_CORRUPT` | the local store file that holds the module's data (`kv.json`) is corrupt and this runtime holds no copy of it: nothing was removed, the registry entry included; repair the store (the runtime's log says how), then uninstall again. Not retryable as it is |
 | `MODULE_KEYS_NOT_PURGED` | the module's keys could not all be deleted (the store did not answer within 30 s, or answered an error; its code is named); the registry entry and the data directory are kept, and some keys may already be deleted: uninstall again to delete what is left |
-| `MODULE_DATA_NOT_DIRECTORY` | the data directory is a link or a file; it is left alone, remove it by hand |
+| `MODULE_DATA_NOT_DIRECTORY` | the data directory is a link or a file; it is left alone, remove it by hand. Found only at the delete (a link swapped in meanwhile), the keys and the registry entry are already gone: uninstalling again once it is removed finishes it |
+| `MODULE_DATA_NOT_REMOVED` | the keys and the registry entry were removed, then the data directory could not be (a full or read-only disk, its permissions); its errno code is named and the directory is kept, perhaps only in part: fix the cause and uninstall again, or remove it by hand |
 | `MODULE_DATA_UNREADABLE` | the data directory (or its `sessions/`, or a directory on the way to it) could not be read, or the uninstall could not write in it; its errno code is named and nothing was removed: make it readable, then uninstall again |
 
 Every device-scoped route above (everything under `/devices/:deviceID/...`)
