@@ -12,16 +12,28 @@ const path = require('path');
 const identity = require('../../lib/identity');
 const {mkdtemp, remove} = require('./test-tmp');
 
+// (the setup's and the teardown's own bound: mocha gives a hook the timeout
+// its suite has when the hook is made, and useIdentity is often called before
+// a describe's this.timeout(), so they would run under mocha's default 2 s;
+// an initSync and an addKey per key, and a tree removed with retries, are
+// synchronous file work a slow Windows runner took past that:
+// R-flake-jobs-local-01. Raised only: a larger timeout, or none at all (0,
+// --no-timeouts), is kept.)
+const SETUP_MS = 30000;
+const atLeast = (hook) => { const t = hook.timeout(); if (t !== 0 && t < SETUP_MS) hook.timeout(SETUP_MS); };
+
 function useIdentity(keys) {
   let saved = null;
   let dir = null;
-  before(() => {
+  before(function() {
+    atLeast(this);
     saved = identity.stateForTests();
     dir = mkdtemp('ch-identity-scope-');
     identity.initSync({moduleDataPath: dir});
     for (const k of keys) identity.addKey(k, 'test-user', false);
   });
-  after(() => {
+  after(function() {
+    atLeast(this);
     if (saved != null) saved.restore();
     if (dir != null) remove(dir);
   });

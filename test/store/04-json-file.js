@@ -646,3 +646,164 @@ describe('store 04: update() outlasts a live holder\'s slow hold (B-storelock)',
     }
   });
 });
+
+// R-win-ledger-rename: a write renames a new file into place, and on Windows
+// a rename over a file another process has open can be refused. The store's
+// files are read without the lock (an openJsonFile, a reload(): a balance
+// asked for, another runtime starting), so a reader must never cost a write:
+// update() is a metering charge's, and a charge it answers with an error is
+// not made again.
+const openDirs = require('../helpers/test-tmp').forFile(['ch-store-04-open-']);
+
+// a process running `script`, its first line of output awaited (it is then
+// doing what the test needs it to), for 30 s at most; ended with its input,
+// killed otherwise -- on every path, the failed wait for its first line
+// included (it starts nothing of its own: the process is all there is)
+async function reader(script) {
+  const child = spawn(process.execPath, ['-e', script], {stdio: ['pipe', 'pipe', 'inherit']});
+  let out = '';
+  child.stdout.setEncoding('utf8');
+  const exited = new Promise((resolve) => child.once('close', (code, signal) => resolve({code, signal})));
+  let bound = null;
+  const ready = new Promise((resolve, reject) => {
+    child.stdout.on('data', (d) => { out += d; if (out.includes('\n')) resolve(); });
+    exited.then((e) => reject(new Error(`the reader ended first: ${JSON.stringify(e)}`)));
+    bound = setTimeout(() => reject(new Error(`the reader said nothing in 30 s (${JSON.stringify(out)})`)), 30000);
+  });
+  child.stdin.on('error', () => undefined);
+  try {
+    await ready;
+  } catch (e) {
+    child.kill('SIGKILL');
+    await exited;
+    throw e;
+  } finally {
+    clearTimeout(bound);
+  }
+  return {
+    end: () => { child.stdin.end(); return exited; },
+    kill: () => { if (child.exitCode == null && child.signalCode == null) child.kill('SIGKILL'); return exited; },
+    said: () => out
+  };
+}
+const update = (f, key, fn) => new Promise((resolve) => f.update(key, fn, (err, value) => resolve({err, value})));
+const add = (v) => ({n: ((v != null && v.n) || 0) + 1});
+const onDisk = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
+
+describe('store 04: a reader never costs a write (R-win-ledger-rename)', function() {
+  this.timeout(120000);
+  const winIt = process.platform === 'win32' ? it : it.skip;
+  let file = null;
+  let f = null;
+  let r = null;
+  beforeEach(() => {
+    file = path.join(openDirs.mkdtemp('ch-store-04-open-'), 'm.json');
+    f = openJsonFile(file);
+    f.set('k', {n: 0});
+    f.flush();
+  });
+  afterEach(async () => {
+    if (r != null) { await r.kill(); r = null; }
+    f.close();
+  });
+
+  // The file held open by another process while the change is made, until
+  // the test ends its input. On Windows the rename meets the open handle
+  // and is refused: update() must try it again without blocking (the test
+  // ends the reader's input while the change waits), and make it once the
+  // handle is closed. Elsewhere the change is made at once.
+  it('a change made while another process has the file open is not refused', async () => {
+    r = await reader(`
+      const fd = require('fs').openSync(${JSON.stringify(file)}, 'r');
+      process.stdout.write('open\\n');
+      process.stdin.resume();
+      process.stdin.once('end', () => { require('fs').closeSync(fd); });
+    `);
+    const done = update(f, 'k', add);
+    assert.deepStrictEqual(await r.end(), {code: 0, signal: null});
+    const {err, value} = await done;
+    assert.ok(err == null, `the change was refused: ${err != null ? `${err.code} ${err.message}` : ''}`);
+    assert.deepStrictEqual(value, {n: 1});
+    assert.deepStrictEqual(onDisk(file), {k: {n: 1}}, 'made once');
+  });
+
+  // As it happens: another process reading again and again, whatever the
+  // moment. It says how many reads it had made when it was ready and how
+  // many when its input ended (before reading on), so the test sees reads
+  // made while the changes were; its own refused reads are counted by code
+  // and said too (a reader refused costs no write: told, not failed).
+  it('every change lands once while another process reads the file again and again', async function() {
+    // (each change gives up at update()'s own deadline, UPDATE_WAIT_MS in
+    // lib/store/json-file.js, and the loop stops at the first that does: so
+    // at most that wait for each change, and a margin for the reader)
+    const changes = 50;
+    const UPDATE_WAIT_MS = 10000;
+    this.timeout(changes * UPDATE_WAIT_MS + 30000);
+    r = await reader(`
+      const fs = require('fs');
+      let stop = false;
+      let ready = false;
+      let n = 0;
+      const refused = {};
+      process.stdin.resume();
+      process.stdin.once('end', () => { stop = true; });
+      const once = () => {
+        if (stop) return process.stdout.write(\`read \${n} refused \${JSON.stringify(refused)}\\n\`);
+        for (let i = 0; i < 20; i++) {
+          try { JSON.parse(fs.readFileSync(${JSON.stringify(file)}, 'utf8')); n += 1; } catch (e) { if (e.code == null) throw e; refused[e.code] = (refused[e.code] || 0) + 1; }
+        }
+        if (!ready && n > 0) { ready = true; process.stdout.write(\`reading \${n}\\n\`); }
+        return setImmediate(once);
+      };
+      once();
+    `);
+    // each rename the store makes, and each one refused (and so tried
+    // again, or failed): said, so a reader of the log can tell the changes
+    // met the reader's reads (none elsewhere than Windows)
+    const rename = fs.renameSync;
+    const renames = {made: 0, refused: 0};
+    fs.renameSync = function(...a) {
+      try { const out = rename.apply(this, a); renames.made += 1; return out; } catch (e) { renames.refused += 1; throw e; }
+    };
+    const failed = [];
+    try {
+      for (let i = 0; i < changes && failed.length === 0; i++) {
+        const {err} = await update(f, 'k', add);
+        if (err != null) failed.push(`${err.code} ${err.message}`);
+      }
+    } finally {
+      fs.renameSync = rename;
+    }
+    process.stdout.write(`      (${renames.refused} renames refused, ${renames.made} made)\n`);
+    assert.deepStrictEqual(await r.end(), {code: 0, signal: null});
+    const atReady = Number((/reading (\d+)/.exec(r.said()) || [])[1]);
+    const atEnd = Number((/read (\d+) refused/.exec(r.said()) || [])[1]);
+    const refused = (/refused (\{.*\})/.exec(r.said()) || [])[1];
+    if (refused !== '{}') process.stdout.write(`      (the reader's own reads refused: ${refused})\n`);
+    assert.ok(atEnd > atReady, `the reader read on while the changes were made (${r.said()})`);
+    assert.deepStrictEqual(failed, [], `a change refused (the reader: ${r.said()})`);
+    assert.deepStrictEqual(onDisk(file), {k: {n: changes}});
+  });
+
+  // (Windows) a handle never closed: the refused rename is tried again until
+  // update()'s deadline, then the change fails with the refusal's code, the
+  // store's file named and the wait said, the file as it was and no new file
+  // left beside it -- told to its caller, never lost silently
+  winIt('a rename still refused at update()\'s deadline fails the change with its code and the wait, the file as it was (Windows)', async () => {
+    r = await reader(`
+      const fd = require('fs').openSync(${JSON.stringify(file)}, 'r');
+      process.stdout.write('open\\n');
+      process.stdin.resume();
+      process.stdin.once('end', () => { require('fs').closeSync(fd); });
+    `);
+    const {err} = await update(f, 'k', add);
+    assert.deepStrictEqual(await r.end(), {code: 0, signal: null});
+    assert.ok(err != null && (err.code === 'EPERM' || err.code === 'EBUSY'), `refused with its code: ${err != null ? `${err.code} ${err.message}` : 'no error'}`);
+    assert.strictEqual(err.path, file, 'the store\'s file named, not the new one');
+    assert.match(err.message, /still refused at update\(\)'s deadline, 10000 ms/);
+    assert.deepStrictEqual(onDisk(file), {k: {n: 0}}, 'the file as it was');
+    assert.deepStrictEqual(fs.readdirSync(path.dirname(file)).filter((e) => e.includes('.tmp-')), [], 'no new file left');
+  });
+
+  openDirs.hooks();
+});
