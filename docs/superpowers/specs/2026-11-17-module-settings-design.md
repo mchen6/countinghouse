@@ -407,9 +407,10 @@ call, with a cursor.
 **`SETTING_REQUIRED` across hops.** It is checked for the whole declared
 call graph before the outer call runs (not billed), so a scenario never
 swallows a part's missing setting. The message reads: "… needs a setting:
-defaultRepo (Default repository). Ask the user for the value (do not
-guess), then set it, or run `ch-local settings set
-weather-tool.defaultRepo`."
+defaultRepo (Default repository). Ask the user to run `ch-local settings
+set weather-tool.defaultRepo` in their own terminal; it asks for the value.
+Do not guess it." (changed 11-26: a text value is set at a terminal while
+no client is tested)
 
 **Delivery, every path.** The versioned snapshot is attached on: a client
 call, a routed hop, a direct peer channel's announcement, a job run, single
