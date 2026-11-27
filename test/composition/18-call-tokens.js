@@ -3094,22 +3094,68 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       }
     });
 
-    it('a hop held again after an end keeps its first bound: the 25 s rule (here 3 s) is for the whole hop', async () => {
-      cli.setOptions({workerThread: true, requestTimeout: 5});   // seconds: a hold of 3 s
+    // its deadline, read off the held calls themselves (DeviceManager.heldOn, for tests): the same absolute moment after every pass
+    const deadlineOn = (device) => DeviceManager.heldOn(device).map((h) => h.endsAt);
+    it('a hop held again after an end keeps its first deadline: the 25 s rule is for the whole hop', async () => {
       const {dm, caller, callee, replies, token} = setup(() => {});
-      const t0 = Date.now();
       try {
         dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm8', caller, token);
-        await new Promise((r) => setTimeout(r, 1500));
+        await turns();
+        const first = deadlineOn(callee);
+        assert.strictEqual(first.length, 1, 'not held');
         // a copy replaced, still undecided itself: the old copy's end runs the hop again, held on the new one
-        dm.deviceMap[CALLEE] = worker(CALLEE, []);
+        const next = worker(CALLEE, []);
+        dm.deviceMap[CALLEE] = next;
         DeviceManager.releaseHeldOn(callee);
-        // (its first bound ends at 3 s; held anew it would end at 4.5 s)
-        await until(() => replies.length > 0, 3800 - (Date.now() - t0), 'answered at its first bound');
+        await until(() => deadlineOn(next).length === 1, 2000, 'held on the new copy');
+        assert.deepStrictEqual([deadlineOn(next), replies.length], [first, 0]);
+        DeviceManager.releaseHeldOn(next);
       } finally {
         tokens().drop(token);
       }
-      assert.strictEqual(replies[0].errCode, 'CTX_CALL_NOT_READY');
+    });
+
+    it('a copy replaced while a later pass checks its caller is held for, with the same deadline, never refused early', async () => {
+      const {dm, caller, callee, replies, token} = setup(() => {});
+      const next = worker(CALLEE, []);
+      try {
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm9', caller, token);
+        await turns();
+        const first = deadlineOn(callee);
+        // its end runs the hop again; during that pass's access check the callee is replaced (copy A ended, copy B undecided)
+        const auth = require.cache[authPath].exports;
+        require.cache[authPath].exports = (...a) => { require.cache[authPath].exports = auth; callee.exited = true; dm.deviceMap[CALLEE] = next; return auth(...a); };
+        DeviceManager.releaseHeldOn(callee);
+        await until(() => deadlineOn(next).length === 1 || replies.length > 0, 2000, 'held on the new copy, or answered');
+        assert.deepStrictEqual([replies.map((r) => r.errCode), deadlineOn(next)], [[], first]);
+        DeviceManager.releaseHeldOn(next);
+      } finally {
+        tokens().drop(token);
+      }
+    });
+
+    it('a pass past its deadline is the final pass: never held again', async () => {
+      cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
+      const {dm, caller, callee, replies, token} = setup(() => {});
+      try {
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm10', caller, token, false, {until: Date.now() - 1});
+        await until(() => replies.length > 0, 2000, 'answered');
+        assert.deepStrictEqual([replies[0].errCode, deadlineOn(callee)], ['CTX_CALL_NOT_READY', []]);
+      } finally {
+        tokens().drop(token);
+      }
+    });
+
+    it('a pass that meets an in-place replacement waits for it no longer than the hop\'s deadline', async () => {
+      const {dm, caller, replies, token} = setup(() => {});
+      dm.replacingInPlace = () => true;
+      try {
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm11', caller, token, false, {until: Date.now() - 1});
+        // (its deadline passed: the replacement is not waited out, its token's whole life)
+        await until(() => replies.length > 0, 2000, 'answered at once');
+      } finally {
+        tokens().drop(token);
+      }
     });
 
     // over a direct peer channel (--directPeerChannels) the callee's token is issued as its worker asks for the invoke's metering:
@@ -3147,6 +3193,31 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         }
       });
     }
+
+    it('over a direct peer channel, through the match: a callee with no verdict at its channel\'s cap is told not ready, before the cap and before its input is checked', () => {
+      const PeerChannelBroker = require('../../lib/peer-channel-broker');
+      const moduleSpec = require('../../lib/module-spec');
+      const replies = [];
+      const callee = Object.assign(worker(CALLEE, []), {ended: null, moduleSpec: {}, sendPeerMeteringReplyToChild: (m) => replies.push(m)});
+      const callerWM = Object.assign(worker(CALLER, []), {ended: null, bindings: {[CALLER]: {identity: 'caller-id', module: 'S', targets: new Set([`${CALLEE}|svc|act`])}}});
+      const b = new PeerChannelBroker({deviceMap: {[CALLEE]: callee}});
+      const pairKey = `${callerWM.workerId}:${callee.workerId}`;
+      b.channelRegistry[pairKey] = {callerWM: callerWM, calleeWM: callee, grants: {}};
+      b.unbilledPerChannel.set(pairKey, PeerChannelBroker.UNBILLED_PER_CHANNEL_MAX);
+      const token = tokens().issue({billingKey: `k-${hex()}`, identityKey: 'caller-id', module: 'S', workerId: callerWM.workerId, deviceID: CALLER, ttlMs: 60000});
+      const savedCheck = moduleSpec.checkInput;
+      let checked = 0;
+      moduleSpec.checkInput = () => { checked++; return null; };
+      try {
+        const {serialize, toArrayBuffer} = require('../../lib/serialized-result');
+        b.handleAnnouncement({channel: pairKey, invokeId: 1, token: token, epoch: 'e', deviceID: CALLEE, serviceID: 'svc', actionName: 'act', inputBytes: toArrayBuffer(serialize({input: {}}))}, callerWM);
+        b.handleMeteringRequest({channel: pairKey, invokeId: 1}, 'mp', callee);
+        assert.deepStrictEqual([replies.length, replies[0] && replies[0].errCode, checked], [1, 'CTX_CALL_NOT_READY', 0], JSON.stringify(replies));
+      } finally {
+        moduleSpec.checkInput = savedCheck;
+        tokens().drop(token);
+      }
+    });
 
     it('its caller\'s call ending meanwhile (its token dropped) ends the hold: nothing sent, the hop refused as with a dropped token', async () => {
       const {dm, caller, sent, replies, token} = setup((cb) => cb(null, {identity: 'callee-id', allowed: null, targets: []}));
