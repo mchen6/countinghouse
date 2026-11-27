@@ -1652,7 +1652,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
       if (b != null) b.close();
       a.close();
     }
-    assert.ok(got.purge.err != null && got.list.err != null, JSON.stringify(got));
+    assert.ok(/holds no copy of it/.test(got.purge.err) && /holds no copy of it/.test(got.list.err), JSON.stringify(got));
     assert.strictEqual(got.after, 1);
     assert.deepStrictEqual(Object.keys(onDisk(file)), ['keep']);
   });
@@ -1673,7 +1673,11 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
       fs.readFileSync = read;
       f.close();
     }
-    assert.strictEqual(logged.filter((l) => l.includes(file) && l.includes('EACCES')).length, 1, JSON.stringify(logged));
+    const mine = logged.filter((l) => l.includes(file));
+    assert.strictEqual(mine.filter((l) => l.includes('EACCES')).length, 1, JSON.stringify(mine));
+    assert.ok(mine.some((l) => l.includes('EACCES') && /changes wait until it can be read/.test(l)), JSON.stringify(mine));
+    assert.ok(!mine.some((l) => /corrupt/.test(l)), `a read error is not a corrupt file (${JSON.stringify(mine)})`);
+    assert.ok(mine.some((l) => /change\(s\) not written: the file could not be read/.test(l)), JSON.stringify(mine));
   });
 
   it('local-kv\'s interval keeps only the store\'s read errors to itself: anything else is thrown', () => {
@@ -1689,6 +1693,28 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
       kv.close();
     }
     assert.strictEqual(thrown && thrown.message, 'a bug in the sweep');
+  });
+
+  it('kv: a purge that meets a read error answers the store\'s own words, never the file\'s path', () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const LocalKv = require('../../lib/local-kv');
+    const kv = new LocalKv({storePath: dir});
+    const file = path.join(dir, 'kv.json');
+    const read = fs.readFileSync;
+    let err = null;
+    try {
+      kv.file.set('m:mod:x', {t: 'string', v: '1'}); kv.file.flush();
+      fs.readFileSync = function(p) {
+        if (p === file) throw Object.assign(new Error(`EACCES: permission denied, open '${p}'`), {code: 'EACCES', syscall: 'open'});
+        return read.apply(this, arguments);
+      };
+      try { kv.deletePrefix('m:mod:'); } catch (e) { err = e; }
+    } finally {
+      fs.readFileSync = read;
+      kv.close();
+    }
+    assert.ok(err != null && /^ERR the store could not be read/.test(err.message), String(err && err.message));
+    assert.ok(!err.message.includes(dir), err.message);
   });
 
   lockedDirs.hooks();
