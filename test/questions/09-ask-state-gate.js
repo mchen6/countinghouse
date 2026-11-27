@@ -1,6 +1,6 @@
 'use strict';
 // A retry's single-use requestState is spent only once the call has passed
-// its key's own gate: a retry refused there -- its key over its budget
+// its gates: a retry refused there -- its key over its budget
 // (RATE_LIMIT_EXCEEDED), a charge that can't be recorded (a ledger code) --
 // keeps its state, and so does one the server-wide limit refuses
 // (RUNTIME_BUSY); the client's next retry with the same state is served
@@ -66,8 +66,32 @@ async function retriedPast(s, key, state, code) {
   return got;
 }
 
-describe('questions 09: a retry refused at its key\'s gate keeps its requestState', function() {
+describe('questions 09: a retry refused at its gates keeps its requestState', function() {
   this.timeout(120000);
+
+  // (server free: the gate a retry passes before its state is spent)
+  describe('the retry\'s gate itself (lib/mcp/gateway.js gateRetry)', () => {
+    const {gateRetryForTests: gateRetry} = require('../../lib/mcp/gateway');
+    const {CountinghouseError} = require('../../lib/countinghouse-error');
+    const logger = require('../../lib/logger');
+    let realE = null;
+    before(() => { realE = logger.E; logger.E = () => {}; });
+    after(() => { logger.E = realE; });
+
+    it('passed: the call marked gated; refused: the refusal, not gated; a gate that throws: RUNTIME_BUSY, not gated', async () => {
+      const passed = {};
+      assert.strictEqual(await gateRetry({callGate: (session, cb) => setImmediate(cb, null)}, passed), null);
+      assert.strictEqual(passed.gated, true);
+      const refused = {};
+      const over = await gateRetry({callGate: (session, cb) => setImmediate(cb, new CountinghouseError('RATE_LIMIT_EXCEEDED'))}, refused);
+      assert.strictEqual(over.code, 'RATE_LIMIT_EXCEEDED');
+      assert.strictEqual(refused.gated, undefined);
+      const threw = {};
+      const busy = await gateRetry({callGate: () => { throw new Error('the limiter broke'); }}, threw);
+      assert.strictEqual(busy && busy.code, 'RUNTIME_BUSY');
+      assert.strictEqual(threw.gated, undefined);
+    });
+  });
 
   describe('its key over its budget (RATE_LIMIT_EXCEEDED)', () => {
     const SETUP = `k${crypto.randomBytes(12).toString('hex')}`;
