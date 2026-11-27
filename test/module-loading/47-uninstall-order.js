@@ -206,7 +206,7 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
   it('a sessions/ or a <name>/ that can\'t be written in, or a parent its rmdir needs that can\'t be: refused before any key goes', async function() {
     if (!permissionsBite) return this.skip();
     const root = dataRoot();
-    fs.mkdirSync(path.join(root, 'rosess-mod', 'sessions'), {recursive: true});
+    fs.mkdirSync(path.join(root, 'rosess-mod', 'sessions', 'e'.repeat(32), 'data'), {recursive: true});
     lock(path.join(root, 'rosess-mod', 'sessions'), 0o500);
     const sess = await uninstall('rosess-mod');
     assert.strictEqual(sess.e && sess.e.code, 'MODULE_DATA_UNREADABLE', String(sess.e && sess.e.message));
@@ -242,6 +242,35 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
     const ro = await uninstall('ro-mod');
     assert.strictEqual(ro.e && ro.e.code, 'MODULE_DATA_UNREADABLE', String(ro.e && ro.e.message));
     assert.ok(ro.e.message.includes('(EACCES)'), ro.e.message);
+    assert.deepStrictEqual(calls, []);
+  });
+
+  it('a <name>/ holding only what isn\'t the runtime\'s, and not writable: kept and named in kept, as ever; the keys and the row go', async function() {
+    if (!permissionsBite) return this.skip();
+    const root = dataRoot();
+    fs.mkdirSync(path.join(root, 'foreign-mod'), {recursive: true});
+    fs.writeFileSync(path.join(root, 'foreign-mod', 'stray'), 'keep');
+    lock(path.join(root, 'foreign-mod'), 0o500);
+    const {e, r} = await uninstall('foreign-mod');
+    assert.strictEqual(e, null, String(e && e.message));
+    assert.deepStrictEqual(calls, ['purge m:foreign-mod:', 'purge ms:foreign-mod:', 'registry foreign-mod']);
+    assert.strictEqual(r.dataDeleted, false);
+    assert.ok(r.kept.some((k) => k.endsWith('foreign-mod')), JSON.stringify(r.kept));
+    assert.strictEqual(fs.readFileSync(path.join(root, 'foreign-mod', 'stray'), 'utf8'), 'keep');
+  });
+
+  it('a <name>/ whose data/ the runtime made (marked), and not writable: MODULE_DATA_UNREADABLE before any key goes', async function() {
+    if (!permissionsBite) return this.skip();
+    const root = dataRoot();
+    const dirs = require('../../lib/module-data').dirsFor(root, 'marked-mod');
+    fs.mkdirSync(dirs.data, {recursive: true});
+    fs.writeFileSync(path.join(dirs.data, 'f'), 'x');
+    await require('../../lib/data-ownership').record(dirs.root, {data: dirs.data}, root);
+    assert.ok((await require('../../lib/data-ownership').readMarker(dirs.root, root)).data != null, 'marked');
+    lock(dirs.root, 0o500);
+    const {e} = await uninstall('marked-mod');
+    assert.strictEqual(e && e.code, 'MODULE_DATA_UNREADABLE', String(e && e.message));
+    assert.ok(e.message.startsWith(unreadableText(dirs.root, 'EACCES')), e.message);
     assert.deepStrictEqual(calls, []);
   });
 

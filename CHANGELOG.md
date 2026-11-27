@@ -862,9 +862,7 @@ configuration). None of it is available to a hosted server.
   (`MODULE_KEYS_NOT_PURGED`, naming the store's error code; a retry deletes
   what is left). A data directory the uninstall couldn't read or write in
   (its permissions, a link that loops) is refused first with the new
-  `MODULE_DATA_UNREADABLE`, with nothing removed; one it would have kept as
-  someone else's is refused the same way, where before it was kept and
-  named in `kept`. A failed registry removal (`REMOVE_MODULE_INFO_FAIL`) now
+  `MODULE_DATA_UNREADABLE`, with nothing removed. A failed registry removal (`REMOVE_MODULE_INFO_FAIL`) now
   says the keys may already be deleted.
 
 ### Added — `ctx.usage()`: the current call's counts so far
