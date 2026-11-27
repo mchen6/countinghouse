@@ -67,7 +67,7 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
     fs.writeFileSync(file, '{"broken": ');
     const run = meter(['set', '--storePath', storePath, '--balance', '50'], {COUNTINGHOUSE_SEED_KEY: KEY});
     assert.strictEqual(run.status, 2, `${run.status} ${run.stdout} ${run.stderr}`);
-    assert.ok(/corrupt/.test(run.stderr) && /move it away/.test(run.stderr), run.stderr);
+    assert.ok(run.stderr.includes('the ledger (metering.json in the --storePath you gave) is corrupt, and this command holds no copy of it: let a runtime that has it open replace it, or move metering.json away to start an empty ledger (every balance and free count starts from nothing; the file you moved keeps what could be recovered)'), run.stderr);
     assert.ok(!run.stderr.includes(storePath) && !run.stderr.includes(KEY), run.stderr);
     assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"broken": ');
   });
