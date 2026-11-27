@@ -2966,6 +2966,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     });
     const {snapshot: optionsNow, restore: restoreOptions} = require('../helpers/options-scope');
     const authPath = require.resolve('../../lib/user-auth');
+    // (identities whose grant on the callee user-auth refuses)
+    const denied = new Set();
     let kept = null;
     let savedAuth = null;
     before(() => {
@@ -2973,11 +2975,12 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       savedAuth = require.cache[authPath];
       // a granted key: a session for the hop, whose callback is the hop's own answer (localCB), as user-auth makes it
       require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: (a, b, deviceID, appKey, s, act, localCB, cb) => {
+        if (denied.has(appKey)) return cb(Object.assign(new Error('no grant'), {code: 'DEVICE_ACCESS_DENIED'}));
         const session = {appKey: appKey, callback: localCB, setDeviceTimer(d, f) { return f.call(session, null, d, null); }};
         return cb(null, session);
       }};
     });
-    beforeEach(() => cli.setOptions({workerThread: true, requestTimeout: 30}));
+    beforeEach(() => { denied.clear(); cli.setOptions({workerThread: true, requestTimeout: 30}); });
     after(() => {
       restoreOptions(kept);
       if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
@@ -2989,31 +2992,130 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const verdict = dm.verifyComposition;
       let decide = null;
       dm.verifyComposition = (id, spec, pi, mp, name, cb) => (id === CALLEE ? (decide = () => verdict(id, spec, pi, mp, name, cb)) : verdict(id, spec, pi, mp, name, cb));
-      dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm1', caller, token);
-      await turns();
-      assert.deepStrictEqual([sent.length, replies.length], [0, 0], 'sent before the callee\'s verdict');
-      dm.verificationPass(null);
-      decide();
-      await until(() => sent.length > 0, 2000, 'sent once the callee\'s verdict was delivered');
-      const child = tokens().resolve(sent[0].args.token, {workerId: dm.deviceMap[CALLEE].workerId});
-      assert.strictEqual(tokens().identityOf(child), 'callee-id');
-      tokens().drop(sent[0].args.token);
-      tokens().drop(token);
+      try {
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm1', caller, token);
+        await turns();
+        assert.deepStrictEqual([sent.length, replies.length], [0, 0], 'sent before the callee\'s verdict');
+        dm.verificationPass(null);
+        decide();
+        await until(() => sent.length > 0, 2000, 'sent once the callee\'s verdict was delivered');
+        const child = tokens().resolve(sent[0].args.token, {workerId: dm.deviceMap[CALLEE].workerId});
+        assert.strictEqual(tokens().identityOf(child), 'callee-id');
+      } finally {
+        for (const m of sent) tokens().drop(m.args.token);
+        tokens().drop(token);
+      }
     });
 
     it('at its bound (its caller\'s time, at most 25 s) answers its caller CTX_CALL_NOT_READY, nothing sent, no token issued', async () => {
       cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
       const {dm, caller, sent, replies, token} = setup(() => {});
       const before = tokens().size();
-      dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm2', caller, token);
-      await until(() => replies.length > 0, 5000, 'answered at its bound');
-      assert.deepStrictEqual([sent.length, replies[0].errCode, tokens().size()], [0, 'CTX_CALL_NOT_READY', before]);
-      tokens().drop(token);
+      try {
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm2', caller, token);
+        await until(() => replies.length > 0, 5000, 'answered at its bound');
+        assert.deepStrictEqual([sent.length, replies[0].errCode, tokens().size()], [0, 'CTX_CALL_NOT_READY', before]);
+      } finally {
+        for (const m of sent) tokens().drop(m.args.token);
+        tokens().drop(token);
+      }
+    });
+
+    // at its bound the hop runs once more as a fresh one would, its own checks with it: the callee's listing, the caller's access,
+    // the missing-device path; a callee still undecided then is not ready only for a caller its access check let through
+    it('at its bound, a callee turned off during the hold: the answer for a device not listed, nothing sent', async () => {
+      cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
+      const visibility = require('../../lib/module-visibility');
+      const {dm, caller, sent, replies, token} = setup(() => {});
+      const before = visibility.configure({moduleOf: (id) => (id === CALLEE ? 'hop-off' : null), changed: () => {}});
+      try {
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm4', caller, token);
+        visibility.hide(['hop-off']);
+        await until(() => replies.length > 0, 5000, 'answered at its bound');
+      } finally {
+        visibility.show(['hop-off']);
+        visibility.configure(before);
+        tokens().drop(token);
+      }
+      assert.deepStrictEqual([sent.length, replies[0].errCode], [0, 'DEVICE_NOT_FOUND']);
+    });
+
+    // the caller's access is checked before any hold, as it needs no verdict: a caller with no grant on the callee is refused at once,
+    // the same answer whether the callee is hosted and undecided or not hosted at all; only a caller with access ever waits
+    it('a caller with no access is refused before any hold, the same answer for a hosted undecided callee as for one never hosted', async () => {
+      const answers = [];
+      for (const hosted of [true, false]) {
+        const {dm, caller, callee, sent, replies, token} = setup(() => {});
+        if (!hosted) delete dm.deviceMap[CALLEE];
+        denied.add('caller-id');
+        let held = 0;
+        const counting = setInterval(() => { held = Math.max(held, DeviceManager.verdictHeldOn(callee)); }, 1);
+        try {
+          dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, `m5-${hosted}`, caller, token);
+          held = Math.max(held, DeviceManager.verdictHeldOn(callee));
+          await until(() => replies.length > 0, 2000, 'refused');
+        } finally {
+          clearInterval(counting);
+          tokens().drop(token);
+        }
+        answers.push([hosted, held, sent.length, replies[0].errCode, replies[0].errMsg]);
+      }
+      assert.deepStrictEqual(answers.map((a) => a.slice(1, 4)), [[0, 0, 'DEVICE_ACCESS_DENIED'], [0, 0, 'DEVICE_ACCESS_DENIED']], JSON.stringify(answers));
+      assert.strictEqual(answers[0][4], answers[1][4], 'the two refusals differ');
+    });
+
+    it('a callee whose worker exits during the hold is answered then, as a fresh hop into it, never held again to the bound', async () => {
+      const {dm, caller, callee, sent, replies, token} = setup(() => {});
+      try {
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm6', caller, token);
+        await turns();
+        callee.exited = true;   // (as the exit handler marks it, before it releases; the map still holds it)
+        DeviceManager.releaseHeldOn(callee);
+        await until(() => replies.length > 0, 2000, 'answered at the exit, not at the 25 s bound');
+      } finally {
+        tokens().drop(token);
+      }
+      assert.deepStrictEqual([sent.length, replies[0].errCode !== 'CTX_CALL_NOT_READY'], [0, true]);
+    });
+
+    it('at its bound, a callee decided but not yet delivered: the hop runs, with the callee\'s identity', async () => {
+      cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
+      const {dm, caller, sent, token} = setup((cb) => cb(null, {identity: 'callee-id', allowed: null, targets: []}));
+      dm.relayComposition = () => {};   // never acknowledged: decided, never delivered
+      try {
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm7', caller, token);
+        await turns();
+        dm.verificationPass(null);
+        await until(() => sent.length > 0, 5000, 'sent at its bound');
+        assert.strictEqual(tokens().identityOf(tokens().resolve(sent[0].args.token, {workerId: dm.deviceMap[CALLEE].workerId})), 'callee-id');
+      } finally {
+        for (const m of sent) tokens().drop(m.args.token);
+        tokens().drop(token);
+      }
+    });
+
+    it('a hop held again after an end keeps its first bound: the 25 s rule (here 3 s) is for the whole hop', async () => {
+      cli.setOptions({workerThread: true, requestTimeout: 5});   // seconds: a hold of 3 s
+      const {dm, caller, callee, replies, token} = setup(() => {});
+      const t0 = Date.now();
+      try {
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm8', caller, token);
+        await new Promise((r) => setTimeout(r, 1500));
+        // a copy replaced, still undecided itself: the old copy's end runs the hop again, held on the new one
+        dm.deviceMap[CALLEE] = worker(CALLEE, []);
+        DeviceManager.releaseHeldOn(callee);
+        // (its first bound ends at 3 s; held anew it would end at 4.5 s)
+        await until(() => replies.length > 0, 3800 - (Date.now() - t0), 'answered at its first bound');
+      } finally {
+        tokens().drop(token);
+      }
+      assert.strictEqual(replies[0].errCode, 'CTX_CALL_NOT_READY');
     });
 
     // over a direct peer channel (--directPeerChannels) the callee's token is issued as its worker asks for the invoke's metering:
     // a callee with no verdict yet is answered not ready there (retryable), never issued a token from a binding not decided
-    for (const [what, decided, want] of [['no verdict yet', false, 'CTX_CALL_NOT_READY'], ['its verdict decided (control)', true, null]]) {
+    for (const [what, decided, want, atCap] of [['no verdict yet', false, 'CTX_CALL_NOT_READY', false], ['its verdict decided (control)', true, null, false],
+      ['no verdict yet, its channel at its cap (not ready first: retryable, before the cap\'s refusal)', false, 'CTX_CALL_NOT_READY', true]]) {
       it(`over a direct peer channel, a callee with ${what}: ${want == null ? 'its token issued with its identity' : 'not ready, no token issued'}`, () => {
         const PeerChannelBroker = require('../../lib/peer-channel-broker');
         const replies = [];
@@ -3023,6 +3125,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         const b = new PeerChannelBroker({deviceMap: {[CALLEE]: callee}});
         const entry = {callerWM: callerWM, calleeWM: callee, grants: {}};
         b.channelRegistry.ch = entry;
+        if (atCap) b.unbilledPerChannel.set('ch', PeerChannelBroker.UNBILLED_PER_CHANNEL_MAX);
         const token = tokens().issue({billingKey: `k-${hex()}`, identityKey: 'caller-id', module: 'S', workerId: callerWM.workerId, deviceID: CALLER, ttlMs: 60000});
         const now = Date.now();
         const announced = {token: token, workerId: callerWM.workerId, channel: 'ch', at: now, deadline: now + 60000, epoch: 'e', invokeId: 1, limits: null, session: null,
