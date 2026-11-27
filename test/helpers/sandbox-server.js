@@ -11,6 +11,38 @@ const {redisArgsFor} = require('./test-env');
 
 const ROOT = path.join(__dirname, '..', '..');
 
+// Every server startServer spawned, by pid, until it exits: {port, server}.
+// A hook that fails while a start is still pending leaves its file without
+// the server object (auth 42's before(), with Redis unreachable, 11-27), and a
+// spawned server is detached, its own process group, so nothing else would
+// stop it. stopAll() stops what is still here: a file's after() calls it,
+// and so does this process's exit. A start on a port that a recorded server
+// still holds stops that one first and says so (CI runs a folder in one
+// mocha process, so an exit-time stop alone lets a leaked server hold its
+// port while the later files run). Servers spawned other than through
+// startServer are not covered.
+const live = new Map();
+function stopAll() {
+  for (const pid of [...live.keys()]) {
+    killTree(pid);
+    live.delete(pid);
+  }
+}
+process.on('exit', stopAll);
+// (the recorded servers still on `port`, stopped; each waited for at most
+// 5 s, so the port is free for the next start)
+async function takeBackPort(port) {
+  const stale = [...live.entries()].filter(([, e]) => e.port === port);
+  await Promise.all(stale.map(([pid, e]) => new Promise((resolve) => {
+    process.stderr.write(`sandbox-server: a server from an earlier start (pid ${pid}) still held port ${port}: stopped\n`);
+    const done = setTimeout(resolve, 5000);
+    e.server.once('exit', () => { clearTimeout(done); resolve(); });
+    if (e.server.exitCode != null || e.server.signalCode != null) { clearTimeout(done); resolve(); }
+    killTree(pid);
+    live.delete(pid);
+  })));
+}
+
 // opts.expectExit: resolve as soon as the process exits instead of waiting
 // for the ready line -- for startup-refusal tests. A server that starts
 // instead is killed after 20 s, so a failing test does not leak it.
@@ -19,15 +51,18 @@ const ROOT = path.join(__dirname, '..', '..');
 // opts.root: a countinghouse installed somewhere else (default: this repo).
 // opts.nodeArgs: node's own flags before framework.js (bin/countinghouse
 // runs it with --expose-gc: the direct-peer-channels files, #234)
-function startServer(port, args, opts) {
+async function startServer(port, args, opts) {
   opts = opts || {};
   const root = opts.root || ROOT;
+  await takeBackPort(port);
   return new Promise((resolve, reject) => {
     const server = spawn(process.execPath,
       (opts.nodeArgs || []).concat([path.join(root, 'framework.js'), '--bindAddr', '127.0.0.1', '--port', String(port)], args, redisArgsFor(args)),
       {cwd: opts.cwd || root,
        env: Object.assign({}, process.env, {NODE_PATH: path.join(root, 'lib')}, opts.env || {}),
        stdio: ['ignore', 'pipe', 'pipe'], detached: true});
+    live.set(server.pid, {port, server});
+    server.once('exit', () => live.delete(server.pid));
     server.output = '';
     server.exitCode = null;
     server.stdout.on('data', (chunk) => { server.output += chunk.toString(); });
@@ -67,6 +102,7 @@ function killTree(pid) {
 function stopServer(server) {
   if (server == null || server.pid == null) return;
   killTree(server.pid);
+  live.delete(server.pid);
 }
 
 // Asks the server to shut down (POST /shutdown, as an admin: key), waits at
@@ -144,4 +180,4 @@ function waitFor(predicate, timeoutMs, label, describe) {
   });
 }
 
-module.exports = {ROOT, startServer, stopServer, shutdownThenStop, mcpCall, post, waitFor, redisArgsFor};
+module.exports = {ROOT, startServer, stopServer, stopAll, shutdownThenStop, mcpCall, post, waitFor, redisArgsFor};
