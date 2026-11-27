@@ -70,6 +70,31 @@ describe('stdio 14: countinghouse_settings', () => {
     options.moduleSandbox = 'enforce'; assert.deepStrictEqual(of(await row()), {value: 'enforce', stored: undefined, has: false});
   });
 
+  // (and set judges it as get shows it: a mode that differs from what runs is stored for the next start, said from what runs; never a
+  // "done" from the file's default while the row goes on showing another)
+  it('set: moduleSandbox asked for other than what runs, with nothing stored, is stored for the next start, from what runs', async () => {
+    options.moduleSandbox = 'audit';
+    const a = await tool.set('moduleSandbox', 'enforce');
+    assert.deepStrictEqual(core(a), {name: 'moduleSandbox', old: 'audit', new: 'enforce', applies: 'next start'});
+    assert.strictEqual(stored().moduleSandbox, 'enforce');
+    const row = (await tool.get()).settings.find((x) => x.name === 'moduleSandbox');
+    assert.deepStrictEqual([row.value, row.stored], ['audit', 'enforce']);
+    assert.deepStrictEqual(history().map((h) => [h.setting, h.old, h.new]), [['moduleSandbox', 'audit', 'enforce']]);
+    // (ch-local's next start replays the history: an unlabelled change ({setting, new}) sets the value, and the file must say the
+    // same, or it reports a change made outside ch-local (ch-local lib/outside-edits.js); `old` is not compared)
+    const line = history()[0]; assert.strictEqual(Object.prototype.hasOwnProperty.call(line, 'change'), false); assert.strictEqual(line.new, stored().moduleSandbox);
+    // (again: the file has it already, nothing more is written or recorded)
+    await tool.set('moduleSandbox', 'enforce'); assert.strictEqual(history().length, 1);
+  });
+
+  // (ch-local's record is read once a get, so the rows and the notice say the same of it, even while ch-local rewrites it)
+  it('get reads ch-local\'s record of the installed modules once', async () => {
+    const was = fs.readFileSync; let reads = 0;
+    fs.readFileSync = function (f, ...a) { if (String(f).endsWith('modules.json')) reads++; return was.call(this, f, ...a); };
+    try { await tool.get(); } finally { fs.readFileSync = was; }
+    assert.strictEqual(reads, 1);
+  });
+
   // (ch-local's record there and unreadable lists no on/off rows, and says so, as the overview does)
   it('get: an unreadable record of the installed modules is said, and the runtime\'s rows still come', async () => {
     fs.writeFileSync(path.join(home, 'modules.json'), '{"modules": ');
