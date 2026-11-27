@@ -11,7 +11,9 @@ const assert = require('assert');
 const {CountinghouseError} = require('../../lib/countinghouse-error');
 const callTokens = require('../../lib/call-tokens');
 
-describe('validation 38: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
+describe('validation 39: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
+  // (the runtime's one log, made by any test that reaches it, is reset after)
+  after(() => require('../../lib/failed-call-log').resetRuntimeLog());
   const HEAD = new CountinghouseError('DEVICE_INVOKE_EXCEPTION').message;
 
   describe('the runtime\'s own worker-side reasons cross on an exact match', () => {
@@ -24,10 +26,15 @@ describe('validation 38: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
       }
       for (const r of ['a module\'s result could not be read', 'the error could not be sent between threads', 'the value could not be sent between threads']) assert.ok(CountinghouseError.WORKER_REASONS.includes(r), r);
     });
+    it('a handler\'s own throw of the same words never crosses as the runtime\'s reason (it carries the from-handler mark)', () => {
+      const thrown = require('../../lib/countinghouse-error').markFromHandler(new CountinghouseError('DEVICE_INVOKE_EXCEPTION', 'a module\'s result could not be read'));
+      const decoded = CountinghouseError.fromReplyFields(CountinghouseError.replyFields(thrown));
+      assert.strictEqual(CountinghouseError.fromReply(decoded).message, HEAD);
+    });
     it('a near match, another code\'s head or a forged text is rebuilt from the code alone', () => {
       const r = 'a module\'s result could not be read';
       const real = raised('DEVICE_INVOKE_EXCEPTION', r);
-      for (const message of [`${real}!`, `${HEAD}:  ${r}`, `${HEAD} ${r}`, `${real} and more`, `x ${real}`, `${HEAD} Before it failed, the runtime refused its call to another module: DEVICE_NOT_FOUND.`]) {
+      for (const message of [`${real}!`, `${HEAD}:  ${r}`, `${HEAD} ${r}`, `${real} and more`, `x ${real}`, `${HEAD}. Before it failed, the runtime refused its call to another module: DEVICE_NOT_FOUND.`]) {
         assert.strictEqual(CountinghouseError.fromReply({code: 'DEVICE_INVOKE_EXCEPTION', message}).message, HEAD, message);
       }
       const fail = new CountinghouseError('DEVICE_INVOKE_FAIL').message;
@@ -38,16 +45,20 @@ describe('validation 38: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
   describe('the answer says the refusal the runtime gave before the failure', () => {
     it('a crash or a failure after a module call the runtime refused: one line, the code, never the module', () => {
       const e = CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code: 'DEVICE_NOT_FOUND', to: 'module'});
-      assert.strictEqual(e.message, `${HEAD} Before it failed, the runtime refused its call to another module: DEVICE_NOT_FOUND.`);
+      assert.strictEqual(e.message, `${HEAD}. Before it failed, the runtime refused its call to another module: DEVICE_NOT_FOUND.`);
       assert.deepStrictEqual(e.refusedBefore, {code: 'DEVICE_NOT_FOUND', to: 'module'});
       assert.ok(!Object.keys(e).includes('refusedBefore'), 'not enumerable: never sent as a field');
       const r = CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_FAIL'), {code: 'REMOTE_TIMEOUT', to: 'remote'});
-      assert.ok(r.message.endsWith(' Before it failed, the runtime refused its call to a remote service: REMOTE_TIMEOUT.'), r.message);
+      assert.ok(r.message.endsWith('. Before it failed, the runtime refused its call to a remote service: REMOTE_TIMEOUT.'), r.message);
     });
-    it('a part that is not there, whatever the reason (unloaded, reloading, not listed), is said as one code: no probing a module\'s state', () => {
-      for (const code of ['MODULE_UNLOADED', 'MODULE_RELOADING', 'MODULE_NOT_LISTED', 'DEVICE_NOT_FOUND']) {
+    it('a code about the calling module\'s own call is said as it is; any other (a part\'s state) is DEVICE_NOT_FOUND, the log keeping the exact code', () => {
+      for (const code of ['CTX_CALL_NOT_READY', 'CTX_CALL_UNDECLARED', 'HOP_CHAIN_TOO_DEEP', 'USAGE_CALL_FOREIGN']) {
+        assert.ok(CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code, to: 'module'}).message.endsWith(`: ${code}.`), code);
+      }
+      assert.ok(CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code: 'REMOTE_UNDECLARED', to: 'remote'}).message.endsWith(': REMOTE_UNDECLARED.'));
+      for (const code of ['MODULE_UNLOADED', 'MODULE_RELOADING', 'MODULE_NOT_LISTED', 'DEVICE_NOT_FOUND', 'MODULE_RESTARTING', 'MODULE_SUSPENDED', 'SESSION_WORKER_ENDED', 'SESSION_WORKERS_BUSY', 'MODULE_SESSION_PAUSED']) {
         const e = CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code, to: 'module'});
-        assert.strictEqual(e.message, `${HEAD} Before it failed, the runtime refused its call to another module: DEVICE_NOT_FOUND.`, code);
+        assert.strictEqual(e.message, `${HEAD}. Before it failed, the runtime refused its call to another module: DEVICE_NOT_FOUND.`, code);
         assert.deepStrictEqual(e.refusedBefore, {code, to: 'module'}, 'the log keeps the exact code');
       }
     });
@@ -151,7 +162,12 @@ describe('validation 38: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
       const {log, lines} = make();
       log.failed('pack/triage', CountinghouseError.module('MY_OWN', 'mine'));
       log.failed('pack/triage', null);
+      // (a runtime code a handler passed on carries the from-handler mark: the module's, not the runtime's)
+      log.failed('pack/triage', {code: 'CTX_CALL_NOT_READY', fromHandler: true});
       assert.deepStrictEqual(lines, []);
+      // (a refusal is read as the object's own fields only: an inherited one is no refusal)
+      log.failed('pack/triage', new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), Object.create({code: 'DEVICE_NOT_FOUND', to: 'module'}));
+      assert.deepStrictEqual(lines, ['a call failed: pack/triage: DEVICE_INVOKE_EXCEPTION (the module crashed)']);
     });
     it('a burst of 7, then silence: 5 lines, then exactly one line at the window\'s end saying 2 were left out', () => {
       const {log, lines, advance} = make(5, 600000);
@@ -175,6 +191,8 @@ describe('validation 38: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
       assert.strictEqual(toolOf({moduleName: 'pack', deviceList: {d1: spec('pack', ['triage'])}}, 'triage', 'd1'), 'pack/triage');
       assert.strictEqual(toolOf({hostModuleName: 'host', deviceList: {d2: spec('host', ['run'])}}, 'run', 'd2'), 'host/run');
       assert.strictEqual(toolOf({spec: spec('single', ['go'])}, 'go', 'd3'), 'single/go');
+      // (a scoped module, as a module's data folder allows one)
+      assert.strictEqual(toolOf({moduleName: '@acme/pack', deviceList: {d4: spec('@acme/pack', ['triage'])}}, 'triage', 'd4'), '@acme/pack/triage');
       for (const [device, action, id] of [[null, 'a', 'd'], [{}, 'a', 'd'], [{moduleName: 'm', deviceList: {d: spec('m', ['a'])}}, null, 'd'],
         [{moduleName: 'm', deviceList: {d: spec('m', ['a'])}}, 'made-up', 'd'], [{moduleName: 'm', deviceList: {d: spec('m', ['a'])}}, 'a', 'other'],
         [{moduleName: 'm\nx', deviceList: {d: spec('m', ['a'])}}, 'a', 'd'], [{moduleName: 'm'}, 'a', 'd']]) {

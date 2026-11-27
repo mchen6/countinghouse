@@ -17,13 +17,15 @@ const {toolErrorCode} = require('../helpers/tool-result');
 const {deviceIDForName} = require('../../lib/call-address');
 const {testPort} = require('../helpers/test-env');
 
-const PORT     = testPort(9678);
 const FIXTURES = path.join(ROOT, 'test', 'fixtures');
 const LINE     = /Before it failed, the runtime refused its call to another module: ([A-Z][A-Z0-9_]+)\./;
 const hex      = () => crypto.randomBytes(6).toString('hex');
 const tmp      = require('../helpers/test-tmp').forFile(['ch-refused-25-']);
 
-describe('composition 25: a crash after the runtime refused one of its module calls says that refusal', function() {
+// (each path: the direct peer channels, on by default, and the routed one,
+// where a hop passes the main thread's hop path)
+for (const [label, port, flags] of [['peer channels', testPort(9678), []], ['routed', testPort(9679), ['--no-directPeerChannels']]]) {
+describe(`composition 25 (${label}): a crash after the runtime refused one of its module calls says that refusal`, function() {
   this.timeout(120000);
   const KEYS = {user: `user-key-${hex()}`, admin: `admin-key-${hex()}`, crasher: `crasher-internal-${hex()}`, caller: `caller-internal-${hex()}`, relay: `relay-internal-${hex()}`};
   let server = null;
@@ -39,7 +41,7 @@ describe('composition 25: a crash after the runtime refused one of its module ca
       [KEYS.caller]: {userName: `caller-${hex()}`, devices: ['*'], runsModules: ['compose-caller']},
       [KEYS.relay]: {userName: `relay-${hex()}`, devices: [deviceIDForName('compose-crasher')], runsModules: ['compose-relay']}
     }), {mode: 0o600});
-    server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath,
+    server = await startServer(port, ['--workerThread', ...flags, '--authProvider', 'file', '--authConfigPath', authPath,
       '--moduleSandbox', 'off', '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(FIXTURES, 'compose-callee'),
       '--loadModule', path.join(FIXTURES, 'compose-caller'),
@@ -48,7 +50,9 @@ describe('composition 25: a crash after the runtime refused one of its module ca
   });
   after(() => stopServer(server));
 
-  const call = (name) => mcpCall(PORT, KEYS.user, name, {});
+  const call = (name) => mcpCall(port, KEYS.user, name, {});
+  // a line the server logs, waited for (bounded), never read once and hoped for
+  const logged = async (re) => { for (let i = 0; i < 50 && !re.test(server.output); i++) await new Promise((r) => setTimeout(r, 100)); return re.test(server.output); };
   const textOf = (result) => result.content.map((c) => c.text).join('\n');
 
   it('an untyped throw with no module call refused: no such line, whatever the module wrote', async () => {
@@ -64,11 +68,14 @@ describe('composition 25: a crash after the runtime refused one of its module ca
   });
 
   it('a call the runtime refused, then an untyped throw: DEVICE_INVOKE_EXCEPTION, and the refusal\'s code in one line, never the other module\'s name', async () => {
-    assert.strictEqual((await post(PORT, KEYS.admin, '/unload-module', {name: 'compose-callee'})).status, 200);
+    assert.strictEqual((await post(port, KEYS.admin, '/unload-module', {name: 'compose-callee'})).status, 200);
     const result = await call('compose_crasher_crasherservice_refusedthenthrow');
     assert.strictEqual(result.isError, true, JSON.stringify(result));
     assert.strictEqual(toolErrorCode(result), 'DEVICE_INVOKE_EXCEPTION', JSON.stringify(result));
-    assert.ok(LINE.exec(textOf(result)) != null, textOf(result));
+    const m = LINE.exec(textOf(result));
+    // (an unloaded part is said as DEVICE_NOT_FOUND, whatever its state; the log keeps the exact code)
+    assert.ok(m != null && m[1] === 'DEVICE_NOT_FOUND', textOf(result));
+    assert.ok(await logged(/a call failed: compose-crasher\/refusedThenThrow: DEVICE_INVOKE_EXCEPTION \(the module crashed\), after the runtime refused its call to another module: MODULE_UNLOADED/), server.output.slice(-3000));
     assert.ok(!/compose-callee|calleeService|double/.test(textOf(result)), textOf(result));
     // (the module's own text never crosses)
     assert.ok(!/the call failed/.test(textOf(result)), textOf(result));
@@ -86,12 +93,13 @@ describe('composition 25: a crash after the runtime refused one of its module ca
     assert.ok(!/compose-callee|compose-crasher|the relay failed/.test(textOf(result)), textOf(result));
   });
 
-  it('the runtime logs each such failure without --debug: the tool, the code and its class, and the refusal; no module text', () => {
-    assert.ok(/a call failed: \S+: DEVICE_INVOKE_EXCEPTION \(the module crashed\), after the runtime refused its call to another module: [A-Z][A-Z0-9_]+/.test(server.output), server.output.slice(-3000));
+  it('the runtime logs each such failure without --debug: the tool, the code and its class, and the refusal; no module text', async () => {
+    assert.ok(await logged(/a call failed: \S+: DEVICE_INVOKE_EXCEPTION \(the module crashed\), after the runtime refused its call to another module: [A-Z][A-Z0-9_]+/), server.output.slice(-3000));
     assert.ok(!/the call failed: /.test(server.output), 'the module\'s own text is never logged');
     // (a callee's crash relayed to its caller is one user call: logged once, as the caller's tool, never again as the callee's)
-    assert.ok(/a call failed: compose-caller\/viaBoom: DEVICE_INVOKE_EXCEPTION/.test(server.output), server.output.slice(-3000));
+    assert.ok(await logged(/a call failed: compose-caller\/viaBoom: DEVICE_INVOKE_EXCEPTION/), server.output.slice(-3000));
     assert.ok(!/a call failed: compose-callee\//.test(server.output), 'a hop\'s own session is not logged');
   });
   tmp.hooks();
 });
+}
