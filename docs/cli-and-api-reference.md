@@ -140,8 +140,9 @@ status, 429 (503 for `RUNTIME_BUSY`, `SUBSCRIPTIONS_FULL`,
 `LEDGER_CORRUPT` and `LEDGER_RECORD_INVALID`), and `Retry-After` when a
 hint was written (5 s for `LEDGER_UNREACHABLE` and `LEDGER_UNWRITABLE`,
 whose texts also end "retry shortly"; none for the other ledger codes). A
-billed `tools/call` or invoke-action refused for the ledger is a tool error
-result with the same code, refused before it runs; a balance asked for
+billed `tools/call` refused for the ledger is a tool error result with the
+same code, and a billed HTTP invoke-action is answered with the code's HTTP
+status and `{code}`, each refused before it runs; a balance asked for
 answers the same codes. A billed call refused for the ledger is not counted
 by the per-key limiter; the server-wide limit still counts it, as it counts
 every call. Under Redis ACLs, the runtime's user needs write access to the
