@@ -807,3 +807,85 @@ describe('store 04: a reader never costs a write (R-win-ledger-rename)', functio
 
   openDirs.hooks();
 });
+
+// R-exit-flush-refused: flush() (close, the exit flush) is synchronous, and
+// on Windows its rename is refused while another process has the file open
+// (a reader without the lock). It was rescheduled, and at exit that write was
+// lost (local-kv's kv.json: modules' data, task tombstones, asks). It tries a
+// refused rename again within its one wait (LOCK_WAIT_MS: the lock's and the
+// rename's together), the lock released between attempts.
+const flushDirs = require('../helpers/test-tmp').forFile(['ch-store-04-flush-']);
+
+describe('store 04: a flush outlasts a reader holding the file (R-exit-flush-refused)', function() {
+  this.timeout(60000);
+  const winIt = process.platform === 'win32' ? it : it.skip;
+  let file = null;
+  let f = null;
+  let r = null;
+  beforeEach(() => {
+    file = path.join(flushDirs.mkdtemp('ch-store-04-flush-'), 'kv.json');
+    f = openJsonFile(file, {debounceMs: 60000});
+    f.set('k', {n: 0});
+    f.flush();
+  });
+  afterEach(async () => {
+    if (r != null) { await r.kill(); r = null; }
+    f.close();
+  });
+
+  // The other process closes its handle on its own (the flush blocks this
+  // process, so the test can't tell it to), once it has seen the new file
+  // appear a second time: a second attempt, which only a refused rename
+  // makes, so the flush is trying again when the handle closes (Windows).
+  // Elsewhere the rename is never refused, and the flush writes at once.
+  it('a flush while another process has the file open, closing it once the flush tries again, has written the change when it returns', async () => {
+    r = await reader(`
+      const fs = require('fs');
+      const fd = fs.openSync(${JSON.stringify(file)}, 'r');
+      let closed = false;
+      const close = () => { if (!closed) { closed = true; fs.closeSync(fd); } };
+      process.stdout.write('open\\n');
+      process.stdin.resume();
+      process.stdin.once('end', close);
+      const dir = ${JSON.stringify(path.dirname(file))};
+      const tmp = ${JSON.stringify(`${path.basename(file)}.tmp-`)};
+      let was = false;
+      let seen = 0;
+      const watch = () => {
+        if (closed) return;
+        const is = fs.readdirSync(dir).some((e) => e.startsWith(tmp));
+        if (is && !was) seen += 1;
+        was = is;
+        if (seen >= 2) return close();
+        setImmediate(watch);
+      };
+      watch();
+    `);
+    f.set('k', {n: 1});
+    f.flush();
+    assert.deepStrictEqual(onDisk(file), {k: {n: 1}}, 'written by the flush itself, not a later retry');
+    assert.deepStrictEqual(await r.end(), {code: 0, signal: null});
+  });
+
+  // (Windows) a handle never closed: the flush gives up at its one wait, and
+  // the change is kept for the scheduled write, which lands it once the
+  // other process has closed the file
+  winIt('a handle never closed: the flush gives up within its wait, and the change is written once the file is let go (Windows)', async () => {
+    r = await reader(`
+      const fd = require('fs').openSync(${JSON.stringify(file)}, 'r');
+      process.stdout.write('open\\n');
+      process.stdin.resume();
+      process.stdin.once('end', () => { require('fs').closeSync(fd); });
+    `);
+    f.set('k', {n: 1});
+    f.flush();
+    // (it returned: it gave up at its wait, and kept the change)
+    assert.deepStrictEqual(onDisk(file), {k: {n: 0}}, 'not written while the handle is held');
+    assert.deepStrictEqual(await r.end(), {code: 0, signal: null});
+    const until = Date.now() + 15000;
+    while (onDisk(file).k.n !== 1 && Date.now() < until) await new Promise((res) => setTimeout(res, 50));
+    assert.deepStrictEqual(onDisk(file), {k: {n: 1}}, 'the scheduled write landed it');
+  });
+
+  flushDirs.hooks();
+});
