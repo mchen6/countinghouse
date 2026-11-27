@@ -111,7 +111,8 @@ describe('local-kv 01: the review of B3', () => {
   // "inf" and "-inf" as kv.json keeps them: any other (null, as an older
   // writer left Infinity, or text) is a malformed entry, dropped
   it('a sorted set whose stored score is not a number, "inf" or "-inf" is malformed and dropped; "inf" and "-inf" read as themselves', async () => {
-    const storePath = tmpStore();
+    const tmp = require('../helpers/test-tmp');
+    const storePath = tmp.mkdtemp('ch-local-kv-01-inf-');
     fs.writeFileSync(path.join(storePath, 'kv.json'), JSON.stringify({
       nul: {t: 'zset', v: {a: null}}, txt: {t: 'zset', v: {a: 'high'}}, ok: {t: 'zset', v: {a: 'inf', b: '-inf', c: 2}}}));
     const kv = new LocalKv({storePath});
@@ -121,6 +122,7 @@ describe('local-kv 01: the review of B3', () => {
       assert.deepStrictEqual(await run(kv, 'zrange', 'ok', 0, -1, 'WITHSCORES'), ['b', '-inf', 'c', '2', 'a', 'inf']);
     } finally {
       kv.close();
+      tmp.remove(storePath);
     }
   });
 

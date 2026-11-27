@@ -75,26 +75,33 @@ describe('local-kv 02: inf and -inf scores read back from kv.json as Redis keeps
   after(() => { if (redisClient != null) redisClient.quit(); });
 
   it('zrange WITHSCORES, GT, LT and INCR after the read-back answer as Redis does', async () => {
-    const storePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-local-kv-02-inf-'));
-    const before = [['zadd', 'zi', 'inf', 'top', '-inf', 'bottom', 1, 'mid'], ['zadd', 'zj', '+inf', 'x']];
-    const after = [['zrange', 'zi', 0, -1, 'WITHSCORES'], ['zrange', 'zi', 0, 0], ['zadd', 'zi', 'GT', 5, 'top'], ['zadd', 'zi', 'LT', 5, 'bottom'],
+    const tmp = require('../helpers/test-tmp');
+    const storePath = tmp.mkdtemp('ch-local-kv-02-inf-');
+    const writes = [['zadd', 'zi', 'inf', 'top', '-inf', 'bottom', 1, 'mid'], ['zadd', 'zj', '+inf', 'x']];
+    const reads = [['zrange', 'zi', 0, -1, 'WITHSCORES'], ['zrange', 'zi', 0, 0], ['zadd', 'zi', 'GT', 5, 'top'], ['zadd', 'zi', 'LT', 5, 'bottom'],
       ['zadd', 'zi', 'INCR', 1, 'top'], ['zadd', 'zi', 'INCR', 1, 'bottom'], ['zrange', 'zi', 0, -1, 'WITHSCORES'], ['zrange', 'zj', 0, -1, 'WITHSCORES']];
-    const first = new LocalKv({storePath});
-    for (const [cmd, ...args] of before) {
-      assert.deepStrictEqual(await run(first, cmd, ...args), await run(redisClient, cmd, ...args), cmd);
-    }
-    first.close();
-    const kv = new LocalKv({storePath});
     const diffs = [];
     try {
-      for (const [cmd, ...args] of after) {
+      const first = new LocalKv({storePath});
+      try {
+        for (const [cmd, ...args] of writes) {
+          assert.deepStrictEqual(await run(first, cmd, ...args), await run(redisClient, cmd, ...args), cmd);
+        }
+      } finally {
+        first.close();
+      }
+      const kv = new LocalKv({storePath});
+      try {
+        for (const [cmd, ...args] of reads) {
         const expected = await run(redisClient, cmd, ...args);
         const actual = await run(kv, cmd, ...args);
         try { assert.deepStrictEqual(actual, expected); } catch (e) { diffs.push({step: [cmd, ...args], redis: expected, local: actual}); }
+        }
+      } finally {
+        kv.close();
       }
     } finally {
-      kv.close();
-      fs.rmSync(storePath, {recursive: true, force: true});
+      tmp.remove(storePath);
     }
     assert.deepStrictEqual(diffs, []);
   });
