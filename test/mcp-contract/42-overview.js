@@ -689,6 +689,9 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.strictEqual(read().pluginLatest, null, 'the plugin is up to date');
       file(dir, Object.assign({}, good, {plugin: {installed: '0.8.0', latest: '0.7.0'}}));
       assert.strictEqual(read().pluginLatest, null, 'an older plugin is no update');
+      // (the installed release's plugin not known: no plugin line, as ch-local's own upgrade says none)
+      file(dir, Object.assign({}, good, {plugin: {installed: null, latest: '0.7.0'}}));
+      assert.strictEqual(read().pluginLatest, null, 'no plugin known to be installed');
       // (A's medium on the update line, 3: the relations ch-local's check keeps)
       for (const bad of [{v: 2}, Object.assign({}, good, {available: '1.5.0; rm -rf ~'}), Object.assign({}, good, {checkedAt: 'yesterday'}),
         Object.assign({}, good, {installed: 7}), Object.assign({}, good, {major: 'yes'}), Object.assign({}, good, {breaking: 'no'}),
@@ -754,7 +757,7 @@ describe('mcp-contract 42: countinghouse_overview (B-firstrun)', () => {
       assert.strictEqual(F.update(null, {checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: '1.5.0', major: false, pluginLatest: null}),
         'ch-local 1.5.0 is available (you have 1.4.0; checked 2026-11-21): run `ch-local upgrade` in your own terminal.');
       assert.strictEqual(F.update('/home/u/.ch/bin/ch-local.js', {checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: '2.0.0', major: true, pluginLatest: '0.7.0'}),
-        'ch-local 2.0.0 is available (you have 1.4.0; checked 2026-11-21): run `node "/home/u/.ch/bin/ch-local.js" upgrade` in your own terminal. It is a new major version: its release notes say what changes. The plugin can then be updated to 0.7.0.');
+        'ch-local 2.0.0 is available (you have 1.4.0; checked 2026-11-21): run `node "/home/u/.ch/bin/ch-local.js" upgrade` in your own terminal. It is a new major version: its release notes say what changes. If you use the ch-packs plugin in Claude Code, it can then be updated to 0.7.0.');
       assert.strictEqual(F.update(null, {checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: null, major: false, pluginLatest: null}),
         'ch-local 1.4.0 was up to date when you last checked (2026-11-21).');
       const data = overview.build({version: '1', settingsProfile: true, packs: [], update: {checkedAt: '2026-11-21T09:30:00.000Z', installed: '1.4.0', available: null, major: false, pluginLatest: null}});

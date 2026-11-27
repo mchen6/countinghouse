@@ -124,12 +124,13 @@ a module passes on from a part's call is the module's answer (kind
 `prompts/get`, `completion/complete`, `tasks/*`, a resource read), an
 address over `--unauthRateLimit`, a key or session with as many
 subscriptions open as it may have (`TOO_MANY_SUBSCRIPTIONS`), and the
-runtime at its limit (`RUNTIME_BUSY`) -- is the JSON-RPC error -32000, the
+runtime at its limit (`RUNTIME_BUSY`) or with as many subscriptions open as
+it allows (`SUBSCRIPTIONS_FULL`) -- is the JSON-RPC error -32000, the
 catalogue's message (or the subscription limit's own), and the same keys in
 its `error.data`. A single request's is sent with its code's HTTP status,
-429 (503 for `RUNTIME_BUSY`), and `Retry-After` when a hint was written. A
-legacy batch stays 200, with `Retry-After` the longest hint among its
-limited messages.
+429 (503 for `RUNTIME_BUSY` and `SUBSCRIPTIONS_FULL`), and `Retry-After`
+when a hint was written. A legacy batch stays 200, with `Retry-After` the
+longest hint among its limited messages.
 
 **Module names.** A load (`/load-module`, `countinghouse_load_module`, `--loadModule`, the registry at startup, restarts) must use the module's package.json name; any other name is refused with `MODULE_NAME_MISMATCH`. `POST /load-module` may leave `name` out, and then uses the package.json name.
 
