@@ -84,7 +84,9 @@ describe('validation 39: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
     });
     it('a code about the calling module\'s own call is said as it is; any other (a part\'s state) is DEVICE_NOT_FOUND, the log keeping the exact code', () => {
       for (const code of ['CTX_CALL_NOT_READY', 'CTX_CALL_UNDECLARED', 'HOP_CHAIN_TOO_DEEP', 'USAGE_CALL_FOREIGN', 'INPUT_TOO_LARGE', 'OUTPUT_TOO_LARGE', 'SETTING_REQUIRED', 'SETTING_NOT_READY',
-        'INPUT_DATA_VALIDATION_FAIL', 'OUTPUT_DATA_VALIDATION_FAIL', 'VALIDATION_TIMEOUT', 'VALIDATION_CALLER_THROTTLED']) {
+        'INPUT_DATA_VALIDATION_FAIL', 'OUTPUT_DATA_VALIDATION_FAIL', 'VALIDATION_TIMEOUT', 'VALIDATION_CALLER_THROTTLED',
+        // (the call's own input or the answer's shape, as main's validators and checks give them)
+        'MISSING_OUTPUT_ARGUMENT', 'ARGUMENTS_INVALID', 'ACTION_NOT_FOUND', 'SERVICE_NOT_FOUND', 'INPUT_NOT_FOUND', 'ACTION_NOT_IMPLEMENTED']) {
         assert.ok(CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code, to: 'module'}).message.endsWith(`: ${code}.`), code);
       }
       assert.ok(CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code: 'REMOTE_UNDECLARED', to: 'remote'}).message.endsWith(': REMOTE_UNDECLARED.'));
@@ -164,6 +166,15 @@ describe('validation 39: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
       callTokens.drop(outer);
     });
     it('a remote\'s own failure (unreachable, a timeout) is not the runtime\'s refusal: not kept, and it clears an earlier one', () => {
+      // (the runtime's own refusals of a remote call are kept, runtime kind or not)
+      for (const code of ['HOP_IDENTITY_UNRESOLVED', 'REMOTE_RESULT_TOO_LARGE']) {
+        const o = issue(); callTokens.noteRefused(o, code, 'remote', W);
+        assert.deepStrictEqual(callTokens.refusedOf(o), {code, to: 'remote'}, code); callTokens.drop(o);
+      }
+      for (const code of ['REMOTE_UNREACHABLE', 'REMOTE_TIMEOUT', 'REMOTE_AUTH_FAILED', 'REMOTE_PROTOCOL']) {
+        const o = issue(); callTokens.noteRefused(o, 'REMOTE_UNDECLARED', 'remote', W); callTokens.noteRefused(o, code, 'remote', W);
+        assert.strictEqual(callTokens.refusedOf(o), null, code); callTokens.drop(o);
+      }
       const outer = issue();
       callTokens.noteRefused(outer, 'REMOTE_UNDECLARED', 'remote', W);
       assert.deepStrictEqual(callTokens.refusedOf(outer), {code: 'REMOTE_UNDECLARED', to: 'remote'});
