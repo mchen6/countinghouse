@@ -1076,5 +1076,97 @@ describe('store 04: a write after a corrupt file builds from this process\'s map
     }
   });
 
+  // (the high on 38015155, 2) every OS: a write that failed after its own
+  // move-aside (ENOSPC, EIO, any rename error) left no file, and the next
+  // charge built from nothing on every OS, not only Windows' retry
+  it('a charge whose write fails after the file was found corrupt, then another charge: one free call spent, the other keys kept', async () => {
+    const dir = corruptDirs.mkdtemp('ch-store-04-corrupt-');
+    const file = path.join(dir, 'metering.json');
+    const apiKey = `k-${require('crypto').randomBytes(8).toString('hex')}`;
+    const id = meterId(apiKey);
+    const seeded = {other: {balance: 3, toolPriceRecord: {}}};
+    seeded[id] = {balance: 10, toolPriceRecord: {t: {count: 2}}};
+    fs.writeFileSync(file, JSON.stringify(seeded));
+    const provider = new LocalMeteringProvider({meter: true, storePath: dir});
+    const rename = fs.renameSync;
+    const charge = () => new Promise((resolve) => provider.recordCall(apiKey, 't', 5, (err, a) => resolve({err, a})));
+    let first = null;
+    let second = null;
+    try {
+      fs.writeFileSync(file, '{"broken": ');
+      let failed = 0;
+      fs.renameSync = function(from, to) {
+        if (failed === 0 && to === file && String(from).startsWith(`${file}.tmp-`)) {
+          failed += 1;
+          throw Object.assign(new Error(`EIO: i/o error, rename '${from}' -> '${to}'`), {code: 'EIO', syscall: 'rename'});
+        }
+        return rename.apply(this, arguments);
+      };
+      first = await charge();
+      second = await charge();
+      assert.strictEqual(failed, 1, 'the first write failed');
+    } finally {
+      fs.renameSync = rename;
+      provider.close();
+    }
+    assert.ok(fs.renameSync === rename, 'the stub is gone');
+    assert.strictEqual(first.err && first.err.code, 'EIO');
+    assert.deepStrictEqual(second, {err: null, a: {tool: 't', charged: 0, balance: 10, remainingFreeCalls: 1}});
+    assert.deepStrictEqual(onDisk(file), {other: {balance: 3, toolPriceRecord: {}}, [id]: {balance: 10, toolPriceRecord: {t: {count: 1}}}});
+  });
+
+  // (the high on 38015155, 1) a good file read since the move-aside is the
+  // file as it is: once it is removed, the store is gone, even with the aside
+  // file still there
+  it('a good file read after the move-aside ends it: that file removed, the next write is only the unwritten keys', () => {
+    const dir = corruptDirs.mkdtemp('ch-store-04-corrupt-');
+    const file = path.join(dir, 'm.json');
+    const f = openJsonFile(file, {debounceMs: 60000});
+    try {
+      f.set('a', 1);
+      f.flush();
+      fs.writeFileSync(file, '{"broken": ');
+      f.reload();
+      fs.writeFileSync(file, JSON.stringify({x: 1}));
+      f.reload();
+      assert.deepStrictEqual(f.data, {x: 1});
+      assert.strictEqual(fs.readdirSync(dir).filter((e) => e.startsWith('m.json.corrupt-')).length, 1, 'the aside file is still there');
+      fs.unlinkSync(file);
+      f.set('c', 3);
+      f.flush();
+      assert.deepStrictEqual(onDisk(file), {c: 3});
+    } finally {
+      f.close();
+    }
+  });
+
+  // (the high on 38015155, 3) a check that can't be made keeps the map: only
+  // an aside file that is gone (ENOENT) ends the rebuild, never a stat refused
+  it('an aside file whose stat is refused keeps the map: the next write is all of it', () => {
+    const dir = corruptDirs.mkdtemp('ch-store-04-corrupt-');
+    const file = path.join(dir, 'm.json');
+    const f = openJsonFile(file, {debounceMs: 60000});
+    const stat = fs.statSync;
+    try {
+      f.set('a', 1);
+      f.flush();
+      fs.writeFileSync(file, '{"broken": ');
+      f.reload();
+      const aside = path.join(dir, fs.readdirSync(dir).filter((e) => e.startsWith('m.json.corrupt-'))[0]);
+      fs.unlinkSync(aside);
+      fs.statSync = function(p) {
+        if (p === aside) throw Object.assign(new Error(`EACCES: permission denied, stat '${p}'`), {code: 'EACCES', syscall: 'stat'});
+        return stat.apply(this, arguments);
+      };
+      f.set('c', 3);
+      f.flush();
+    } finally {
+      fs.statSync = stat;
+      f.close();
+    }
+    assert.ok(fs.statSync === stat, 'the stub is gone');
+    assert.deepStrictEqual(onDisk(file), {a: 1, c: 3});
+  });
+
   corruptDirs.hooks();
 });
