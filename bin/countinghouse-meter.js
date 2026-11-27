@@ -84,7 +84,7 @@ if (store === 'local') {
     // (the error's code only: a path can name the operator's directories)
     // (a corrupt ledger this command never saw whole: never replaced by it,
     // R-store-aside-locked; what to do, said)
-    if (err != null && err.code === 'ECORRUPT') fail('the ledger is corrupt, and this command holds no copy of it: let a runtime that has it open replace it, or move it away to start a new ledger');
+    if (err != null && err.code === 'ECORRUPT') fail('the ledger (metering.json in the --storePath you gave) is corrupt, and this command holds no copy of it: let a runtime that has it open replace it, or move metering.json away to start an empty ledger (every balance and free count starts from nothing; the file you moved keeps what could be recovered)');
     if (err) fail(`the balance could not be written (${err.code || 'error'})`);
     process.stdout.write(`set balance ${balance} for ${id}\n`);
   });
