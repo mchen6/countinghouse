@@ -1159,6 +1159,8 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
   let W = null;
   beforeEach(() => { logged = []; W = logger.W; logger.W = (line) => { logged.push(String(line)); }; });
   afterEach(() => { logger.W = W; });
+  // (process-wide: the read error last said for each file, cleared when this describe ends)
+  after(() => { require('../../lib/store/json-file').forgetReadErrors(); });
   const aside = (dir, base) => fs.readdirSync(dir).filter((e) => e.startsWith(`${base}.corrupt-`));
 
   it('a write that fails after the file was found corrupt leaves it there: another process writes its whole map, and this one\'s change goes over it', async () => {
@@ -1376,7 +1378,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     assert.deepStrictEqual(kept, ['{"first": ', '{"second": ']);
   });
 
-  it('a corrupt ledger this process will itself replace is a balance that can\'t be told yet: LEDGER_UNREADABLE (retryable), never the one in memory', async () => {
+  it('a corrupt ledger this process saw whole is a balance told from its map (the rewrite pending), never refused', async () => {
     const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
     const LocalMeteringProvider = require('../../lib/metering/local-provider');
     const apiKey = `k-${require('crypto').randomBytes(8).toString('hex')}`;
@@ -1390,7 +1392,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     } finally {
       provider.close();
     }
-    assert.deepStrictEqual(got.err && [got.err.code, require('../../lib/error-catalogue').CODES[got.err.code].retryable], ['LEDGER_UNREADABLE', true]);
+    assert.deepStrictEqual(got, {err: null, r: {balance: 10}});
   });
 
   it('a copy aside whose first name is taken gets another: the copy is kept', () => {
@@ -1741,6 +1743,129 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     }
     assert.ok(err != null && /^ERR the store could not be read/.test(err.message), String(err && err.message));
     assert.ok(!err.message.includes(dir), err.message);
+  });
+
+  // (the Reviewer's ruling on the delta read, round 8) the ledger's state
+  // table, a row a case: whether this runtime saw the file whole (known,
+  // unknown) x the file (good, corrupt, unreadable), each path's answer: the
+  // per-key gate (rateLimit), a charge (recordCall), a balance (checkBalance)
+  describe('the ledger\'s state table', () => {
+    const {CODES} = require('../../lib/error-catalogue');
+    const {meterId} = require('../../lib/key-fingerprint');
+    const LocalMeteringProvider = require('../../lib/metering/local-provider');
+    const apiKey = `k-${require('crypto').randomBytes(8).toString('hex')}`;
+    const ask = (p, m, ...a) => new Promise((resolve) => p[m](apiKey, ...a, (err, r) => resolve(err != null ? {err: err.code} : {r})));
+    const ledger = (dir) => {
+      const file = path.join(dir, 'metering.json');
+      fs.writeFileSync(file, JSON.stringify({[meterId(apiKey)]: {balance: 10, toolPriceRecord: {t: {count: 2}}}}));
+      return file;
+    };
+    const read = fs.readFileSync;
+    let unreadable = null;
+    beforeEach(() => {
+      unreadable = null;
+      fs.readFileSync = function(p) {
+        if (p === unreadable) throw Object.assign(new Error(`EACCES: permission denied, open '${p}'`), {code: 'EACCES', syscall: 'open'});
+        return read.apply(this, arguments);
+      };
+    });
+    afterEach(() => { fs.readFileSync = read; });
+
+    it('the two texts, word for word, with their flags and statuses', () => {
+      assert.deepStrictEqual([CODES.LEDGER_CORRUPT.en, CODES.LEDGER_CORRUPT.retryable, CODES.LEDGER_CORRUPT.httpStatus],
+        ["The usage ledger can't be read, so charged calls and balance checks are refused until it is repaired; the runtime's log says how", false, 500]);
+      assert.deepStrictEqual([CODES.LEDGER_UNREADABLE.en, CODES.LEDGER_UNREADABLE.retryable, CODES.LEDGER_UNREADABLE.httpStatus],
+        ["The usage ledger can't be read right now; charged calls and balance checks are refused until it can be read again", true, 503]);
+    });
+
+    it('known, good: the gate passes, a charge is made, the balance told', async () => {
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      ledger(dir);
+      const p = new LocalMeteringProvider({meter: true, storePath: dir});
+      try {
+        assert.deepStrictEqual(await ask(p, 'rateLimit'), {r: {limited: false}});
+        assert.deepStrictEqual(await ask(p, 'recordCall', 't', 5), {r: {tool: 't', charged: 0, balance: 10, remainingFreeCalls: 1}});
+        assert.deepStrictEqual(await ask(p, 'checkBalance'), {r: {balance: 10}});
+      } finally { p.close(); }
+    });
+
+    it('known, corrupt (the rewrite pending): nothing refused; the gate passes, a charge is made from the map, the balance told from it', async () => {
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      const file = ledger(dir);
+      const p = new LocalMeteringProvider({meter: true, storePath: dir});
+      try {
+        fs.writeFileSync(file, '{"broken": ');
+        assert.deepStrictEqual(await ask(p, 'checkBalance'), {r: {balance: 10}});
+        assert.deepStrictEqual(await ask(p, 'rateLimit'), {r: {limited: false}});
+        assert.deepStrictEqual(await ask(p, 'recordCall', 't', 5), {r: {tool: 't', charged: 0, balance: 10, remainingFreeCalls: 1}});
+      } finally { p.close(); }
+      assert.deepStrictEqual(onDisk(file), {[meterId(apiKey)]: {balance: 10, toolPriceRecord: {t: {count: 1}}}});
+    });
+
+    it('known, unreadable: once a read has failed, the gate and the balance refuse LEDGER_UNREADABLE (read again first); readable again, they go on', async () => {
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      const file = ledger(dir);
+      const p = new LocalMeteringProvider({meter: true, storePath: dir});
+      try {
+        unreadable = file;
+        assert.deepStrictEqual(await ask(p, 'checkBalance'), {err: 'LEDGER_UNREADABLE'});
+        assert.deepStrictEqual(await ask(p, 'rateLimit'), {err: 'LEDGER_UNREADABLE'});
+        unreadable = null;
+        assert.deepStrictEqual(await ask(p, 'rateLimit'), {r: {limited: false}});
+        assert.deepStrictEqual(await ask(p, 'checkBalance'), {r: {balance: 10}});
+      } finally { p.close(); }
+    });
+
+    it('known, unreadable before any read has failed: the gate passes, the charge\'s own read fails and is told (logged and lost), and the gate then refuses', async () => {
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      const file = ledger(dir);
+      const p = new LocalMeteringProvider({meter: true, storePath: dir});
+      try {
+        unreadable = file;
+        assert.deepStrictEqual(await ask(p, 'rateLimit'), {r: {limited: false}});
+        assert.deepStrictEqual(await ask(p, 'recordCall', 't', 5), {err: 'EACCES'});
+        assert.deepStrictEqual(await ask(p, 'rateLimit'), {err: 'LEDGER_UNREADABLE'});
+      } finally { p.close(); }
+    });
+
+    it('unknown, corrupt: the gate and the balance refuse LEDGER_CORRUPT, a charge ECORRUPT', async () => {
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      const file = ledger(dir);
+      fs.writeFileSync(file, '{"broken": ');
+      const p = new LocalMeteringProvider({meter: true, storePath: dir});
+      try {
+        assert.deepStrictEqual(await ask(p, 'rateLimit'), {err: 'LEDGER_CORRUPT'});
+        assert.deepStrictEqual(await ask(p, 'checkBalance'), {err: 'LEDGER_CORRUPT'});
+        assert.deepStrictEqual(await ask(p, 'recordCall', 't', 5), {err: 'ECORRUPT'});
+      } finally { p.close(); }
+      assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"broken": ');
+    });
+
+    it('unknown, unreadable: the gate and the balance refuse LEDGER_UNREADABLE', async () => {
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      const file = ledger(dir);
+      fs.writeFileSync(file, '{"broken": ');
+      const p = new LocalMeteringProvider({meter: true, storePath: dir});
+      try {
+        unreadable = file;
+        assert.deepStrictEqual(await ask(p, 'rateLimit'), {err: 'LEDGER_UNREADABLE'});
+        assert.deepStrictEqual(await ask(p, 'checkBalance'), {err: 'LEDGER_UNREADABLE'});
+      } finally { p.close(); }
+    });
+
+    it('unknown, then good (another process replaced it): everything goes on, read again first', async () => {
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      const file = ledger(dir);
+      const good = fs.readFileSync(file, 'utf8');
+      fs.writeFileSync(file, '{"broken": ');
+      const p = new LocalMeteringProvider({meter: true, storePath: dir});
+      try {
+        fs.writeFileSync(file, good);
+        assert.deepStrictEqual(await ask(p, 'rateLimit'), {r: {limited: false}});
+        assert.deepStrictEqual(await ask(p, 'recordCall', 't', 5), {r: {tool: 't', charged: 0, balance: 10, remainingFreeCalls: 1}});
+        assert.deepStrictEqual(await ask(p, 'checkBalance'), {r: {balance: 10}});
+      } finally { p.close(); }
+    });
   });
 
   lockedDirs.hooks();

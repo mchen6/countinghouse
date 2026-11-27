@@ -207,6 +207,8 @@ describe('sandbox 17: POST /uninstall-module', function() {
     server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleSandbox', 'audit', '--store', 'local', '--storePath', kvDir,
       '--modulePath', modulesDir, '--moduleDataPath', store(), '--moduleRegistry']);
     const r = await uninstall({name: 'ghost-mod'});
+    const {CODES} = require('../../lib/error-catalogue');
+    assert.deepStrictEqual([r.status, CODES.MODULE_STORE_CORRUPT.retryable], [500, false], 'not retryable, 500');
     assert.deepStrictEqual(r.body && [r.body.code, r.body.kind, r.body.message], ['MODULE_STORE_CORRUPT', 'operator',
       'The module was not uninstalled: the store file that holds its data is corrupt, and this runtime holds no copy of it, so nothing was removed -- repair the store (the runtime\'s log says how), then uninstall again'], JSON.stringify(r.body));
     const rows = await new Promise((resolve, reject) => {
