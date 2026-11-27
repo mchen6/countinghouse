@@ -12,6 +12,26 @@
         "type": "object",
         "properties": {}
       }
+    },
+    "relayRethrow": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    "relayBig": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
     }
   }
 }

@@ -29,6 +29,28 @@ describe('validation 39: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
     it('the same words built as a handler\'s untyped throw is built (lib/handler-answer.js), unmarked, stay the bare head', () => {
       for (const reason of CountinghouseError.WORKER_REASONS) assert.strictEqual(across(new CountinghouseError('DEVICE_INVOKE_EXCEPTION', reason)).message, HEAD, reason);
     });
+    it('on the peer path too: the mark crosses a callee\'s port refusal and a main refusal the caller\'s worker is handed', () => {
+      const reason = 'a hop\'s input could not be read';
+      const wire = CountinghouseError.replyFields(CountinghouseError.runtimeReason('DEVICE_INVOKE_EXCEPTION', reason));
+      // (the caller's end of the port: lib/peer-channel.js)
+      const PeerChannel = require('../../lib/peer-channel');
+      let got = null;
+      const end = Object.create(PeerChannel.prototype);
+      end.pending = {7: {}}; end._settle = (id, err) => { got = err; };
+      end._handleReply(Object.assign({id: 7, category: 'peer-reply', data: null}, wire));
+      assert.strictEqual(CountinghouseError.fromReply(got).message, raised('DEVICE_INVOKE_EXCEPTION', reason));
+      // (the caller's worker, handed main's answer: lib/peer-worker.js)
+      const {methods, registerPeerMaps} = require('../../lib/peer-worker');
+      let delivered = null;
+      const state = {};
+      registerPeerMaps(state, {peerChannels: {5: {epoch: 1, deliver: (id, err) => { delivered = err; }}}});
+      methods.onPeerResult.call(state, Object.assign({channel: 'c:5', epoch: 1, invokeId: 1}, wire));
+      assert.strictEqual(CountinghouseError.fromReply(delivered).message, raised('DEVICE_INVOKE_EXCEPTION', reason));
+      // (unmarked, the same words stay the bare head on both)
+      const plain = {errMsg: raised('DEVICE_INVOKE_EXCEPTION', reason), errCode: 'DEVICE_INVOKE_EXCEPTION'};
+      end.pending = {8: {}}; end._handleReply(Object.assign({id: 8, category: 'peer-reply', data: null}, plain));
+      assert.strictEqual(CountinghouseError.fromReply(got).message, HEAD);
+    });
     it('the closed list', () => {
       for (const r of ['a module\'s result could not be read', 'the error could not be sent between threads', 'the value could not be sent between threads']) assert.ok(CountinghouseError.WORKER_REASONS.includes(r), r);
     });
@@ -61,17 +83,24 @@ describe('validation 39: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
       assert.ok(r.message.endsWith('. Before it failed, the runtime refused its call to a remote service: REMOTE_TIMEOUT.'), r.message);
     });
     it('a code about the calling module\'s own call is said as it is; any other (a part\'s state) is DEVICE_NOT_FOUND, the log keeping the exact code', () => {
-      for (const code of ['CTX_CALL_NOT_READY', 'CTX_CALL_UNDECLARED', 'HOP_CHAIN_TOO_DEEP', 'USAGE_CALL_FOREIGN', 'INPUT_TOO_LARGE', 'OUTPUT_TOO_LARGE', 'SETTING_REQUIRED', 'SETTING_NOT_READY']) {
+      for (const code of ['CTX_CALL_NOT_READY', 'CTX_CALL_UNDECLARED', 'HOP_CHAIN_TOO_DEEP', 'USAGE_CALL_FOREIGN', 'INPUT_TOO_LARGE', 'OUTPUT_TOO_LARGE', 'SETTING_REQUIRED', 'SETTING_NOT_READY',
+        'INPUT_DATA_VALIDATION_FAIL', 'OUTPUT_DATA_VALIDATION_FAIL', 'VALIDATION_TIMEOUT', 'VALIDATION_CALLER_THROTTLED']) {
         assert.ok(CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code, to: 'module'}).message.endsWith(`: ${code}.`), code);
       }
       assert.ok(CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code: 'REMOTE_UNDECLARED', to: 'remote'}).message.endsWith(': REMOTE_UNDECLARED.'));
       // (a remote's refusal is never said as a missing module)
       assert.ok(!/DEVICE_NOT_FOUND/.test(CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code: 'CTX_CALL_NOT_READY', to: 'remote'}).message));
-      for (const code of ['MODULE_UNLOADED', 'MODULE_RELOADING', 'MODULE_NOT_LISTED', 'DEVICE_NOT_FOUND', 'MODULE_RESTARTING', 'MODULE_SUSPENDED', 'SESSION_WORKER_ENDED', 'SESSION_WORKERS_BUSY', 'MODULE_SESSION_PAUSED']) {
+      // (a module's validation quarantine is that module's state, held until an operator reloads it)
+      for (const code of ['MODULE_UNLOADED', 'MODULE_RELOADING', 'MODULE_NOT_LISTED', 'DEVICE_NOT_FOUND', 'MODULE_RESTARTING', 'MODULE_SUSPENDED', 'SESSION_WORKER_ENDED', 'SESSION_WORKERS_BUSY', 'MODULE_SESSION_PAUSED', 'VALIDATION_QUARANTINED']) {
         const e = CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code, to: 'module'});
         assert.strictEqual(e.message, `${HEAD}. Before it failed, the runtime refused its call to another module: DEVICE_NOT_FOUND.`, code);
         assert.deepStrictEqual(e.refusedBefore, {code, to: 'module'}, 'the log keeps the exact code');
       }
+    });
+    it('every catalogue code the CTX_CALL_ and HOP_ prefixes let through is listed here: a new one is said as it is only by choice', () => {
+      const {CODES} = require('../../lib/error-catalogue');
+      const through = Object.keys(CODES).filter((c) => c.startsWith('CTX_CALL_') || c.startsWith('HOP_')).sort();
+      assert.deepStrictEqual(through, ['CTX_CALL_BAD_ADDRESS', 'CTX_CALL_NOT_READY', 'CTX_CALL_UNBOUND', 'CTX_CALL_UNDECLARED', 'CTX_CALL_UNRESOLVED', 'HOP_CHAIN_TOO_DEEP', 'HOP_IDENTITY_UNRESOLVED'].sort(), JSON.stringify(through));
     });
     it('anything else is left as it was: another code, a module\'s error, no refusal, a code of another form', () => {
       const keep = (err, refused) => { const m = err.message; assert.strictEqual(CountinghouseError.withRefusal(err, refused).message, m); };

@@ -27,7 +27,7 @@ const tmp      = require('../helpers/test-tmp').forFile(['ch-refused-25-']);
 for (const [label, port, flags] of [['peer channels', testPort(9678), []], ['routed', testPort(9679), ['--no-directPeerChannels']]]) {
 describe(`composition 25 (${label}): a crash after the runtime refused one of its module calls says that refusal`, function() {
   this.timeout(120000);
-  const KEYS = {user: `user-key-${hex()}`, admin: `admin-key-${hex()}`, crasher: `crasher-internal-${hex()}`, caller: `caller-internal-${hex()}`, relay: `relay-internal-${hex()}`};
+  const KEYS = {user: `user-key-${hex()}`, admin: `admin-key-${hex()}`, crasher: `crasher-internal-${hex()}`, caller: `caller-internal-${hex()}`, relay: `relay-internal-${hex()}`, rethrower: `rethrower-internal-${hex()}`};
   let server = null;
 
   before(async () => {
@@ -39,13 +39,16 @@ describe(`composition 25 (${label}): a crash after the runtime refused one of it
       // granted the callee, so its declared call verifies at load
       [KEYS.crasher]: {userName: `crasher-${hex()}`, devices: [deviceIDForName('compose-callee')], runsModules: ['compose-crasher']},
       [KEYS.caller]: {userName: `caller-${hex()}`, devices: ['*'], runsModules: ['compose-caller']},
-      [KEYS.relay]: {userName: `relay-${hex()}`, devices: [deviceIDForName('compose-crasher')], runsModules: ['compose-relay']}
+      [KEYS.relay]: {userName: `relay-${hex()}`, devices: ['compose-crasher', 'compose-rethrower', 'compose-big'].map(deviceIDForName), runsModules: ['compose-relay']},
+      [KEYS.rethrower]: {userName: `rethrower-${hex()}`, devices: [deviceIDForName('compose-callee')], runsModules: ['compose-rethrower']}
     }), {mode: 0o600});
     server = await startServer(port, ['--workerThread', ...flags, '--authProvider', 'file', '--authConfigPath', authPath,
       '--moduleSandbox', 'off', '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(FIXTURES, 'compose-callee'),
       '--loadModule', path.join(FIXTURES, 'compose-caller'),
       '--loadModule', path.join(FIXTURES, 'compose-crasher'),
+      '--loadModule', path.join(FIXTURES, 'compose-rethrower'),
+      '--loadModule', path.join(FIXTURES, 'compose-big'),
       '--loadModule', path.join(FIXTURES, 'compose-relay')]);
   });
   after(() => stopServer(server));
@@ -91,6 +94,23 @@ describe(`composition 25 (${label}): a crash after the runtime refused one of it
     assert.strictEqual(toolErrorCode(result), 'DEVICE_INVOKE_EXCEPTION', JSON.stringify(result));
     assert.ok(!LINE.test(textOf(result)), textOf(result));
     assert.ok(!/compose-callee|compose-crasher|the relay failed/.test(textOf(result)), textOf(result));
+  });
+
+  it('a part that rethrew the typed refusal it got: that code came back in its reply, never noted as the runtime\'s refusal of the caller\'s call', async () => {
+    // (compose-callee was unloaded above; compose-rethrower's own call is refused
+    // and it rethrows that error, whose code crosses back in its reply. On the
+    // routed path the hop's answer passes the main thread, which notes only what
+    // it raised itself: no sentence.)
+    const result = await call('compose_relay_relayservice_relayrethrow');
+    assert.strictEqual(toolErrorCode(result), 'DEVICE_INVOKE_EXCEPTION', JSON.stringify(result));
+    assert.ok(!LINE.test(textOf(result)), textOf(result));
+  });
+
+  (label === 'routed' ? it : it.skip)('a hop the runtime refused after it was sent (its answer fails its schema in the main thread\'s validator): the runtime\'s own refusal, said as it is', async () => {
+    const result = await call('compose_relay_relayservice_relaybig');
+    assert.strictEqual(toolErrorCode(result), 'DEVICE_INVOKE_EXCEPTION', JSON.stringify(result));
+    const m = LINE.exec(textOf(result));
+    assert.ok(m != null && m[1] === 'OUTPUT_DATA_VALIDATION_FAIL', textOf(result));
   });
 
   it('the runtime logs each such failure without --debug: the tool, the code and its class, and the refusal; no module text', async () => {

@@ -4,7 +4,9 @@
   "license": "Apache-2.0",
   "countinghouse": {
     "calls": [
-      "compose-crasher/crasherService.refusedThenThrow"
+      "compose-crasher/crasherService.refusedThenThrow",
+      "compose-rethrower/rethrowService.rethrow",
+      "compose-big/bigService.big"
     ]
   }
 }
