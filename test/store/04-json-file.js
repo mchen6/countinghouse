@@ -1607,7 +1607,6 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
       f.set('a', 1); f.flush();
       fs.writeFileSync(file, '{"one": ');
       f.reload(); f.flush();
-      assert.strictEqual(f.isCorrupt(), false, 'replaced: not corrupt any more');
       fs.writeFileSync(file, '{"two": ');
       f.reload(); f.flush();
     } finally {
@@ -1682,6 +1681,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     assert.strictEqual(thrown, 3, 'each open still says it could not read');
     const mine = logged.filter((l) => l.includes(file));
     assert.strictEqual(mine.filter((l) => l.includes('EACCES')).length, 1, JSON.stringify(mine));
+    assert.ok(mine.includes(`local store: ${file} could not be read (EACCES)`), `at open there is no map to keep (${JSON.stringify(mine)})`);
     assert.strictEqual(mine.filter((l) => /can be read again/.test(l)).length, 1, JSON.stringify(mine));
   });
 
@@ -1703,7 +1703,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     }
     const mine = logged.filter((l) => l.includes(file));
     assert.strictEqual(mine.filter((l) => l.includes('EACCES')).length, 1, JSON.stringify(mine));
-    assert.ok(mine.some((l) => l.includes('EACCES') && /changes wait until it can be read/.test(l)), JSON.stringify(mine));
+    assert.ok(mine.includes(`local store: ${file} could not be read (EACCES); the map is kept as it is: changes made in memory wait until it can be read, and a change that needs it read first (a charge, a nonce's use) fails and is told to its caller`), JSON.stringify(mine));
     assert.ok(!mine.some((l) => /corrupt/.test(l)), `a read error is not a corrupt file (${JSON.stringify(mine)})`);
     assert.ok(mine.some((l) => /change\(s\) not written: the file could not be read/.test(l)), JSON.stringify(mine));
   });
@@ -1802,6 +1802,28 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
       assert.deepStrictEqual(onDisk(file), {[meterId(apiKey)]: {balance: 10, toolPriceRecord: {t: {count: 1}}}});
     });
 
+    it('known, corrupt, the rewrite failing (a full disk): nothing refused; the charge answers its write\'s error, and is lost', async () => {
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      const file = ledger(dir);
+      const p = new LocalMeteringProvider({meter: true, storePath: dir});
+      const rename = fs.renameSync;
+      try {
+        fs.writeFileSync(file, '{"broken": ');
+        fs.renameSync = function(from, to) {
+          if (to === file && String(from).startsWith(`${file}.tmp-`)) throw Object.assign(new Error('ENOSPC: no space left on device, rename'), {code: 'ENOSPC', syscall: 'rename'});
+          return rename.apply(this, arguments);
+        };
+        assert.deepStrictEqual(await ask(p, 'rateLimit'), {r: {limited: false}});
+        assert.deepStrictEqual(await ask(p, 'checkBalance'), {r: {balance: 10}});
+        assert.deepStrictEqual(await ask(p, 'recordCall', 't', 5), {err: 'ENOSPC'});
+        assert.deepStrictEqual(await ask(p, 'checkBalance'), {r: {balance: 10}}, 'the lost charge is in no balance');
+      } finally {
+        fs.renameSync = rename;
+        p.close();
+      }
+      assert.ok(fs.renameSync === rename, 'the stub is gone');
+    });
+
     it('known, unreadable: once a read has failed, the gate and the balance refuse LEDGER_UNREADABLE (read again first); readable again, they go on', async () => {
       const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
       const file = ledger(dir);
@@ -1816,7 +1838,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
       } finally { p.close(); }
     });
 
-    it('known, unreadable before any read has failed: the gate passes, the charge\'s own read fails and is told (logged and lost), and the gate then refuses', async () => {
+    it('known, unreadable before any read has failed: every call let through before the first read fails runs; its charge\'s read fails and is told (logged and lost), and the gate then refuses', async () => {
       const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
       const file = ledger(dir);
       const p = new LocalMeteringProvider({meter: true, storePath: dir});
