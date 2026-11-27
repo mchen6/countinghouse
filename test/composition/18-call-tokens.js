@@ -2811,6 +2811,41 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       }
     });
 
+    // a held run's release has no caller lookup after it: the end's own listing and serving checks are its only ones
+    it('a held run whose module is turned off during the hold never runs: the uniform answer', async () => {
+      const visibility = require('../../lib/module-visibility');
+      const sent = [];
+      const answered = [];
+      const dev = proxy('d-h45', sent);
+      const dm = manager({'d-h45': dev}, bound, [], {n: 0});
+      const before = visibility.configure({moduleOf: (id) => (id === 'd-h45' ? 'held-off-run' : null), changed: () => {}});
+      try {
+        DeviceManager.prototype.invokeJobs.call(dm, dev, 'd-h45', 'svc', 'act', {}, 'job-h45', (err) => answered.push(err && err.code), {ownerKey: `owner-${hex()}`});
+        visibility.hide(['held-off-run']);
+        dm.verificationPass(null);
+        await turns();
+        await turns();
+      } finally {
+        visibility.show(['held-off-run']);
+        visibility.configure(before);
+      }
+      assert.deepStrictEqual([sent.length, answered], [0, ['DEVICE_NOT_FOUND']]);
+    });
+
+    it('a held run whose target exits in the release\'s own turn never runs', async () => {
+      const sent = [];
+      const answered = [];
+      const dev = proxy('d-h46', sent);
+      const dm = manager({'d-h46': dev}, bound, [], {n: 0});
+      DeviceManager.prototype.invokeJobs.call(dm, dev, 'd-h46', 'svc', 'act', {}, 'job-h46', (err) => answered.push(err && err.code), {ownerKey: `owner-${hex()}`});
+      dm.verificationPass(null);
+      dev.exited = true;
+      DeviceManager.releaseHeldOn(dev);
+      await turns();
+      await turns();
+      assert.deepStrictEqual([sent.length, answered], [0, ['DEVICE_NOT_FOUND']]);
+    });
+
     it('a held call never keeps the process alive: its timer and its poll are unref\'d', () => {
       const child = `
         const W = process.argv[1];
