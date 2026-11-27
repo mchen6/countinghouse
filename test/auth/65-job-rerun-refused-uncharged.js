@@ -14,7 +14,9 @@ const fs      = require('fs');
 const path    = require('path');
 const request = require('supertest');
 const redis   = require('redis');
+const {Queue} = require('bullmq');
 const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
+const {prefixFor} = require('../helpers/job-queue');
 const {testPort, redisConnectionFor} = require('../helpers/test-env');
 const {meterId} = require('../../lib/key-fingerprint');
 
@@ -44,6 +46,8 @@ describe('auth 65: a job\'s run started again within its run waits for a charge 
   let data = null;
   let server = null;
   let ledger = null;
+  let queue = null;
+  let taskId = null;
   const cmd = (name, ...args) => new Promise((resolve, reject) => ledger[name](...args, (e, r) => (e ? reject(e) : resolve(r))));
   const until = async (what, ok, ms = 30000) => {
     const end = Date.now() + ms;
@@ -68,8 +72,14 @@ describe('auth 65: a job\'s run started again within its run waits for a charge 
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath, '--mcpToolCallCost', '1',
       '--moduleDataPath', path.join(base, 'module_data'), '--loadModule', FIXTURE]);
     await until(() => modern('tools/list', {}), (r) => r.body.result != null && r.body.result.tools.some((t) => t.name === TOOL));
+    // (this server's own queue: the task is its job, jobId = taskId)
+    queue = new Queue('job-queue', {prefix: prefixFor(path.join(base, 'module_data')), connection: redisConnectionFor(11)});
   });
   after(async () => {
+    if (queue != null) {
+      if (taskId != null) { const j = await queue.getJob(taskId).catch(() => null); if (j != null) await j.remove().catch(() => {}); }
+      await queue.close();
+    }
     stopServer(server);
     if (ledger != null) { await cmd('del', meterId(OWNER)).catch(() => {}); ledger.quit(); }
   });
@@ -78,7 +88,7 @@ describe('auth 65: a job\'s run started again within its run waits for a charge 
     const started = await modern('tools/call', {name: TOOL, arguments: {}}, TOOL);
     assert.strictEqual(started.status, 200, JSON.stringify(started.body));
     assert.strictEqual((started.body.result || {}).resultType, 'task', JSON.stringify(started.body));
-    const taskId = started.body.result.taskId;
+    taskId = started.body.result.taskId;
     // (the first pass is under way, let through: now the key is marked)
     await until(() => fs.existsSync(path.join(data, 'started')), (x) => x === true);
     const balance = await request(URL).get('/balance').set('X-CH-Key', OWNER);
@@ -86,9 +96,14 @@ describe('auth 65: a job\'s run started again within its run waits for a charge 
     fs.writeFileSync(path.join(data, 'go'), '1');
     const done = await until(() => modern('tasks/get', {taskId}, taskId),
       (r) => r.body.result != null && !['working', 'input_required'].includes(r.body.result.status));
-    assert.strictEqual(done.body.result.status, 'failed', JSON.stringify(done.body));
-    assert.ok(JSON.stringify(done.body.result).includes('LEDGER_RECORD_INVALID'), JSON.stringify(done.body));
+    assert.deepStrictEqual([done.body.result.status, done.body.result.statusMessage], ['failed', 'LEDGER_RECORD_INVALID'], JSON.stringify(done.body));
+    // (the first pass ran and ended on its question -- the rerun's gate is
+    // what refused, not a first pass's -- and nothing ran after it)
     assert.strictEqual(fs.readFileSync(path.join(data, 'passes'), 'utf8'), 'pass\n', 'a second pass ran');
+    assert.strictEqual(fs.readFileSync(path.join(data, 'ask-codes'), 'utf8'), 'ASK_PENDING\n');
+    const job = await queue.getJob(taskId);
+    assert.ok(job != null, 'the task\'s job');
+    assert.deepStrictEqual([await job.getState(), job.attemptsMade], ['failed', 1]);
   });
 
   trees.hooks();

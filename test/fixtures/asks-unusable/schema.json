@@ -3,12 +3,7 @@
     "probe": {
       "input": {
         "type": "object",
-        "properties": {
-          "note": {
-            "type": "string",
-            "maxLength": 32
-          }
-        }
+        "properties": {}
       },
       "output": {
         "type": "object",
@@ -18,9 +13,6 @@
           },
           "code": {
             "type": "string"
-          },
-          "runs": {
-            "type": "integer"
           }
         },
         "required": [
