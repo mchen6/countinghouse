@@ -1964,7 +1964,10 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const sent = [];
       const session = {appKey: `caller-${hex()}`, callback: () => {}};
       session.setDeviceTimer = (dev, cb) => cb.call(session, null, dev, null);
-      DeviceManager.prototype.invokeAction.call({}, device(41, sent), 'd-41', 'svc', 'act', {input: {}}, session);
+      // (a device whose composition verdict has landed, as every device reaching a call has once startup's verifications are
+      // decided: one without is held for it, composition 19)
+      const dev = device(41, sent); dev.bindings['d-41'] = {identity: 'k', module: 'm', targets: new Set()};
+      DeviceManager.prototype.invokeAction.call({}, dev, 'd-41', 'svc', 'act', {input: {}}, session);
       assert.strictEqual(sent.length, 1);
       const token = sent[0].args.token;
       assert.notStrictEqual(tokens().resolve(token, {workerId: 41}), null);
@@ -1972,12 +1975,26 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.strictEqual(tokens().resolve(token, {workerId: 41}), null, 'the token outlived the session');
     });
 
+    // (a run of a module whose verdict is not decided yet, a task resumed at a start, is held as a call is, bounded
+    // by the run's own timeout too; at the bound CTX_CALL_NOT_READY, nothing sent and no token issued)
+    it('a run of a device whose composition verdict is not decided is held, and at its bound answers CTX_CALL_NOT_READY unsent', async () => {
+      cli.setOptions({workerThread: true, requestTimeout: 30});
+      const sent = [];
+      const before = tokens().size();
+      let answered = null;
+      DeviceManager.prototype.invokeJobs.call({}, device(43, sent), 'd-43', 'svc', 'act', {}, 'job-3', (err) => { answered = err; }, {ownerKey: `owner-${hex()}`, timeoutMs: 2300});
+      assert.deepStrictEqual([sent.length, answered, tokens().size()], [0, null, before], 'held: nothing sent, no token');
+      await sleep(700);
+      assert.deepStrictEqual([sent.length, answered && answered.code, tokens().size()], [0, 'CTX_CALL_NOT_READY', before]);
+    });
+
     it('(#138-3) a run\'s token is dropped at the run\'s timeout, and lives as long as a run that has none', async () => {
       cli.setOptions({workerThread: true, requestTimeout: 30});
       const sent = [];
       const dm = {};
-      DeviceManager.prototype.invokeJobs.call(dm, device(42, sent), 'd-42', 'svc', 'act', {}, 'job-1', () => {}, {ownerKey: `owner-${hex()}`, timeoutMs: 100});
-      DeviceManager.prototype.invokeJobs.call(dm, device(42, sent), 'd-42', 'svc', 'act', {}, 'job-2', () => {}, {ownerKey: `owner-${hex()}`});
+      const withVerdict = () => { const d = device(42, sent); d.bindings['d-42'] = {identity: 'k', module: 'm', targets: new Set()}; return d; };   // (as every device's, its start decided)
+      DeviceManager.prototype.invokeJobs.call(dm, withVerdict(), 'd-42', 'svc', 'act', {}, 'job-1', () => {}, {ownerKey: `owner-${hex()}`, timeoutMs: 100});
+      DeviceManager.prototype.invokeJobs.call(dm, withVerdict(), 'd-42', 'svc', 'act', {}, 'job-2', () => {}, {ownerKey: `owner-${hex()}`});
       assert.strictEqual(sent.length, 2);
       const [bounded, open] = sent.map((m) => m.args.token);
       assert.ok(!('timeoutMs' in sent[0].args) && !('ownerKey' in sent[0].args), 'the run\'s bookkeeping was sent to the worker');
