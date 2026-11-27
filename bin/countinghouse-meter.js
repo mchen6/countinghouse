@@ -92,7 +92,7 @@ if (store === 'local') {
 } else {
   // (db 0, the ledger's, as lib/store.js's metering opens it; one field of
   // the hash set, its free-call counts kept; a lib/redis-resilient client,
-  // as every node_redis client: R-redis-drop-spin)
+  // as every node_redis client)
   // An operator's command waits longer for a first connect than the runtime
   // does (a Redis still loading its data), and no longer than that for the
   // write's answer. A resilient client emits no 'error' for a refused

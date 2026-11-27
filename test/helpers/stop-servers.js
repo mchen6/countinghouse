@@ -1,6 +1,6 @@
 // Loaded by every mocha run (.mocharc.json): after the last test, every
 // server test/helpers/sandbox-server.js started and nothing stopped is
-// stopped (R-redis-drop-spin). Its own exit-time stop runs only when mocha
+// stopped. Its own exit-time stop runs only when mocha
 // calls process.exit (--exit); CI's largest run has no --exit, and there a
 // leaked server's pipes would keep the process, and the job, alive. Nothing
 // is loaded for a run that never used the helper.
