@@ -1418,8 +1418,9 @@ can't use (on MCP, `unknown tool: <name>`, the same answer for every
 reason; `DEVICE_NOT_FOUND` on the REST routes and for a task's run). A
 module loaded later that fails its verification keeps serving its own
 actions, unbound: a call held for it goes on, and its `ctx.call` is refused.
-A module unloaded or restarted while a call to it is held answers that call
-at once, as a call to it would be answered then.
+A module unloaded, restarted or crashed while a call to it is held answers
+that call at once with that same answer, and the call is never sent; a
+retry reaches the module once it is back.
 `examples/repo-review/token-comparison.js` waits for the server's "all
 module discovered" log line plus a settle buffer to stay out of the window
 entirely — see its comment on `waitForAllModulesDiscovered` for the full
