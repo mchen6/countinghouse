@@ -1630,5 +1630,65 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     assert.deepStrictEqual(onDisk(file), {f: 2, u: 1});
   });
 
+  // (the medium on the final range, 562c91ab)
+  it('kv: the main thread\'s purge and listing refuse on a map that never saw the file whole, and work once it is replaced', async () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const LocalKv = require('../../lib/local-kv');
+    const run = (kv, ...a) => new Promise((resolve, reject) => kv[a[0]](...a.slice(1), (e, r) => (e ? reject(e) : resolve(r))));
+    const a = new LocalKv({storePath: dir});
+    const file = path.join(dir, 'kv.json');
+    let b = null;
+    const got = {};
+    try {
+      await run(a, 'set', 'm:mod:x', '1'); await run(a, 'set', 'keep', '2'); a.file.flush();
+      fs.writeFileSync(file, '{"broken": ');
+      b = new LocalKv({storePath: dir});
+      for (const [name, fn] of [['purge', () => b.deletePrefix('m:mod:')], ['list', () => b.keysWithPrefix('m:mod:')]]) {
+        try { got[name] = {r: fn()}; } catch (e) { got[name] = {err: e.message}; }
+      }
+      a.reload(); a.file.flush();
+      got.after = b.deletePrefix('m:mod:'); b.file.flush();
+    } finally {
+      if (b != null) b.close();
+      a.close();
+    }
+    assert.ok(got.purge.err != null && got.list.err != null, JSON.stringify(got));
+    assert.strictEqual(got.after, 1);
+    assert.deepStrictEqual(Object.keys(onDisk(file)), ['keep']);
+  });
+
+  it('a read error is said once for its code, not again by each write that meets it', () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const file = path.join(dir, 'm.json');
+    const f = openJsonFile(file, {debounceMs: 60000});
+    const read = fs.readFileSync;
+    try {
+      f.set('a', 1); f.flush();
+      fs.readFileSync = function(p) {
+        if (p === file) throw Object.assign(new Error(`EACCES: permission denied, open '${p}'`), {code: 'EACCES', syscall: 'open'});
+        return read.apply(this, arguments);
+      };
+      f.set('b', 2); f.flush(); f.flush(); f.flush();
+    } finally {
+      fs.readFileSync = read;
+      f.close();
+    }
+    assert.strictEqual(logged.filter((l) => l.includes(file) && l.includes('EACCES')).length, 1, JSON.stringify(logged));
+  });
+
+  it('local-kv\'s interval keeps only the store\'s read errors to itself: anything else is thrown', () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const LocalKv = require('../../lib/local-kv');
+    const kv = new LocalKv({storePath: dir});
+    let thrown = null;
+    try {
+      kv.sweep = () => { throw new Error('a bug in the sweep'); };
+      try { kv.tick(); } catch (e) { thrown = e; }
+    } finally {
+      kv.close();
+    }
+    assert.strictEqual(thrown && thrown.message, 'a bug in the sweep');
+  });
+
   lockedDirs.hooks();
 });

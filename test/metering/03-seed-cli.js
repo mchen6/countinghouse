@@ -58,6 +58,20 @@ describe('metering 03: seeding a balance (bin/countinghouse-meter.js)', function
     assert.ok(!fs.existsSync(path.join(storePath, 'metering.json')), 'nothing written');
   });
 
+  // (R-store-aside-locked) a corrupt ledger is never replaced by a process that
+  // never saw it whole, and the CLI is one: it says what is wrong and what to
+  // do, naming no path
+  it('a corrupt ledger: said as corrupt, with what to do, exit 2, the file left as it was', () => {
+    const storePath = trees.mkdtemp('ch-metering-03-');
+    const file = path.join(storePath, 'metering.json');
+    fs.writeFileSync(file, '{"broken": ');
+    const run = meter(['set', '--storePath', storePath, '--balance', '50'], {COUNTINGHOUSE_SEED_KEY: KEY});
+    assert.strictEqual(run.status, 2, `${run.status} ${run.stdout} ${run.stderr}`);
+    assert.ok(/corrupt/.test(run.stderr) && /move it away/.test(run.stderr), run.stderr);
+    assert.ok(!run.stderr.includes(storePath) && !run.stderr.includes(KEY), run.stderr);
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), '{"broken": ');
+  });
+
   it('refuses without COUNTINGHOUSE_SEED_KEY, and never takes the key as an argument', () => {
     const storePath = trees.mkdtemp('ch-metering-03-');
     const none = meter(['set', '--storePath', storePath, '--balance', '5'], {});
