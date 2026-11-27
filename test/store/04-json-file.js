@@ -1323,7 +1323,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     assert.strictEqual(logged.filter((l) => l.includes(file) && l.includes('EACCES')).length, 1, JSON.stringify(logged));
   });
 
-  it('a balance asked for while the ledger can\'t be read is the one uniform refusal (RUNTIME_BUSY, as the per-key gate answers), never a throw', async () => {
+  it('a balance asked for while the ledger can\'t be read is LEDGER_UNREADABLE (retryable), never a throw', async () => {
     const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
     const LocalMeteringProvider = require('../../lib/metering/local-provider');
     const provider = new LocalMeteringProvider({meter: true, storePath: dir});
@@ -1344,7 +1344,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     }
     assert.ok(fs.readFileSync === read, 'the stub is gone');
     assert.strictEqual(got.thrown, undefined, 'never thrown');
-    assert.strictEqual(got.err && got.err.code, 'RUNTIME_BUSY');
+    assert.deepStrictEqual(got.err && [got.err.code, require('../../lib/error-catalogue').CODES[got.err.code].retryable], ['LEDGER_UNREADABLE', true]);
     assert.strictEqual(got.r, undefined);
   });
 
@@ -1376,7 +1376,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     assert.deepStrictEqual(kept, ['{"first": ', '{"second": ']);
   });
 
-  it('a corrupt ledger is a balance that can\'t be told: RUNTIME_BUSY, never the one in memory', async () => {
+  it('a corrupt ledger this process will itself replace is a balance that can\'t be told yet: LEDGER_UNREADABLE (retryable), never the one in memory', async () => {
     const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
     const LocalMeteringProvider = require('../../lib/metering/local-provider');
     const apiKey = `k-${require('crypto').randomBytes(8).toString('hex')}`;
@@ -1390,7 +1390,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     } finally {
       provider.close();
     }
-    assert.strictEqual(got.err && got.err.code, 'RUNTIME_BUSY');
+    assert.deepStrictEqual(got.err && [got.err.code, require('../../lib/error-catalogue').CODES[got.err.code].retryable], ['LEDGER_UNREADABLE', true]);
   });
 
   it('a copy aside whose first name is taken gets another: the copy is kept', () => {
@@ -1534,7 +1534,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     assert.deepStrictEqual([onDisk(file).counter.v, onDisk(file).other.v], ['57', 'x']);
   });
 
-  it('metering: a call is refused before it runs while the ledger is corrupt and this process never saw it whole (the per-key gate answers RUNTIME_BUSY, as checkBalance does)', async () => {
+  it('metering: a call is refused before it runs while the ledger is corrupt and this process never saw it whole (LEDGER_CORRUPT, not retryable, from the gate and from checkBalance)', async () => {
     const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
     const LocalMeteringProvider = require('../../lib/metering/local-provider');
     const file = path.join(dir, 'metering.json');
@@ -1545,14 +1545,17 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     const gate = () => new Promise((resolve) => fresh.rateLimit(`k-${require('crypto').randomBytes(8).toString('hex')}`, (err, r) => resolve({err, r})));
     let before = null;
     let after = null;
+    let balance = null;
     try {
       before = await gate();
+      balance = await new Promise((resolve) => fresh.checkBalance(`k-${require('crypto').randomBytes(8).toString('hex')}`, (err, r) => resolve({err, r})));
       known.reload(); known.flush();
       after = await gate();
     } finally {
       fresh.close(); known.close();
     }
-    assert.strictEqual(before.err && before.err.code, 'RUNTIME_BUSY');
+    assert.deepStrictEqual(before.err && [before.err.code, require('../../lib/error-catalogue').CODES[before.err.code].retryable], ['LEDGER_CORRUPT', false]);
+    assert.deepStrictEqual(balance.err && balance.err.code, 'LEDGER_CORRUPT', 'checkBalance answers the same');
     assert.deepStrictEqual(after, {err: null, r: {limited: false}});
   });
 
