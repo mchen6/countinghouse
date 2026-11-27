@@ -125,7 +125,7 @@ for (const [mode, thread] of [['worker mode', '--workerThread']]) {
     it('ctx.settingRequired for a declared setting unset: SETTING_REQUIRED, in the runtime\'s words, the setting in _meta', async () => {
       const res = await call(await toolName('repo'));
       assert.strictEqual(codeOf(res), 'SETTING_REQUIRED', JSON.stringify(res).slice(0, 600));
-      assert.match(textOf(res), /weather-tool needs a setting: defaultRepo \(Default repository\)\. Ask the user to run `[^`]+` in their own terminal, followed by the value; do not guess it\./);
+      assert.match(textOf(res), /weather-tool needs a setting: defaultRepo \(Default repository\)\. Ask the user to run `[^`]+` in their own terminal; it asks for the value\. Do not guess it\./);
       assert.deepStrictEqual(res.result._meta['countinghouse/missingSettings'], ['defaultRepo']);
       const given = await call(await toolName('repo'), {repo: 'acme/api'});
       assert.deepStrictEqual(toolOutput(given.result), {repo: 'acme/api'});
