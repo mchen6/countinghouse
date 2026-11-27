@@ -38,7 +38,7 @@ describe('stdio 14: countinghouse_settings', () => {
     return err;
   };
 
-  before(() => { saved = {requestTimeout: options.requestTimeout, maxOutputBytes: options.maxOutputBytes}; });
+  before(() => { saved = {requestTimeout: options.requestTimeout, maxOutputBytes: options.maxOutputBytes, moduleSandbox: options.moduleSandbox}; });
   after(() => Object.assign(options, saved));
   beforeEach(() => {
     home = tmpDirs.mkdtemp('ch-settings-');
@@ -53,7 +53,33 @@ describe('stdio 14: countinghouse_settings', () => {
     // the runtime on its defaults at each case's start, whatever the case
     // before (or a file run before this one, #285) left: a cap's value is
     // what the runtime runs with
-    Object.assign(options, {maxOutputBytes: 16 * MiB, requestTimeout: 30000});
+    Object.assign(options, {maxOutputBytes: 16 * MiB, requestTimeout: 30000, moduleSandbox: 'enforce'});
+  });
+
+  // (the row says the mode this runtime runs, as a cap's says its value; the file's beside it, as
+  // stored, where the two differ: a change waiting for the next start, or a mode given at the start. Without workers it runs off)
+  it('get: moduleSandbox is the mode the runtime runs, and the file\'s value is stored beside it where they differ', async () => {
+    const row = async () => (await tool.get()).settings.find((x) => x.name === 'moduleSandbox');
+    const of = (r) => ({value: r.value, stored: r.stored, has: Object.prototype.hasOwnProperty.call(r, 'stored')});
+    assert.deepStrictEqual(of(await row()), {value: 'enforce', stored: undefined, has: false});
+    options.moduleSandbox = 'audit'; assert.deepStrictEqual(of(await row()), {value: 'audit', stored: undefined, has: false});   // (given at the start, nothing stored)
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {moduleSandbox: 'enforce'}}));   // (stored for the next start: a terminal change)
+    assert.deepStrictEqual(of(await row()), {value: 'audit', stored: 'enforce', has: true});
+    options.moduleSandbox = 'off'; const r = await row();
+    assert.deepStrictEqual(of(r), {value: 'off', stored: 'enforce', has: true}); assert.deepStrictEqual(r.bounds, {enum: ['enforce', 'audit']});   // (set's bounds stay)
+    options.moduleSandbox = 'enforce'; assert.deepStrictEqual(of(await row()), {value: 'enforce', stored: undefined, has: false});
+  });
+
+  // (ch-local's record there and unreadable lists no on/off rows, and says so, as the overview does)
+  it('get: an unreadable record of the installed modules is said, and the runtime\'s rows still come', async () => {
+    fs.writeFileSync(path.join(home, 'modules.json'), '{"modules": ');
+    const got = await tool.get();
+    assert.strictEqual(got.notice, 'The list of installed packs could not be read, so their on/off settings are not listed: run `ch-local status` in your own terminal.');
+    assert.deepStrictEqual(got.settings.map((x) => x.name), ['maxOutputBytes', 'requestTimeout', 'moduleSandbox', 'autoUpgrade', 'upgradeCheck']);
+    // (a record that reads: no notice, the rows back)
+    fs.writeFileSync(path.join(home, 'modules.json'), JSON.stringify({modules: {[SC]: {version: '1.0.0', role: 'scenario'}}, packs: {p0: {modules: {[SC]: '1.0.0'}}}}));
+    const again = await tool.get();
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(again, 'notice'), false); assert.ok(again.settings.some((x) => x.name === EN));
   });
 
   it('get, with no file: every setting at its default, with its bounds, whether it guards, and when it applies', async () => {

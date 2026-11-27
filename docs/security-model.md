@@ -977,7 +977,10 @@ and what the runtime runs with, is refused (`SETTING_ABOVE_CEILING`): it
 would put a value above the ceiling in `settings.json` for the next start.
 For the two caps the settings tool reports, and judges a change against,
 what the runtime runs with (with nothing stored, what it started with: the
-ceiling may have bounded the start), not the stored default. What it
+ceiling may have bounded the start), not the stored default. For
+`moduleSandbox` it reports the mode this runtime runs, from its start (`off`
+where it runs without workers), with the stored value beside it as `stored`
+where the two differ. What it
 writes to `settings.json` without the user's confirmation never exceeds
 what the file yields already (its stored value, else the default), and is
 above the ceiling only when it lowers what the file yields: a
