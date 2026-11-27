@@ -2,10 +2,12 @@
 // A retry's single-use requestState is spent only once the call has passed
 // its key's own gate: a retry refused there -- its key over its budget
 // (RATE_LIMIT_EXCEEDED), a charge that can't be recorded (a ledger code) --
-// keeps its state, and the client's next retry with the same state is
-// served with its answer, never ASK_STATE_INVALID. Two servers: one with a
-// per-key limit of one call a second; one whose caller's usage record has a
-// balance that isn't a number (read, it marks that key).
+// keeps its state, and so does one the server-wide limit refuses
+// (RUNTIME_BUSY); the client's next retry with the same state is served
+// with its answer, never ASK_STATE_INVALID. Three servers: one with a
+// per-key limit of one call a second; one with a server-wide limit of one;
+// one whose caller's usage record has a balance that isn't a number (read,
+// it marks that key).
 const assert  = require('assert');
 const crypto  = require('crypto');
 const fs      = require('fs');
@@ -80,6 +82,24 @@ describe('questions 09: a retry refused at its key\'s gate keeps its requestStat
       const refused = await s.call(CALLER, {what: 'it'}, accept(first.result.requestState, {yes: true}));
       assert.strictEqual(codeOf(refused), 'RATE_LIMIT_EXCEEDED', JSON.stringify(refused).slice(0, 500));
       const done = await retriedPast(s, CALLER, first.result.requestState, 'RATE_LIMIT_EXCEEDED');
+      assert.ok(done.result != null && done.result.structuredContent != null, `${codeOf(done)}: ${JSON.stringify(done).slice(0, 500)}`);
+      assert.deepStrictEqual([done.result.structuredContent.asked, done.result.structuredContent.answer], [true, {yes: true}]);
+    });
+  });
+
+  describe('the runtime at its limit (RUNTIME_BUSY)', () => {
+    const SETUP = `k${crypto.randomBytes(12).toString('hex')}`;
+    const CALLER = `k${crypto.randomBytes(12).toString('hex')}`;
+    const s = server(testPort(9842), [SETUP, CALLER], ['--globalRateLimit', '1']);
+    before(() => s.start(SETUP));
+    after(() => stopServer(s.server));
+
+    it('refused for the server-wide limit, then retried with the same state: served with its answer', async () => {
+      const first = await s.call(CALLER, {what: 'it'});
+      assert.strictEqual(first.result && first.result.resultType, 'input_required', JSON.stringify(first).slice(0, 500));
+      const refused = await s.call(CALLER, {what: 'it'}, accept(first.result.requestState, {yes: true}));
+      assert.strictEqual(codeOf(refused), 'RUNTIME_BUSY', JSON.stringify(refused).slice(0, 500));
+      const done = await retriedPast(s, CALLER, first.result.requestState, 'RUNTIME_BUSY');
       assert.ok(done.result != null && done.result.structuredContent != null, `${codeOf(done)}: ${JSON.stringify(done).slice(0, 500)}`);
       assert.deepStrictEqual([done.result.structuredContent.asked, done.result.structuredContent.answer], [true, {yes: true}]);
     });
