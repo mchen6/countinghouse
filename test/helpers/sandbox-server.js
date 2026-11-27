@@ -11,35 +11,43 @@ const {redisArgsFor} = require('./test-env');
 
 const ROOT = path.join(__dirname, '..', '..');
 
-// Every server startServer spawned, by pid, until it exits: {port, server}.
-// A hook that fails while a start is still pending leaves its file without
-// the server object (auth 42's before(), with Redis unreachable, 11-27), and a
-// spawned server is detached, its own process group, so nothing else would
-// stop it. stopAll() stops what is still here: a file's after() calls it,
-// and so does this process's exit. A start on a port that a recorded server
-// still holds stops that one first and says so (CI runs a folder in one
-// mocha process, so an exit-time stop alone lets a leaked server hold its
-// port while the later files run). Servers spawned other than through
+// Every server startServer spawned, by pid, until it exits: {port, server,
+// stopping}. A hook that fails while a start is still pending leaves its file
+// without the server object (auth 42's before(), with Redis unreachable,
+// 11-27), and a spawned server is detached, its own process group, so
+// nothing else would stop it. What is still here is stopped by stopOn(port)
+// or stopAll() (a file's after()), by the root afterAll in
+// test/helpers/stop-servers.js, and at this process's exit (mocha --exit).
+// A start on a port a recorded server still holds stops that one first, and
+// waits for it to exit (CI runs a folder in one mocha process: an exit-time
+// stop alone would let a leaked server hold its port while later files run).
+// An entry leaves only when its process has exited, so a start right after
+// a stop waits for the port too. Servers spawned other than through
 // startServer are not covered.
 const live = new Map();
+// (bumped by stopAll: a start still waiting for its port when everything was
+// stopped never spawns)
+let generation = 0;
+function stopEntry(pid, e) {
+  e.stopping = true;
+  killTree(pid);
+}
 function stopAll() {
-  for (const pid of [...live.keys()]) {
-    killTree(pid);
-    live.delete(pid);
-  }
+  generation++;
+  for (const [pid, e] of live) stopEntry(pid, e);
 }
 process.on('exit', stopAll);
-// (the recorded servers still on `port`, stopped; each waited for at most
-// 5 s, so the port is free for the next start)
-async function takeBackPort(port) {
-  const stale = [...live.entries()].filter(([, e]) => e.port === port);
-  await Promise.all(stale.map(([pid, e]) => new Promise((resolve) => {
-    process.stderr.write(`sandbox-server: a server from an earlier start (pid ${pid}) still held port ${port}: stopped\n`);
-    const done = setTimeout(resolve, 5000);
-    e.server.once('exit', () => { clearTimeout(done); resolve(); });
-    if (e.server.exitCode != null || e.server.signalCode != null) { clearTimeout(done); resolve(); }
-    killTree(pid);
-    live.delete(pid);
+// (each recorded server on `port` stopped, and waited for: at most 5 s each)
+function stopOn(port, {say = false} = {}) {
+  const on = [...live.entries()].filter(([, e]) => e.port === port);
+  return Promise.all(on.map(([pid, e]) => new Promise((resolve) => {
+    // (said only for a server nobody had stopped: a leaked one)
+    const leaked = say && e.stopping !== true;
+    const said = (how) => { if (leaked) process.stderr.write(`sandbox-server: a server from an earlier start (pid ${pid}) still held port ${port}: ${how}\n`); };
+    if (e.server.exitCode != null || e.server.signalCode != null) { live.delete(pid); return resolve(); }
+    const done = setTimeout(() => { said('stopped, but it had not exited after 5 s'); resolve(); }, 5000);
+    e.server.once('exit', () => { clearTimeout(done); said('stopped'); resolve(); });
+    return stopEntry(pid, e);
   })));
 }
 
@@ -54,15 +62,20 @@ async function takeBackPort(port) {
 async function startServer(port, args, opts) {
   opts = opts || {};
   const root = opts.root || ROOT;
-  await takeBackPort(port);
+  const at = generation;
+  await stopOn(port, {say: true});
+  if (at !== generation) throw new Error(`sandbox-server: every server was stopped while this start waited for port ${port}: not started`);
   return new Promise((resolve, reject) => {
     const server = spawn(process.execPath,
       (opts.nodeArgs || []).concat([path.join(root, 'framework.js'), '--bindAddr', '127.0.0.1', '--port', String(port)], args, redisArgsFor(args)),
       {cwd: opts.cwd || root,
        env: Object.assign({}, process.env, {NODE_PATH: path.join(root, 'lib')}, opts.env || {}),
        stdio: ['ignore', 'pipe', 'pipe'], detached: true});
-    live.set(server.pid, {port, server});
-    server.once('exit', () => live.delete(server.pid));
+    if (server.pid != null) {
+      live.set(server.pid, {port, server, stopping: false});
+      server.once('exit', () => live.delete(server.pid));
+      server.once('error', () => live.delete(server.pid));
+    }
     server.output = '';
     server.exitCode = null;
     server.stdout.on('data', (chunk) => { server.output += chunk.toString(); });
@@ -101,8 +114,9 @@ function killTree(pid) {
 // The server may already be gone if an earlier step failed.
 function stopServer(server) {
   if (server == null || server.pid == null) return;
+  const e = live.get(server.pid);
+  if (e != null) e.stopping = true;
   killTree(server.pid);
-  live.delete(server.pid);
 }
 
 // Asks the server to shut down (POST /shutdown, as an admin: key), waits at
@@ -180,4 +194,4 @@ function waitFor(predicate, timeoutMs, label, describe) {
   });
 }
 
-module.exports = {ROOT, startServer, stopServer, stopAll, shutdownThenStop, mcpCall, post, waitFor, redisArgsFor};
+module.exports = {ROOT, startServer, stopServer, stopOn, stopAll, shutdownThenStop, mcpCall, post, waitFor, redisArgsFor};

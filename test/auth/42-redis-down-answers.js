@@ -16,7 +16,7 @@ const fs     = require('fs');
 const net    = require('net');
 const path   = require('path');
 const redis  = require('redis');
-const {ROOT, startServer, stopServer, stopAll, mcpCall} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, stopOn, mcpCall} = require('../helpers/sandbox-server');
 const {testPort} = require('../helpers/test-env');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {redisUrlFor} = require('../helpers/test-env');
@@ -107,9 +107,9 @@ describe('auth 42: with Redis down a call still answers, and billing resumes whe
   });
   after(async () => {
     stopServer(server);
-    // (and a server whose start was still pending when before() failed:
-    // with Redis unreachable it did, and the server outlived the file)
-    stopAll();
+    // (and a server on this file's port whose start was still pending when
+    // before() failed: with Redis unreachable it did, and outlived the file)
+    await stopOn(PORT);
     if (proxyUp) await proxy.down();
     if (dir != null) fs.rmSync(dir, {recursive: true, force: true});
     if (direct != null) { await redisCmd('del', CALLER_LEDGER).catch(() => {}); direct.quit(); }
