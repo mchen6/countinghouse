@@ -88,6 +88,19 @@ describe('metering 06: a key\'s own record fault, on a real Redis', function() {
     assert.strictEqual(provider._recordMarks.size, 0);
   });
 
+  // (Redis 6 and older put the script's place before a redis.pcall error:
+  // the scripts' own function takes it off, run here as Redis runs it)
+  it('a redis.pcall error as Redis 6 words it: the script\'s place taken off, its code word first', async () => {
+    const run = (e) => cmd('eval', `${RedisMeteringProvider.UNPLACED}\nreturn unplaced(ARGV[1])`, 0, e);
+    assert.deepStrictEqual(await Promise.all([
+      run('@user_script: 32: OOM command not allowed when used memory > \'maxmemory\'.'),
+      run('@user_script: 7: WRONGTYPE Operation against a key holding the wrong kind of value'),
+      run('READONLY You can\'t write against a read only replica.'),
+      run('ERR hash value is not a float')]),
+    ['OOM command not allowed when used memory > \'maxmemory\'.', 'WRONGTYPE Operation against a key holding the wrong kind of value',
+      'READONLY You can\'t write against a read only replica.', 'ERR hash value is not a float']);
+  });
+
   it('a repaired record is found by that key\'s own probe, at most once a second: its calls are served again', async () => {
     await charge(KEYS.string);
     assert.strictEqual((await ask(KEYS.string)).code, 'LEDGER_RECORD_INVALID');

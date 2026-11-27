@@ -294,6 +294,32 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       assert.deepStrictEqual([CODES.LEDGER_RECORD_INVALID.kind, CODES.LEDGER_RECORD_INVALID.retryable, CODES.LEDGER_RECORD_INVALID.httpStatus], ['operator', false, 500]);
     });
 
+    // Redis 6.2 and older wrap an error raised in a script: node_redis reads
+    // its code as ERR. The code inside it is the one classified and said.
+    it('an error raised in a script, as Redis 6.2 wraps it: the code inside is classified -- a record\'s own that key\'s, any other the store\'s, and said by it', async () => {
+      const {meterId} = require('../../lib/key-fingerprint');
+      const wrapped = (inner) => Object.assign(new Error(`ERR Error running script (call to f_0123456789abcdef0123456789abcdef01234567): @user_script:3: ${inner}`), {code: 'ERR'});
+      const {redisCode} = RedisMeteringProvider;
+      assert.deepStrictEqual([
+        redisCode(wrapped('WRONGTYPE Operation against a key holding the wrong kind of value')),
+        redisCode(wrapped('BADRECORD the balance is not a number')),
+        redisCode(wrapped('READONLY You can\'t write against a read only replica.')),
+        redisCode(Object.assign(new Error('ERR something else'), {code: 'ERR'})),
+        redisCode(Object.assign(new Error('NOSCRIPT No matching script'), {code: 'NOSCRIPT'}))],
+      ['WRONGTYPE', 'BADRECORD', 'READONLY', 'ERR', 'NOSCRIPT']);
+      for (const [inner, record] of [['WRONGTYPE Operation against a key holding the wrong kind of value', true], ['BADRECORD the balance is not a number', true], ['READONLY You can\'t write against a read only replica.', false]]) {
+        logged = [];
+        const client = fakeClient();
+        const provider = make(client);
+        client.evalErr = (key) => (key === meterId(KEY) ? wrapped(inner) : null);
+        await charge(provider);
+        const code = inner.split(' ')[0];
+        assert.strictEqual(provider._chargeMark.marked(), !record, `${code}: the store marked`);
+        assert.strictEqual((await ask(provider, true)).err.code, record ? 'LEDGER_RECORD_INVALID' : 'LEDGER_UNREACHABLE', code);
+        assert.ok(logged.some(([w, l]) => w === 'E' && l.includes(`(${code})`)), `${code}: ${JSON.stringify(logged)}`);
+      }
+    });
+
     it('a balance asked while Redis can\'t answer: LEDGER_UNREACHABLE, never node_redis\'s code or message', async () => {
       const client = fakeClient();
       const provider = make(client);
