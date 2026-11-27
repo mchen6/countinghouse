@@ -514,6 +514,12 @@ says how to write a module for this.
   `countinghouse://m/<module>/<path>`, to the keys that may reach its module.
   `resources/read` runs the action as a `tools/call` would: authorized,
   validated, rate limited and billed.
+- **Change notices without a listen.** A 2025-11-25 client of a `--stdio`
+  runtime or of a shared runtime's session has no listen. Once it has listed
+  its prompts or resources, it is told `notifications/prompts/list_changed`
+  or `notifications/resources/list_changed` unasked, as it is told of its
+  tools, and initialize declares `listChanged` for both. A client that goes on
+  in 2026-07-28 after its initialize is told nothing unasked.
 - **Change notices on a listen.** `subscriptions/listen` also agrees to
   `resourcesListChanged`, `promptsListChanged` and `resourceSubscriptions`,
   on HTTP, stdio and a shared runtime's session.
