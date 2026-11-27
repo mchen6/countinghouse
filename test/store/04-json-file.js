@@ -1058,5 +1058,23 @@ describe('store 04: a write after a corrupt file builds from this process\'s map
     assert.deepStrictEqual(onDisk(file), {[id]: {balance: 10, toolPriceRecord: {t: {count: 1}}}});
   });
 
+  // (the medium on f66ec188, 3) everywhere: fn is handed a copy, so a fn that
+  // changes its value and then throws leaves the map, and the unwritten value
+  // the next write takes, as they were
+  it('update()\'s fn is handed a copy: one that changes its value and throws changes neither the map nor the next write', async () => {
+    const file = path.join(corruptDirs.mkdtemp('ch-store-04-corrupt-'), 'm.json');
+    const f = openJsonFile(file, {debounceMs: 60000});
+    try {
+      f.set('k', {t: {count: 2}});
+      const {err} = await update(f, 'k', (v) => { v.t.count -= 1; throw new Error('fn refused'); });
+      assert.strictEqual(err && err.message, 'fn refused');
+      assert.deepStrictEqual(f.data.k, {t: {count: 2}}, 'the map as it was');
+      f.flush();
+      assert.deepStrictEqual(onDisk(file), {k: {t: {count: 2}}}, 'the next write as it was');
+    } finally {
+      f.close();
+    }
+  });
+
   corruptDirs.hooks();
 });
