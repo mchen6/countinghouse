@@ -202,7 +202,9 @@ been removed. Then, unless `keepData` is `true`, it deletes the module's
 module's registry entry (when the server uses the registry, that is when no
 `--loadModule` is given); then, unless `keepData` is `true`, it deletes
 `<moduleDataPath>/<name>`, never following links. A reload or an upgrade
-keeps the keys and the data. It never removes the module's
+keeps the keys and the data. A failure in that last step, after the keys
+and the registry entry are gone, answers `MODULE_DATA_NOT_REMOVED` with the
+directory kept; uninstalling again finishes it. It never removes the module's
 code under `--modulePath`. It removes only directories the runtime made
 (the security model's ["Only what the runtime made is deleted"](security-model.md)):
 `kept` lists, as paths under `--moduleDataPath`, each one it found there but

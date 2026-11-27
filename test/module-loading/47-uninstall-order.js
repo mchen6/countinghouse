@@ -317,6 +317,58 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
     assert.deepStrictEqual(calls, ['purge m:late-mod:', 'purge ms:late-mod:', 'registry late-mod']);
   });
 
+  it('a sessions/ made unlistable while the keys were purged: MODULE_DATA_NOT_REMOVED (EACCES) at the listing', async function() {
+    if (!permissionsBite) return this.skip();
+    const root = dataRoot();
+    const sessions = path.join(root, 'list-mod', 'sessions');
+    fs.mkdirSync(path.join(sessions, 'a'.repeat(32), 'data'), {recursive: true});
+    onPurge = (prefix) => { if (prefix.startsWith('ms:')) lock(sessions, 0o300); };
+    const res = await uninstall('list-mod');
+    assert.strictEqual(res.e && res.e.code, 'MODULE_DATA_NOT_REMOVED', String(res.e && res.e.message));
+    assert.ok(res.e.message.includes('(EACCES)'), res.e.message);
+  });
+
+  it('the log line of a directory step that failed never names a session: its id is cut', async () => {
+    const root = dataRoot();
+    const id = 'b'.repeat(32);
+    fs.mkdirSync(path.join(root, 'logid-mod', 'sessions', id, 'data'), {recursive: true});
+    const partition = require('../../lib/session-partition');
+    const realRemove = partition.remove;
+    partition.remove = () => Promise.reject(Object.assign(new Error(`ENOSPC: no space left on device, open '${path.join(root, 'logid-mod', 'sessions', id, '.countinghouse-owned.ab12')}'`), {code: 'ENOSPC'}));
+    const logged = [];
+    const realW = LOG.W;
+    LOG.W = (line) => { logged.push(String(line)); };
+    let res;
+    try { res = await uninstall('logid-mod'); } finally { partition.remove = realRemove; LOG.W = realW; }
+    assert.strictEqual(res.e && res.e.code, 'MODULE_DATA_NOT_REMOVED', String(res.e && res.e.message));
+    assert.ok(res.e.message.includes('(ENOSPC)'), res.e.message);
+    const line = logged.find((l) => l.includes('its data directory was not removed'));
+    assert.ok(line != null, JSON.stringify(logged));
+    assert.ok(!line.includes(id) && line.includes('<a session>'), line);
+  });
+
+  it('a session partition refusing a link on the way: MODULE_DATA_NOT_DIRECTORY, as the link refusal it is', async () => {
+    const root = dataRoot();
+    fs.mkdirSync(path.join(root, 'plink-mod', 'sessions', 'c'.repeat(32), 'data'), {recursive: true});
+    const partition = require('../../lib/session-partition');
+    const realRemove = partition.remove;
+    const at = path.join(root, 'plink-mod', 'sessions');
+    partition.remove = () => Promise.reject(Object.assign(new Error(`${at} is not a directory`), {notRealPath: at}));
+    let res;
+    try { res = await uninstall('plink-mod'); } finally { partition.remove = realRemove; }
+    assert.strictEqual(res.e && res.e.code, 'MODULE_DATA_NOT_DIRECTORY', String(res.e && res.e.message));
+  });
+
+  it('session-partition\'s own link refusal says which path (notRealPath)', async () => {
+    const root = dataRoot();
+    const outside = trees.mkdtemp('ch-ml47-');
+    fs.mkdirSync(path.join(outside, 'sessions'));
+    fs.symlinkSync(outside, path.join(root, 'linkp-mod'), 'junction');
+    const partition = require('../../lib/session-partition');
+    const err = await partition.remove(root, {}, 'linkp-mod', 'd'.repeat(32), {keys: false}).then(() => null, (e) => e);
+    assert.ok(err != null && err.notRealPath === 'linkp-mod', String(err && err.message));
+  });
+
   it('MODULE_DATA_NOT_REMOVED is in the catalogue, an operator\'s and not retryable, its text word for word', () => {
     const c = CODES.MODULE_DATA_NOT_REMOVED;
     assert.deepStrictEqual([c.kind, c.retryable, c.httpStatus], ['operator', false, 500]);
