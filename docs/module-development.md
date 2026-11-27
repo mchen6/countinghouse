@@ -1421,11 +1421,13 @@ actions, unbound: a call held for it goes on, and its `ctx.call` is refused.
 A module that ends while a call to it is held (an unload, a crash, a
 restart) answers that call at once, and the call is never sent. The answer
 is the one a new call to the tool would get at that moment: gone, the same
-`unknown tool` answer; restarting, `MODULE_RESTARTING`, retryable. While the
-module is being replaced by a new version, where a new call would wait for
-it, the held call gets `CTX_CALL_NOT_READY` and the client's retry is
-served. A held call whose client cancelled it, or whose request timer ran
-out, is never sent either.
+`unknown tool` answer; restarting, `MODULE_RESTARTING`, retryable. When a
+new version serves the tool after a retry (the module reloaded, in place or
+not), the held call gets `CTX_CALL_NOT_READY` and the client's retry is
+served. A module turned off or hidden while a call to it is held never runs
+that call: it gets the same `unknown tool` answer a new call gets. A held
+call whose client cancelled it, or whose request timer ran out, is never
+sent either.
 `examples/repo-review/token-comparison.js` waits for the server's "all
 module discovered" log line plus a settle buffer to stay out of the window
 entirely — see its comment on `waitForAllModulesDiscovered` for the full

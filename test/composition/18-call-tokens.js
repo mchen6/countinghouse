@@ -2244,7 +2244,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         'live-purged': false, 'live-bound': false, 'live-landed': false, 'live-bound-open': true}, r.stderr);
     });
 
-    it('a held call is not released by the end of another copy of its device: it waits on for its own verdict, to its bound', async () => {
+    it('a held call is not released by the end of another copy of its device: it waits on to its bound, answered as a fresh call then', async () => {
       cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
       const sent = [];
       const held = proxy('d-h9', sent);
@@ -2256,7 +2256,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       await purging(dm, other);
       assert.deepStrictEqual([sent.length, answers], [0, []], 'released by another copy\'s end');
       await until(() => answers.length > 0, 5000, 'answered at its own bound');
-      assert.deepStrictEqual([sent.length, answers], [0, ['CTX_CALL_NOT_READY']]);
+      // (by then the device is out of the map: as a fresh call, the uniform answer)
+      assert.deepStrictEqual([sent.length, answers], [0, ['DEVICE_NOT_FOUND']]);
     });
 
     // a task's creation held the same way (untilVerdict): gone, as any tool the caller can't use ('purged'); restarting, created, as a
@@ -2394,6 +2395,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const s = session([]);
       s.callback = (e) => errs.push(e);
       DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h23', 'svc', 'act', {input: {}}, s);
+      dev.exited = true;   // (as the exit handler marks it, before it releases)
       DeviceManager.releaseHeldOn(dev);
       await turns();
       assert.deepStrictEqual([sent.length, ...uniform(errs)], [0, 1, 'DEVICE_NOT_FOUND', true]);
@@ -2435,7 +2437,94 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       dm.untilVerdict('d-h26', null, (d, err) => decided.push(d, err && err.code), () => { throw new Error('the caller check threw'); });
       await until(() => decided.length > 0, 2000, 'the hold ended');
       assert.deepStrictEqual(decided, ['purged', 'DEVICE_NOT_FOUND']);
-      assert.ok(logged.some((l) => /caller check threw/.test(l)), JSON.stringify(logged));
+      await turns();
+      assert.strictEqual(logged.filter((l) => /caller check threw/.test(l)).length, 1, JSON.stringify(logged));
+    });
+
+    it('a module turned off during the hold: no handler runs, the uniform answer (a tightening applies to held calls as to fresh ones)', async () => {
+      const visibility = require('../../lib/module-visibility');
+      const sent = [];
+      const dev = proxy('d-h27', sent);
+      const dm = manager({'d-h27': dev}, bound, [], {n: 0});
+      const errs = [];
+      const s = session([]);
+      s.callback = (e) => errs.push(e);
+      const before = visibility.configure({moduleOf: (id) => (id === 'd-h27' ? 'held-off' : null), changed: () => {}});
+      try {
+        DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h27', 'svc', 'act', {input: {}}, s);
+        visibility.hide(['held-off']);
+        dm.verificationPass(null);
+        await turns();
+        await turns();
+      } finally {
+        visibility.show(['held-off']);
+        visibility.configure(before);
+      }
+      assert.deepStrictEqual([sent.length, ...uniform(errs)], [0, 1, 'DEVICE_NOT_FOUND', true]);
+    });
+
+    it('a verdict whose relay into the worker failed releases nothing: the call stays held to its bound, unsent', async () => {
+      cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
+      const sent = [];
+      const dev = proxy('d-h28', sent);
+      const dm = manager({'d-h28': dev}, bound, [], {n: 0});
+      dm.relayComposition = (d, msg, cb) => cb(new Error('the relay failed'));
+      const answers = [];
+      DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h28', 'svc', 'act', {input: {}}, session(answers));
+      dm.verificationPass(null);
+      await turns();
+      assert.deepStrictEqual([sent.length, answers], [0, []], 'released on a failed relay');
+      await until(() => answers.length > 0, 5000, 'answered at its bound');
+      assert.deepStrictEqual([sent.length, answers], [0, ['CTX_CALL_NOT_READY']]);
+    });
+
+    it('a call held on copy A, which fails its startup verdict while copy B is listed, answers not ready (a retry reaches B)', async () => {
+      const sent = [];
+      const devA = proxy('d-h29', sent);
+      const devB = proxy('d-h29', sent);
+      let answerA = null;
+      const dm = manager({'d-h29': devA}, (cb) => { answerA = cb; }, [], {n: 0});
+      const answers = [];
+      DeviceManager.prototype.invokeAction.call(dm, devA, 'd-h29', 'svc', 'act', {input: {}}, session(answers));
+      dm.verificationPass(null);
+      dm.deviceMap['d-h29'] = devB;
+      answerA(new Error('a target not declared'));
+      await turns();
+      await turns();
+      assert.deepStrictEqual([sent.length, answers], [0, ['CTX_CALL_NOT_READY']]);
+    });
+
+    it('a call held on a session\'s worker whose record is closing (its unload) answers as a fresh call then: going', async () => {
+      const {SessionModuleRecord} = require('../../lib/session-module-record');
+      const sent = [];
+      const rec = Object.assign(Object.create(SessionModuleRecord.prototype), {hostModuleName: 'held', deviceList: {'d-h30': {}}, bindings: {}, closing: true});
+      const wm = Object.assign(proxy('d-h30', sent), {bindings: rec.bindings});
+      const dm = manager({'d-h30': rec}, () => {}, [], {n: 0});
+      dm.moduleManager = {endedStateForDevice: () => ({code: 'MODULE_UNLOADED', name: 'held'})};
+      const errs = [];
+      const s = session([]);
+      s.callback = (e) => errs.push(e && e.code);
+      DeviceManager.prototype.invokeAction.call(dm, wm, 'd-h30', 'svc', 'act', {input: {}}, s);
+      wm.exited = true;
+      DeviceManager.releaseHeldOn(wm);
+      await turns();
+      assert.deepStrictEqual([sent.length, errs], [0, ['MODULE_UNLOADED']]);
+    });
+
+    it('a held run\'s bound follows its session\'s tightened request timeout', async () => {
+      const settings = require('../../lib/session-settings');
+      const sid = `s-${hex()}`;
+      const savedOf = settings.limitsOf;
+      settings.limitsOf = (id) => (id === sid ? {requestTimeout: 3000, maxOutputBytes: null} : savedOf(id));
+      const answered = [];
+      try {
+        DeviceManager.prototype.invokeJobs.call({}, proxy('d-h31', []), 'd-h31', 'svc', 'act', {}, 'job-h31', (err) => answered.push(err && err.code), {ownerKey: `owner-${hex()}`, session: sid});
+        // (a 3 s tightening: a hold of 1 s; the global 30 s would hold it 25 s)
+        await until(() => answered.length > 0, 10000, 'the run answered at its session\'s bound');
+      } finally {
+        settings.limitsOf = savedOf;
+      }
+      assert.deepStrictEqual(answered, ['CTX_CALL_NOT_READY']);
     });
 
     it('a held call never keeps the process alive: its timer and its poll are unref\'d', () => {
@@ -2446,10 +2535,9 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         const dm = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {'d-x': {bindings: null, workerId: 1}}});
         dm.untilVerdict('d-x', null, () => {});
         console.log('held', DeviceManager.verdictHeldOn(dm.deviceMap['d-x']));`;
-      const t0 = Date.now();
+      // (exited on its own, before its 15 s timeout: the hold is 25 s)
       const r = require('child_process').spawnSync(process.execPath, ['-e', child, ROOT], {encoding: 'utf8', timeout: 15000});
       assert.deepStrictEqual([r.status, r.signal, r.stdout.trim()], [0, null, 'held 1'], r.stderr);
-      assert.ok(Date.now() - t0 < 12000, `the process waited out the hold (${Date.now() - t0} ms)`);
     });
 
     it('two ends of one held call in the same turn answer it once (a worker\'s exit and its purge)', async () => {
