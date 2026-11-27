@@ -255,8 +255,13 @@ the client can hear it:
   `notifications/tools/list_changed` on it;
 - a 2025-11-25 client of a `--stdio` runtime, or of a shared runtime's
   session, gets it unasked, once it has listed
-  (`capabilities.tools.listChanged`); a session is told of any change to the
-  tool set, which may leave its own list the same;
+  (`capabilities.tools.listChanged`); its prompts and resources are told the
+  same way, with `notifications/prompts/list_changed` and
+  `notifications/resources/list_changed`, once it has listed them
+  (`capabilities.prompts.listChanged`, `capabilities.resources.listChanged`);
+  a session is told of any change to the module set, which may leave its own
+  lists the same; a client that goes on in 2026-07-28 after its initialize is
+  told nothing unasked;
 - a 2025-11-25 client over HTTP has no stream to hear it on, and lists again.
 
 The loop does not wait for the notice: `load_module` returns the names it made

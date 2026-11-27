@@ -157,6 +157,7 @@ describe('session-runtime 09: a 2025-11-25 session of a shared runtime hears its
     const loaded = await r.control({type: 'load', name: 'ch-pack-three', dirs: dirsOf(three)});
     assert.strictEqual(loaded.ok, true, `${JSON.stringify(loaded)}\n${r.err.slice(-1500)}`);
     await until(() => told().length > 0);
+    assert.ok(told().length > 0, `told prompts/list_changed: ${JSON.stringify(rl.notes)}`);
     // (one for each settled change: a load may make more than one)
     for (const n of told()) assert.deepStrictEqual(n, {jsonrpc: '2.0', method: 'notifications/prompts/list_changed'}, 'the plain frame');
     assert.ok((await prompts()).some((n) => /greet/.test(n)), 'the pack\'s prompt is listed');
