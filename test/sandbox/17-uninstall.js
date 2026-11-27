@@ -188,7 +188,7 @@ describe('sandbox 17: POST /uninstall-module', function() {
   // (R-store-aside-locked) a local kv.json this process never saw whole: its
   // keys can't be purged, so the uninstall is refused before anything is
   // removed -- the registry row, the data and the file stay
-  it('registry mode, a corrupt kv.json this runtime never saw whole: refused with MODULE_KEYS_NOT_PURGED, the registry row, the data and the file as they were', async function() {
+  it('registry mode, a corrupt kv.json this runtime never saw whole: refused with MODULE_STORE_CORRUPT (not retryable), the registry row, the data and the file as they were', async function() {
     let sqlite3 = null;
     try { sqlite3 = require('sqlite3'); } catch (e) { return this.skip(); }
     base = mkdtemp('uninstall-');
@@ -207,7 +207,8 @@ describe('sandbox 17: POST /uninstall-module', function() {
     server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleSandbox', 'audit', '--store', 'local', '--storePath', kvDir,
       '--modulePath', modulesDir, '--moduleDataPath', store(), '--moduleRegistry']);
     const r = await uninstall({name: 'ghost-mod'});
-    assert.strictEqual(r.body && r.body.code, 'MODULE_KEYS_NOT_PURGED', JSON.stringify(r.body));
+    assert.deepStrictEqual(r.body && [r.body.code, r.body.kind, r.body.message], ['MODULE_STORE_CORRUPT', 'operator',
+      'The module was not uninstalled: the store file that holds its data is corrupt, and this runtime holds no copy of it, so nothing was removed -- repair the store (the runtime\'s log says how), then uninstall again'], JSON.stringify(r.body));
     const rows = await new Promise((resolve, reject) => {
       const d = new sqlite3.Database(dbFile);
       d.all("SELECT name FROM module_info WHERE name = 'ghost-mod'", (e, got) => d.close(() => (e ? reject(e) : resolve(got))));

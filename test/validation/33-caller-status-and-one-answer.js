@@ -127,6 +127,19 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       }
     });
 
+    // (the Fable high on #559, 1) /mcp's gates (the lists, tasks/*,
+    // prompts/get, completion, resources/read) answer a ledger refusal with
+    // its catalogue status, 503, never HTTP 200: LIMIT_CODES lists both
+    it('/mcp answers a ledger refusal with its status, 503, and no Retry-After of its own', () => {
+      const ed = require('../../lib/mcp/error-data');
+      for (const code of ['LEDGER_CORRUPT', 'LEDGER_UNREADABLE']) {
+        const headers = {};
+        const res = {set: (k, v) => { headers[k] = v; }, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; }};
+        assert.strictEqual(ed.answerLimit(res, ed.limitAnswer(7, new CountinghouseError(code))), true, code);
+        assert.deepStrictEqual([res.code, res.body.error.code, res.body.error.data[ed.ERROR_CODE_META_KEY], headers['Retry-After']], [503, -32000, code, undefined], code);
+      }
+    });
+
     // #482's high, 1: the limiters say what they are
     it('invoke-action\'s limiters: a key over its budget is RATE_LIMIT_EXCEEDED 429; the runtime at its limit is RUNTIME_BUSY 503 with Retry-After', () => {
       const CdifInterface = require('../../lib/countinghouse-interface');

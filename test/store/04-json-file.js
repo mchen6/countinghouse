@@ -1660,6 +1660,29 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
     assert.deepStrictEqual(Object.keys(onDisk(file)), ['keep']);
   });
 
+  it('a read error at open is said once for its code, however often the store is opened again', () => {
+    const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+    const file = path.join(dir, 'm.json');
+    fs.writeFileSync(file, '{}');
+    const read = fs.readFileSync;
+    let thrown = 0;
+    try {
+      fs.readFileSync = function(p) {
+        if (p === file) throw Object.assign(new Error(`EACCES: permission denied, open '${p}'`), {code: 'EACCES', syscall: 'open'});
+        return read.apply(this, arguments);
+      };
+      for (let i = 0; i < 3; i++) { try { openJsonFile(file); } catch (e) { thrown += 1; } }
+    } finally {
+      fs.readFileSync = read;
+    }
+    const f = openJsonFile(file);
+    f.close();
+    assert.strictEqual(thrown, 3, 'each open still says it could not read');
+    const mine = logged.filter((l) => l.includes(file));
+    assert.strictEqual(mine.filter((l) => l.includes('EACCES')).length, 1, JSON.stringify(mine));
+    assert.strictEqual(mine.filter((l) => /can be read again/.test(l)).length, 1, JSON.stringify(mine));
+  });
+
   it('a read error is said once for its code, not again by each write that meets it', () => {
     const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
     const file = path.join(dir, 'm.json');
