@@ -29,6 +29,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {spawn} = require('child_process');
+const request = require('supertest');
+const {startServer, stopServer} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
+const {deviceIDForName} = require('../../lib/call-address');
 
 const ENTRY = path.join(__dirname, '..', '..', 'bin', 'countinghouse-stdio.js');
 
@@ -73,7 +77,8 @@ function serve({delayMs, delayModule, args = [], slowStartMs, badCall, stdioBoun
     more.push('--loadModule', sibling);
   }
   // The hook is honoured only under the test suite's marker.
-  const env = {...process.env, COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG: '1', COUNTINGHOUSE_TEST_COMPOSITION_DELAY_MS: String(delayMs)};
+  // (and a held call's start and end said: the cases tell a held call from one sent at once by it, never by elapsed time)
+  const env = {...process.env, COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG: '1', COUNTINGHOUSE_TEST_COMPOSITION_DELAY_MS: String(delayMs), COUNTINGHOUSE_TEST_HELD_LOG: '1'};
   if (delayModule != null) env.COUNTINGHOUSE_TEST_COMPOSITION_DELAY_MODULE = delayModule;
   if (stdioBoundMs != null) env.COUNTINGHOUSE_TEST_STDIO_READY_BOUND_MS = String(stdioBoundMs);
   const child = spawn(process.execPath, [ENTRY, '--workerThread', '--store', 'local', '--storePath', path.join(root, 'store'),
@@ -113,6 +118,9 @@ async function listed(s) {
   }
   throw new Error(`compose_wait was never listed; stderr: ${s.stderr().slice(-1500)}`);
 }
+
+// how each call held for a verdict ended, in order ('release' the only one that sends)
+const heldEnds = (s) => [...s.stderr().matchAll(/a call held for [\w-]+'s verdict ended: ([\w-]+)/g)].map((m) => m[1]);
 
 async function timedCall(s, ms) {
   const started = Date.now();
@@ -211,10 +219,11 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
     const s = serve({delayMs: 0, stdioBoundMs: 1, slowSibling: true});
     try {
       await listed(s);
-      const {r, waited} = await timedCall(s, 40000);
+      const {r} = await timedCall(s, 40000);
       assert.strictEqual(r.result.isError, false, `${JSON.stringify(r)}\n${s.stderr().slice(-1500)}`);
       assert.deepStrictEqual(r.result.structuredContent, {n: 41});
-      assert.ok(waited < 15000, `sent when the verdict was decided (${waited} ms), not at the 25 s bound`);
+      // (held, and released by its verdict: a call sent at once, unheld, carries no binding and fails, the reported bug)
+      assert.deepStrictEqual(heldEnds(s), ['release'], `held, and released by its verdict:\n${s.stderr().slice(-1500)}`);
     } finally {
       s.stop();
     }
@@ -224,10 +233,12 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
     const s = serve({delayMs: 0, stdioBoundMs: 1, slowSibling: true, args: ['--requestTimeout', '3']});
     try {
       await listed(s);
-      const {r, waited} = await timedCall(s, 20000);
+      const {r} = await timedCall(s, 20000);
       assert.strictEqual(r.result.isError, true, JSON.stringify(r));
       assert.strictEqual(r.result._meta['countinghouse/code'], 'CTX_CALL_NOT_READY', JSON.stringify(r));
-      assert.ok(waited < 3000, `answered at the bound, 1 s under a 3 s timer (${waited} ms)`);
+      // (held, and ended at its bound: never sent, so its handler never ran; a call sent at once would have answered the same code
+      // from its handler's own ctx.call)
+      assert.deepStrictEqual(heldEnds(s), ['bound'], s.stderr().slice(-1500));
     } finally {
       s.stop();
     }
@@ -246,6 +257,7 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
       await listed(s);
       const {created} = await taskOf(s);
       assert.ok(created.result != null && created.result.task != null, `${JSON.stringify(created)}\n${s.stderr().slice(-1500)}`);
+      assert.strictEqual(heldEnds(s)[0], 'release', `its creation held, and released by the verdict:\n${s.stderr().slice(-1500)}`);
       const taskId = created.result.task.taskId;
       let status = null;
       for (let i = 0; i < 200 && status !== 'completed' && status !== 'failed'; i++) {
@@ -264,8 +276,8 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
     const s = serve({delayMs: 0, stdioBoundMs: 1, slowSibling: true, args: ['--requestTimeout', '3']});
     try {
       await listed(s);
-      const {created, waited} = await taskOf(s, 20000);
-      assert.ok(waited < 3000, `answered at the bound, 1 s under a 3 s timer (${waited} ms)`);
+      const {created} = await taskOf(s, 20000);
+      assert.deepStrictEqual(heldEnds(s), ['bound'], s.stderr().slice(-1500));
       assert.ok(created.result != null && created.result.task == null, `no task: ${JSON.stringify(created)}`);
       assert.strictEqual(created.result._meta['countinghouse/code'], 'CTX_CALL_NOT_READY', JSON.stringify(created));
     } finally {
@@ -277,8 +289,8 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
     const s = serve({delayMs: 3000, badCall: true, stdioBoundMs: 1, slowSibling: true});
     try {
       await listed(s);
-      const {created, waited} = await taskOf(s);
-      assert.ok(waited < 15000, `answered when it was purged (${waited} ms)`);
+      const {created} = await taskOf(s);
+      assert.deepStrictEqual(heldEnds(s), ['gone'], `held, and ended when it was purged:\n${s.stderr().slice(-1500)}`);
       assert.strictEqual(created.result, undefined, JSON.stringify(created));
       assert.strictEqual(created.error.code, -32602);
       assert.strictEqual(created.error.message, 'unknown tool: compose_wait; countinghouse_overview shows what is installed here and which tools you can use');
@@ -309,10 +321,8 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
         if (found != null) uri = found.uri; else await new Promise((resolve) => setTimeout(resolve, 100));
       }
       assert.ok(uri != null, `never listed; stderr: ${s.stderr().slice(-1500)}`);
-      const started = Date.now();
       const r = await s.request('resources/read', {uri}, 40000);
-      const waited = Date.now() - started;
-      assert.ok(waited < 15000, `released when it was purged (${waited} ms), not at the bound`);
+      assert.deepStrictEqual(heldEnds(s), ['gone'], `held, and ended when it was purged:\n${s.stderr().slice(-1500)}`);
       const fresh = await s.request('resources/read', {uri: uri.replace(/all$/, 'never_served')});
       const shape = (x) => ({keys: Object.keys(x).sort(), code: x.error && x.error.code, message: x.error && x.error.message, data: x.error && x.error.data});
       assert.deepStrictEqual(shape(r), shape(fresh), `${JSON.stringify(r)} / ${JSON.stringify(fresh)}`);
@@ -337,6 +347,30 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
       assert.strictEqual(r.error.message, 'unknown tool: compose_wait; countinghouse_overview shows what is installed here and which tools you can use');
     } finally {
       s.stop();
+    }
+  });
+
+  // What a REST call held for a module purged at its verdict is answered: the route's own answer for that device after the purge
+  // (a held call released by the purge goes through the same route answer as a fresh call then; docs/module-development.md says it)
+  it('over REST, a module purged at its verdict is answered with the route\'s answer for it after the purge', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-composition-19-rest-'));
+    let server = null;
+    try {
+      const port = testPort(9803);
+      const key = `composition-19-${Date.now()}`;
+      const authFile = path.join(root, 'auth.json');
+      fs.writeFileSync(authFile, JSON.stringify({[key]: {userName: 'composition-19', devices: ['*']}}));
+      server = await startServer(port, ['--workerThread', '--store', 'local', '--storePath', path.join(root, 'store'), '--moduleDataPath', path.join(root, 'module_data'),
+        '--modulePath', path.join(root, 'modules'), '--authConfigPath', require('../helpers/private-auth').privateAuth(authFile),
+        '--loadModule', fixture(root, {badCall: true})]);
+      const res = await request(`http://127.0.0.1:${port}`).post(`/devices/${deviceIDForName('compose-wait')}/invoke-action`).set('X-CH-Key', key)
+        .send({serviceID: 'waitService', actionName: 'compose_wait', input: {n: 1}});
+      // (the module is still in the module map, only its device was purged, so the route takes it as listed and passes the device's
+      // own answer through: DEVICE_NOT_FOUND, 404)
+      assert.deepStrictEqual([res.status, res.body.code], [404, 'DEVICE_NOT_FOUND'], JSON.stringify(res.body));
+    } finally {
+      if (server != null) await stopServer(server);
+      fs.rmSync(root, {recursive: true, force: true});
     }
   });
 });

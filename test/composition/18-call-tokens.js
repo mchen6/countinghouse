@@ -2032,9 +2032,21 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     let kept = null;
     let savedE = null;
     let logged = [];
-    before(() => { kept = optionsNow(); savedE = LOG.E; LOG.E = (e) => logged.push(String(e && e.message ? e.message : e)); });
-    beforeEach(() => { logged = []; cli.setOptions({workerThread: true, requestTimeout: 30}); });
-    after(() => { LOG.E = savedE; restoreOptions(kept); });
+    // user-auth, as the main thread reads it at a release (from require.cache on each use): a key in `revoked` has lost its grant
+    const revoked = new Set();
+    const authPath = require.resolve('../../lib/user-auth');
+    let savedAuth = null;
+    before(() => {
+      kept = optionsNow(); savedE = LOG.E; LOG.E = (e) => logged.push(String(e && e.message ? e.message : e));
+      savedAuth = require.cache[authPath];
+      require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,
+        exports: (a, b, deviceID, appKey, c, d, e, cb) => cb(revoked.has(appKey) ? Object.assign(new Error('no grant'), {code: 'DEVICE_ACCESS_DENIED'}) : null, {appKey: appKey})};
+    });
+    beforeEach(() => { logged = []; revoked.clear(); cli.setOptions({workerThread: true, requestTimeout: 30}); });
+    after(() => {
+      LOG.E = savedE; restoreOptions(kept);
+      if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
+    });
 
     for (const [what, verdict, relayedAs, want] of [
       ['bound', bound, (m) => m.deviceID, ['d-h1', 'landed']],
@@ -2596,6 +2608,136 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       await turns();
       await turns();
       assert.deepStrictEqual([sent.length, answers], [0, ['CTX_CALL_NOT_READY']]);
+    });
+
+    it('a call released after a hold has its token dropped at its caller\'s deadline, not a full timeout later (its hops neither run nor bill)', async () => {
+      cli.setOptions({workerThread: true, requestTimeout: 4});   // seconds: a full timeout of 4 s from the release
+      const sent = [];
+      const dev = proxy('d-h36', sent);
+      const dm = manager({'d-h36': dev}, bound, [], {n: 0});
+      const s = session([]);
+      s.deadline = Date.now() + 1500;   // (its clock started before the hold: 1.5 s left of it)
+      DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h36', 'svc', 'act', {input: {}}, s);
+      dm.verificationPass(null);
+      await turns();
+      await turns();
+      assert.strictEqual(sent.length, 1);
+      const token = sent[0].args.token;
+      await until(() => tokens().resolve(token, {workerId: dev.workerId}) == null, 3000, 'the token dropped at the caller\'s deadline');
+    });
+
+    it('a run released after a hold has its token bounded by the run\'s own clock, which started before the hold', async () => {
+      const sent = [];
+      const controlSent = [];
+      const dev = proxy('d-h37', sent);
+      const control = proxy('d-h37', controlSent);
+      control.bindings = {'d-h37': {identity: 'k', module: 'm', targets: new Set()}};
+      const dm = manager({'d-h37': dev}, bound, [], {n: 0});
+      let ack = null;
+      dm.relayComposition = (d, msg, cb) => { ack = cb; };
+      const extra = () => ({ownerKey: `owner-${hex()}`, timeoutMs: 20000});
+      DeviceManager.prototype.invokeJobs.call(dm, dev, 'd-h37', 'svc', 'act', {}, 'job-h37', () => {}, extra());
+      DeviceManager.prototype.invokeJobs.call({}, control, 'd-h37', 'svc', 'act', {}, 'job-h37c', () => {}, extra());   // (unheld: issued now)
+      dm.verificationPass(null);
+      await new Promise((r) => setTimeout(r, 800));   // (held this long before its verdict is delivered)
+      ack(null);
+      await turns();
+      await turns();
+      assert.strictEqual(sent.length, 1);
+      const held = tokens().resolve(sent[0].args.token, {workerId: dev.workerId});
+      const unheld = tokens().resolve(controlSent[0].args.token, {workerId: control.workerId});
+      assert.ok(held != null && unheld != null && held.expires - unheld.expires < 400, `the held run's token outlives its clock by ${held && unheld ? held.expires - unheld.expires : '?'} ms`);
+      tokens().drop(sent[0].args.token);
+      tokens().drop(controlSent[0].args.token);
+    });
+
+    it('a call whose session ended during the hold is never sent: the ended answer', async () => {
+      const sessionsLib = require('../../lib/sessions');
+      const savedLive = sessionsLib.live;
+      const sid = `s-${hex()}`;
+      let open = true;
+      sessionsLib.live = (id) => (id === sid ? open : savedLive(id));
+      const sent = [];
+      const dev = proxy('d-h38', sent);
+      const dm = manager({'d-h38': dev}, bound, [], {n: 0});
+      const errs = [];
+      const s = session([]);
+      s.sessionId = sid;
+      s.callback = (e) => errs.push(e && e.code);
+      try {
+        DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h38', 'svc', 'act', {input: {}}, s);
+        open = false;
+        dm.verificationPass(null);
+        await turns();
+        await turns();
+      } finally {
+        sessionsLib.live = savedLive;
+      }
+      assert.deepStrictEqual([sent.length, errs], [0, ['MODULE_NOT_LISTED']]);
+    });
+
+    it('a call whose grant was revoked during the hold is refused at its release by the main thread\'s own check: the uniform answer', async () => {
+      const sent = [];
+      const dev = proxy('d-h39', sent);
+      const dm = manager({'d-h39': dev}, bound, [], {n: 0});
+      const errs = [];
+      const s = session([]);
+      s.callback = (e) => errs.push(e);
+      DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h39', 'svc', 'act', {input: {}}, s);
+      revoked.add(s.appKey);
+      dm.verificationPass(null);
+      await turns();
+      await turns();
+      assert.deepStrictEqual([sent.length, ...uniform(errs)], [0, 1, 'DEVICE_NOT_FOUND', true]);
+    });
+
+    it('a call held on a session\'s worker of the listed record stays held when another copy\'s verdict lands', async () => {
+      cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
+      const {SessionModuleRecord} = require('../../lib/session-module-record');
+      const sent = [];
+      const devA = proxy('d-h40', []);
+      const rec = Object.assign(Object.create(SessionModuleRecord.prototype), {hostModuleName: 'held', deviceList: {'d-h40': {}}, bindings: {}});
+      const wm = Object.assign(proxy('d-h40', sent), {bindings: rec.bindings});
+      let answerA = null;
+      const dm = manager({'d-h40': devA}, (cb) => { answerA = cb; }, [], {n: 0});
+      dm.verificationPass(null);
+      dm.deviceMap['d-h40'] = rec;
+      const answers = [];
+      DeviceManager.prototype.invokeAction.call(dm, wm, 'd-h40', 'svc', 'act', {input: {}}, session(answers));
+      bound(answerA);   // A's verdict delivered on A
+      await turns();
+      await turns();
+      assert.deepStrictEqual([sent.length, answers], [0, []], 'ended by another copy\'s verdict');
+      await until(() => answers.length > 0, 5000, 'answered at its own bound');
+    });
+
+    it('a held task creation whose end throws while it decides its answer is still answered, with the uniform answer', async () => {
+      cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
+      const dm = manager({'d-h41': proxy('d-h41', [])}, () => {}, [], {n: 0});
+      dm.heldAnswerNow = () => { throw new Error('deciding the answer threw'); };
+      const decided = [];
+      dm.untilVerdict('d-h41', null, (d, err) => decided.push(d, err && err.code));
+      await until(() => decided.length > 0, 5000, 'the creation answered');
+      assert.deepStrictEqual(decided, ['purged', 'DEVICE_NOT_FOUND']);
+    });
+
+    it('a task creation whose grant was revoked during its hold is refused at its release, as a fresh creation is: the uniform answer', () => {
+      const child = `
+        const W = process.argv[1];
+        const authPath = require.resolve(W + '/lib/user-auth');
+        let checks = 0;
+        // (the creation's own check passes; the grant is gone by the release's)
+        require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: (a, b, c, d, e, f, g, cb) => (++checks === 1 ? cb(null, {}) : cb(Object.assign(new Error('no grant'), {code: 'DEVICE_ACCESS_DENIED'})))};
+        require(W + '/lib/cli-options').setOptions({workerThread: true, requestTimeout: 30});
+        require(W + '/lib/logger').createLogger();
+        const gw = require(W + '/lib/mcp/gateway');
+        const dm = {untilVerdict: (id, limits, cb) => setImmediate(() => cb('landed', undefined, true))};
+        gw.createTaskForToolCallFor({id: 7, params: {name: 'held_tool'}}, {deviceManager: dm}, {deviceID: 'd-n4', serviceID: 's', actionName: 'a', name: 'held_tool'},
+          {}, null, (err, res) => { console.log(JSON.stringify({res, checks})); process.exit(0); }, null, null, false, null);
+        setTimeout(() => { console.log('{}'); process.exit(3); }, 5000);`;
+      const r = require('child_process').spawnSync(process.execPath, ['-e', child, ROOT], {encoding: 'utf8', timeout: 30000});
+      const out = JSON.parse(r.stdout.trim().split('\n').pop());
+      assert.deepStrictEqual([out.checks, out.res && out.res.error && out.res.error.code, out.res && out.res.error && /^unknown tool: held_tool/.test(out.res.error.message)], [2, -32602, true], r.stdout + r.stderr);
     });
 
     it('a held call never keeps the process alive: its timer and its poll are unref\'d', () => {
