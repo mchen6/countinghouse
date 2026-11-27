@@ -104,7 +104,7 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       assert.strictEqual(counted, 0);
     });
 
-    it('a write that fails in the store is told as a write\'s failure (storeWrite); a lock that stays busy is not', async () => {
+    it('a write that fails in the store marks the ledger, as a lock held past the wait does; a read that failed does not', async () => {
       const {provider} = open();
       const fsMod = require('fs');
       const realOpen = fsMod.openSync;
@@ -117,11 +117,17 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       assert.ok(r.err != null && r.err.code === 'ENOSPC' && r.err.storeWrite === true, String(r.err && r.err.message));
       provider.file.writeNow = (cb) => cb(Object.assign(new Error('no space'), {code: 'ENOSPC'}));
       assert.strictEqual((await ask(provider, true)).err.code, 'LEDGER_UNWRITABLE');
-      // (busy: no storeWrite, so no mark)
-      const other = open().provider;
-      other.file.update = (key, fn, cb) => cb(new Error('the store lock stayed busy for 10000 ms'));
-      await charge(other);
-      assert.strictEqual((await ask(other, true)).err, null);
+      // (a lock held past the wait: the charge was lost, so marked too)
+      const busy = open().provider;
+      busy.file.update = (key, fn, cb) => cb(new Error('the store lock stayed busy for 10000 ms'));
+      busy.file.writeNow = (cb) => cb(Object.assign(new Error('busy'), {code: 'EBUSY'}));
+      await charge(busy);
+      assert.strictEqual((await ask(busy, true)).err.code, 'LEDGER_UNWRITABLE');
+      // (a read that failed is the ledger's other state, refused as itself: no mark)
+      const read = open().provider;
+      read.file.update = (key, fn, cb) => cb(Object.assign(new Error('EIO, read'), {code: 'EIO', storeRead: true}));
+      await charge(read);
+      assert.strictEqual(read._chargeMark.marked(), false);
     });
 
     it('without --meter nothing is recorded, so every call can be', async () => {
@@ -133,36 +139,74 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
 
   describe('Redis', () => {
     const RedisMeteringProvider = require('../../lib/metering/redis-provider');
-    // a client as node_redis's, on a Redis this test plays
+    const {CountinghouseError} = require('../../lib/countinghouse-error');
+    // a client as node_redis's, on a Redis this test plays: evalErr(key,
+    // probe) answers each EVAL (the record script, or the record probe)
     function fakeClient() {
-      const c = {ready: true, pings: 0, pingOk: false, evalErr: null, hmgetErr: null,
-        ping(cb) { c.pings++; process.nextTick(cb, c.pingOk ? null : Object.assign(new Error('Redis did not answer PING within 3000 ms'), {code: 'REDIS_COMMAND_TIMEOUT'}), c.pingOk ? 'PONG' : undefined); },
-        eval(...args) { const cb = args[args.length - 1]; process.nextTick(cb, c.evalErr, c.evalErr ? undefined : [0, '9', 0]); },
+      const c = {ready: true, sets: 0, setErr: null, recordProbes: 0, hmgetErr: null, evalErr: () => null,
+        set(...args) { c.sets++; const cb = args[args.length - 1]; process.nextTick(cb, c.setErr, c.setErr ? undefined : 'OK'); },
+        eval(script, n, key, ...rest) {
+          const cb = rest[rest.length - 1];
+          const probe = /'TYPE'/.test(script);
+          if (probe) c.recordProbes++;
+          const err = c.evalErr(key, probe);
+          process.nextTick(cb, err, err ? undefined : (probe ? '0' : [0, '9', 0]));
+        },
         hmget(id, f, cb) { process.nextTick(cb, c.hmgetErr, c.hmgetErr ? undefined : ['5']); },
         on() {}};
       return c;
     }
     let clock = 0;
     const make = (client) => { clock = 1000000; return new RedisMeteringProvider({redisClient: client, now: () => clock}); };
+    const timeout = () => Object.assign(new Error('Redis did not answer EVAL within 3000 ms (redis://user:pw@host.invalid)'), {code: 'REDIS_COMMAND_TIMEOUT'});
+    const askAs = (provider, key) => new Promise((resolve) => provider.rateLimit(key, (err) => resolve(err), {billed: true}));
+    const chargeAs = (provider, key) => new Promise((resolve) => provider.recordCall(key, 'tool-a', 1, (err) => resolve(err)));
 
-    it('a charge that fails marks it: the next billed call is refused LEDGER_UNREACHABLE; a PING at most once a second clears it; one line each way, no URL or message', async () => {
+    it('a charge that fails marks it: the next billed call is refused LEDGER_UNREACHABLE; a probe write at most once a second clears it; one line each way, no URL or message', async () => {
       const client = fakeClient();
       const provider = make(client);
-      client.evalErr = Object.assign(new Error('Redis did not answer EVAL within 3000 ms (redis://user:pw@host.invalid)'), {code: 'REDIS_COMMAND_TIMEOUT'});
+      client.evalErr = () => timeout();
+      client.setErr = timeout();
       assert.strictEqual((await charge(provider)).err.code, 'REDIS_COMMAND_TIMEOUT');
       assert.strictEqual((await ask(provider, true)).err.code, 'LEDGER_UNREACHABLE');
-      assert.strictEqual(client.pings, 0);
+      assert.strictEqual(client.sets, 0);
       assert.strictEqual((await ask(provider, false)).err, null);
       clock += 1000;
       assert.strictEqual((await ask(provider, true)).err.code, 'LEDGER_UNREACHABLE');
-      assert.strictEqual(client.pings, 1);
-      client.pingOk = true;
+      assert.strictEqual(client.sets, 1);
+      client.setErr = null;
+      client.evalErr = () => null;
       clock += 1000;
       assert.strictEqual((await ask(provider, true)).err, null);
-      assert.strictEqual(client.pings, 2);
+      assert.strictEqual(client.sets, 2);
       assert.deepStrictEqual(logged.filter(([, l]) => l.includes('usage ledger (Redis)')), [
         ['E', 'the usage ledger (Redis) can\'t be reached (REDIS_COMMAND_TIMEOUT); charged calls are refused until it answers'],
         ['I', 'the usage ledger (Redis) answers again; charged calls are served']]);
+    });
+
+    it('a Redis that answers but refuses writes (READONLY) keeps the mark: the probe is a write', async () => {
+      const client = fakeClient();
+      const provider = make(client);
+      client.evalErr = () => Object.assign(new Error('READONLY You can\'t write against a read only replica.'), {code: 'READONLY'});
+      client.setErr = Object.assign(new Error('READONLY You can\'t write against a read only replica.'), {code: 'READONLY'});
+      await charge(provider);
+      clock += 1000;
+      assert.strictEqual((await ask(provider, true)).err.code, 'LEDGER_UNREACHABLE');
+      clock += 1000;
+      assert.strictEqual((await ask(provider, true)).err.code, 'LEDGER_UNREACHABLE');
+      assert.strictEqual(client.sets, 2);
+    });
+
+    it('a failure that comes while a probe is out keeps the mark, whatever the probe answers', async () => {
+      const client = fakeClient();
+      const provider = make(client);
+      client.evalErr = () => timeout();
+      await charge(provider);
+      clock += 1000;
+      // (the probe answers on the next tick; a charge fails before it does)
+      const asked = ask(provider, true);
+      provider._chargeMark.mark(timeout());
+      assert.strictEqual((await asked).err.code, 'LEDGER_UNREACHABLE');
     });
 
     it('a client that isn\'t connected refuses a billed call before any command, and marks it', async () => {
@@ -173,6 +217,42 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       assert.ok(logged.some(([w, l]) => w === 'E' && l === 'the usage ledger (Redis) can\'t be reached (NR_CLOSED); charged calls are refused until it answers'), JSON.stringify(logged));
     });
 
+    it('one key\'s record of the wrong type refuses that key alone, LEDGER_UNWRITABLE, until its own probe can charge it; said by its fingerprint', async () => {
+      const client = fakeClient();
+      const provider = make(client);
+      const A = `${KEY}-a`;
+      const B = `${KEY}-b`;
+      const {meterId} = require('../../lib/key-fingerprint');
+      let bad = true;
+      client.evalErr = (key) => ((bad && key === meterId(A)) ? Object.assign(new Error('WRONGTYPE Operation against a key holding the wrong kind of value'), {code: 'WRONGTYPE'}) : null);
+      assert.strictEqual((await chargeAs(provider, A)).code, 'WRONGTYPE');
+      assert.strictEqual((await askAs(provider, A)).code, 'LEDGER_UNWRITABLE');
+      assert.strictEqual(await askAs(provider, B), null, 'another key is not refused');
+      assert.strictEqual(provider._chargeMark.marked(), false, 'the provider is not marked');
+      clock += 1000;
+      assert.strictEqual((await askAs(provider, A)).code, 'LEDGER_UNWRITABLE');
+      assert.strictEqual(client.recordProbes, 1);
+      bad = false;
+      clock += 1000;
+      assert.strictEqual(await askAs(provider, A), null);
+      assert.deepStrictEqual(logged.filter(([, l]) => l.includes('the usage record of')), [
+        ['E', `the usage record of ${keyFingerprint(A)} can't be charged (WRONGTYPE); its charged calls are refused until it can be`],
+        ['I', `the usage record of ${keyFingerprint(A)} can be charged again; its charged calls are served`]]);
+      assert.ok(!logged.some(([, l]) => l.includes(A) || l.includes(meterId(A))), JSON.stringify(logged));
+    });
+
+    it('one key\'s free-call record that can\'t be read refuses that key\'s calls: LEDGER_RECORD_INVALID, not retryable', async () => {
+      const client = fakeClient();
+      const provider = make(client);
+      const {meterId} = require('../../lib/key-fingerprint');
+      client.evalErr = (key) => (key === meterId(KEY) ? Object.assign(new Error('BADRECORD toolPriceRecord is not valid JSON'), {code: 'BADRECORD'}) : null);
+      await charge(provider);
+      const err = await askAs(provider, KEY);
+      assert.strictEqual(err && err.code, 'LEDGER_RECORD_INVALID');
+      assert.strictEqual(CODES.LEDGER_RECORD_INVALID.en, 'This key\'s usage record can\'t be read, so its charged calls are refused until it is repaired; the runtime\'s log names the record');
+      assert.deepStrictEqual([CODES.LEDGER_RECORD_INVALID.kind, CODES.LEDGER_RECORD_INVALID.retryable, CODES.LEDGER_RECORD_INVALID.httpStatus], ['operator', false, 500]);
+    });
+
     it('a balance asked while Redis can\'t answer: LEDGER_UNREACHABLE, never node_redis\'s code or message', async () => {
       const client = fakeClient();
       const provider = make(client);
@@ -180,6 +260,16 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       const r = await new Promise((resolve) => provider.checkBalance(KEY, (err, b) => resolve({err, b})));
       assert.strictEqual(r.err && r.err.code, 'LEDGER_UNREACHABLE');
       assert.ok(!r.err.message.includes('connection is already closed'), r.err.message);
+    });
+
+    it('a job\'s run refused keeps the refusal\'s code ("CODE: text") and retries as the catalogue says', async () => {
+      const {chargeableRun} = require('../../lib/job-control-common');
+      const refuse = (code) => ({chargeable: (key, cb) => cb(new CountinghouseError(code))});
+      const e1 = await chargeableRun(refuse('LEDGER_UNREACHABLE'), KEY).then(() => null, (e) => e);
+      assert.ok(e1.message.startsWith('LEDGER_UNREACHABLE: ') && e1.code === 'LEDGER_UNREACHABLE' && e1.retry === true, e1.message);
+      const e2 = await chargeableRun(refuse('LEDGER_RECORD_INVALID'), KEY).then(() => null, (e) => e);
+      assert.ok(e2.message.startsWith('LEDGER_RECORD_INVALID: ') && e2.retry === false, e2.message);
+      assert.strictEqual(await chargeableRun(refuse('LEDGER_UNREACHABLE'), null), undefined, 'a run with no owner key is not billed');
     });
   });
 

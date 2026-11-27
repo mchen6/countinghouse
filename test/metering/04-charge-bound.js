@@ -105,10 +105,10 @@ describe('metering 04: a hop\'s charge, waited for at most METER_PENDING_MS (B-h
     assert.deepStrictEqual(answers.map((a) => [a[0].message, a[1], a[2]]), [['redis down', null, false], ['boom', null, false]]);
   });
 
-  it('a charge\'s error keeps its code, and a message naming the key names its fingerprint instead', () => {
+  it('a charge\'s error keeps its code, and its line names the key\'s fingerprint and the code, never the key or the store\'s message', () => {
     const out = chargeError('hop', 't', KEY, Object.assign(new Error(`ERR in EVAL with args ${KEY} 1`), {code: 'ERR_STORE'}));
     assert.strictEqual(out.code, 'ERR_STORE');
-    assert.ok(!out.message.includes(KEY) && out.message.includes(`[${keyFingerprint(KEY)}]`) && !out.message.includes(meterId(KEY)), out.message);
+    assert.ok(!out.message.includes(KEY) && out.message.includes(keyFingerprint(KEY)) && out.message.includes('(ERR_STORE)') && !out.message.includes('EVAL') && !out.message.includes(meterId(KEY)), out.message);
     lateOutcome('peer hop', 'x', KEY, new Error('detail'), null);
     const line = logged.find(([l]) => l === 'E')[1];
     assert.ok(line.startsWith(`peer hop x: the billing failed for ${keyFingerprint(KEY)}`) && line.includes('it was pending') && !line.includes(KEY), line);

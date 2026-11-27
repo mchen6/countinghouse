@@ -48,7 +48,7 @@ describe('jobs-local 11: a billed run waits for a charge that can be recorded', 
       runner.addJob({appKey: 'owner-key-11'}, {name: 'n'}, 'dev', 'svc', 'act', {}, (err, r) => {
         if (err) { process.stdout.write('OUT ' + JSON.stringify({addErr: err.code || err.message}) + '\\n'); process.exit(0); }
         settled(r.id, (first) => {
-          const refused = {state: first.state, said: /LEDGER_UNWRITABLE|usage ledger/.test(JSON.stringify(first)), ran: ran.length, billed: billed.length};
+          const refused = {state: first.state, said: /LEDGER_UNWRITABLE: /.test(JSON.stringify(first)), ran: ran.length, billed: billed.length};
           recordable = true;
           runner.addJob({appKey: 'owner-key-11'}, {name: 'm'}, 'dev', 'svc', 'act', {}, (err2, r2) => {
             if (err2) { process.stdout.write('OUT ' + JSON.stringify({addErr2: err2.code || err2.message}) + '\\n'); process.exit(0); }
