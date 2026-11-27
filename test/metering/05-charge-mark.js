@@ -408,6 +408,49 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
     });
   });
 
+  // A call nothing would charge (--mcpToolCallCost 0, the default) is not
+  // billed: never gated, whatever the ledger. ch-local runs so, with
+  // --store local and no --meter; a Redis runtime with no cost set too.
+  describe('a call nothing would charge is never gated', () => {
+    const CdifInterface = require('../../lib/countinghouse-interface');
+    const cli = require('../../lib/cli-options');
+    const {CountinghouseError} = require('../../lib/countinghouse-error');
+    let savedCost;
+    before(() => { savedCost = cli.mcpToolCallCost; });
+    after(() => { cli.mcpToolCallCost = savedCost; });
+    // an interface over a provider whose ledger refuses every charge now
+    const over = (provider) => Object.assign(Object.create(CdifInterface.prototype), {meteringProvider: provider});
+    const refusing = () => {
+      const asked = [];
+      return {asked, chargeable: (k, cb) => { asked.push('chargeable'); cb(new CountinghouseError('LEDGER_UNREACHABLE')); },
+        rateLimit: (k, cb, opts) => { asked.push(opts != null && opts.billed === true ? 'billed' : 'unbilled'); cb(opts != null && opts.billed === true ? new CountinghouseError('LEDGER_UNREACHABLE') : null, {limited: false}); }};
+    };
+    const chargeable = (ci) => new Promise((resolve) => ci.chargeable(KEY, resolve));
+    const limited = (ci) => new Promise((resolve) => ci.rateLimit(KEY, (err) => resolve(err), {billed: true}));
+
+    it('cost 0: chargeable, and a billed call\'s limit asked as an unbilled one\'s; cost 1: refused as the ledger says', async () => {
+      const provider = refusing();
+      const ci = over(provider);
+      cli.mcpToolCallCost = 0;
+      assert.strictEqual(await chargeable(ci), null);
+      assert.strictEqual(await limited(ci), null);
+      assert.deepStrictEqual(provider.asked, ['unbilled'], 'the ledger was asked for a call nothing charges');
+      cli.mcpToolCallCost = 1;
+      assert.strictEqual((await chargeable(ci)).code, 'LEDGER_UNREACHABLE');
+      assert.strictEqual((await limited(ci)).code, 'LEDGER_UNREACHABLE');
+    });
+
+    it('ch-local\'s path: --store local without --meter is chargeable at any cost', async () => {
+      const LocalMeteringProvider = require('../../lib/metering/local-provider');
+      const provider = new LocalMeteringProvider({meter: false});
+      const ci = over(provider);
+      for (const cost of [0, 1]) {
+        cli.mcpToolCallCost = cost;
+        assert.strictEqual(await chargeable(ci), null, `cost ${cost}`);
+      }
+    });
+  });
+
   it('a probe that throws is a probe that failed: the mark is probed again a second later, never left refusing for good', async () => {
     const {chargeMark} = require('../../lib/metering/charge-mark');
     let clock = 1000000;
