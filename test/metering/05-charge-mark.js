@@ -223,6 +223,46 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       assert.ok(logged.some(([w, l]) => w === 'E' && l === 'the usage ledger (Redis) can\'t be reached (NR_CLOSED); charged calls are refused until it answers'), JSON.stringify(logged));
     });
 
+    it('a client never connected past the first-connect wait: the outage marked and said once', async () => {
+      const client = fakeClient();
+      client.ready = false;
+      // (a command sent while not connected fails at once, as node_redis's)
+      client.setErr = Object.assign(new Error('SET can\'t be processed. The connection is not yet established'), {code: 'NR_CLOSED'});
+      const provider = make(client);
+      assert.strictEqual((await ask(provider, true)).err.code, 'LEDGER_UNREACHABLE');
+      assert.deepStrictEqual(logged.filter(([w]) => w === 'E'), []);
+      clock += RedisMeteringProvider.FIRST_CONNECT_MS;
+      assert.strictEqual((await ask(provider, true)).err.code, 'LEDGER_UNREACHABLE');
+      clock += 1000;
+      assert.strictEqual((await ask(provider, true)).err.code, 'LEDGER_UNREACHABLE');
+      assert.deepStrictEqual(logged.filter(([w]) => w === 'E'), [['E', 'the usage ledger (Redis) can\'t be reached (NR_CLOSED); charged calls are refused until it answers']]);
+    });
+
+    it('a paid charge that lands while a key\'s record probe is out, then the probe fails: the key stays refused, its mark kept', async () => {
+      const client = fakeClient();
+      const provider = make(client);
+      const {meterId} = require('../../lib/key-fingerprint');
+      const wrong = () => Object.assign(new Error('WRONGTYPE Operation against a key holding the wrong kind of value'), {code: 'WRONGTYPE'});
+      client.evalErr = (key) => (key === meterId(KEY) ? wrong() : null);
+      await charge(provider);
+      clock += 1000;
+      // (the probe fails, answered later; the charge sent meanwhile succeeds
+      // first and clears the mark)
+      client.evalErr = (key, probe) => ((key === meterId(KEY) && probe) ? wrong() : null);
+      const evalNow = client.eval;
+      client.eval = (script, n, key, ...rest) => {
+        const cb = rest.pop();
+        const later = /ARGV\[1\]/.test(script) ? cb : (e, r) => setTimeout(cb, 5, e, r);
+        return evalNow(script, n, key, ...rest, later);
+      };
+      const during = ask(provider, true);
+      assert.strictEqual((await charge(provider)).err, null);
+      assert.strictEqual((await during).err.code, 'LEDGER_RECORD_INVALID');
+      clock += 100;
+      const again = await ask(provider, true);
+      assert.strictEqual(again.err && again.err.code, 'LEDGER_RECORD_INVALID', 'the failed probe\'s mark was orphaned');
+    });
+
     it('a client not yet connected the first time refuses a billed call, retryably, with no outage marked or said; once ready, served at once', async () => {
       const client = fakeClient();
       client.ready = false;
@@ -298,22 +338,25 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
     // its code as ERR. The code inside it is the one classified and said.
     it('an error raised in a script, as Redis 6.2 wraps it: the code inside is classified -- a record\'s own that key\'s, any other the store\'s, and said by it', async () => {
       const {meterId} = require('../../lib/key-fingerprint');
-      const wrapped = (inner) => Object.assign(new Error(`ERR Error running script (call to f_0123456789abcdef0123456789abcdef01234567): @user_script:3: ${inner}`), {code: 'ERR'});
+      // (Redis 6.2.24's words, checked against it: an error raised from
+      // redis.call is placed once, a shared one -- READONLY, OOM -- twice and
+      // dashed; a script's own error_reply comes through as it is)
+      const raised = (inner) => Object.assign(new Error(`ERR Error running script (call to f_983e0b70de8b79daabb450b494a411bd40937370): @user_script:1: ${inner}`), {code: 'ERR'});
+      const FORMS = {
+        WRONGTYPE: raised('WRONGTYPE Operation against a key holding the wrong kind of value'),
+        BADRECORD: Object.assign(new Error('BADRECORD the balance is not a number'), {code: 'BADRECORD'}),
+        READONLY: raised('@user_script: 1: -READONLY You can\'t write against a read only replica.')};
       const {redisCode} = RedisMeteringProvider;
-      assert.deepStrictEqual([
-        redisCode(wrapped('WRONGTYPE Operation against a key holding the wrong kind of value')),
-        redisCode(wrapped('BADRECORD the balance is not a number')),
-        redisCode(wrapped('READONLY You can\'t write against a read only replica.')),
+      assert.deepStrictEqual([redisCode(FORMS.WRONGTYPE), redisCode(FORMS.BADRECORD), redisCode(FORMS.READONLY),
         redisCode(Object.assign(new Error('ERR something else'), {code: 'ERR'})),
         redisCode(Object.assign(new Error('NOSCRIPT No matching script'), {code: 'NOSCRIPT'}))],
       ['WRONGTYPE', 'BADRECORD', 'READONLY', 'ERR', 'NOSCRIPT']);
-      for (const [inner, record] of [['WRONGTYPE Operation against a key holding the wrong kind of value', true], ['BADRECORD the balance is not a number', true], ['READONLY You can\'t write against a read only replica.', false]]) {
+      for (const [code, record] of [['WRONGTYPE', true], ['BADRECORD', true], ['READONLY', false]]) {
         logged = [];
         const client = fakeClient();
         const provider = make(client);
-        client.evalErr = (key) => (key === meterId(KEY) ? wrapped(inner) : null);
+        client.evalErr = (key) => (key === meterId(KEY) ? FORMS[code] : null);
         await charge(provider);
-        const code = inner.split(' ')[0];
         assert.strictEqual(provider._chargeMark.marked(), !record, `${code}: the store marked`);
         assert.strictEqual((await ask(provider, true)).err.code, record ? 'LEDGER_RECORD_INVALID' : 'LEDGER_UNREACHABLE', code);
         assert.ok(logged.some(([w, l]) => w === 'E' && l.includes(`(${code})`)), `${code}: ${JSON.stringify(logged)}`);

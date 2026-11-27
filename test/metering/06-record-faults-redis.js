@@ -63,7 +63,7 @@ describe('metering 06: a key\'s own record fault, on a real Redis', function() {
     });
   }
 
-  for (const shown of [' 5', '5 ', 'nan', 'inf', '']) {
+  for (const shown of [' 5', '5 ', 'nan', 'inf', '', '1e-5000']) {
     it(`a balance Redis won't add to (${JSON.stringify(shown)}): BADRECORD, that key's alone, the provider unmarked`, async () => {
       await cmd('hset', meterId(KEYS.balance), 'balance', shown);
       const failed = await charge(KEYS.balance);
@@ -79,6 +79,23 @@ describe('metering 06: a key\'s own record fault, on a real Redis', function() {
     assert.strictEqual((await ask(KEYS.balance)).code, 'LEDGER_RECORD_INVALID');
   });
 
+  it('a free-call record Redis decodes but won\'t encode (a count of 1e999): BADRECORD, that key\'s alone, the provider unmarked', async () => {
+    await cmd('hset', meterId(KEYS.json), 'toolPriceRecord', '{"tool-a":{"count":1e999}}');
+    const failed = await charge(KEYS.json);
+    assert.strictEqual(failed.err && failed.err.code, 'BADRECORD', String(failed.err && failed.err.message));
+    assert.strictEqual(provider._chargeMark.marked(), false, 'the provider is not marked');
+    assert.strictEqual((await ask(KEYS.json)).code, 'LEDGER_RECORD_INVALID');
+  });
+
+  it('a free call on a marked key clears nothing: only a paid charge shows its balance can be charged', async () => {
+    await cmd('hset', meterId(KEYS.balance), 'balance', '1e-5000');
+    assert.strictEqual((await charge(KEYS.balance)).err.code, 'BADRECORD');
+    await cmd('hset', meterId(KEYS.balance), 'toolPriceRecord', '{"tool-a":{"count":1}}');
+    const free = await charge(KEYS.balance);
+    assert.ok(free.err == null && free.r.charged === 0, JSON.stringify(free));
+    assert.strictEqual((await ask(KEYS.balance)).code, 'LEDGER_RECORD_INVALID', 'a free call cleared the mark');
+  });
+
   it('a charge that succeeds on a marked key\'s record clears its mark at once, and forgets it', async () => {
     await charge(KEYS.string);
     await cmd('del', meterId(KEYS.string));
@@ -88,16 +105,18 @@ describe('metering 06: a key\'s own record fault, on a real Redis', function() {
     assert.strictEqual(provider._recordMarks.size, 0);
   });
 
-  // (Redis 6 and older put the script's place before a redis.pcall error:
-  // the scripts' own function takes it off, run here as Redis runs it)
+  // (Redis 6.2 places and dashes a shared error from redis.pcall, "@user_script:
+  // 1: -READONLY ...\r\n", checked against 6.2.24; an ordinary one comes
+  // unplaced: the scripts' own function takes the place off, run here as
+  // Redis runs it)
   it('a redis.pcall error as Redis 6 words it: the script\'s place taken off, its code word first', async () => {
     const run = (e) => cmd('eval', `${RedisMeteringProvider.UNPLACED}\nreturn unplaced(ARGV[1])`, 0, e);
     assert.deepStrictEqual(await Promise.all([
-      run('@user_script: 32: OOM command not allowed when used memory > \'maxmemory\'.'),
-      run('@user_script: 7: WRONGTYPE Operation against a key holding the wrong kind of value'),
+      run('@user_script: 32: -OOM command not allowed when used memory > \'maxmemory\'.\r\n'),
+      run('@user_script: 1: -READONLY You can\'t write against a read only replica.\r\n'),
       run('READONLY You can\'t write against a read only replica.'),
       run('ERR hash value is not a float')]),
-    ['OOM command not allowed when used memory > \'maxmemory\'.', 'WRONGTYPE Operation against a key holding the wrong kind of value',
+    ['OOM command not allowed when used memory > \'maxmemory\'.', 'READONLY You can\'t write against a read only replica.',
       'READONLY You can\'t write against a read only replica.', 'ERR hash value is not a float']);
   });
 

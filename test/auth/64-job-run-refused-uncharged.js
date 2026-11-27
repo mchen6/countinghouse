@@ -79,8 +79,12 @@ describe('auth 64: a billed job run waits for a charge that can be recorded (the
     const refused = await settled(second.body.id);
     assert.ok(refused != null && /^LEDGER_RECORD_INVALID: /.test(String(refused.failedReason)), `not refused for the record: ${JSON.stringify(refused && {failedReason: refused.failedReason, returnvalue: refused.returnvalue})}`);
     assert.ok(!String(refused.failedReason).includes(OWNER), refused.failedReason);
-    await sleep(1500);
-    assert.strictEqual((await queue.getJob(second.body.id)).attemptsMade, 1, 'retried, though the refusal isn\'t retryable');
+    // (a retried run goes back to wait; one that isn't retried is failed for good)
+    const end = Date.now() + 20000;
+    while (await refused.getState() !== 'failed' && Date.now() < end) await sleep(100);
+    const last = await queue.getJob(second.body.id);
+    assert.strictEqual(await last.getState(), 'failed');
+    assert.strictEqual(last.attemptsMade, 1, 'retried, though the refusal isn\'t retryable');
   });
 
   trees.hooks();
