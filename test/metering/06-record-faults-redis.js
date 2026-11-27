@@ -30,8 +30,6 @@ describe('metering 06: a key\'s own record fault, on a real Redis', function() {
     logger.I = () => {};
     client = resilient.createClient(redisUrlFor(), {db: 0}, undefined, {commandDeadlineMs: 3000});
     client.on('error', () => {});
-    clock = 1000000;
-    provider = new RedisMeteringProvider({redisClient: client, now: () => clock});
   });
   after(async () => {
     if (client != null) {
@@ -41,6 +39,9 @@ describe('metering 06: a key\'s own record fault, on a real Redis', function() {
     Object.assign(logger, realLog);
   });
   beforeEach(async () => {
+    // (a provider of its own per case: no key's mark carried from another)
+    clock = 1000000;
+    provider = new RedisMeteringProvider({redisClient: client, now: () => clock});
     await cmd('del', ...Object.values(KEYS).map(meterId));
     await cmd('hset', meterId(KEYS.good), 'balance', '10');
     await cmd('set', meterId(KEYS.string), 'not a hash');
@@ -61,6 +62,31 @@ describe('metering 06: a key\'s own record fault, on a real Redis', function() {
       assert.strictEqual(good.r.charged, 1);
     });
   }
+
+  for (const shown of [' 5', '5 ', 'nan', 'inf', '']) {
+    it(`a balance Redis won't add to (${JSON.stringify(shown)}): BADRECORD, that key's alone, the provider unmarked`, async () => {
+      await cmd('hset', meterId(KEYS.balance), 'balance', shown);
+      const failed = await charge(KEYS.balance);
+      assert.strictEqual(failed.err && failed.err.code, 'BADRECORD', String(failed.err && failed.err.message));
+      assert.strictEqual(provider._chargeMark.marked(), false, 'the provider is not marked');
+      assert.strictEqual(await ask(KEYS.good), null);
+    });
+  }
+
+  it('a balance asked of a record whose balance isn\'t a number: LEDGER_RECORD_INVALID, as its charged calls are', async () => {
+    const r = await new Promise((resolve) => provider.checkBalance(KEYS.balance, (err, b) => resolve({err, b})));
+    assert.strictEqual(r.err && r.err.code, 'LEDGER_RECORD_INVALID', JSON.stringify(r.b));
+    assert.strictEqual((await ask(KEYS.balance)).code, 'LEDGER_RECORD_INVALID');
+  });
+
+  it('a charge that succeeds on a marked key\'s record clears its mark at once, and forgets it', async () => {
+    await charge(KEYS.string);
+    await cmd('del', meterId(KEYS.string));
+    const after = await charge(KEYS.string);
+    assert.strictEqual(after.err, null, String(after.err && after.err.message));
+    assert.strictEqual(await ask(KEYS.string), null, 'served within the second');
+    assert.strictEqual(provider._recordMarks.size, 0);
+  });
 
   it('a repaired record is found by that key\'s own probe, at most once a second: its calls are served again', async () => {
     await charge(KEYS.string);
