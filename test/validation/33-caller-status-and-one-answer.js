@@ -101,6 +101,45 @@ describe('validation 33: one status rule; one answer for a name the caller can\'
       }
     });
 
+    // R-store-aside-locked: a local ledger that can't be used answers its own
+    // code through both per-key gates (never RUNTIME_BUSY's "retry shortly"):
+    // LEDGER_CORRUPT not retryable, LEDGER_UNREADABLE retryable; any other
+    // error of the check is still RUNTIME_BUSY
+    it('the per-key gates pass a ledger refusal through as itself; any other error of the check is RUNTIME_BUSY', (done) => {
+      const CdifInterface = require('../../lib/countinghouse-interface');
+      const {check: rateLimitGate} = require('../../lib/rate-limit-gate');
+      const told = [];
+      const session = {appKey: 'k', callbackWithoutTimer: (err) => told.push(err)};
+      const failing = (err) => ({rateLimiter: null, rateLimit: (k, cb) => cb(err), deviceManager: {emit() { throw new Error('dispatched'); }}});
+      const errs = [new CountinghouseError('LEDGER_CORRUPT'), new CountinghouseError('LEDGER_UNREADABLE'), new Error('a limiter fault')];
+      for (const e of errs) CdifInterface.prototype.invokeDeviceAction.call(failing(e), LISTED, SERVICE, 'act', null, session);
+      const gated = [];
+      let n = 0;
+      for (const e of errs) {
+        rateLimitGate(failing(e), 'k', (limited, err) => {
+          gated.push([limited, err && err.code]);
+          if (++n === errs.length) {
+            assert.deepStrictEqual(told.map((x) => [x.code, CODES[x.code].retryable]), [['LEDGER_CORRUPT', false], ['LEDGER_UNREADABLE', true], ['RUNTIME_BUSY', true]]);
+            assert.deepStrictEqual(gated, [[true, 'LEDGER_CORRUPT'], [true, 'LEDGER_UNREADABLE'], [true, 'RUNTIME_BUSY']]);
+            done();
+          }
+        });
+      }
+    });
+
+    // (the Fable high on #559, 2) /mcp's gates (the lists, tasks/*,
+    // prompts/get, completion, resources/read) answer a ledger refusal with
+    // its catalogue status, 503, never HTTP 200: LIMIT_CODES lists both
+    it('/mcp answers a ledger refusal with its catalogue status (500 corrupt, 503 unreadable), and no Retry-After of its own', () => {
+      const ed = require('../../lib/mcp/error-data');
+      for (const [code, status] of [['LEDGER_CORRUPT', 500], ['LEDGER_UNREADABLE', 503]]) {
+        const headers = {};
+        const res = {set: (k, v) => { headers[k] = v; }, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; }};
+        assert.strictEqual(ed.answerLimit(res, ed.limitAnswer(7, new CountinghouseError(code))), true, code);
+        assert.deepStrictEqual([res.code, res.body.error.code, res.body.error.data[ed.ERROR_CODE_META_KEY], headers['Retry-After']], [status, -32000, code, undefined], code);
+      }
+    });
+
     // #482's high, 1: the limiters say what they are
     it('invoke-action\'s limiters: a key over its budget is RATE_LIMIT_EXCEEDED 429; the runtime at its limit is RUNTIME_BUSY 503 with Retry-After', () => {
       const CdifInterface = require('../../lib/countinghouse-interface');
