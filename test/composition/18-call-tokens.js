@@ -2959,6 +2959,12 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       return {dm, caller, callee, sent, replies, token};
     };
     const turns = () => new Promise((r) => setImmediate(() => setImmediate(r)));
+    // a channel's grant as its open's access check stores it (lib/peer-channel-broker.js addGrant): keyed by the caller's id then, its
+    // key's meter id among its meters; id: that id (a key-derived one, the key's meter id, when the identity index had none)
+    const {meterId} = require('../../lib/key-fingerprint');
+    const grantOn = (grants, key, deviceID, id = meterId(key)) => {
+      grants[`${id}\u0000${deviceID}`] = {deviceID: deviceID, id: id, meters: new Set([meterId(key)])};
+    };
     const until = (pred, ms, what) => new Promise((resolve, reject) => {
       const end = Date.now() + ms;
       const look = () => (pred() ? resolve() : Date.now() > end ? reject(new Error(`not within ${ms} ms: ${what}`)) : setTimeout(look, 20));
@@ -3078,7 +3084,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       } finally {
         tokens().drop(token);
       }
-      assert.deepStrictEqual([sent.length, replies[0].errCode !== 'CTX_CALL_NOT_READY'], [0, true]);
+      assert.deepStrictEqual([sent.length, replies[0].errCode], [0, dm.missingDeviceErrorForHop(CALLEE).code]);
     });
 
     // its bound reached as its timer reaches it (DeviceManager.atBoundOnForTests), in the turn its callee is decided: before its
@@ -3160,6 +3166,27 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       }
     });
 
+    // (and after the check, as the callee is picked: a copy that replaced it then, undecided, is held for in the next pass)
+    it('a copy replaced after the access check, as the callee is picked, is held for, with the same deadline, never refused early', async () => {
+      const {dm, caller, callee, replies, token} = setup(() => {});
+      const next = worker(CALLEE, []);
+      const pick = dm.workerFor;
+      try {
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm9b', caller, token);
+        await turns();
+        const first = deadlineOn(callee);
+        // decided (its poll releases the hop); the next pass's pick finds it replaced by copy B, undecided
+        dm.workerFor = (...a) => { dm.workerFor = pick; callee.exited = true; dm.deviceMap[CALLEE] = next; return a[2](null, next); };
+        callee.bindings = {[CALLEE]: {identity: 'callee-id', module: 'C', targets: new Set()}};
+        await until(() => deadlineOn(next).length === 1 || replies.length > 0, 2000, 'held on the new copy, or answered');
+        assert.deepStrictEqual([replies.map((r) => r.errCode), deadlineOn(next)], [[], first]);
+        DeviceManager.releaseHeldOn(next);
+      } finally {
+        dm.workerFor = pick;
+        tokens().drop(token);
+      }
+    });
+
     it('a pass past its deadline is the final pass: never held again', async () => {
       cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
       const {dm, caller, callee, replies, token} = setup(() => {});
@@ -3203,7 +3230,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     it('a hop that waited out one replacement still waits out a later one met on a later pass, within its deadline', async () => {
       const {dm, caller, callee, sent, replies, token} = setup(() => {});
       let replacing = false;
-      dm.replacingInPlace = () => replacing;
+      let polls = 0;
+      dm.replacingInPlace = () => { if (replacing) polls++; return replacing; };
       try {
         // (it arrived as a replacement ended: waited)
         dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm13', caller, token, true);
@@ -3212,7 +3240,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         replacing = true;
         delete dm.deviceMap[CALLEE];
         DeviceManager.releaseHeldOn(callee);
-        await new Promise((r) => setTimeout(r, 300));
+        await until(() => polls >= 3, 3000, 'the replacement asked about three times');
         assert.deepStrictEqual(replies.map((r) => r.errCode), [], 'answered while the replacement was under way');
         const next = worker(CALLEE, sent);
         next.bindings = {[CALLEE]: {identity: 'callee-id', module: 'C', targets: new Set()}};
@@ -3282,7 +3310,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         const b = new PeerChannelBroker({deviceMap: {[CALLEE]: callee}});
         const entry = {callerWM: callerWM, calleeWM: callee, grants: {}};
         b.channelRegistry.ch = entry;
-        PeerChannelBroker.addGrantForTests(entry.grants, 'caller-id', CALLEE);   // (the channel granted this device)
+        grantOn(entry.grants, 'caller-id', CALLEE);   // (the channel granted this device)
         if (atCap) b.unbilledPerChannel.set('ch', PeerChannelBroker.UNBILLED_PER_CHANNEL_MAX);
         const token = tokens().issue({billingKey: `k-${hex()}`, identityKey: 'caller-id', module: 'S', workerId: callerWM.workerId, deviceID: CALLER, ttlMs: 60000});
         const now = Date.now();
@@ -3317,7 +3345,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       b.channelRegistry[pairKey] = {callerWM: callerWM, calleeWM: callee, grants: {}};
       b.unbilledPerChannel.set(pairKey, PeerChannelBroker.UNBILLED_PER_CHANNEL_MAX);
       const token = tokens().issue({billingKey: `k-${hex()}`, identityKey: 'caller-id', module: 'S', workerId: callerWM.workerId, deviceID: CALLER, ttlMs: 60000});
-      PeerChannelBroker.addGrantForTests(b.channelRegistry[pairKey].grants, 'caller-id', CALLEE);   // (the channel granted this device)
+      grantOn(b.channelRegistry[pairKey].grants, 'caller-id', CALLEE);   // (the channel granted this device)
       const savedCheck = moduleSpec.checkInput;
       let checked = 0;
       moduleSpec.checkInput = () => { checked++; return null; };
@@ -3340,13 +3368,81 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const b = new PeerChannelBroker({deviceMap: {[CALLEE]: callee}});
       const pairKey = `${callerWM.workerId}:${callee.workerId}`;
       b.channelRegistry[pairKey] = {callerWM: callerWM, calleeWM: callee, grants: {}};
-      PeerChannelBroker.addGrantForTests(b.channelRegistry[pairKey].grants, 'caller-id', 'd-another-device');   // (granted another device only)
+      grantOn(b.channelRegistry[pairKey].grants, 'caller-id', 'd-another-device');   // (granted another device only)
       const token = tokens().issue({billingKey: `k-${hex()}`, identityKey: 'caller-id', module: 'S', workerId: callerWM.workerId, deviceID: CALLER, ttlMs: 60000});
       try {
         const {serialize, toArrayBuffer} = require('../../lib/serialized-result');
         b.handleAnnouncement({channel: pairKey, invokeId: 1, token: token, epoch: 'e', deviceID: CALLEE, serviceID: 'svc', actionName: 'act', inputBytes: toArrayBuffer(serialize({input: {}}))}, callerWM);
         b.handleMeteringRequest({channel: pairKey, invokeId: 1}, 'mq', callee);
         assert.deepStrictEqual([replies.length, replies[0] && replies[0].errCode], [1, 'PEER_NOT_GRANTED'], JSON.stringify(replies));
+      } finally {
+        tokens().drop(token);
+      }
+    });
+
+    // the callee read again once the caller's access check has answered: a reload or a supervised restart during it replaced the copy
+    // read before it, and the hop is held on (or goes to) the copy the map holds then, never one replaced while it serves on
+    it('a callee replaced during the caller\'s access check by a decided copy: the hop goes to that copy, never held on the one replaced', async () => {
+      const {dm, caller, callee, sent, token} = setup(() => {});
+      parked = [];
+      try {
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm16', caller, token);
+        await until(() => parked.length === 1, 2000, 'at its access check');
+        const next = worker(CALLEE, sent);
+        next.bindings = {[CALLEE]: {identity: 'callee-id', module: 'C', targets: new Set()}};
+        dm.deviceMap[CALLEE] = next;   // (the copy read before still serves: not ended, not exited, not unloading)
+        parked.shift()();
+        await until(() => sent.length > 0 || DeviceManager.verdictHeldOn(callee) > 0, 2000, 'sent or held');
+        assert.deepStrictEqual([DeviceManager.verdictHeldOn(callee), sent.length], [0, 1]);
+        assert.strictEqual(tokens().identityOf(tokens().resolve(sent[0].args.token, {workerId: next.workerId})), 'callee-id');
+      } finally {
+        parked = null;
+        for (const m of sent) tokens().drop(m.args.token);
+        tokens().drop(token);
+      }
+    });
+
+    // each held hop keeps a timer and a poll on the main thread: one call holds a bounded number at once, and one more is answered
+    // not ready at once (retryable, and only after its access check, as its final pass would answer it); another call's are its own
+    it('one call holds at most HOP_HOLDS_PER_CALL hops at once: one more is told not ready at once; another call holds its own', async () => {
+      const {dm, caller, callee, sent, replies, token} = setup(() => {});
+      const max = DeviceManager.HOP_HOLDS_PER_CALL;
+      const other = tokens().issue({billingKey: `k-${hex()}`, identityKey: 'caller-id', module: 'S', workerId: caller.workerId, deviceID: CALLER, ttlMs: 60000});
+      try {
+        for (let i = 0; i <= 64; i++) dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, `m17-${i}`, caller, token);
+        await until(() => replies.length > 0, 2000, 'the one past the limit answered');
+        assert.deepStrictEqual([max, replies.map((r) => [r.msgID, r.errCode]), DeviceManager.verdictHeldOn(callee), sent.length],
+          [64, [['m17-64', 'CTX_CALL_NOT_READY']], 64, 0]);
+        dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm17-other', caller, other);
+        await turns();
+        assert.deepStrictEqual([DeviceManager.verdictHeldOn(callee), replies.length], [65, 1]);
+        // (its holds ended, its count is free again)
+        tokens().drop(token);
+        await until(() => replies.length === 65, 2000, 'its held hops answered once its call went');
+        assert.strictEqual(DeviceManager.verdictHeldOn(callee), 1);
+      } finally {
+        tokens().drop(token);
+        tokens().drop(other);
+      }
+    });
+
+    // a channel's grant is keyed by the caller's id at its open: a key not yet in the identity index then has a key-derived one (its
+    // meter id), and a stable one later; the key's meter id is among the grant's meters either way, and that is what is matched
+    it('over a direct peer channel, a granted caller whose id changed since its channel opened is told not ready, never not granted', () => {
+      const PeerChannelBroker = require('../../lib/peer-channel-broker');
+      const replies = [];
+      const callee = Object.assign(worker(CALLEE, []), {ended: null, moduleSpec: {}, sendPeerMeteringReplyToChild: (m) => replies.push(m)});
+      const callerWM = Object.assign(worker(CALLER, []), {ended: null, bindings: {[CALLER]: {identity: 'caller-id', module: 'S', targets: new Set([`${CALLEE}|svc|act`])}}});
+      const b = new PeerChannelBroker({deviceMap: {[CALLEE]: callee}});
+      const pairKey = `${callerWM.workerId}:${callee.workerId}`;
+      b.channelRegistry[pairKey] = {callerWM: callerWM, calleeWM: callee, grants: {}};
+      grantOn(b.channelRegistry[pairKey].grants, 'caller-id', CALLEE, 'u_an-id-from-before');   // (granted under the id it had then)
+      const token = tokens().issue({billingKey: `k-${hex()}`, identityKey: 'caller-id', module: 'S', workerId: callerWM.workerId, deviceID: CALLER, ttlMs: 60000});
+      try {
+        const {serialize, toArrayBuffer} = require('../../lib/serialized-result');
+        b.handleAnnouncement({channel: pairKey, invokeId: 1, token: token, epoch: 'e', deviceID: CALLEE, serviceID: 'svc', actionName: 'act', inputBytes: toArrayBuffer(serialize({input: {}}))}, callerWM);
+        b.handleMeteringRequest({channel: pairKey, invokeId: 1}, 'mr', callee);
+        assert.deepStrictEqual([replies.length, replies[0] && replies[0].errCode], [1, 'CTX_CALL_NOT_READY'], JSON.stringify(replies));
       } finally {
         tokens().drop(token);
       }
