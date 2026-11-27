@@ -11,12 +11,15 @@
 //
 // A fixture file runs under mocha in a child process, on this file's two
 // ports (its own environment has no port base, so its port guard leaves
-// them be); the servers are found afterwards by their ports. Every one found
-// is stopped by this file, on every path.
+// them be). It wraps child_process.spawn before the helper takes it, and
+// prints each server's pid and port as it is spawned: that is how this file
+// knows which processes to look for (no ps: the test image has none), and
+// that the pending start really spawned. Every server named is stopped by
+// this file, on every path.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const {spawn, execFileSync} = require('child_process');
+const {spawn} = require('child_process');
 const {testPort} = require('../helpers/test-env');
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -24,47 +27,56 @@ const HELPER = path.join(ROOT, 'test/helpers/sandbox-server.js');
 const PENDING_PORT = testPort(9837);
 const HELD_PORT = testPort(9838);
 
-// the pids of servers spawned from this checkout on `port`
-function serversOn(port) {
-  const out = execFileSync('ps', ['-eo', 'pid=,args=']).toString();
-  return out.split('\n').filter((l) => l.includes(path.join(ROOT, 'framework.js')) && new RegExp(`--port ${port}(\\s|$)`).test(l))
-    .map((l) => Number(l.trim().split(/\s+/)[0]));
-}
+const alive = (pid) => {
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+};
 const killAll = (pids) => { for (const pid of pids) { try { process.kill(-pid, 'SIGKILL'); } catch (e) { try { process.kill(pid, 'SIGKILL'); } catch (e2) { /* gone */ } } } };
+// (each `SPAWNED <pid> <port>` line the fixture printed)
+const spawnedIn = (out) => [...out.matchAll(/^SPAWNED (\d+) (\d+)$/gm)].map((m) => ({pid: Number(m[1]), port: Number(m[2])}));
 
-// (the pending start's hook fails once its server has been spawned, seen by
-// its port, within 20 s)
 const FIXTURE = `
-const {execFileSync} = require('child_process');
+const childProcess = require('child_process');
+const realSpawn = childProcess.spawn;
+const spawned = new Set();
+childProcess.spawn = function(cmd, args, ...rest) {
+  const child = realSpawn.call(this, cmd, args, ...rest);
+  const at = (args || []).indexOf('--port');
+  if (at >= 0 && child.pid != null) {
+    process.stdout.write('SPAWNED ' + child.pid + ' ' + args[at + 1] + '\\n');
+    spawned.add(Number(args[at + 1]));
+  }
+  return child;
+};
 const {startServer} = require(${JSON.stringify(HELPER)});
-const FLAGS = ['--no-workerThread', '--debug', '--debugKey', 'k'];
-const spawnedOn = (port) => execFileSync('ps', ['-eo', 'args=']).toString().split('\\n')
-  .some((l) => l.includes(${JSON.stringify(path.join(ROOT, 'framework.js'))}) && new RegExp('--port ' + port + '(\\\\s|$)').test(l));
 describe('a start still pending when its hook fails', function() {
   this.timeout(30000);
   before(async () => {
-    startServer(${PENDING_PORT}, FLAGS).catch(() => {});
+    startServer(${PENDING_PORT}, ['--no-workerThread', '--debug', '--debugKey', 'k']).catch(() => {});
     const until = Date.now() + 20000;
-    while (!spawnedOn(${PENDING_PORT}) && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    while (!spawned.has(${PENDING_PORT}) && Date.now() < until) await new Promise((r) => setTimeout(r, 20));
     throw new Error('the hook fails while the start is pending');
   });
   it('never runs', () => {});
 });
 describe('a server left running', function() {
   this.timeout(60000);
-  it('starts and is never stopped', async () => { await startServer(${HELD_PORT}, FLAGS); });
+  it('starts and is never stopped', async () => { await startServer(${HELD_PORT}, ['--no-workerThread', '--debug', '--debugKey', 'k']); });
 });
 describe('a start on the port it holds', function() {
   this.timeout(60000);
-  it('takes the port back', async () => { await startServer(${HELD_PORT}, FLAGS); });
+  it('takes the port back', async () => {
+    await startServer(${HELD_PORT}, ['--no-workerThread', '--debug', '--debugKey', 'k']);
+    process.stdout.write('TOOK-BACK\\n');
+  });
 });
 `;
 
 describe('validation 38: no server a test starts outlives its file', function() {
-  if (process.platform === 'win32') return;   // (ps and process groups: POSIX)
-  this.timeout(120000);
+  if (process.platform === 'win32') return;   // (process groups: POSIX)
+  this.timeout(300000);
   const trees = require('../helpers/test-tmp').forFile(['ch-validation-38-']);
-  after(() => killAll([...serversOn(PENDING_PORT), ...serversOn(HELD_PORT)]));
+  const named = [];
+  after(() => killAll(named));
 
   // Without --exit (CI's largest run), with the repo's mocha config: the root
   // hook stops what is left. With --exit (run-local) and without the root
@@ -79,30 +91,35 @@ describe('validation 38: no server a test starts outlives its file', function() 
       const dir = trees.mkdtemp('ch-validation-38-');
       const file = path.join(dir, 'fixture.js');
       fs.writeFileSync(file, FIXTURE);
-      const env = Object.assign({}, process.env);
+      const env = Object.assign({}, process.env, {NO_COLOR: '1'});
       delete env.CH_TEST_PORT_BASE;
-      const mocha = spawn(process.execPath, [path.join(ROOT, 'node_modules/mocha/bin/mocha.js'), ...run.args, file],
+      delete env.FORCE_COLOR;
+      delete env.MOCHA_COLORS;
+      const mocha = spawn(process.execPath, [path.join(ROOT, 'node_modules/mocha/bin/mocha.js'), '--no-color', ...run.args, file],
         {cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true});
       let out = '';
       mocha.stdout.on('data', (c) => { out += c; });
       mocha.stderr.on('data', (c) => { out += c; });
       let timer = null;
       const ended = await new Promise((resolve) => {
-        timer = setTimeout(() => { killAll([mocha.pid]); resolve(false); }, 60000);
+        timer = setTimeout(() => { killAll([mocha.pid]); resolve(false); }, 150000);
         mocha.on('close', () => resolve(true));
       }).finally(() => clearTimeout(timer));
+      const servers = spawnedIn(out);
+      named.push(...servers.map((x) => x.pid));
       // (a stopped server is gone once its kill lands: waited for, at most 5 s)
       const until = Date.now() + 5000;
-      let left = {pending: serversOn(PENDING_PORT), held: serversOn(HELD_PORT)};
-      while ((left.pending.length > 0 || left.held.length > 0) && Date.now() < until) {
+      let left = servers.filter((x) => alive(x.pid));
+      while (left.length > 0 && Date.now() < until) {
         await new Promise((r) => setTimeout(r, 100));
-        left = {pending: serversOn(PENDING_PORT), held: serversOn(HELD_PORT)};
+        left = servers.filter((x) => alive(x.pid));
       }
-      killAll([...left.pending, ...left.held]);
-      assert.ok(ended, `the fixture did not end (a server it started still holds it open): ${out.slice(-2000)}`);
-      assert.deepStrictEqual(left, {pending: [], held: []}, out.slice(-2000));
-      assert.ok(/[✔✓] takes the port back/.test(out), `the start on the held port failed: ${out.slice(-2000)}`);
-      assert.ok(new RegExp(`a server from an earlier start \\(pid \\d+\\) still held port ${HELD_PORT}: stopped\\n`).test(out), out.slice(-2000));
+      killAll(left.map((x) => x.pid));
+      assert.ok(ended, `the fixture did not end within 150 s: ${out.slice(-2000)}`);
+      assert.deepStrictEqual(servers.map((x) => x.port), [PENDING_PORT, HELD_PORT, HELD_PORT], `the three servers spawned: ${out.slice(-2000)}`);
+      assert.deepStrictEqual(left, [], out.slice(-2000));
+      assert.ok(/^TOOK-BACK$/m.test(out), `the start on the held port failed: ${out.slice(-2000)}`);
+      assert.ok(new RegExp(`a server from an earlier start \\(pid ${servers[1].pid}\\) still held port ${HELD_PORT}: stopped\\n`).test(out), out.slice(-2000));
     });
   }
 

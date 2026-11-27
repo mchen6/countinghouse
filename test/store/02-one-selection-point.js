@@ -11,7 +11,7 @@ const LIB = path.resolve(__dirname, '../../lib');
 // Each way to make a Redis client or a job queue, and the files allowed to
 // use it: the store and the Redis implementations behind it.
 const RULES = [
-  {pattern: /require\(['"]redis['"]\)/, allowed: ['store.js', 'redis-resilient.js']},
+  {pattern: /require\(['"]redis['"]\)/, allowed: ['redis-resilient.js']},
   {pattern: /require\(['"]bullmq['"]\)/, allowed: ['job-control.js']},
   {pattern: /require\(['"][./]*redis-resilient['"]\)/, allowed: ['store.js', 'metering/redis-provider.js']},
   // constructing the provider (its file's encodeLegacyTool helper is

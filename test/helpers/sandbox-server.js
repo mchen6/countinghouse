@@ -22,8 +22,11 @@ const ROOT = path.join(__dirname, '..', '..');
 // waits for it to exit (CI runs a folder in one mocha process: an exit-time
 // stop alone would let a leaked server hold its port while later files run).
 // An entry leaves only when its process has exited, so a start right after
-// a stop waits for the port too. Servers spawned other than through
-// startServer are not covered.
+// a stop waits for the port too. Not covered: servers spawned other than
+// through startServer; a start still waiting for its port when a file's
+// stopOn() for that port runs, or one begun after the root afterAll (neither
+// bumps the generation stopAll does); and a mocha ended by a signal (timeout's
+// SIGTERM: no 'exit' event, so its servers outlive it, as before).
 const live = new Map();
 // (bumped by stopAll: a start still waiting for its port when everything was
 // stopped never spawns)
@@ -45,8 +48,10 @@ function stopOn(port, {say = false} = {}) {
     const leaked = say && e.stopping !== true;
     const said = (how) => { if (leaked) process.stderr.write(`sandbox-server: a server from an earlier start (pid ${pid}) still held port ${port}: ${how}\n`); };
     if (e.server.exitCode != null || e.server.signalCode != null) { live.delete(pid); return resolve(); }
-    const done = setTimeout(() => { said('stopped, but it had not exited after 5 s'); resolve(); }, 5000);
-    e.server.once('exit', () => { clearTimeout(done); said('stopped'); resolve(); });
+    // (one line either way: an exit after the 5 s give-up says nothing more)
+    let gaveUp = false;
+    const done = setTimeout(() => { gaveUp = true; said('stopped, but it had not exited after 5 s'); resolve(); }, 5000);
+    e.server.once('exit', () => { clearTimeout(done); if (!gaveUp) said('stopped'); resolve(); });
     return stopEntry(pid, e);
   })));
 }

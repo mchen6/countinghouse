@@ -7,8 +7,9 @@
 // redis-resilient client has its queue on until its first 'ready', so its
 // first connect was exposed (a runtime starting while Redis restarts; a client
 // made lazily as Redis closes). Each resilient client drains a snapshot of the
-// queue: a command put back waits in the new one and is answered NR_CLOSED
-// when 'ready' turns the queue off.
+// queue: a command put back waits in the new one, and the drain answers it
+// NR_CLOSED; one that throws as it is sent leaves the rest queued, answered
+// at the first-connect bound.
 //
 // The client runs in a child process: on the old code it spins, so its own
 // timers never fire and this file kills it (its process group) at the bound.
@@ -30,20 +31,21 @@ const BOUND_MS = 10000;
 // nothing else can hold it; no client here reaches a Redis.)
 const CHILD = `
 const net = require('net');
+const mode = process.argv[2] || 'unwritable';
 const resilient = require(${JSON.stringify(path.join(ROOT, 'lib/redis-resilient'))});
 let client = null;
 const server = net.createServer((sock) => {
   sock.on('error', () => {});
   sock.on('data', (d) => {
     if (!/info/i.test(String(d))) return;
-    Object.defineProperty(client.stream, 'writable', {configurable: true, get: () => false});
+    if (mode === 'unwritable') Object.defineProperty(client.stream, 'writable', {configurable: true, get: () => false});
     const body = '# Server\\r\\nredis_version:7.0.0\\r\\n';
     sock.write('$' + Buffer.byteLength(body) + '\\r\\n' + body + '\\r\\n');
   });
 });
 server.listen(0, '127.0.0.1', () => {
   const deadline = Number(process.argv[1]);
-  client = resilient.createClient(server.address().port, {host: '127.0.0.1'}, 60000, {commandDeadlineMs: deadline});   // run-local: not the shared Redis
+  client = resilient.createClient(server.address().port, {host: '127.0.0.1'}, mode === 'throw' ? 1000 : 60000, {commandDeadlineMs: deadline});   // run-local: not the shared Redis
   client.on('error', () => {});
   const codes = [];
   const answered = (e) => {
@@ -51,6 +53,15 @@ server.listen(0, '127.0.0.1', () => {
     if (codes.length < 3) return;
     setTimeout(() => { process.stdout.write('ANSWERED ' + codes.join(',') + '\\n'); process.exit(0); }, deadline > 0 ? deadline * 3 : 50);
   };
+  if (mode === 'throw') {
+    // (a sent, never answered by this server; b's object argument throws as
+    // the drain sends it; c, after it, must still be answered)
+    process.on('uncaughtException', () => {});
+    client.get('a', () => {});
+    client.set('b', {x: 1});
+    client.get('c', (e) => { process.stdout.write('ANSWERED-C ' + (e != null ? (e.code || 'error') : 'ok') + '\\n'); process.exit(0); });
+    return;
+  }
   for (const k of ['a', 'b', 'c']) client.get(k, answered);
 });
 `;
@@ -60,8 +71,8 @@ describe('store 10: a resilient client whose stream closes as it becomes ready a
 
   // (the child stopped on every path: its process group, or the child
   // itself where there are none, Windows)
-  async function runChild(deadlineMs) {
-    const child = spawn(process.execPath, ['-e', CHILD, String(deadlineMs)], {stdio: ['ignore', 'pipe', 'pipe'], detached: true});
+  async function runChild(deadlineMs, mode = 'unwritable') {
+    const child = spawn(process.execPath, ['-e', CHILD, String(deadlineMs), mode], {stdio: ['ignore', 'pipe', 'pipe'], detached: true});
     let out = '';
     child.stdout.on('data', (c) => { out += c; });
     child.stderr.on('data', (c) => { out += c; });
@@ -84,17 +95,18 @@ describe('store 10: a resilient client whose stream closes as it becomes ready a
     assert.strictEqual(await runChild(300), 'ANSWERED NR_CLOSED,NR_CLOSED,NR_CLOSED');
   });
 
-  // (the fix replaces a node_redis internal: an upgrade must not undo it unseen)
-  it('the drain is redis-resilient\'s own, on node_redis 3.1.x', () => {
+  it('a command that throws as the drain sends it leaves the rest queued: answered at the first-connect bound', async () => {
+    assert.strictEqual(await runChild(0, 'throw'), 'ANSWERED-C NR_CLOSED');
+  });
+
+  // (the fix replaces a node_redis internal: an upgrade must not undo it
+  // unseen; the behavioural cases above are the real test)
+  it('node_redis is 3.1.x, and its on_ready still drains with send_offline_queue', () => {
     const version = require('redis/package.json').version;
-    // (port 1: nothing answers there, and this client sends nothing)
-    const client = require('../../lib/redis-resilient').createClient(1, {host: '127.0.0.1'}, 10);   // run-local: not the shared Redis
-    client.on('error', () => {});
-    try {
-      const own = Object.prototype.hasOwnProperty.call(client, 'send_offline_queue');
-      assert.ok(own && /^3\.1\./.test(version), 'node_redis changed: recheck the offline-queue drain (redis-resilient.js)');
-    } finally {
-      client.end(false);
-    }
+    const proto = require('redis').RedisClient.prototype;
+    const recheck = 'node_redis changed: recheck the offline-queue drain (redis-resilient.js)';
+    assert.ok(/^3\.1\./.test(version), `${recheck}: version ${version}, not 3.1.x`);
+    assert.ok(typeof proto.send_offline_queue === 'function', `${recheck}: version ${version} has no send_offline_queue`);
+    assert.ok(/this\.send_offline_queue\(\)/.test(String(proto.on_ready)), `${recheck}: version ${version}'s on_ready no longer calls send_offline_queue`);
   });
 });

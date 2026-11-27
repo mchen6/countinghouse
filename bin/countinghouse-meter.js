@@ -99,12 +99,23 @@ if (store === 'local') {
   // connection: its queued write is answered NR_CLOSED at the bound.
   const client = require('../lib/redis-resilient').createClient(argv.redisUrl != null ? argv.redisUrl : DEFAULT_REDIS_URL, {db: 0},
     CLI_CONNECT_MS, {commandDeadlineMs: CLI_CONNECT_MS});
-  // (the error's code only: a connection string can hold a password)
-  client.on('error', (err) => fail(`Redis could not be reached (${err.code || 'error'})`));
+  // (the error's code only: a connection string can hold a password; a
+  // refused connect is named by its own code, which 'reconnecting' carries)
+  let connectError = null;
+  client.on('reconnecting', (info) => { if (info != null && info.error != null && info.error.code != null) connectError = info.error.code; });
+  let done = false;
+  client.on('error', (err) => { if (!done) fail(`Redis could not be reached (${err.code || 'error'})`); });
   client.hset(id, 'balance', String(balance), (err) => {
-    if (err != null && (err.code === 'NR_CLOSED' || err.code === 'REDIS_COMMAND_TIMEOUT')) fail(`Redis could not be reached (${err.code})`);
+    if (err != null && err.code === 'NR_CLOSED') fail(`Redis could not be reached (${connectError || err.code})`);
+    // (sent, but never answered: it may have been applied. The key the HSET
+    // wrote, in full; never the URL, which can hold a password, nor a
+    // redis-cli line, which would check another Redis. Words passed by
+    // business.)
+    if (err != null && err.code === 'REDIS_COMMAND_TIMEOUT') fail(`the balance was sent, but Redis did not answer within ${CLI_CONNECT_MS / 1000} s, so it may or may not be set: check field \`balance\` of key ${id} on the Redis your --redisUrl names, or run this command again (it sets the balance to the value you gave; it does not add to it)`);
     if (err) fail(`the balance could not be set (${err.code || 'error'})`);
     process.stdout.write(`set balance ${balance} for ${id}\n`);
-    client.quit();
+    // (the balance is set: a QUIT that is never answered changes nothing)
+    done = true;
+    client.quit(() => process.exit(0));
   });
 }
