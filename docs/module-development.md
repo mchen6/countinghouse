@@ -59,7 +59,7 @@ name and the fix. A module never half-loads.
 | `ctx.device` | `{deviceID, friendlyName}` — this device |
 | `ctx.serviceID`, `ctx.actionName` | the action being served |
 | `ctx.settings` | your module's settings for this call: frozen, no prototype, an unset setting absent ([Module settings](#module-settings)) |
-| `ctx.settingRequired(name)` | return (or throw) it when the call needs a setting the user has not set: the client is told, in the runtime's words, to ask the user for it ([A missing setting](#a-missing-setting)) |
+| `ctx.settingRequired(name)` | return (or throw) it when the call needs a setting the user has not set: the client is told, in the runtime's words, to ask the user to set it in their own terminal (on a hosted runtime: that its operator sets it) ([A missing setting](#a-missing-setting)) |
 | `ctx.log(entry)` | device log, already bound to this device |
 | `ctx.serviceClient(opts, cb)` | call another module by deviceID, as `ctx.call` authorizes (no `as`) — see below |
 | `ctx.call(address, input, opts)` | call another module by name — see below |
@@ -678,7 +678,7 @@ The vocabulary is small and closed. It is not JSON Schema.
 | `format` | For a `string`, optional: `slug`, `repo` (`owner/name`, GitHub's grammar), `email`, `hostname` or `url` (https only, no user info, kept in canonical form). There is no `pattern` and no `path`. |
 | `default` | Optional; it must be a valid value. A setting with no default and no value is **unset**, and so is an empty string. |
 | `required` | `true`: a call while the setting is unset fails before your handler runs. |
-| `confirm` | `true`: a change in conversation needs the user's own confirmation. Mark a setting that sends data somewhere, costs money, or acts for the user. Every `string` setting needs it anyway. |
+| `confirm` | `true`: a change in conversation needs the user's own confirmation. Mark a setting that sends data somewhere, costs money, or acts for the user. Every `string` setting needs it anyway. While no client is on countinghouse's tested list for that confirmation, such a setting is set at a terminal only (unless the operator sets a fixed value for it). |
 | `title`, `description` | Shown to the user and the agent: at most 64 and 512 characters. |
 
 - **The declaration is at most 16 KiB**, and a module that declares settings
@@ -744,7 +744,9 @@ module.exports = async function forecast(input, ctx) {
   The check covers every module the call can reach through its declared
   calls, so a part's missing setting fails the outer call too. The client is
   told which setting (`_meta["countinghouse/missingSettings"]`) and to ask
-  the user for it; for a part's, only that a module the tool calls needs a
+  the user to run the command that sets it in their own terminal, which asks
+  for the value (on a hosted runtime: that its operator sets it); for a
+  part's, only that a module the tool calls needs a
   setting made at a terminal (a part's settings are never named to a
   client).
 - **Needed only as a fallback** (most settings are a default for an input,

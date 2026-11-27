@@ -232,7 +232,7 @@ describe('validation 30: countinghouse_settings and module settings', () => {
     // makes the sentence false, so this pin fails until it is reworded.
     it('the shipped tested-client list has no tested range: a string setting asked by a client whose own conditions are met is the terminal\'s', async () => {
       const clients = require('../../lib/elicitation-clients');
-      const REVISIT = 'a tested client makes the instructions\' text-value sentence false (lib/mcp/instructions.js, mcp-contract 41): reword it, then move this pin';
+      const REVISIT = 'a tested client makes the instructions\' text-value sentence false (lib/mcp/instructions.js, mcp-contract 41), the module guide\'s `confirm` row (docs/module-development.md), the two settings design specs\' 11-26 notes and lib/module-settings.js\'s header: reword them, then move this pin';
       const list = clients.ALLOWLIST;
       assert.strictEqual(clients.noClientTested(list), true, REVISIT);
       // (ch-local's answer on the client's configuration taken as yes: only
