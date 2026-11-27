@@ -2846,6 +2846,44 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.deepStrictEqual([sent.length, answered], [0, ['DEVICE_NOT_FOUND']]);
     });
 
+    for (const [what, during, want] of [
+      ['its target replaced', (dm, dev, other) => { dm.deviceMap['d-h47'] = other; }, 'CTX_CALL_NOT_READY'],
+      ['its target unloading (an in-place reload\'s drain read it idle)', (dm, dev) => { dev.unloading = true; }, 'CTX_CALL_NOT_READY']]) {
+      it(`a release whose target stops serving while it reads its caller's grant sends nothing: ${what}`, async () => {
+        const sent = [];
+        const dev = proxy('d-h47', sent);
+        const other = proxy('d-h47', []);
+        const dm = manager({'d-h47': dev}, bound, [], {n: 0});
+        const errs = [];
+        const s = session([]);
+        s.callback = (e) => errs.push(e && e.code);
+        DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h47', 'svc', 'act', {input: {}}, s);
+        duringLookup = () => during(dm, dev, other);
+        dm.verificationPass(null);
+        await turns();
+        await turns();
+        await turns();
+        assert.deepStrictEqual([sent.length, errs], [0, [want]]);
+      });
+    }
+
+    it('a throw in a release\'s check after its caller\'s lookup is logged and answered with the uniform answer, never with an internal object', async () => {
+      const sent = [];
+      const dev = proxy('d-h48', sent);
+      const dm = manager({'d-h48': dev}, bound, [], {n: 0});
+      const answers = [];
+      const s = session([]);
+      s.callback = (e, data) => answers.push([e && e.code, e != null && e.goneAtVerdict === true, data == null]);
+      DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h48', 'svc', 'act', {input: {}}, s);
+      duringLookup = () => { dm.listedNow = () => { throw new Error('the listing check threw'); }; };
+      dm.verificationPass(null);
+      await turns();
+      await turns();
+      await turns();
+      assert.deepStrictEqual([sent.length, answers], [0, [['DEVICE_NOT_FOUND', true, true]]]);
+      assert.ok(logged.some((l) => /listing check threw/.test(l)), JSON.stringify(logged));
+    });
+
     it('a held call never keeps the process alive: its timer and its poll are unref\'d', () => {
       const child = `
         const W = process.argv[1];

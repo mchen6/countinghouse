@@ -1423,9 +1423,11 @@ can't use, `MODULE_NOT_LISTED` (404); `DEVICE_NOT_FOUND` for a task's run). A
 module loaded later that fails its verification keeps serving its own
 actions, unbound: a call held for it goes on, and its `ctx.call` is refused.
 A module that ends while a call to it is held (an unload, a crash, a
-restart) answers that call at once, and the call is never sent. The answer
-is the one a new call to the tool would get at that moment: gone, the same
-`unknown tool` answer; restarting, `MODULE_RESTARTING`, retryable. When a
+restart) answers that call at once, and the call is never sent. Over MCP,
+the answer is the one a new call to the tool would get at that moment: gone,
+the same `unknown tool` answer; restarting, `MODULE_RESTARTING`, retryable.
+On the REST routes, a held call that ends gone gets the route's one answer
+for a device the caller can't use, `MODULE_NOT_LISTED` (404). When a
 new version serves the tool after a retry (the module reloaded, in place or
 not), the held call gets `CTX_CALL_NOT_READY` and the client's retry is
 served. A module turned off or hidden while a call to it is held never runs
