@@ -138,6 +138,14 @@ describe('auth 42: with Redis down a call still answers, and billing resumes whe
     assert.ok(/retry shortly$/.test(String(text)), JSON.stringify(c));
   });
 
+  it('a billed HTTP invoke-action with Redis down is refused the same way, before it runs: 503 LEDGER_UNREACHABLE', async () => {
+    const {deviceIDForName} = require('../../lib/call-address');
+    const res = await require('supertest')(`http://127.0.0.1:${PORT}`).post(`/devices/${deviceIDForName('echo-device')}/invoke-action`)
+      .set('X-CH-Key', CALLER).send({serviceID: 'urn:countinghouse-com:serviceID:echoService', actionName: 'echo', input: {foo: [], bar: 'x'}});
+    assert.strictEqual(res.status, 503, JSON.stringify(res.body));
+    assert.strictEqual(res.body.code, 'LEDGER_UNREACHABLE');
+  });
+
   it('a balance asked with Redis down: 503 LEDGER_UNREACHABLE with Retry-After, never node_redis\'s message', async () => {
     const res = await require('supertest')(`http://127.0.0.1:${PORT}`).get('/balance').set('X-CH-Key', CALLER);
     assert.strictEqual(res.status, 503, JSON.stringify(res.body));

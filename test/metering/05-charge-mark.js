@@ -4,7 +4,7 @@
 // ledger's write, Redis's answer -- is marked: the next billed call is refused
 // retryably (LEDGER_UNWRITABLE, LEDGER_UNREACHABLE), with one log line when the
 // mark is set and one when it clears. While marked, at most one probe a
-// second (a write of the ledger, a PING): one that succeeds clears the mark
+// second (a write of the ledger, a Redis probe key set): one that succeeds clears the mark
 // and the call goes on; between probes the mark refuses without touching the
 // store. An unbilled call never asks. A refused call is never charged and is
 // not counted by the limiter. Without --meter nothing is recorded, so every
@@ -52,7 +52,7 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
     it('a charge whose write fails marks the ledger: the next billed call is refused LEDGER_UNWRITABLE, an unbilled one is not; one log line naming the ledger and the code', async () => {
       const {storePath, provider} = open();
       const update = provider.file.update;
-      provider.file.update = (key, fn, cb) => cb(Object.assign(new Error('no space left on device'), {code: 'ENOSPC', storeWrite: true}));
+      provider.file.update = (key, fn, cb) => cb(Object.assign(new Error('no space left on device'), {code: 'ENOSPC'}));
       const first = await charge(provider);
       assert.strictEqual(first.err && first.err.code, 'ENOSPC');
       provider.file.writeNow = (cb) => cb(Object.assign(new Error('still full'), {code: 'ENOSPC'}));
@@ -69,7 +69,7 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
 
     it('while marked, at most one probe write a second; one that succeeds clears the mark, says so once, and the call goes on', async () => {
       const {storePath, provider} = open();
-      provider.file.update = (key, fn, cb) => cb(Object.assign(new Error('io'), {code: 'EIO', storeWrite: true}));
+      provider.file.update = (key, fn, cb) => cb(Object.assign(new Error('io'), {code: 'EIO'}));
       await charge(provider);
       let probes = 0;
       let writable = false;
@@ -94,7 +94,7 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
     it('a refused call is not counted by the limiter', async () => {
       const storePath = trees.mkdtemp('ch-metering-05-');
       const provider = new LocalMeteringProvider({storePath, meter: true, now: () => 1, rateLimitMaxPerInterval: 1});
-      provider.file.update = (key, fn, cb) => cb(Object.assign(new Error('io'), {code: 'EIO', storeWrite: true}));
+      provider.file.update = (key, fn, cb) => cb(Object.assign(new Error('io'), {code: 'EIO'}));
       await charge(provider);
       provider.file.writeNow = (cb) => cb(Object.assign(new Error('io'), {code: 'EIO'}));
       let counted = 0;
@@ -114,7 +114,7 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       };
       let r;
       try { r = await charge(provider); } finally { fsMod.openSync = realOpen; }
-      assert.ok(r.err != null && r.err.code === 'ENOSPC' && r.err.storeWrite === true, String(r.err && r.err.message));
+      assert.ok(r.err != null && r.err.code === 'ENOSPC', String(r.err && r.err.message));
       provider.file.writeNow = (cb) => cb(Object.assign(new Error('no space'), {code: 'ENOSPC'}));
       assert.strictEqual((await ask(provider, true)).err.code, 'LEDGER_UNWRITABLE');
       // (a lock held past the wait: the charge was lost, so marked too)
@@ -147,7 +147,8 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
         set(...args) { c.sets++; const cb = args[args.length - 1]; process.nextTick(cb, c.setErr, c.setErr ? undefined : 'OK'); },
         eval(script, n, key, ...rest) {
           const cb = rest[rest.length - 1];
-          const probe = /'TYPE'/.test(script);
+          // (the record probe: the record's checks and a zero write, no tool)
+          const probe = !/ARGV\[1\]/.test(script);
           if (probe) c.recordProbes++;
           const err = c.evalErr(key, probe);
           process.nextTick(cb, err, err ? undefined : (probe ? '0' : [0, '9', 0]));
