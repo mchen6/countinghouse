@@ -2012,68 +2012,80 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
 // never read its count; a short write (a full disk) left a truncated temp
 // file, renamed over the good one. Each write is now continued until every
 // byte is down, and one that makes no progress fails before the rename.
+const shortDirs = require('../helpers/test-tmp').forFile(['ch-store-04-short-']);
 describe('store 04: a write that stops short (R-store-short-write)', function() {
   this.timeout(30000);
-  const realWriteSync = fs.writeSync;
-  const realOpenSync = fs.openSync;
-  afterEach(() => { fs.writeSync = realWriteSync; fs.openSync = realOpenSync; });
-  // writes to the store's temp file only (`<file>.tmp-<pid>`) go through
-  // `write`; every other write (the log, the lock file) is left alone
-  function stubTempWrites(write) {
+  const logger = require('../../lib/logger');
+  const real = {writeSync: fs.writeSync, openSync: fs.openSync, closeSync: fs.closeSync, W: logger.W};
+  let logged = [];
+  const restore = () => { fs.writeSync = real.writeSync; fs.openSync = real.openSync; fs.closeSync = real.closeSync; };
+  beforeEach(() => { logged = []; logger.W = (line) => { logged.push(String(line)); }; });
+  afterEach(() => { restore(); logger.W = real.W; });
+  // writes to this store's own temp file only (`<file>.tmp-<pid>`, while it
+  // is open) go through `write`; every other write (the log, the lock file,
+  // an fd number reused after the temp file closed) is left alone
+  function stubTempWrites(file, write) {
+    const tempName = `${file}.tmp-${process.pid}`;
     const temp = new Set();
     fs.openSync = function(p, ...rest) {
-      const fd = realOpenSync.call(fs, p, ...rest);
-      if (String(p).includes('.tmp-')) temp.add(fd);
+      const fd = real.openSync.call(fs, p, ...rest);
+      if (String(p) === tempName) temp.add(fd);
       return fd;
     };
+    fs.closeSync = function(fd) {
+      temp.delete(fd);
+      return real.closeSync.call(fs, fd);
+    };
     fs.writeSync = function(fd, ...rest) {
-      return temp.has(fd) ? write(fd, ...rest) : realWriteSync.call(fs, fd, ...rest);
+      return temp.has(fd) ? write(fd, ...rest) : real.writeSync.call(fs, fd, ...rest);
     };
   }
-  const restore = () => { fs.writeSync = realWriteSync; fs.openSync = realOpenSync; };
 
   it('a write that puts down only part of what it was given is continued: the file ends whole', () => {
-    const dir = tmpStore();
-    const file = path.join(dir, 'm.json');
+    const file = path.join(shortDirs.mkdtemp('ch-store-04-short-'), 'm.json');
+    const a = openJsonFile(file);
     try {
-      const a = openJsonFile(file);
       a.set('k', 'x'.repeat(5000));
       // (each call writes half of what it is given, at least one byte)
-      stubTempWrites((fd, data, ...rest) => {
-        if (typeof(data) === 'string') return realWriteSync.call(fs, fd, data.slice(0, Math.ceil(data.length / 2)));
+      stubTempWrites(file, (fd, data, ...rest) => {
+        if (typeof(data) === 'string') return real.writeSync.call(fs, fd, data.slice(0, Math.ceil(data.length / 2)));
         const off = rest[0] != null ? rest[0] : 0;
         const len = rest[1] != null ? rest[1] : data.length - off;
-        return realWriteSync.call(fs, fd, data, off, Math.max(1, Math.ceil(len / 2)));
+        return real.writeSync.call(fs, fd, data, off, Math.max(1, Math.ceil(len / 2)));
       });
       a.flush();
       restore();
       assert.ok(JSON.parse(fs.readFileSync(file, 'utf8')).k === 'x'.repeat(5000), 'the file holds the whole map');
-      a.close();
-      assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => f.includes('.tmp-')), []);
+      assert.deepStrictEqual(fs.readdirSync(path.dirname(file)).filter((f) => f.includes('.tmp-')), []);
     } finally {
       restore();
-      fs.rmSync(dir, {recursive: true, force: true});
+      a.close();
     }
   });
 
-  it('a write that makes no progress fails before the rename: the file keeps what it held, no temp file is left, and the change is written once a write can', () => {
-    const dir = tmpStore();
-    const file = path.join(dir, 'm.json');
+  it('a write that makes no progress fails before the rename: the file keeps what it held, no temp file is left, the failure is logged naming the file and never the map, and the change is written once a write can', () => {
+    const file = path.join(shortDirs.mkdtemp('ch-store-04-short-'), 'm.json');
+    const a = openJsonFile(file);
     try {
-      const a = openJsonFile(file);
       a.set('a', 1);
       a.flush();
-      a.set('b', 2);
-      stubTempWrites(() => 0);
+      a.set('b', 'held-value-b');
+      stubTempWrites(file, () => 0);
       a.flush();
       restore();
       assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {a: 1});
-      assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => f.includes('.tmp-')), []);
+      assert.deepStrictEqual(fs.readdirSync(path.dirname(file)).filter((f) => f.includes('.tmp-')), []);
+      const lines = logged.filter((l) => l.includes('not written'));
+      assert.strictEqual(lines.length, 1, JSON.stringify(logged));
+      assert.ok(lines[0].includes(`writing ${file}.tmp-${process.pid} stopped after 0 of `), lines[0]);
+      assert.ok(!lines[0].includes('held-value-b'), lines[0]);
       a.close();
-      assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {a: 1, b: 2});
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {a: 1, b: 'held-value-b'});
     } finally {
       restore();
-      fs.rmSync(dir, {recursive: true, force: true});
+      a.close();
     }
   });
+
+  shortDirs.hooks();
 });
