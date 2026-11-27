@@ -2265,6 +2265,16 @@ HTTP request's disconnect changes nothing.
   is interrupted, and no answer is written. A remote call already running
   for the call is aborted: it rejects at once, and the remote server is
   sent `notifications/cancelled`.
+- **A billed call runs only while its charge can be recorded.** A
+  tools/call (not a completion's action), an invoke-action, a job's run and
+  a hop each ask, before they run, whether their charge can be recorded; a
+  ledger that can't record it -- Redis unreachable, or a charge it just
+  failed; a local ledger whose write just failed -- refuses them retryably
+  (`LEDGER_UNREACHABLE`, `LEDGER_UNWRITABLE`). A refused call is not counted
+  by the per-key limiter. A charge that fails after its call ran is lost,
+  logged by the key's fingerprint, the tool and the amount, and the ledger
+  is marked: the next billed call is refused until a probe, at most one a
+  second, finds it recording again.
 - **The bill is what ran.** Each path captures its billing key when the
   work starts, never by resolving the token again when it bills:
   - a routed hop at its start;
