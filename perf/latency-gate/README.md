@@ -15,13 +15,13 @@ From a countinghouse checkout with its dependencies installed (`npm ci`):
 node perf/latency-gate/gate.js --ch-local <path to a ch-local checkout>
 ```
 
-That builds ch-shim with cargo (ch-local pins its toolchain), runs the closed load shape (5 alternating rounds of 300 back-to-back calls per session at N=1, 2 and 4), prints each round and the verdict, and exits 0 on PASS, 1 on FAIL and 2 when the harness itself fails or an option is invalid. Options:
+That builds ch-shim with cargo (ch-local pins its toolchain), runs the closed load shape (5 alternating rounds of 300 back-to-back calls per session at N=1, 2 and 4), prints each round and the verdict, and exits 0 on PASS, 1 on FAIL, 2 when the harness itself fails, an option is invalid or the machine has fewer than 4 CPUs, and 3 with `--allowFewerCores` on such a machine (no gate verdict). Options:
 - `--mode open` runs the realistic rate instead: 60 calls per session, each after a gap drawn from 1–5 s by a seeded RNG (`--seed`), at N=2, 3 and 10, with the median, p90 and p95 reported. This takes about 3 minutes per layout and session count, so about 28 minutes for the three layouts at the three defaults. Together with closed mode and the shim's build, one workflow job then comes close to its 45-minute timeout. Dispatch the two modes as separate runs (`-f modes=closed`, then `-f modes=open`), or lower `open_calls`.
 - `--shim <binary>` uses an already-built ch-shim.
 - `--sessions 1,2,4`, `--rounds`, `--calls` override the mode's defaults. They are checked as small positive integers.
 - `--json <file>` writes the result.
 
-It runs on Linux and macOS. The shared runtime doesn't run on Windows yet.
+It runs on Linux and macOS only: it uses a Unix socket and a POSIX script, and refuses Windows. It refuses a machine with fewer than 4 CPUs (exit 2); `--allowFewerCores` runs it on a smaller one, and the result is then "not a gate verdict" (exit 3), never PASS or FAIL.
 
 ## What it compares
 
