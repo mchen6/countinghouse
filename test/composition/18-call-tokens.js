@@ -2463,6 +2463,27 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.deepStrictEqual([sent.length, ...uniform(errs)], [0, 1, 'DEVICE_NOT_FOUND', true]);
     });
 
+    it('a module turned off during the hold, its bound reached with no verdict: the uniform answer, as a fresh call gets', async () => {
+      cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
+      const visibility = require('../../lib/module-visibility');
+      const sent = [];
+      const dev = proxy('d-h35', sent);
+      const dm = manager({'d-h35': dev}, () => {}, [], {n: 0});
+      const errs = [];
+      const s = session([]);
+      s.callback = (e) => errs.push(e);
+      const before = visibility.configure({moduleOf: (id) => (id === 'd-h35' ? 'held-off-bound' : null), changed: () => {}});
+      try {
+        DeviceManager.prototype.invokeAction.call(dm, dev, 'd-h35', 'svc', 'act', {input: {}}, s);
+        visibility.hide(['held-off-bound']);
+        await until(() => errs.length > 0, 5000, 'answered at its bound');
+      } finally {
+        visibility.show(['held-off-bound']);
+        visibility.configure(before);
+      }
+      assert.deepStrictEqual([sent.length, ...uniform(errs)], [0, 1, 'DEVICE_NOT_FOUND', true]);
+    });
+
     it('a verdict whose relay into the worker failed releases nothing: the call stays held to its bound, unsent', async () => {
       cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
       const sent = [];
