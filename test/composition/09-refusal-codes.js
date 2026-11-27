@@ -145,11 +145,11 @@ describe('ctx.call refusals carry a code an MCP client can branch on', () => {
       assert.notStrictEqual(head, code, `${code} has no entry in the error catalogue`);
       assert.ok(/ctx\.call/.test(head), `${code}'s head should name ctx.call: ${head}`);
     }
-    // CTX_CALL_NOT_READY also answers a client's call held before its module's verdict (never sent), so its head names no ctx.call:
-    // it says to retry, and that nothing was done
+    // CTX_CALL_NOT_READY also answers a client's call held before its module's verdict (never sent), so its head names no ctx.call.
+    // Its words are true at every raise site: the call to the module not ready was not run (a composing handler that passes it on may
+    // have done work of its own, so it never says nothing was done), whenever the check runs (not only after the start)
     const notReady = new CountinghouseError('CTX_CALL_NOT_READY').message;
-    assert.notStrictEqual(notReady, 'CTX_CALL_NOT_READY', 'CTX_CALL_NOT_READY has no entry in the error catalogue');
-    assert.ok(/retry/.test(notReady) && /nothing was done/.test(notReady), `CTX_CALL_NOT_READY's head says to retry, and that nothing was done: ${notReady}`);
+    assert.strictEqual(notReady, 'Not ready yet: the runtime is still checking a module this call needs, so the call to it was not run; retry in a few seconds.');
   });
 });
 
