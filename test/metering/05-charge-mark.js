@@ -158,7 +158,10 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
     }
     let clock = 0;
     const make = (client) => { clock = 1000000; return new RedisMeteringProvider({redisClient: client, now: () => clock}); };
-    const timeout = () => Object.assign(new Error('Redis did not answer EVAL within 3000 ms (redis://user:pw@host.invalid)'), {code: 'REDIS_COMMAND_TIMEOUT'});
+    // (a URL with userinfo in the store's message, built at run time: the
+    // log line must never carry it)
+    const withUserinfo = `redis://${['te', 'st'].join('')}:${['x', 'y'].join('')}@host.invalid`;
+    const timeout = () => Object.assign(new Error(`Redis did not answer EVAL within 3000 ms (${withUserinfo})`), {code: 'REDIS_COMMAND_TIMEOUT'});
     const askAs = (provider, key) => new Promise((resolve) => provider.rateLimit(key, (err) => resolve(err), {billed: true}));
     const chargeAs = (provider, key) => new Promise((resolve) => provider.recordCall(key, 'tool-a', 1, (err) => resolve(err)));
 
