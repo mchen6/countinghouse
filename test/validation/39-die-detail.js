@@ -19,17 +19,26 @@ describe('validation 39: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
   describe('the runtime\'s own worker-side reasons cross on an exact match', () => {
     // (as the runtime raises one: new CountinghouseError(code, reason), its message "<head>: <reason>")
     const raised = (code, reason) => new CountinghouseError(code, reason).message;
-    it('one of the closed list crosses with its reason', () => {
+    // (across a reply: the worker's fields, decoded on the main thread)
+    const across = (err) => CountinghouseError.fromReply(CountinghouseError.fromReplyFields(CountinghouseError.replyFields(err)));
+    it('one of the closed list crosses with its reason, raised by the runtime (its mark crosses the reply)', () => {
       for (const reason of CountinghouseError.WORKER_REASONS) {
-        const e = CountinghouseError.fromReply({code: 'DEVICE_INVOKE_EXCEPTION', message: raised('DEVICE_INVOKE_EXCEPTION', reason)});
-        assert.strictEqual(e.message, raised('DEVICE_INVOKE_EXCEPTION', reason), reason);
+        assert.strictEqual(across(CountinghouseError.runtimeReason('DEVICE_INVOKE_EXCEPTION', reason)).message, raised('DEVICE_INVOKE_EXCEPTION', reason), reason);
       }
+    });
+    it('the same words built as a handler\'s untyped throw is built (lib/handler-answer.js), unmarked, stay the bare head', () => {
+      for (const reason of CountinghouseError.WORKER_REASONS) assert.strictEqual(across(new CountinghouseError('DEVICE_INVOKE_EXCEPTION', reason)).message, HEAD, reason);
+    });
+    it('the closed list', () => {
       for (const r of ['a module\'s result could not be read', 'the error could not be sent between threads', 'the value could not be sent between threads']) assert.ok(CountinghouseError.WORKER_REASONS.includes(r), r);
     });
     it('a handler\'s own throw of the same words never crosses as the runtime\'s reason (it carries the from-handler mark)', () => {
       const thrown = require('../../lib/countinghouse-error').markFromHandler(new CountinghouseError('DEVICE_INVOKE_EXCEPTION', 'a module\'s result could not be read'));
       const decoded = CountinghouseError.fromReplyFields(CountinghouseError.replyFields(thrown));
       assert.strictEqual(CountinghouseError.fromReply(decoded).message, HEAD);
+      // (a runtime raise that a handler threw on keeps its from-handler mark: its words are not the runtime's)
+      const passedOn = require('../../lib/countinghouse-error').markFromHandler(CountinghouseError.runtimeReason('DEVICE_INVOKE_EXCEPTION', 'a module\'s result could not be read'));
+      assert.strictEqual(across(passedOn).message, HEAD);
     });
     it('a near match, another code\'s head or a forged text is rebuilt from the code alone', () => {
       const r = 'a module\'s result could not be read';
@@ -52,10 +61,12 @@ describe('validation 39: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
       assert.ok(r.message.endsWith('. Before it failed, the runtime refused its call to a remote service: REMOTE_TIMEOUT.'), r.message);
     });
     it('a code about the calling module\'s own call is said as it is; any other (a part\'s state) is DEVICE_NOT_FOUND, the log keeping the exact code', () => {
-      for (const code of ['CTX_CALL_NOT_READY', 'CTX_CALL_UNDECLARED', 'HOP_CHAIN_TOO_DEEP', 'USAGE_CALL_FOREIGN']) {
+      for (const code of ['CTX_CALL_NOT_READY', 'CTX_CALL_UNDECLARED', 'HOP_CHAIN_TOO_DEEP', 'USAGE_CALL_FOREIGN', 'INPUT_TOO_LARGE', 'OUTPUT_TOO_LARGE', 'SETTING_REQUIRED', 'SETTING_NOT_READY']) {
         assert.ok(CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code, to: 'module'}).message.endsWith(`: ${code}.`), code);
       }
       assert.ok(CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code: 'REMOTE_UNDECLARED', to: 'remote'}).message.endsWith(': REMOTE_UNDECLARED.'));
+      // (a remote's refusal is never said as a missing module)
+      assert.ok(!/DEVICE_NOT_FOUND/.test(CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code: 'CTX_CALL_NOT_READY', to: 'remote'}).message));
       for (const code of ['MODULE_UNLOADED', 'MODULE_RELOADING', 'MODULE_NOT_LISTED', 'DEVICE_NOT_FOUND', 'MODULE_RESTARTING', 'MODULE_SUSPENDED', 'SESSION_WORKER_ENDED', 'SESSION_WORKERS_BUSY', 'MODULE_SESSION_PAUSED']) {
         const e = CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code, to: 'module'});
         assert.strictEqual(e.message, `${HEAD}. Before it failed, the runtime refused its call to another module: DEVICE_NOT_FOUND.`, code);
