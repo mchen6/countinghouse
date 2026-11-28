@@ -214,7 +214,7 @@ describe('session-transport 03: the listener against hostile peers (#245 review)
       assert.strictEqual(detaches.length, 1, 'no second detach without an attach between');
     });
 
-    it('a replay is taken once per connection, and one of more than 64 entries closes', async() => {
+    it('a replay is taken once per connection: a second, or one of more than 64 entries, closes it', async() => {
       await start();
       const a = await shim.session(sock, secret);
       const s = opened[0];
@@ -222,7 +222,10 @@ describe('session-transport 03: the listener against hostile peers (#245 review)
       s.on('replay', (e) => seen.push(e));
       a.c.send('C', {op: 'replay', entries: [{n: 1}]});
       a.c.send('C', {op: 'replay', entries: [{n: 2}]});
-      await tick(100);
+      // (a second replay on one connection is no protocol: closed, so a shim
+      // that sent one attaches again and replays once, never waiting out an
+      // answer that would not come)
+      assert.ok(await until(() => a.c.closed()), 'a second replay closes the connection');
       assert.deepStrictEqual(seen, [[{n: 1}]]);
       const b = await shim.session(sock, secret);
       b.c.send('C', {op: 'replay', entries: Array.from({length: 65}, (_, i) => ({n: i}))});
