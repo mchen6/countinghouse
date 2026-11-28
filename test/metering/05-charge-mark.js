@@ -451,6 +451,63 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
     });
   });
 
+  // Fail closed means one uniform refusal, never a hang: a limiter that
+  // throws, now or in its answer, refuses RUNTIME_BUSY, once; the caller's
+  // own continuation is never caught and answered twice.
+  describe('a limiter that throws refuses RUNTIME_BUSY, never hangs', () => {
+    const CdifInterface = require('../../lib/countinghouse-interface');
+    const gate = require('../../lib/rate-limit-gate');
+    const throwing = () => { throw new Error('the limiter broke'); };
+    // a result whose reading throws, as a provider's answer might
+    const unreadable = () => ({get limited() { return throwing(); }});
+    const over = (ci) => Object.assign(Object.create(CdifInterface.prototype), {meteringProvider: null, rateLimiter: null}, ci);
+    // every answer the gate gives, collected a while (bounded): exactly one expected
+    const answers = (run) => new Promise((resolve) => {
+      const got = [];
+      run((x) => got.push(x));
+      setTimeout(() => resolve(got), 50);
+    });
+    const session = () => ({appKey: KEY, billed: false});
+
+    for (const [what, rateLimit] of [
+      ['throws when asked', throwing],
+      ['answers a result that throws when read', (k, cb) => setImmediate(() => cb(null, unreadable()))]]) {
+      it(`a key's limiter that ${what}: keyGate and callGate answer RUNTIME_BUSY once; the route gate refuses so`, async () => {
+        const ci = over({rateLimit});
+        const viaKey = await answers((cb) => ci.keyGate(session(), cb));
+        assert.deepStrictEqual(viaKey.map((r) => r && r.code), ['RUNTIME_BUSY']);
+        const viaCall = await answers((cb) => ci.callGate(session(), cb));
+        assert.deepStrictEqual(viaCall.map((r) => r && r.code), ['RUNTIME_BUSY']);
+        const viaRoute = await answers((cb) => gate.check(ci, KEY, (limited, refusal) => cb({limited, code: refusal && refusal.code})));
+        assert.deepStrictEqual(viaRoute, [{limited: true, code: 'RUNTIME_BUSY'}]);
+      });
+    }
+
+    it('the server-wide limiter that throws when asked: callGate answers RUNTIME_BUSY once', async () => {
+      const ci = over({rateLimiter: throwing, rateLimit: (k, cb) => cb(null, {limited: false})});
+      const got = await answers((cb) => ci.callGate(session(), cb));
+      assert.deepStrictEqual(got.map((r) => r && r.code), ['RUNTIME_BUSY']);
+    });
+
+    it('a continuation that throws is its own: the gate answers once, never twice', async () => {
+      const ci = over({rateLimit: (k, cb) => setImmediate(() => cb(null, {limited: false}))});
+      let calls = 0;
+      const seen = [];
+      const prior = process.listeners('uncaughtException');
+      process.removeAllListeners('uncaughtException');
+      process.once('uncaughtException', (e) => seen.push(e.message));
+      try {
+        ci.keyGate(session(), () => { calls++; throw new Error('the caller\'s own'); });
+        await new Promise((r) => setTimeout(r, 50));
+      } finally {
+        process.removeAllListeners('uncaughtException');
+        for (const l of prior) process.on('uncaughtException', l);
+      }
+      assert.strictEqual(calls, 1);
+      assert.deepStrictEqual(seen, ['the caller\'s own']);
+    });
+  });
+
   it('a probe that throws is a probe that failed: the mark is probed again a second later, never left refusing for good', async () => {
     const {chargeMark} = require('../../lib/metering/charge-mark');
     let clock = 1000000;
