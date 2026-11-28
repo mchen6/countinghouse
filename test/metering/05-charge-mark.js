@@ -65,6 +65,11 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       const sent = {headers: {}};
       answerError({setHeader: (k, v) => { sent.headers[k] = v; }, status(n) { sent.status = n; return this; }, json(b) { sent.body = b; return this; }}, billed.err);
       assert.deepStrictEqual([sent.status, sent.headers['Retry-After'], sent.body && sent.body.code], [503, '5', 'LEDGER_UNWRITABLE']);
+      // (and over MCP the same 5 s, as countinghouse/retryAfter in a limit
+      // answer's data, docs/cli-and-api-reference.md; a refused tools/call's
+      // _meta reads the same hint: auth 42 has it end to end)
+      const {limitData} = require('../../lib/mcp/error-data');
+      assert.strictEqual(limitData(billed.err)['countinghouse/retryAfter'], 5);
       const unbilled = await ask(provider, false);
       assert.strictEqual(unbilled.err, null);
       await ask(provider, true);
