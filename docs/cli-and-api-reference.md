@@ -114,13 +114,17 @@ modules see their own code at. Install it elsewhere (e.g.
 **MCP error answers.** A tool error result (`isError: true`) carries in its
 `_meta` the error's `countinghouse/code` (the catalogue code, or a module's
 own) and `countinghouse/kind`: who should act, `caller`, `module`,
-`runtime` or `operator`, as a REST error body's `kind` says it. A
-rate-limit refusal adds `countinghouse/retryAfter`: when to retry, in whole
-seconds, the limiter's own, within its window (a REST 429 or 503 says the
-same in `Retry-After`). It appears only where a limiter wrote it: an error
-a module passes on from a part's call is the module's answer (kind
-`module`) and carries none. Every limit's refusal on `/mcp` outside
-`tools/call` -- a key over its budget (`tools/list`, `prompts/list`,
+`runtime` or `operator`, as a REST error body's `kind` says it.
+Retryable refusals from the rate limits (`RATE_LIMIT_EXCEEDED`,
+`UNAUTH_RATE_LIMITED`, and `RUNTIME_BUSY` when the server-wide limit is
+reached) and from the usage ledger (`LEDGER_UNREACHABLE`,
+`LEDGER_UNWRITABLE`) carry `countinghouse/retryAfter`, the seconds to wait
+before retrying (whole seconds, and for a rate limit at most its window; a
+REST 429 or 503 says the same in `Retry-After`); no other refusal carries
+it. It appears only where the runtime wrote it: an error a module passes on
+from a part's call is the module's answer (kind `module`) and carries none.
+Every limit's refusal on `/mcp` outside `tools/call` -- a key over its
+budget (`tools/list`, `prompts/list`,
 `prompts/get`, `completion/complete`, `tasks/*`, a resource read), an
 address over `--unauthRateLimit`, a key or session with as many
 subscriptions open as it may have (`TOO_MANY_SUBSCRIPTIONS`), the

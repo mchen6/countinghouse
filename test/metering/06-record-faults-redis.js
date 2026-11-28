@@ -64,12 +64,23 @@ describe('metering 06: a key\'s own record fault, on a real Redis', function() {
   }
 
   for (const shown of [' 5', '5 ', 'nan', 'inf', '', '1e-5000']) {
-    it(`a balance Redis won't add to (${JSON.stringify(shown)}): BADRECORD, that key's alone, the provider unmarked`, async () => {
+    it(`a balance Redis won't add to (${JSON.stringify(shown)}): BADRECORD, that key refused LEDGER_RECORD_INVALID, the provider unmarked, another key served`, async () => {
       await cmd('hset', meterId(KEYS.balance), 'balance', shown);
       const failed = await charge(KEYS.balance);
       assert.strictEqual(failed.err && failed.err.code, 'BADRECORD', String(failed.err && failed.err.message));
+      // (the CHANGELOG's words: its billed calls are refused until it is
+      // repaired -- from the mark at once, and by its record's own probe a
+      // second later, which reads the same bad balance)
+      const refused = await ask(KEYS.balance);
+      assert.strictEqual(refused && refused.code, 'LEDGER_RECORD_INVALID');
+      clock += 1000;
+      const probed = await ask(KEYS.balance);
+      assert.strictEqual(probed && probed.code, 'LEDGER_RECORD_INVALID', 'the probe refuses it too');
       assert.strictEqual(provider._chargeMark.marked(), false, 'the provider is not marked');
       assert.strictEqual(await ask(KEYS.good), null);
+      const good = await charge(KEYS.good);
+      assert.strictEqual(good.err, null, String(good.err && good.err.message));
+      assert.strictEqual(good.r.charged, 1);
     });
   }
 
