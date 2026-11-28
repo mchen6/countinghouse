@@ -65,7 +65,17 @@ describe('mcp-contract 17: stored values, in-process (M6)', function() {
     it('a metering refusal is the answer: no contents, no bytes; the charge was asked once, at --resourceReadCost', async () => {
       const {id} = await blobs.put({owner: identity.idForKey(KEY), session: null, mimeType: 'application/pdf', bytes: Buffer.from('%PDF secret'), source: {}});
       const ci = stub(true);
-      const res = await read(`countinghouse://r/${id}`, ci);
+      const LOG = require('../../lib/logger');
+      const realE = LOG.E;
+      const logged = [];
+      LOG.E = (x) => logged.push(String(x && x.message != null ? x.message : x));
+      let res;
+      try { res = await read(`countinghouse://r/${id}`, ci); } finally { LOG.E = realE; }
+      // (logged by the key's fingerprint, the tool, the amount and the
+      // error's code, never the store's own message, which may name a host,
+      // a URL or the key)
+      const {keyFingerprint} = require('../../lib/key-fingerprint');
+      assert.deepStrictEqual(logged, [`metering: a call's charge was not recorded: ${keyFingerprint(KEY)}, tool countinghouse:resources/read, amount 3 (ERROR)`]);
       assert.strictEqual(res.result, undefined, JSON.stringify(res));
       // a fixed text: the provider's own message is logged, never echoed
       assert.strictEqual(res.error.message, 'the read could not be metered');
