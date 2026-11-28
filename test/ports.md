@@ -24,6 +24,7 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9790–9799 | B (2026-11-14) |
 | 9800–9809 | A: kind caller, usage 24 (2026-11-19) |
 | 9820–9829 | B (2026-11-20) |
+| 9834–9839 | B (2026-11-27): validation 38, sandbox 73, auth 64 and 65 |
 | 9834–9839 | B (2026-11-27): validation 38, sandbox 73, auth 64 |
 | 9834–9839 | B (2026-11-27): validation 38, sandbox 73, auth 64 and 65 |
 | 9840–9849 | B (2026-11-27): questions 09 |
@@ -79,6 +80,7 @@ one) as well as the ports it binds.
 | `test/auth/62-auth-stores-private.js` | 9833 |
 | `test/auth/61-job-owner-never-the-key.js` | 9830, 9831, 9832 |
 | `test/auth/64-job-run-refused-uncharged.js` | 9839 |
+| `test/auth/65-job-rerun-refused-uncharged.js` | 9836 |
 | `test/benchmark/test001.js` | 9527 |
 | `test/benchmark/test002.js` | 9527 |
 | `test/composition/02-ctx-call.js` | 9556–9557, 9560 |
@@ -95,6 +97,7 @@ one) as well as the ports it binds.
 | `test/composition/17-hop-module-error.js` | 9618–9620 |
 | `test/composition/18-call-tokens.js` | 9695–9698 |
 | `test/composition/21-declared-calls-enforced.js` | 9699 (also remote/10's stand-in port; the two never run concurrently) |
+| `test/composition/25-refused-before-crash.js` | 9678–9679 |
 | `test/device-config/02-from-main-thread.js` | 9629 |
 | `test/device-config/03-json-errors-without-content.js` | 9629 |
 | `test/direct-peer-channels/01-echo-roundtrip.js` | 9527 |

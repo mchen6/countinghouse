@@ -1,0 +1,30 @@
+{
+  "device": {
+    "friendlyName": "asks-unusable",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a long-running action that asks a question no form can show, so its task's run starts again at once",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:askService": {
+        "actionList": [
+          {
+            "name": "probe",
+            "description": "Waits for a go file in its data, then asks a question no form can show, and says what came of asking.",
+            "input": {
+              "schema": "/askService/probe/input"
+            },
+            "output": {
+              "schema": "/askService/probe/output"
+            },
+            "questions": {
+              "pick": {
+                "message": "Pick one",
+                "schema": "/askService/probe/questions/pick"
+              }
+            },
+            "longRunning": true
+          }
+        ]
+      }
+    }
+  }
+}

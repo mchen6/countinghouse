@@ -68,6 +68,7 @@ const REVIEWED = [
   ['worker-message', 'a live bind, call or apply', /^if \(this\.worker != null\) this\.worker\.on\('message', this\.onEnvelope\.bind\(this\)\);$/, 'main thread (this.worker)'],
   ['worker-message', 'require in a function body', /require\('\.\/logger'\)\.E\(new Error\(`module worker /, 'main thread: a worker\'s end'],
   ['worker-message', 'require in a function body', /require\('\.\/worker-output'\)\./, 'main thread: a worker\'s messages'],
+  ['worker-message', 'require in a function body', /^const callTokens = require\('\.\/call-tokens'\);$/, 'main thread: a device query\'s answer (isMainThread === true above)'],
   // the capture helpers and captures, defined at load (they are called there only)
   ['peer-worker', 'a live bind, call or apply', /^const uncurry = \(fn\) => Function\.prototype\.call\.bind\(fn\);$/, 'the capture helper: called at load'],
   ['peer-channel', 'a live bind, call or apply', /^const uncurry = \(fn\) => Function\.prototype\.call\.bind\(fn\);$/, 'the capture helper: called at load'],

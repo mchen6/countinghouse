@@ -1,0 +1,25 @@
+{
+  "device": {
+    "friendlyName": "compose-crasher",
+    "manufacturer": "countinghouse",
+    "modelDescription": "A module whose call the runtime refuses, and which then crashes.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:crasherService": {
+        "actionList": [
+          {
+            "name": "refusedThenThrow",
+            "description": "Calls compose-callee, which the runtime refuses once it is unloaded, then throws an untyped error.",
+            "input":  {"schema": "/crasherService/refusedThenThrow/input"},
+            "output": {"schema": "/crasherService/refusedThenThrow/output"}
+          },
+          {
+            "name": "throwsAlone",
+            "description": "Throws an untyped error, calling nothing, its text a refusal's words.",
+            "input":  {"schema": "/crasherService/throwsAlone/input"},
+            "output": {"schema": "/crasherService/throwsAlone/output"}
+          }
+        ]
+      }
+    }
+  }
+}
