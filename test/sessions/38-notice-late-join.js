@@ -43,7 +43,7 @@ describe('sessions 38: a global notice for the sessions that join later', () => 
   beforeEach(() => {
     reset();
     clock = T0;
-    notices.configure({now: () => clock});
+    notices.configure({now: () => clock, wall: () => clock});
     reg = new EventEmitter();
     sessions.attach(reg);
     sent = {};
@@ -105,9 +105,57 @@ describe('sessions 38: a global notice for the sessions that join later', () => 
     assert.strictEqual(got[1], earlier(T0, 'about the pack'));
   });
 
+  it('each line of no module is a kind of its own: a start of many lines keeps them all; one told again is kept once, with the newer time', () => {
+    const lines = ['an outside edit', 'a ceiling note', 'another ceiling note', 'the audit line', 'a module not loaded', 'the upgrade check', 'no module is loaded'];
+    for (const l of lines) tellEverySession(null, l);
+    clock += 1000;
+    tellEverySession(null, 'the audit line');
+    openSession(C);
+    const got = resultFor(C);
+    assert.deepStrictEqual(got, [...lines.filter((l) => l !== 'the audit line').map((l) => earlier(T0, l)), earlier(T0 + 1000, 'the audit line')]);
+  });
+
+  it('a notice about a module hidden (going on or off) when a session opens is not given to it; once shown again, it is', () => {
+    const visibility = require('../../lib/module-visibility');
+    tellEverySession(null, '@acme/m: its settings changed', {about: '@acme/m'});
+    visibility.hide(['@acme/m']);
+    try {
+      openSession(C);
+      assert.deepStrictEqual(resultFor(C), []);
+    } finally {
+      visibility.show(['@acme/m']);
+    }
+    openSession(D);
+    assert.deepStrictEqual(resultFor(D), [earlier(T0, '@acme/m: its settings changed')]);
+  });
+
+  it('a session back after a runtime restart is told the new run\'s, as from after the restart', () => {
+    tellEverySession(null, 'under audit, countinghouse logs what a pack reads');
+    const state = require('../../lib/session-state');
+    const was = state.isResuming;
+    state.isResuming = (id) => id === C;
+    try {
+      openSession(C);
+    } finally {
+      state.isResuming = was;
+    }
+    assert.deepStrictEqual(resultFor(C), [`After a runtime restart, before this session resumed (${new Date(T0).toISOString()}): under audit, countinghouse logs what a pack reads`]);
+  });
+
+  it('order and age by the monotonic clock: a wall clock stepped back changes only the time shown', () => {
+    let wallNow = T0;
+    notices.configure({wall: () => wallNow});
+    tellEverySession(null, 'first');
+    clock += 1000;
+    wallNow -= 3600 * 1000;
+    tellEverySession(null, 'second');
+    openSession(C);
+    assert.deepStrictEqual(resultFor(C), [earlier(T0, 'first'), earlier(T0 - 3600 * 1000, 'second')]);
+  });
+
   describe('past a bound: the oldest go, and how many is said once', () => {
     const dropped = (lines) => lines.filter((l) => /^\d+ earlier notices? /.test(l));
-    // business's words, whole (validation 04 pins them too)
+    // the words, whole (validation 04 pins them too)
     const BOUNDS = 'a session that joins later is given only the newest (5 of each kind, up to 64 kinds, from the last 24 hours)';
 
     it('the newest five of a kind', () => {
@@ -130,6 +178,26 @@ describe('sessions 38: a global notice for the sessions that join later', () => 
       assert.deepStrictEqual(dropped(all), [`2 earlier notices from this run are not shown here: ${BOUNDS}`]);
     });
 
+    it('the runtime\'s own lane goes last: 64 newer kinds of modules let a module kind go before it', () => {
+      tellEverySession(null, 'm0 turned off: run the way back', {own: true});
+      clock += 1000;
+      for (let i = 1; i <= 64; i++) { tellEverySession(`ch-pack-${i}`, `about ${i}`); clock += 1000; }
+      openSession(C);
+      const got = resultFor(C);
+      assert.ok(got.includes(earlier(T0, 'm0 turned off: run the way back')), 'the own lane kept');
+      const all = [...got];
+      for (let i = 1; i <= 64; i++) all.push(...resultFor(C, `ch-pack-${i}`));
+      assert.ok(!all.some((l) => l.endsWith(': about 1')), 'the oldest module kind went');
+      assert.deepStrictEqual(dropped(all), [`1 earlier notice from this run is not shown here: ${BOUNDS}`]);
+    });
+
+    it('the dropped line has a lane of its own: live notices queued after it never push it out', () => {
+      for (let i = 1; i <= 6; i++) tellEverySession('ch-pack-x', `change ${i}`);
+      openSession(C);
+      for (let i = 0; i < 25; i++) notices.add(null, `live ${i}`, {session: C, own: true});
+      assert.deepStrictEqual(dropped(resultFor(C)), [`1 earlier notice from this run is not shown here: ${BOUNDS}`]);
+    });
+
     it('24 hours: one told longer ago is not given, and is counted', () => {
       tellEverySession(null, 'old');
       clock += 12 * 3600 * 1000;
@@ -150,7 +218,7 @@ describe('sessions 38: a global notice for the sessions that join later', () => 
 
   it('under --stdio (no shared runtime) nothing is kept: the one queue holds a notice until a result takes it, as before', () => {
     reset();
-    notices.configure({now: () => clock});
+    notices.configure({now: () => clock, wall: () => clock});
     tellEverySession(null, 'one queue');
     assert.deepStrictEqual(notices.take(null), ['one queue']);
     assert.deepStrictEqual(notices.take(null), []);

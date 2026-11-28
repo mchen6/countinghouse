@@ -110,7 +110,7 @@ describe('sessions 36: no session view (M5a)', () => {
     let applied = null;
     const control = require('../../lib/module-control').createModuleControl({
       shared: () => true, mm: {}, dm: {}, packs: {}, toolsOf: async () => [],
-      notices: {add: (module, text, opts) => told.push([module, text, opts && opts.session])},
+      notices: {add: (module, text, opts) => told.push([module, text, opts && opts.session]), keep: () => {}},
       applyControlSet: async (msg) => { applied = msg; return {}; }});
     // (no type: the handler's own is what the message is judged as)
     await control.notice({module: 'weather-tool', text: 'hello'});
