@@ -122,15 +122,39 @@ describe('auth 42: with Redis down a call still answers, and billing resumes whe
     assert.strictEqual(await settledBalance(), '99');
   });
 
-  it(`answers a tools/call within ${ANSWER_MS} ms once Redis is down, and does not charge it later`, async () => {
+  // A billed call runs only while its charge can be recorded (the owner's
+  // decision, 11-27): with the ledger unreachable it is refused at once,
+  // retryably, and never charged later.
+  it(`refuses a billed tools/call within ${ANSWER_MS} ms once Redis is down: LEDGER_UNREACHABLE, retry shortly`, async () => {
     await proxy.down();
     proxyUp = false;
     await new Promise((r) => setTimeout(r, 300));   // the server's clients see the connection drop
     const c = await timedCall(ANSWER_MS);
     assert.notStrictEqual(c, null, `no answer within ${ANSWER_MS} ms with Redis down\n${server.output.slice(-1500)}`);
+    const answer = c.r || {};
+    const meta = (answer.data != null ? answer.data : answer._meta) || {};
+    assert.strictEqual(meta['countinghouse/code'], 'LEDGER_UNREACHABLE', JSON.stringify(c));
+    const text = answer.message != null ? answer.message : (Array.isArray(answer.content) && answer.content[0] != null ? answer.content[0].text : '');
+    assert.ok(/retry shortly$/.test(String(text)), JSON.stringify(c));
   });
 
-  it('bills again once Redis is back, once per call (the outage call was not queued)', async () => {
+  it('a billed HTTP invoke-action with Redis down is refused the same way, before it runs: 503 LEDGER_UNREACHABLE', async () => {
+    const {deviceIDForName} = require('../../lib/call-address');
+    const res = await require('supertest')(`http://127.0.0.1:${PORT}`).post(`/devices/${deviceIDForName('echo-device')}/invoke-action`)
+      .set('X-CH-Key', CALLER).send({serviceID: 'urn:countinghouse-com:serviceID:echoService', actionName: 'echo', input: {foo: [], bar: 'x'}});
+    assert.strictEqual(res.status, 503, JSON.stringify(res.body));
+    assert.strictEqual(res.body.code, 'LEDGER_UNREACHABLE');
+  });
+
+  it('a balance asked with Redis down: 503 LEDGER_UNREACHABLE with Retry-After, never node_redis\'s message', async () => {
+    const res = await require('supertest')(`http://127.0.0.1:${PORT}`).get('/balance').set('X-CH-Key', CALLER);
+    assert.strictEqual(res.status, 503, JSON.stringify(res.body));
+    assert.strictEqual(res.body.code, 'LEDGER_UNREACHABLE');
+    assert.strictEqual(res.headers['retry-after'], '5');
+    assert.ok(!/NR_CLOSED|connection/i.test(res.body.message), res.body.message);
+  });
+
+  it('bills again once Redis is back, once per call (the refused call was never charged)', async () => {
     await proxy.up();
     proxyUp = true;
     await new Promise((r) => setTimeout(r, 3000));   // longer than the capped reconnect delay

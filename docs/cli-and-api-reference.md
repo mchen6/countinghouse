@@ -125,17 +125,29 @@ a module passes on from a part's call is the module's answer (kind
 address over `--unauthRateLimit`, a key or session with as many
 subscriptions open as it may have (`TOO_MANY_SUBSCRIPTIONS`), the
 runtime at its limit (`RUNTIME_BUSY`) or with as many subscriptions open as
-it allows (`SUBSCRIPTIONS_FULL`), and a local usage ledger that can't be
-used (`LEDGER_UNREADABLE`, retryable: it can't be read right now;
-`LEDGER_CORRUPT`, not retryable: it is corrupt and this runtime holds no
-copy of it, so it must be repaired as the runtime's log says) -- is the
-JSON-RPC error -32000, the catalogue's message (or the subscription limit's
-own), and the same keys in its `error.data`. A single request's is sent
-with its code's HTTP status, 429 (503 for `RUNTIME_BUSY`,
-`SUBSCRIPTIONS_FULL` and `LEDGER_UNREADABLE`, 500 for `LEDGER_CORRUPT`),
-and `Retry-After` when a hint was written (never for the ledger's two). A
-`tools/call` refused for the ledger is a tool error result with the same
-code; a balance asked for answers the same codes. A legacy batch stays 200,
+it allows (`SUBSCRIPTIONS_FULL`), and a usage ledger that can't record a
+charge (`LEDGER_UNREADABLE`, retryable: the local ledger can't be read right
+now; `LEDGER_CORRUPT`, not retryable: it is corrupt and this runtime holds
+no copy of it, so it must be repaired as the runtime's log says;
+`LEDGER_UNREACHABLE`, retryable: Redis can't be reached, or just failed a
+charge; `LEDGER_UNWRITABLE`, retryable: the local ledger's write just
+failed; `LEDGER_RECORD_INVALID`, not retryable: this key's own record can't
+be charged until the operator repairs it) -- is the JSON-RPC error -32000,
+the catalogue's message (or the subscription limit's own), and the same
+keys in its `error.data`. A single request's is sent with its code's HTTP
+status, 429 (503 for `RUNTIME_BUSY`, `SUBSCRIPTIONS_FULL`,
+`LEDGER_UNREADABLE`, `LEDGER_UNREACHABLE` and `LEDGER_UNWRITABLE`, 500 for
+`LEDGER_CORRUPT` and `LEDGER_RECORD_INVALID`), and `Retry-After` when a
+hint was written (5 s for `LEDGER_UNREACHABLE` and `LEDGER_UNWRITABLE`,
+whose texts also end "retry shortly"; none for the other ledger codes). A
+billed `tools/call` refused for the ledger is a tool error result with the
+same code, and a billed HTTP invoke-action is answered with the code's HTTP
+status and `{code}`, each refused before it runs; a balance asked for
+answers the same codes. A billed call refused for the ledger is not counted
+by the per-key limiter; the server-wide limit still counts it, as it counts
+every call. Under Redis ACLs, the runtime's user needs write access to the
+key `countinghouse:metering-probe`: the ledger's mark is cleared by writing
+it. A legacy batch stays 200,
 with `Retry-After` the longest hint among its limited messages.
 
 **Module names.** A load (`/load-module`, `countinghouse_load_module`, `--loadModule`, the registry at startup, restarts) must use the module's package.json name; any other name is refused with `MODULE_NAME_MISMATCH`. `POST /load-module` may leave `name` out, and then uses the package.json name.

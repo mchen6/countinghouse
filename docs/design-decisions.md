@@ -137,11 +137,14 @@ not expected to deviate from without deliberately revisiting them.
   main thread being the one to notice first.
 - **D5 — metering must not create a blind spot.** The direct path bypasses
   the main thread for data, but not for billing: every call is still
-  metered, via a synchronous request/reply back to the main thread (not
-  fire-and-forget) so the callee only replies to the original caller once
-  billing has actually landed. See "Billing authority" above for how this
-  combines with the main-thread-routed path's own metering to avoid
-  double-charging.
+  metered, via a request/reply back to the main thread (not
+  fire-and-forget), and a hop doesn't start while its charge can't be
+  recorded. The charge is waited for at most 500 ms: past it the callee
+  replies with its billing pending, and a charge that then fails is logged
+  and that call goes unbilled (lib/metering/charge-bound.js); the next
+  billed call is refused until the ledger answers. See "Billing authority"
+  above for how this combines with the main-thread-routed path's own
+  metering to avoid double-charging.
 
 ## Every entry path gets a row before it ships
 

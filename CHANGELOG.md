@@ -20,6 +20,28 @@ the auth config.
 - `countinghouse_usage_report` in a session's own runtime (ch-local's per-session profile) covers that session's calls since its runtime started, not every earlier session's: as on the shared runtime, each session's usage is its own. `countinghouse-usage --usageDir <dir>` still covers every session that writes there.
 - `countinghouse_overview` names each local store file that is corrupt and that this runtime holds no copy of, in a new `store` field, with what is refused and, under ch-local, the command that says what to do. It is shown only to an admin or in the user's own runtime, and `metering.json` only with `--meter`.
 
+
+### Changed — a billed call runs only while its charge can be recorded
+
+- A billed call (a tools/call other than a completion's action, an
+  invoke-action, a job's run, a hop) is refused retryably before it runs
+  while its charge can't be recorded: `LEDGER_UNREACHABLE` (Redis can't be
+  reached, or just failed a charge) and `LEDGER_UNWRITABLE` (a local
+  ledger's write just failed), 503 with Retry-After 5 s and "retry shortly"
+  in the text. Before, with Redis down a billed call ran and was never
+  charged. An unbilled call is limited in memory and served, as before.
+- One key whose own usage record can't be charged (of the wrong type, a
+  free-call record that isn't JSON, or a balance that isn't a number Redis
+  can add to) has its billed calls refused with
+  `LEDGER_RECORD_INVALID` (not retryable) until the operator repairs it;
+  other keys are served. The log names the record by the key's
+  fingerprint.
+- `GET /balance` with Redis unreachable answers `LEDGER_UNREACHABLE`, never
+  the Redis client's own error.
+- A charge lost after its call ran is logged by the key's fingerprint, the
+  tool and the amount; the ledger is marked and the next billed call is
+  refused until a probe (at most one a second) finds it recording again.
+  The metering client's commands have a 3 s deadline.
 ### Changed — a module's name maps to one data folder on every system
 
 A module whose name has a part that ends in a dot or a space ("my-tool."), has
