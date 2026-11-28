@@ -23,7 +23,7 @@ function tmpStore() {
 // The announcements in a store (#150): each process's own file, all in its
 // name, .lock.waiting.<pid>-<startId>-<since>; its freshness, `at`, the
 // file's mtime.
-const announcements = (dir) => fs.readdirSync(dir).map((n) => /^\.lock\.waiting\.(\d+)-([tm]\d+)-(\d+)$/.exec(n)).filter((m) => m != null).map((m) => {
+const announcements = (dir) => fs.readdirSync(dir).map((n) => /^\.lock\.waiting\.(\d+)-([tm]-?\d+)-(-?\d+)$/.exec(n)).filter((m) => m != null).map((m) => {
   try { return {pid: Number(m[1]), startId: m[2], since: Number(m[3]), at: fs.statSync(path.join(dir, m[0])).mtimeMs}; } catch (e) { return null; }
 }).filter((w) => w != null);
 const announceAs = (dir, pid, ageMs, startId, since = Date.now() - ageMs) => {
@@ -581,8 +581,8 @@ describe('store 04: a waiter is not starved (#150)', function() {
     let calls = 0;
     const realWrite = fs.writeFileSync;
     fs.writeFileSync = function(file, ...rest) {
-      // the second attempt at the lock file fails with an I/O error
-      if (String(file).endsWith(`${path.sep}.lock`) && ++calls === 2) throw Object.assign(new Error('EIO: i/o error'), {code: 'EIO'});
+      // its first making of the lock, once the holder has let go (none is made while the lock is there), fails with an I/O error
+      if (/^\.lock(\..*\.tmp)?$/.test(path.basename(String(file))) && ++calls === 1) throw Object.assign(new Error('EIO: i/o error'), {code: 'EIO'});
       return realWrite.call(this, file, ...rest);
     };
     try {
@@ -2981,7 +2981,8 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
     const dir = relTmp.mkdtemp('ch-store04-rel-');
     const write = fs.writeFileSync;
     fs.writeFileSync = function(target, data, opts) {
-      if (path.basename(String(target)) === '.lock' && opts != null && opts.flag === 'wx') throw Object.assign(new Error(`EACCES: permission denied, open '${target}'`), {code: 'EACCES', syscall: 'open'});
+      // (making the lock: its temporary file first, or the lock itself where no link is made)
+      if (/^\.lock(\..*\.tmp)?$/.test(path.basename(String(target))) && opts != null && opts.flag === 'wx') throw Object.assign(new Error(`EACCES: permission denied, open '${target}'`), {code: 'EACCES', syscall: 'open'});
       return write.apply(this, arguments);
     };
     try {
@@ -3019,7 +3020,7 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
     const dir = relTmp.mkdtemp('ch-store04-rel-');
     const write = fs.writeFileSync;
     fs.writeFileSync = function(target, data, opts) {
-      if (path.basename(String(target)) === '.lock' && opts != null && opts.flag === 'wx') throw Object.assign(new Error(`EPERM: operation not permitted, open '${target}'`), {code: 'EPERM', syscall: 'open'});
+      if (/^\.lock(\..*\.tmp)?$/.test(path.basename(String(target))) && opts != null && opts.flag === 'wx') throw Object.assign(new Error(`EPERM: operation not permitted, open '${target}'`), {code: 'EPERM', syscall: 'open'});
       return write.apply(this, arguments);
     };
     try {
@@ -3137,7 +3138,7 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
 
   it('a release\'s retries past the point others may take the lock for stale remove nothing', async () => {
     const dir = relTmp.mkdtemp('ch-store04-rel-');
-    // (the point shortened to 300 ms after the acquisition; the retries' time 1 s)
+    // (the point shortened to 5 s after the acquisition; the retries' time 1 s)
     require(MOD).forTests.releaseTimes({retryMs: 1000, cleanupMs: 60000, staleCapMs: 5000});
     let refuse = false;
     refusing.refuse = () => refuse;
@@ -3772,12 +3773,31 @@ describe('store 04: the takeover\'s exclusion', function() {
     const sleeper = await sleeperProcess();
     try {
       plantDeadLock(dir);
-      // (another process, its start in ms and negative, as off Linux on a clock before 1970: alive by its pid)
-      fs.writeFileSync(path.join(dir, `.lock.takeover.${sleeper.pid}-m-5000-aa-1-${Date.now()}`), '');
+      // (another process, its start in ms and negative, as off Linux on a clock before 1970: alive by its pid;
+      // its file dated past a live holder's age, so only its name, read, can make it count)
+      const file = path.join(dir, `.lock.takeover.${sleeper.pid}-m-5000-aa-1-${Date.now()}`);
+      fs.writeFileSync(file, '');
+      const old = (Date.now() - 3600 * 1000) / 1000;
+      fs.utimesSync(file, old, old);
       assert.throws(() => withStoreLock(dir, () => {}, 200), /is held by pid|not yet readable/, 'a live intent with a negative start was not counted');
     } finally {
       sleeper.kill();
     }
+  });
+
+  it('a listing that lacks the taker\'s own intent (a stale listing) is not trusted: no takeover on it', () => {
+    const dir = exTmp.mkdtemp('ch-store04-ex-');
+    plantDeadLock(dir);
+    const before = fs.readFileSync(path.join(dir, '.lock'), 'utf8');
+    const readdir = fs.readdirSync;
+    // (the store's listings, every one, made without any takeover intent in them)
+    fs.readdirSync = function(t) { const r = readdir.apply(this, arguments); return String(t) === dir ? r.filter((n) => !n.startsWith('.lock.takeover.')) : r; };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 100));
+    } finally {
+      fs.readdirSync = readdir;
+    }
+    assert.strictEqual(fs.readFileSync(path.join(dir, '.lock'), 'utf8'), before, 'a takeover went on from a listing without its own intent');
   });
 
   it('a waiter\'s announcement made on a clock before 1970 (its since negative) is still read', async () => {
@@ -3807,4 +3827,498 @@ describe('store 04: the takeover\'s exclusion', function() {
     }
   });
   exTmp.hooks();
+});
+
+// The lock's creation: a lock is never seen empty. Before, it was made by an
+// exclusive open and then a write, and an empty lock older than STALE_MS is
+// stale: a creator stalled between the two was taken over, then wrote its
+// content into the file removed under it and went on holding. Here that
+// interleaving, with real processes: the creator's create made of the same
+// two system calls with a stall between them (its effect, the empty file's
+// age, made at once), waited for only where the code reaches it.
+describe('store 04: the lock\'s creation', function() {
+  this.timeout(60000);
+  const crTmp = require('../helpers/test-tmp').forFile(['ch-store04-cr-']);
+  const CREATOR = `
+    const fs = require('fs'); const path = require('path');
+    const [MOD, DIR] = process.argv.slice(1);
+    const sig = (n) => path.join(DIR, 'sig.' + n);
+    const sl = new Int32Array(new SharedArrayBuffer(4));
+    const waitFor = (n, ms = 20000) => { const t = Date.now() + ms; while (!fs.existsSync(sig(n))) { if (Date.now() > t) throw new Error('timed out waiting for ' + n); Atomics.wait(sl, 0, 0, 2); } };
+    const say = (n) => fs.writeFileSync(sig(n), String(process.pid));
+    const realWrite = fs.writeFileSync;
+    let stalled = false;
+    // (its exclusive create of the lock: the open, a stall, then the write)
+    fs.writeFileSync = function(t, d, o) {
+      if (!stalled && path.basename(String(t)) === '.lock' && o && o.flag === 'wx') {
+        stalled = true;
+        const fd = fs.openSync(t, 'wx', o.mode);
+        say('C-opened'); waitFor('C-go');
+        try { fs.writeSync(fd, d); } finally { fs.closeSync(fd); }
+        return;
+      }
+      return realWrite.apply(this, arguments);
+    };
+    // (found the lock there, after its stall: says so, so the test needn't wait a fixed time)
+    const realLstat = fs.lstatSync;
+    fs.lstatSync = function(t) { const r = realLstat.apply(this, arguments); if (stalled && path.basename(String(t)) === '.lock') say('C-busy'); return r; };
+    const {withStoreLock} = require(MOD);
+    const marker = path.join(DIR, 'holder.marker');
+    let result = 'alone';
+    withStoreLock(DIR, () => {
+      try { realWrite(marker, String(process.pid), {flag: 'wx'}); } catch (e) { if (e.code === 'EEXIST') result = 'two holders'; else throw e; }
+      say('C-holding');
+      waitFor('C-release');
+      if (result === 'alone') fs.unlinkSync(marker);
+    }, 30000);
+    process.stdout.write(result);
+  `;
+  const TAKER = `
+    const fs = require('fs'); const path = require('path');
+    const [MOD, DIR] = process.argv.slice(1);
+    const sig = (n) => path.join(DIR, 'sig.' + n);
+    const sl = new Int32Array(new SharedArrayBuffer(4));
+    const waitFor = (n, ms = 20000) => { const t = Date.now() + ms; while (!fs.existsSync(sig(n))) { if (Date.now() > t) throw new Error('timed out waiting for ' + n); Atomics.wait(sl, 0, 0, 2); } };
+    const say = (n) => fs.writeFileSync(sig(n), String(process.pid));
+    // (found the lock there: says so)
+    const realLstat = fs.lstatSync;
+    fs.lstatSync = function(t) { const r = realLstat.apply(this, arguments); if (path.basename(String(t)) === '.lock') say('T-busy'); return r; };
+    const {withStoreLock} = require(MOD);
+    const marker = path.join(DIR, 'holder.marker');
+    let result = 'alone';
+    withStoreLock(DIR, () => {
+      try { fs.writeFileSync(marker, String(process.pid), {flag: 'wx'}); } catch (e) { if (e.code === 'EEXIST') result = 'two holders'; else throw e; }
+      say('T-holding');
+      waitFor('T-release');
+      if (result === 'alone') fs.unlinkSync(marker);
+    }, 30000);
+    process.stdout.write(result);
+  `;
+  const sigOf = (dir, n) => path.join(dir, `sig.${n}`);
+  const until = async (dir, names, ms = 15000) => {
+    const end = Date.now() + ms;
+    const seen = () => names.some((n) => fs.existsSync(sigOf(dir, n)));
+    while (!seen() && Date.now() < end) await new Promise((resolve) => setTimeout(resolve, 2));
+    return seen();
+  };
+
+  it('a creator stalled between making the lock and writing it: never two holders', async () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const kids = [];
+    const run = (role, script) => {
+      const k = spawn(process.execPath, ['-e', script, MOD, dir], {stdio: ['ignore', 'pipe', 'pipe']});
+      kids.push(k);
+      let out = '', err = '';
+      k.stdout.on('data', (c) => { out += c; });
+      k.stderr.on('data', (c) => { err += c; });
+      return new Promise((resolve) => k.on('close', (code) => resolve({role, code, out, err})));
+    };
+    const say = (n) => fs.writeFileSync(sigOf(dir, n), 'go');
+    try {
+      const c = run('C', CREATOR);
+      const opened = await until(dir, ['C-opened', 'C-holding']);
+      assert.ok(opened, 'the creator never made the lock');
+      // (its stall, 20 s, made at once: the empty lock as old as that stall would leave it)
+      if (fs.existsSync(sigOf(dir, 'C-opened')) && !fs.existsSync(sigOf(dir, 'C-holding'))) {
+        const old = (Date.now() - 20000) / 1000;
+        fs.utimesSync(path.join(dir, '.lock'), old, old);
+      }
+      const t = run('T', TAKER);
+      assert.ok(await until(dir, ['T-holding', 'T-busy']), 'the taker neither held nor found the lock held');
+      // (the creator resumes while the taker holds: it holds too, or waits)
+      say('C-go');
+      assert.ok(await until(dir, ['C-holding', 'C-busy']), 'the creator neither held nor found the lock held');
+      say('T-release');
+      await until(dir, ['C-holding']);
+      say('C-release');
+      const results = await Promise.all([c, t]);
+      for (const r of results) assert.strictEqual(r.code, 0, `${r.role} failed: ${r.err}`);
+      assert.deepStrictEqual(results.map((r) => `${r.role}: ${r.out}`), ['C: alone', 'T: alone'], 'two processes held the store lock at once');
+    } finally {
+      for (const k of kids) if (k.exitCode == null && k.signalCode == null) k.kill();
+    }
+  });
+
+  const crIntents = (dir, re) => fs.readdirSync(dir).filter((n) => re.test(n));
+  const TMP = /^\.lock\..*\.tmp$/;
+
+  it('the lock is made with its content whole: its temporary file goes, and nothing empty is ever the lock', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const seen = [];
+    const link = fs.linkSync;
+    fs.linkSync = function(from, to) { seen.push(fs.readFileSync(from, 'utf8')); return link.apply(this, arguments); };
+    try {
+      withStoreLock(dir, () => { assert.ok(JSON.parse(fs.readFileSync(path.join(dir, '.lock'), 'utf8')).pid === process.pid, 'the lock is not this process\'s'); });
+    } finally {
+      fs.linkSync = link;
+    }
+    assert.strictEqual(seen.length, 1, 'the lock was not linked into place');
+    assert.ok(seen[0].length > 0, 'an empty file was linked as the lock');
+    assert.deepStrictEqual(crIntents(dir, TMP), [], 'its temporary file stayed');
+  });
+
+  it('where the filesystem makes no hard links (ENOTSUP), the lock is made as before', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const link = fs.linkSync;
+    fs.linkSync = () => { throw Object.assign(new Error('ENOTSUP: operation not supported on socket, link'), {code: 'ENOTSUP', syscall: 'link'}); };
+    try {
+      let held = null;
+      withStoreLock(dir, () => { held = JSON.parse(fs.readFileSync(path.join(dir, '.lock'), 'utf8')).pid; });
+      assert.strictEqual(held, process.pid);
+    } finally {
+      fs.linkSync = link;
+    }
+    assert.deepStrictEqual(crIntents(dir, TMP), [], 'its temporary file stayed');
+  });
+
+  it('a temporary file whose removal was refused is removed at the next attempt', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const unlink = fs.unlinkSync;
+    let refused = 0;
+    fs.unlinkSync = function(t) { if (TMP.test(path.basename(String(t))) && refused === 0) { refused++; throw Object.assign(new Error('EPERM: operation not permitted, unlink'), {code: 'EPERM', syscall: 'unlink'}); } return unlink.apply(this, arguments); };
+    try {
+      withStoreLock(dir, () => {});
+      assert.strictEqual(refused, 1, 'the removal was not refused as set up');
+      assert.strictEqual(crIntents(dir, TMP).length, 1, 'no temporary file was left');
+      withStoreLock(dir, () => {});
+      assert.deepStrictEqual(crIntents(dir, TMP), [], 'the left temporary file was never removed');
+    } finally {
+      fs.unlinkSync = unlink;
+    }
+  });
+
+  it('a dead process\'s temporary lock file is removed by the next reader', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const dead = Number(spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], {encoding: 'utf8'}).stdout);
+    const name = `.lock.${dead}-${process.platform === 'linux' ? 't1' : 'm1'}-aa-1.tmp`;
+    fs.writeFileSync(path.join(dir, name), '{}');
+    withStoreLock(dir, () => {});
+    assert.ok(!fs.existsSync(path.join(dir, name)), 'a dead process\'s temporary lock file stayed');
+  });
+
+  it('a link refused (Windows: a lock name still being deleted) is a refusal: the wait ends saying it was still refused, never the old create', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const store = require(MOD).forTests;
+    store.refuseAsWindows(true);
+    const link = fs.linkSync;
+    let fellBack = false;
+    const write = fs.writeFileSync;
+    // (a link to the lock's name refused, as a name still being deleted; a link elsewhere, the probe's, made)
+    fs.linkSync = function(from, to) { if (path.basename(String(to)) === '.lock') throw Object.assign(new Error(`EPERM: operation not permitted, link '${from}' -> '${to}'`), {code: 'EPERM', syscall: 'link'}); return link.apply(this, arguments); };
+    fs.writeFileSync = function(t, d, o) { if (path.basename(String(t)) === '.lock' && o && o.flag === 'wx') fellBack = true; return write.apply(this, arguments); };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 100), /EPERM: operation not permitted, link .* \(the store lock .* was still refused after 100 ms\)/);
+    } finally {
+      fs.linkSync = link;
+      fs.writeFileSync = write;
+      store.refuseAsWindows(false);
+    }
+    assert.strictEqual(fellBack, false, 'a refused link fell back to the create that can leave an empty lock');
+  });
+
+  it('a link that fails for another reason is thrown, never the old create', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const link = fs.linkSync;
+    fs.linkSync = () => { throw Object.assign(new Error('EIO: i/o error, link'), {code: 'EIO', syscall: 'link'}); };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 100), /EIO/);
+    } finally {
+      fs.linkSync = link;
+    }
+    assert.ok(!fs.existsSync(path.join(dir, '.lock')), 'the old create made the lock');
+  });
+
+  it('a temporary file gone before its link (another reader removed it) is made again once', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const link = fs.linkSync;
+    let gone = 0;
+    let fellBack = false;
+    const write = fs.writeFileSync;
+    fs.linkSync = function(from, to) { if (gone === 0) { gone++; fs.unlinkSync(from); } return link.apply(this, arguments); };
+    fs.writeFileSync = function(t, d, o) { if (path.basename(String(t)) === '.lock' && o && o.flag === 'wx') fellBack = true; return write.apply(this, arguments); };
+    try {
+      assert.doesNotThrow(() => withStoreLock(dir, () => {}, 500));
+    } finally {
+      fs.linkSync = link;
+      fs.writeFileSync = write;
+    }
+    assert.strictEqual(gone, 1);
+    assert.strictEqual(fellBack, false, 'a vanished temporary file fell back to the old create');
+  });
+
+  it('a creator stalled between writing its content and linking it into place: never two holders', async () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const STALLED = CREATOR.replace(`fs.writeFileSync = function(t, d, o) {`, `const realLink = fs.linkSync;
+    fs.linkSync = function(from, to) { if (!stalled) { stalled = true; say('C-opened'); waitFor('C-go'); } return realLink.apply(this, arguments); };
+    fs.writeFileSync = function(t, d, o) {`);
+    assert.notStrictEqual(STALLED, CREATOR, 'the stall at the link was not set up');
+    const kids = [];
+    const run = (role, script) => {
+      const k = spawn(process.execPath, ['-e', script, MOD, dir], {stdio: ['ignore', 'pipe', 'pipe']});
+      kids.push(k);
+      let out = '', err = '';
+      k.stdout.on('data', (c) => { out += c; });
+      k.stderr.on('data', (c) => { err += c; });
+      return new Promise((resolve) => k.on('close', (code) => resolve({role, code, out, err})));
+    };
+    const say = (n) => fs.writeFileSync(sigOf(dir, n), 'go');
+    try {
+      const c = run('C', STALLED);
+      assert.ok(await until(dir, ['C-opened']), 'the creator never reached its link');
+      const t = run('T', TAKER);
+      assert.ok(await until(dir, ['T-holding', 'T-busy']), 'the taker neither held nor found the lock held');
+      say('C-go');
+      assert.ok(await until(dir, ['C-holding', 'C-busy']), 'the creator neither held nor found the lock held');
+      say('T-release');
+      await until(dir, ['C-holding']);
+      say('C-release');
+      const results = await Promise.all([c, t]);
+      for (const r of results) assert.strictEqual(r.code, 0, `${r.role} failed: ${r.err}`);
+      assert.deepStrictEqual(results.map((r) => `${r.role}: ${r.out}`), ['C: alone', 'T: alone'], 'two processes held the store lock at once');
+    } finally {
+      for (const k of kids) if (k.exitCode == null && k.signalCode == null) k.kill();
+    }
+  });
+
+  it('on a store made read-only, a temporary file never made is never tracked (no growing list to retry)', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const write = fs.writeFileSync, unlink = fs.unlinkSync;
+    fs.writeFileSync = function(t, d, o) { if (TMP.test(path.basename(String(t)))) throw Object.assign(new Error(`EROFS: read-only file system, open '${t}'`), {code: 'EROFS', syscall: 'open'}); return write.apply(this, arguments); };
+    fs.unlinkSync = function(t) { if (TMP.test(path.basename(String(t)))) throw Object.assign(new Error('EROFS: read-only file system, unlink'), {code: 'EROFS', syscall: 'unlink'}); return unlink.apply(this, arguments); };
+    try {
+      for (let k = 0; k < 3; k++) assert.throws(() => withStoreLock(dir, () => {}, 50), /EROFS/);
+    } finally {
+      fs.writeFileSync = write;
+      fs.unlinkSync = unlink;
+    }
+    assert.deepStrictEqual(require(MOD).forTests.leftTmps(), [], 'a temporary file never made was tracked');
+  });
+
+  it('a temporary file made and then not written is removed, nothing left', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const write = fs.writeFileSync;
+    fs.writeFileSync = function(t, d, o) { if (TMP.test(path.basename(String(t)))) { write.call(this, t, '', o); throw Object.assign(new Error('ENOSPC: no space left on device, write'), {code: 'ENOSPC', syscall: 'write'}); } return write.apply(this, arguments); };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 50), /ENOSPC/);
+    } finally {
+      fs.writeFileSync = write;
+    }
+    assert.deepStrictEqual(crIntents(dir, TMP), [], 'a temporary file stayed');
+  });
+
+  it('once a link has been made in a store, a link answered "unsupported" there is thrown, never the old create', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    withStoreLock(dir, () => {});
+    const link = fs.linkSync;
+    fs.linkSync = () => { throw Object.assign(new Error('EOPNOTSUPP: operation not supported, link'), {code: 'EOPNOTSUPP', syscall: 'link'}); };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 50), /EOPNOTSUPP/);
+    } finally {
+      fs.linkSync = link;
+    }
+  });
+
+  for (const code of ['EPERM', 'EISDIR']) {
+    it(`a filesystem that makes no hard links, answering ${code} (${code === 'EPERM' ? 'FAT, off Windows' : 'FAT, as Windows says it'}), gets the lock made as before`, () => {
+      const dir = crTmp.mkdtemp('ch-store04-cr-');
+      const link = fs.linkSync;
+      fs.linkSync = () => { throw Object.assign(new Error(`${code}: link`), {code, syscall: 'link'}); };
+      try {
+        let held = null;
+        withStoreLock(dir, () => { held = JSON.parse(fs.readFileSync(path.join(dir, '.lock'), 'utf8')).pid; });
+        assert.strictEqual(held, process.pid);
+      } finally {
+        fs.linkSync = link;
+      }
+    });
+  }
+
+  it('on Windows, a link refused EPERM where links can\'t be made at all (the probe refused too): the lock made as before', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const store = require(MOD).forTests;
+    store.refuseAsWindows(true);
+    const link = fs.linkSync;
+    fs.linkSync = (from, to) => { throw Object.assign(new Error(`EPERM: operation not permitted, link '${from}' -> '${to}'`), {code: 'EPERM', syscall: 'link'}); };
+    try {
+      let held = null;
+      withStoreLock(dir, () => { held = JSON.parse(fs.readFileSync(path.join(dir, '.lock'), 'utf8')).pid; });
+      assert.strictEqual(held, process.pid);
+    } finally {
+      fs.linkSync = link;
+      store.refuseAsWindows(false);
+    }
+  });
+
+  it('a link made but answered "exists" (a network filesystem\'s lost reply): taken back under the exclusion, never read as another\'s', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const link = fs.linkSync;
+    let lost = 0;
+    fs.linkSync = function(from, to) { const r = link.apply(this, arguments); if (lost === 0 && path.basename(String(to)) === '.lock') { lost++; throw Object.assign(new Error('EEXIST: file already exists, link'), {code: 'EEXIST', syscall: 'link'}); } return r; };
+    try {
+      assert.doesNotThrow(() => withStoreLock(dir, () => {}, 500));
+    } finally {
+      fs.linkSync = link;
+    }
+    assert.strictEqual(lost, 1);
+  });
+
+  it('a busy lock costs one call: no temporary file is made while the lock is there', async () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const sleeper = await sleeperProcess();
+    const write = fs.writeFileSync;
+    let made = 0;
+    fs.writeFileSync = function(t, d, o) { if (TMP.test(path.basename(String(t)))) made++; return write.apply(this, arguments); };
+    try {
+      write(path.join(dir, '.lock'), JSON.stringify({pid: sleeper.pid, startId: sleeper.startId, instance: 'aa', n: 1, at: Date.now()}));
+      assert.throws(() => withStoreLock(dir, () => {}, 100), /is held by pid/);
+    } finally {
+      fs.writeFileSync = write;
+      sleeper.kill();
+    }
+    assert.strictEqual(made, 0, `${made} temporary file(s) made while the lock was there`);
+  });
+
+  it('a lock already stale when it is linked (its maker stalled past the point) is removed under the takeover\'s exclusion, and a later attempt makes a fresh one', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const link = fs.linkSync, write = fs.writeFileSync;
+    let links = 0, takeovers = 0;
+    // (its maker stalled past the point at its first link: the wall clock moved on 200 s there)
+    fs.linkSync = function(from, to) { if (path.basename(String(to)) === '.lock' && ++links === 1) require(MOD).forTests.clock({wall: 200000}); return link.apply(this, arguments); };
+    fs.writeFileSync = function(t, d, o) { if (path.basename(String(t)).startsWith('.lock.takeover.')) takeovers++; return write.apply(this, arguments); };
+    try {
+      assert.doesNotThrow(() => withStoreLock(dir, () => {}, 2000));
+    } finally {
+      fs.linkSync = link;
+      fs.writeFileSync = write;
+      require(MOD).forTests.clock(null);
+    }
+    assert.ok(links >= 2, 'a lock stale at its birth was kept');
+    assert.ok(takeovers >= 1, 'the stale lock was removed outside the takeover\'s exclusion');
+  });
+
+  it('a live process\'s temporary lock file survives a reader', async () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const sleeper = await sleeperProcess();
+    try {
+      const name = `.lock.${sleeper.pid}-${sleeper.startId}-aa-1.tmp`;
+      fs.writeFileSync(path.join(dir, name), '{}');
+      withStoreLock(dir, () => {});
+      assert.ok(fs.existsSync(path.join(dir, name)), 'a live process\'s temporary lock file was removed');
+    } finally {
+      sleeper.kill();
+    }
+  });
+
+  it('a store found to make no links is tried again after a while: until then no temporary file is made; a link that works moves it back', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const link = fs.linkSync, write = fs.writeFileSync;
+    let unsupported = true, made = 0, links = 0;
+    fs.linkSync = function(from, to) { links++; if (unsupported) throw Object.assign(new Error('ENOTSUP: link'), {code: 'ENOTSUP', syscall: 'link'}); return link.apply(this, arguments); };
+    fs.writeFileSync = function(t, d, o) { if (TMP.test(path.basename(String(t)))) made++; return write.apply(this, arguments); };
+    try {
+      withStoreLock(dir, () => {});
+      const madeFirst = made;
+      withStoreLock(dir, () => {});
+      assert.strictEqual(made, madeFirst, 'a temporary file was made in a store found to make no links');
+      unsupported = false;
+      require(MOD).forTests.clock({mono: 61000});
+      const linksBefore = links;
+      withStoreLock(dir, () => {});
+      assert.ok(links > linksBefore, 'no link was tried again after a while');
+    } finally {
+      fs.linkSync = link;
+      fs.writeFileSync = write;
+      require(MOD).forTests.clock(null);
+    }
+  });
+
+  it('a temporary name found taken twice in a row fails saying so, word for word', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const write = fs.writeFileSync;
+    let last = null;
+    fs.writeFileSync = function(t, d, o) { if (TMP.test(path.basename(String(t))) && o && o.flag === 'wx') { last = String(t); throw Object.assign(new Error(`EEXIST: file already exists, open '${t}'`), {code: 'EEXIST', syscall: 'open'}); } return write.apply(this, arguments); };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 100), (e) => e.code === 'ELOCKTMP' && e.message === `the store lock's temporary file ${last} was already there twice in a row; if no countinghouse process is running, remove it and try again`);
+    } finally {
+      fs.writeFileSync = write;
+    }
+  });
+
+  it('the probe\'s file, its removal refused, is tracked and removed later', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const store = require(MOD).forTests;
+    store.refuseAsWindows(true);
+    const link = fs.linkSync, unlink = fs.unlinkSync;
+    let refuseProbe = true;
+    fs.linkSync = function(from, to) { if (path.basename(String(to)) === '.lock') throw Object.assign(new Error('EPERM: operation not permitted, link'), {code: 'EPERM', syscall: 'link'}); return link.apply(this, arguments); };
+    fs.unlinkSync = function(t) { if (refuseProbe && String(t).endsWith('.probe')) throw Object.assign(new Error('EPERM: operation not permitted, unlink'), {code: 'EPERM', syscall: 'unlink'}); return unlink.apply(this, arguments); };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 50), /was still refused/);
+      assert.ok(store.leftTmps().some((f) => f.endsWith('.probe')), 'the probe\'s file was not tracked');
+      refuseProbe = false;
+      fs.linkSync = link;
+      withStoreLock(dir, () => {});
+      assert.ok(!store.leftTmps().some((f) => f.endsWith('.probe')) && !fs.readdirSync(dir).some((n) => n.endsWith('.probe')), 'the probe\'s file stayed');
+    } finally {
+      fs.linkSync = link;
+      fs.unlinkSync = unlink;
+      store.refuseAsWindows(false);
+      store.stopReleases();
+    }
+  });
+
+  it('a link refused as a sharing violation (EBUSY: a scanner has the temporary file open) is a refusal: busy, tried again', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const store = require(MOD).forTests;
+    store.refuseAsWindows(true);
+    const link = fs.linkSync;
+    fs.linkSync = () => { throw Object.assign(new Error('EBUSY: resource busy or locked, link'), {code: 'EBUSY', syscall: 'link'}); };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 100), /EBUSY: resource busy or locked, link \(the store lock .* was still refused after 100 ms\)/);
+    } finally {
+      fs.linkSync = link;
+      store.refuseAsWindows(false);
+    }
+  });
+
+  it('a store found to make no links is said once, word for word, and not again when its link is tried again', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const logger = require(path.join(ROOT, 'lib', 'logger'));
+    const realW = logger.W;
+    const logged = [];
+    logger.W = (line) => { logged.push(String(line)); };
+    const link = fs.linkSync;
+    fs.linkSync = () => { throw Object.assign(new Error('ENOTSUP: link'), {code: 'ENOTSUP', syscall: 'link'}); };
+    try {
+      withStoreLock(dir, () => {});
+      withStoreLock(dir, () => {});
+      require(MOD).forTests.clock({mono: 61000});
+      withStoreLock(dir, () => {});
+    } finally {
+      fs.linkSync = link;
+      logger.W = realW;
+      require(MOD).forTests.clock(null);
+    }
+    const said = logged.filter((l) => l.includes('hard links'));
+    assert.deepStrictEqual(said, [`local store: ${dir} is on a filesystem that can't make hard links, so its lock is taken the old way there, which isn't safe against two processes at once; move the store to a filesystem that supports hard links (NTFS, ext4, APFS)`]);
+  });
+
+  for (const code of ['EXDEV', 'EACCES']) {
+    it(`a link refused ${code} (${code === 'EXDEV' ? 'some union filesystems' : 'a security profile'}) fails with that error: never the old create, no lock left`, () => {
+      const dir = crTmp.mkdtemp('ch-store04-cr-');
+      const link = fs.linkSync, write = fs.writeFileSync;
+      let fellBack = false;
+      fs.linkSync = () => { throw Object.assign(new Error(`${code}: link`), {code, syscall: 'link'}); };
+      fs.writeFileSync = function(t, d, o) { if (path.basename(String(t)) === '.lock' && o && o.flag === 'wx') fellBack = true; return write.apply(this, arguments); };
+      try {
+        assert.throws(() => withStoreLock(dir, () => {}, 100), (e) => e.code === code);
+      } finally {
+        fs.linkSync = link;
+        fs.writeFileSync = write;
+      }
+      assert.strictEqual(fellBack, false, `a link refused ${code} fell back to the old create`);
+      assert.ok(!fs.existsSync(path.join(dir, '.lock')), 'a lock was left');
+    });
+  }
+  crTmp.hooks();
 });

@@ -26,6 +26,7 @@ the auth config.
 - A call that fails as a crash, an untyped failure or a runtime error is now logged at error level without `--debug`, one line each: "a call failed: <module>/<action>: <code> (the module crashed | the module failed | a runtime error)", ending with the runtime's refusal before it when there was one. At most 5 lines per tool in 10 minutes, then one line saying how many more were left out since when. A module's own error answers are not logged, nor any input or module text. Task runs are logged the same way.
 - A runtime that met a Redis that was closing as it first connected could spin its main thread at full CPU and stop answering; it now fails the commands it had queued and keeps answering.
 - A store write now writes the whole new content before it replaces the file, so a full disk never truncates a store file: the file keeps what it held; a change to settings or stored data is written once a write can, and a usage charge that can't be written is reported as failed.
+- Local store: on a filesystem that refuses hard links with EXDEV (some union filesystems) or EACCES (a security profile), taking the store lock now fails with that error instead of falling back to the old way, which wasn't safe against two processes taking the lock at once.
 
 
 ### Changed — a billed call runs only while its charge can be recorded
