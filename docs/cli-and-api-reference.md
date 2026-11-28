@@ -125,8 +125,9 @@ a module passes on from a part's call is the module's answer (kind
 address over `--unauthRateLimit`, a key or session with as many
 subscriptions open as it may have (`TOO_MANY_SUBSCRIPTIONS`), the
 runtime at its limit (`RUNTIME_BUSY`) or with as many subscriptions open as
-it allows (`SUBSCRIPTIONS_FULL`), and a usage ledger that can't record a
-charge (`LEDGER_UNREADABLE`, retryable: the local ledger can't be read right
+it allows (`SUBSCRIPTIONS_FULL`), and, for a call or read that is charged
+(`--mcpToolCallCost` above 0) or a balance request, a usage ledger that
+can't record a charge (`LEDGER_UNREADABLE`, retryable: the local ledger can't be read right
 now; `LEDGER_CORRUPT`, not retryable: it is corrupt and this runtime holds
 no copy of it, so it must be repaired as the runtime's log says;
 `LEDGER_UNREACHABLE`, retryable: Redis can't be reached, or just failed a
@@ -140,7 +141,8 @@ status, 429 (503 for `RUNTIME_BUSY`, `SUBSCRIPTIONS_FULL`,
 `LEDGER_CORRUPT` and `LEDGER_RECORD_INVALID`), and `Retry-After` when a
 hint was written (5 s for `LEDGER_UNREACHABLE` and `LEDGER_UNWRITABLE`,
 whose texts also end "retry shortly"; none for the other ledger codes). A
-billed `tools/call` refused for the ledger is a tool error result with the
+call that costs nothing is never refused for the ledger. A billed
+`tools/call` refused for the ledger is a tool error result with the
 same code, and a billed HTTP invoke-action is answered with the code's HTTP
 status and `{code}`, each refused before it runs; a balance asked for
 answers the same codes. A billed call refused for the ledger is not counted
