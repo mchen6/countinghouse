@@ -240,15 +240,33 @@ for (const kind of ['local', 'redis']) {
         assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => f !== 'index.json').sort(), [`${young}.bin`]);
       });
 
-      it('a lock held by a live process is never taken over; one whose holder is gone is', async function() {
+      it('the sweep never takes the lock\'s own files for strays (its takeovers\' and its waiters\'), however old', async () => {
+        const b = open();
+        await b.ready;
+        const dir = dirOf();
+        // (a live process's: this one's, as another copy of the store lock would name them)
+        const {START_ID} = require('../../lib/store/json-file').forTests;
+        const names = [`.lock.takeover.${process.pid}-${START_ID}-ab-1-1`, `.lock.waiting.${process.pid}-${START_ID}-1`];
+        const hourAgo = new Date(Date.now() - 3600 * 1000);
+        for (const n of names) { fs.writeFileSync(path.join(dir, n), '', {mode: 0o600}); fs.utimesSync(path.join(dir, n), hourAgo, hourAgo); }
+        const other = open(LIMITS, roots[roots.length - 1]);
+        await other.ready;
+        for (const n of names) assert.ok(fs.existsSync(path.join(dir, n)), `the sweep removed ${n}`);
+      });
+
+      it('a lock held by a live process is not taken over until it is older than the store lock allows a live holder; one whose holder is gone is', async function() {
         this.timeout(20000);
         const b = open();
         await b.ready;
         const lock = path.join(dirOf(), '.lock');
         const child = require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], {stdio: 'ignore'});
         try {
-          fs.writeFileSync(lock, JSON.stringify({pid: child.pid, startMs: 1, at: Date.now() - 3600 * 1000}), {mode: 0o600});
+          fs.writeFileSync(lock, JSON.stringify({pid: child.pid, at: Date.now()}), {mode: 0o600});
           await assert.rejects(b.put(item(OWNER_A, 10)), /held by a live process/);
+          // (a live holder's lock past 120 s: a hung holder, taken over, as the store lock's is)
+          fs.writeFileSync(lock, JSON.stringify({pid: child.pid, at: Date.now() - 3600 * 1000}), {mode: 0o600});
+          assert.notStrictEqual((await b.put(item(OWNER_A, 10))).id, null, 'a hung live holder\'s lock was never taken over');
+          fs.writeFileSync(lock, JSON.stringify({pid: child.pid, at: Date.now()}), {mode: 0o600});
         } finally {
           child.kill('SIGKILL');
         }
