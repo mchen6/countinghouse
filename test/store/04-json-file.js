@@ -20,6 +20,33 @@ function tmpStore() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'ch-store-04-'));
 }
 
+// The announcements in a store (#150): each process's own file, all in its
+// name, .lock.waiting.<pid>-<startId>-<since>; its freshness, `at`, the
+// file's mtime.
+const announcements = (dir) => fs.readdirSync(dir).map((n) => /^\.lock\.waiting\.(\d+)-([tm]\d+)-(\d+)$/.exec(n)).filter((m) => m != null).map((m) => {
+  try { return {pid: Number(m[1]), startId: m[2], since: Number(m[3]), at: fs.statSync(path.join(dir, m[0])).mtimeMs}; } catch (e) { return null; }
+}).filter((w) => w != null);
+const announceAs = (dir, pid, ageMs, startId, since = Date.now() - ageMs) => {
+  const file = path.join(dir, `.lock.waiting.${pid}-${startId}-${since}`);
+  const at = Date.now() - ageMs;
+  fs.writeFileSync(file, '');
+  fs.utimesSync(file, at / 1000, at / 1000);
+};
+// a process's start as an announcement records it: on Linux its start in
+// clock ticks since boot (/proc), else a stand-in (only a process's own pid
+// is compared there)
+const startIdOf = (pid) => {
+  if (process.platform !== 'linux') return 'm1';
+  const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+  return `t${stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]}`;
+};
+// a live process, with its startId
+async function sleeperProcess() {
+  const p = spawn(process.execPath, ['-e', 'process.stdout.write("up"); setTimeout(() => {}, 20000)'], {stdio: ['ignore', 'pipe', 'ignore']});
+  await new Promise((resolve) => p.stdout.once('data', resolve));
+  return {pid: p.pid, startId: startIdOf(p.pid), kill: () => p.kill()};
+}
+
 function child(script) {
   return spawnSync(process.execPath, ['-e', `const {openJsonFile, withStoreLock, flushAllOnExit} = require(${JSON.stringify(MOD)});\n${script}`],
     {cwd: ROOT, encoding: 'utf8', timeout: 30000});
@@ -400,25 +427,75 @@ describe('store 04: the review of B2', function() {
 describe('store 04: a waiter is not starved (#150)', function() {
   this.timeout(60000);
 
-  // The mechanism, deterministically: an announced waiter is yielded to.
-  it('a fresh announcement by another live waiter is yielded to; a dead or old one is not', () => {
+  // Windows refuses a rename onto a file another process has open (or is
+  // deleting), and a busy store's announcement is read on every attempt: an
+  // announcement made by renaming over the file could then never land, and
+  // nothing kept the waiter's turn (store 04's hammer starved on Windows CI).
+  // Here a rename onto an existing file fails as it can on Windows, an old
+  // announcement is already there, and the waiter's must land anyway.
+  it('a waiter\'s announcement lands even where a rename onto an existing file fails, as on Windows', async () => {
     const dir = tmpStore();
-    const sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], {stdio: 'ignore'});
+    const sleeper = await sleeperProcess();
+    // (a file at the name one shared announcement once had: a rename onto it fails here, as on Windows)
+    fs.writeFileSync(path.join(dir, '.lock.waiting'), JSON.stringify({pid: sleeper.pid, startMs: 1, at: Date.now() - 60000}));
+    announceAs(dir, sleeper.pid, 60000, sleeper.startId);
+    const holder = spawn(process.execPath, ['-e', `
+      const fs = require('fs'); const path = require('path');
+      const {withStoreLock} = require(${JSON.stringify(MOD)});
+      const dir = ${JSON.stringify(dir)};
+      // (an announcement, never a temporary file one is written to first)
+      const mine = (name) => name.startsWith('.lock.waiting.' + process.argv[1] + '-');
+      withStoreLock(dir, () => {
+        process.stdout.write('held\\n');
+        let seen = false;
+        const t = Date.now() + 1200;
+        while (Date.now() < t && !seen) seen = fs.readdirSync(dir).some((n) => n.startsWith('.lock.waiting') && !n.endsWith('.tmp') && mine(n));
+        process.stdout.write(seen ? 'seen' : 'not seen');
+      });
+    `, String(process.pid)], {stdio: ['ignore', 'pipe', 'ignore']});
+    let out = '';
+    holder.stdout.on('data', (c) => { out += c; });
+    const rename = fs.renameSync;
     try {
-      const announce = (pid, ageMs) => fs.writeFileSync(path.join(dir, '.lock.waiting'),
-        JSON.stringify({pid: pid, startMs: 1, at: Date.now() - ageMs}));
-      // a live waiter that announced 1700 ms ago: yielded to until it is 2 s old
-      announce(sleeper.pid, 1700);
+      // (bounded: the holder says it holds the lock, or the case fails here)
+      await new Promise((resolve, reject) => {
+        const until = Date.now() + 10000;
+        const check = () => (out.includes('held') ? resolve() : (Date.now() > until ? reject(new Error(`the holder never held the lock (${out})`)) : setTimeout(check, 10)));
+        check();
+      });
+      fs.renameSync = function(from, to) {
+        if (fs.existsSync(to)) throw Object.assign(new Error(`EPERM: operation not permitted, rename '${from}' -> '${to}'`), {code: 'EPERM'});
+        return rename.apply(this, arguments);
+      };
+      withStoreLock(dir, () => {});
+    } finally {
+      fs.renameSync = rename;
+      sleeper.kill();
+      if (holder.exitCode == null) setTimeout(() => holder.kill(), 5000).unref();
+    }
+    // (its exit may already have come while this process waited)
+    await new Promise((resolve) => (holder.exitCode != null ? resolve() : holder.on('exit', resolve)));
+    assert.ok(out.endsWith('seen') && !out.endsWith('not seen'), `the waiter's announcement never landed (${out.trim()})`);
+  });
+
+  // The mechanism, deterministically: an announced waiter is yielded to.
+  it('a fresh announcement by another live waiter is yielded to; a dead or old one is not', async () => {
+    const dir = tmpStore();
+    const sleeper = await sleeperProcess();
+    try {
+      const announce = (pid, ageMs, startId = sleeper.startId) => announceAs(dir, pid, ageMs, startId);
+      // a live waiter renewed 3 s ago: yielded to until it is 4 s old
+      announce(sleeper.pid, 3000);
       const t = Date.now();
       withStoreLock(dir, () => {});
       assert.strictEqual(withStoreLock.waited, true, 'did not yield');
       assert.ok(Date.now() - t >= 200, `yielded only ${Date.now() - t} ms`);
       // a dead one, and an old one, are not
       const gone = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], {encoding: 'utf8'});
-      announce(Number(gone.stdout), 0);
+      announce(Number(gone.stdout), 0, 'm1');
       withStoreLock(dir, () => {});
       assert.strictEqual(withStoreLock.waited, false, 'yielded to a dead waiter');
-      announce(sleeper.pid, 5000);
+      announce(sleeper.pid, 6000);
       withStoreLock(dir, () => {});
       assert.strictEqual(withStoreLock.waited, false, 'yielded to an old announcement');
       // one dated in the future (a clock stepped back since): not fresh
@@ -428,6 +505,47 @@ describe('store 04: a waiter is not starved (#150)', function() {
     } finally {
       sleeper.kill();
     }
+  });
+
+  // Windows (and every system) reuses pids: a new process given a dead
+  // waiter's pid is not that waiter. Where its start can be read (Linux),
+  // one whose start differs from the announcement's is dead: its file goes,
+  // and it is not yielded to; elsewhere it is left, and yielded to only
+  // while fresh, as a live one.
+  (process.platform === 'linux' ? it : it.skip)('a live process announced with another start time (a reused pid) is dead: its file is removed, never yielded to', async () => {
+    const dir = tmpStore();
+    const sleeper = await sleeperProcess();
+    try {
+      announceAs(dir, sleeper.pid, 0, `t${Number(sleeper.startId.slice(1)) - 100}`);
+      withStoreLock(dir, () => {});
+      assert.strictEqual(withStoreLock.waited, false, 'yielded to a reused pid');
+      assert.deepStrictEqual(announcements(dir), [], 'its file was left');
+      // (its own start: alive, yielded to while fresh, its file kept; renewed 3 s ago, so yielded to for about 1 s of the 2 s wait)
+      announceAs(dir, sleeper.pid, 3000, sleeper.startId);
+      withStoreLock(dir, () => {});
+      assert.strictEqual(withStoreLock.waited, true, 'did not yield to a live waiter');
+      assert.strictEqual(announcements(dir).length, 1, 'a live process\'s file was removed');
+    } finally {
+      sleeper.kill();
+    }
+  });
+
+  it('a dead process\'s announcement goes (its pid and start are in its name); this process\'s own pid with another start is dead too', () => {
+    const dir = tmpStore();
+    const gone = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], {encoding: 'utf8'});
+    announceAs(dir, Number(gone.stdout), 0, 'm1');
+    // (this process's pid, recorded by an earlier process given it: another start)
+    announceAs(dir, process.pid, 0, process.platform === 'linux' ? 't1' : 'm1');
+    withStoreLock(dir, () => {});
+    assert.strictEqual(withStoreLock.waited, false, 'yielded to a dead announcement');
+    assert.deepStrictEqual(fs.readdirSync(dir).filter((n) => n.startsWith('.lock.waiting.')), [], 'a dead announcement was left');
+  });
+
+  it('update()\'s failure says what its last attempt found too', () => {
+    const {busyError} = require(MOD);
+    const dir = tmpStore();
+    const err = busyError({busy: true, refused: null, yieldedTo: 4242, heldBy: null}, dir, `the store lock under ${dir} stayed busy for 10000 ms`, 10000);
+    assert.strictEqual(err.message, `the store lock under ${dir} stayed busy for 10000 ms (it yielded to a waiting process (pid 4242))`);
   });
 
   it('a waiter announces itself while the lock is busy, and withdraws once it has the lock', async () => {
@@ -441,13 +559,13 @@ describe('store 04: a waiter is not starved (#150)', function() {
     const f = openJsonFile(file);
     let seen = null;
     const probe = setInterval(() => {
-      try { seen = seen || JSON.parse(fs.readFileSync(path.join(dir, '.lock.waiting'), 'utf8')); } catch (e) { /* not yet */ }
+      seen = seen || announcements(dir).find((w) => w.pid === process.pid) || null;
     }, 20);
     await new Promise((resolve, reject) => f.update('k', () => 1, (err) => (err ? reject(err) : resolve())));
     clearInterval(probe);
     f.close();
     assert.ok(seen != null && seen.pid === process.pid, `no announcement seen: ${JSON.stringify(seen)}`);
-    assert.ok(!fs.existsSync(path.join(dir, '.lock.waiting')), 'the announcement was left behind');
+    assert.deepStrictEqual(announcements(dir).filter((w) => w.pid === process.pid), [], 'the announcement was left behind');
   });
 
   // the review of #160: an announcement is withdrawn on every way out of a
@@ -471,7 +589,7 @@ describe('store 04: a waiter is not starved (#150)', function() {
     } finally {
       fs.writeFileSync = realWrite;
     }
-    assert.ok(!fs.existsSync(path.join(dir, '.lock.waiting')), 'the announcement was left behind');
+    assert.deepStrictEqual(announcements(dir).filter((w) => w.pid === process.pid), [], 'the announcement was left behind');
     await new Promise((resolve) => holder.on('exit', resolve));
   });
 
@@ -481,12 +599,24 @@ describe('store 04: a waiter is not starved (#150)', function() {
   // LOCK_WAIT_MS against an announcement a child kept renewing depended on
   // the renewal's timing, and on Windows a rename over the file while it
   // is read can fail: flaky on #165's CI.)
-  it('a wait that ends yielding to a waiter names the waiter, not a holder', () => {
+  // The failure a wait ends with says what its last attempt found, never a
+  // state read again afterwards (store 04's hammer on Windows CI threw "held
+  // by pid unknown" after a wait it had spent yielding: by then the waiter
+  // had the lock and had withdrawn).
+  it('a wait\'s failure names what its last attempt found: the waiter it yielded to, or the lock\'s holder', () => {
     const {busyError} = require(MOD);
     const dir = tmpStore();
-    const sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], {stdio: 'ignore'});
+    // (nothing in the store any more: no lock, no announcement)
+    assert.match(busyError({busy: true, refused: null, yieldedTo: 4242, heldBy: null}, dir).message, /yielded to a waiting process \(pid 4242\)/);
+    assert.match(busyError({busy: true, refused: null, yieldedTo: null, heldBy: 4343}, dir).message, /held by pid 4343/);
+  });
+
+  it('a wait that ends yielding to a waiter names the waiter, not a holder', async () => {
+    const {busyError} = require(MOD);
+    const dir = tmpStore();
+    const sleeper = await sleeperProcess();
     try {
-      fs.writeFileSync(path.join(dir, '.lock.waiting'), JSON.stringify({pid: sleeper.pid, startMs: 1, at: Date.now()}));
+      announceAs(dir, sleeper.pid, 0, sleeper.startId);
       const err = busyError({busy: true, refused: null}, dir);
       assert.ok(err.message.includes(String(sleeper.pid)), err.message);
       assert.doesNotMatch(err.message, /held by pid unknown/);
@@ -501,7 +631,7 @@ describe('store 04: a waiter is not starved (#150)', function() {
   // working), and a late retry timer lets a hammer whose own announcement
   // the waiter yielded to take the lock freely until the waiter's next
   // attempt, as designed. What the announcement promises is load-free: once
-  // the waiter has announced (the rename onto .lock.waiting), the other
+  // the waiter has announced (its own announcement file created), the other
   // process begins at most one more hold -- one already past its yield
   // check -- before the waiter has the lock. The hammer logs when each hold
   // begins, the waiter when it announced and when it got the lock (inside
@@ -544,10 +674,11 @@ describe('store 04: a waiter is not starved (#150)', function() {
     const waiter = run(`
       const fs = require('fs');
       let announced = null;
-      const rename = fs.renameSync;
-      fs.renameSync = function(from, to) {
-        const r = rename.apply(this, arguments);
-        if (String(to).endsWith('.lock.waiting') && announced == null) announced = monotonic();
+      // (the moment it announced: its own announcement file created, exclusively)
+      const write = fs.writeFileSync;
+      fs.writeFileSync = function(file, data, opts) {
+        const r = write.apply(this, arguments);
+        if (String(file).includes('.lock.waiting.') && opts != null && opts.flag === 'wx' && announced == null) announced = monotonic();
         return r;
       };
       const f = openJsonFile(${JSON.stringify(file)});
@@ -611,7 +742,7 @@ describe('store 04: update() outlasts a live holder\'s slow hold (B-storelock)',
     });
   };
   const exited = (p) => new Promise((resolve) => (p.exitCode != null ? resolve() : p.once('exit', resolve)));
-  const announcement = (dir) => { try { return JSON.parse(fs.readFileSync(path.join(dir, '.lock.waiting'), 'utf8')); } catch (e) { return null; } };
+  const announcement = (dir) => announcements(dir)[0] || null;
   // until check() holds, polling (bounded)
   async function until(check, ms) {
     const end = Date.now() + ms;
