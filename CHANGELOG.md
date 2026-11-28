@@ -22,6 +22,28 @@ the auth config.
 - A call that fails as a crash or an untyped failure (`DEVICE_INVOKE_EXCEPTION`, `DEVICE_INVOKE_FAIL`) after the runtime refused one of its calls to another module or a remote service now says so in one more sentence, with that refusal's code (a refusal about another module's state, such as one that was unloaded, reads DEVICE_NOT_FOUND; the runtime's log keeps the exact code): "Before it failed, the runtime refused its call to another module: DEVICE_NOT_FOUND." It never names the other module and never repeats the module's own text. The added sentence covers only refusals of the failing module's own calls, not of calls made further down (by a module it called). This covers a call whose answer comes back directly; a task run (a task-augmented `tools/call` or a job) doesn't add this sentence.
 - A call that fails as a crash, an untyped failure or a runtime error is now logged at error level without `--debug`, one line each: "a call failed: <module>/<action>: <code> (the module crashed | the module failed | a runtime error)", ending with the runtime's refusal before it when there was one. At most 5 lines per tool in 10 minutes, then one line saying how many more were left out since when. A module's own error answers are not logged, nor any input or module text. A task run's failures are not logged this way.
 
+
+### Changed — a billed call runs only while its charge can be recorded
+
+- A billed call (a tools/call other than a completion's action, an
+  invoke-action, a job's run, a hop) is refused retryably before it runs
+  while its charge can't be recorded: `LEDGER_UNREACHABLE` (Redis can't be
+  reached, or just failed a charge) and `LEDGER_UNWRITABLE` (a local
+  ledger's write just failed), 503 with Retry-After 5 s and "retry shortly"
+  in the text. Before, with Redis down a billed call ran and was never
+  charged. An unbilled call is limited in memory and served, as before.
+- One key whose own usage record can't be charged (of the wrong type, a
+  free-call record that isn't JSON, or a balance that isn't a number Redis
+  can add to) has its billed calls refused with
+  `LEDGER_RECORD_INVALID` (not retryable) until the operator repairs it;
+  other keys are served. The log names the record by the key's
+  fingerprint.
+- `GET /balance` with Redis unreachable answers `LEDGER_UNREACHABLE`, never
+  the Redis client's own error.
+- A charge lost after its call ran is logged by the key's fingerprint, the
+  tool and the amount; the ledger is marked and the next billed call is
+  refused until a probe (at most one a second) finds it recording again.
+  The metering client's commands have a 3 s deadline.
 ### Changed — a module's name maps to one data folder on every system
 
 A module whose name has a part that ends in a dot or a space ("my-tool."), has

@@ -125,17 +125,29 @@ a module passes on from a part's call is the module's answer (kind
 address over `--unauthRateLimit`, a key or session with as many
 subscriptions open as it may have (`TOO_MANY_SUBSCRIPTIONS`), the
 runtime at its limit (`RUNTIME_BUSY`) or with as many subscriptions open as
-it allows (`SUBSCRIPTIONS_FULL`), and a local usage ledger that can't be
-used (`LEDGER_UNREADABLE`, retryable: it can't be read right now;
-`LEDGER_CORRUPT`, not retryable: it is corrupt and this runtime holds no
-copy of it, so it must be repaired as the runtime's log says) -- is the
-JSON-RPC error -32000, the catalogue's message (or the subscription limit's
-own), and the same keys in its `error.data`. A single request's is sent
-with its code's HTTP status, 429 (503 for `RUNTIME_BUSY`,
-`SUBSCRIPTIONS_FULL` and `LEDGER_UNREADABLE`, 500 for `LEDGER_CORRUPT`),
-and `Retry-After` when a hint was written (never for the ledger's two). A
-`tools/call` refused for the ledger is a tool error result with the same
-code; a balance asked for answers the same codes. A legacy batch stays 200,
+it allows (`SUBSCRIPTIONS_FULL`), and a usage ledger that can't record a
+charge (`LEDGER_UNREADABLE`, retryable: the local ledger can't be read right
+now; `LEDGER_CORRUPT`, not retryable: it is corrupt and this runtime holds
+no copy of it, so it must be repaired as the runtime's log says;
+`LEDGER_UNREACHABLE`, retryable: Redis can't be reached, or just failed a
+charge; `LEDGER_UNWRITABLE`, retryable: the local ledger's write just
+failed; `LEDGER_RECORD_INVALID`, not retryable: this key's own record can't
+be charged until the operator repairs it) -- is the JSON-RPC error -32000,
+the catalogue's message (or the subscription limit's own), and the same
+keys in its `error.data`. A single request's is sent with its code's HTTP
+status, 429 (503 for `RUNTIME_BUSY`, `SUBSCRIPTIONS_FULL`,
+`LEDGER_UNREADABLE`, `LEDGER_UNREACHABLE` and `LEDGER_UNWRITABLE`, 500 for
+`LEDGER_CORRUPT` and `LEDGER_RECORD_INVALID`), and `Retry-After` when a
+hint was written (5 s for `LEDGER_UNREACHABLE` and `LEDGER_UNWRITABLE`,
+whose texts also end "retry shortly"; none for the other ledger codes). A
+billed `tools/call` refused for the ledger is a tool error result with the
+same code, and a billed HTTP invoke-action is answered with the code's HTTP
+status and `{code}`, each refused before it runs; a balance asked for
+answers the same codes. A billed call refused for the ledger is not counted
+by the per-key limiter; the server-wide limit still counts it, as it counts
+every call. Under Redis ACLs, the runtime's user needs write access to the
+key `countinghouse:metering-probe`: the ledger's mark is cleared by writing
+it. A legacy batch stays 200,
 with `Retry-After` the longest hint among its limited messages.
 
 **Module names.** A load (`/load-module`, `countinghouse_load_module`, `--loadModule`, the registry at startup, restarts) must use the module's package.json name; any other name is refused with `MODULE_NAME_MISMATCH`. `POST /load-module` may leave `name` out, and then uses the package.json name.
@@ -202,7 +214,9 @@ been removed. Then, unless `keepData` is `true`, it deletes the module's
 module's registry entry (when the server uses the registry, that is when no
 `--loadModule` is given); then, unless `keepData` is `true`, it deletes
 `<moduleDataPath>/<name>`, never following links. A reload or an upgrade
-keeps the keys and the data. It never removes the module's
+keeps the keys and the data. A failure in that last step, after the keys
+and the registry entry are gone, answers `MODULE_DATA_NOT_REMOVED` with the
+directory kept; uninstalling again finishes it. It never removes the module's
 code under `--modulePath`. It removes only directories the runtime made
 (the security model's ["Only what the runtime made is deleted"](security-model.md)):
 `kept` lists, as paths under `--moduleDataPath`, each one it found there but
@@ -217,7 +231,8 @@ when `<moduleDataPath>/<name>` is gone. Errors:
 | `REMOVE_MODULE_INFO_FAIL` | the registry entry could not be removed; the data directory was kept, and the module's keys were deleted unless `keepData` was set; uninstall again to finish |
 | `MODULE_STORE_CORRUPT` | the local store file that holds the module's data (`kv.json`) is corrupt and this runtime holds no copy of it: nothing was removed, the registry entry included; repair the store (the runtime's log says how), then uninstall again. Not retryable as it is |
 | `MODULE_KEYS_NOT_PURGED` | the module's keys could not all be deleted (the store did not answer within 30 s, or answered an error; its code is named); the registry entry and the data directory are kept, and some keys may already be deleted: uninstall again to delete what is left |
-| `MODULE_DATA_NOT_DIRECTORY` | the data directory is a link or a file; it is left alone, remove it by hand |
+| `MODULE_DATA_NOT_DIRECTORY` | the data directory is a link or a file; it is left alone, remove it by hand. Found only at the delete (a link swapped in meanwhile), the keys and the registry entry are already gone: uninstalling again once it is removed finishes it |
+| `MODULE_DATA_NOT_REMOVED` | the keys and the registry entry were removed, then the data directory could not be (a full or read-only disk, its permissions); its errno code is named and the directory is kept, perhaps only in part: fix the cause and uninstall again, or remove it by hand |
 | `MODULE_DATA_UNREADABLE` | the data directory (or its `sessions/`, or a directory on the way to it) could not be read, or the uninstall could not write in it; its errno code is named and nothing was removed: make it readable, then uninstall again |
 
 Every device-scoped route above (everything under `/devices/:deviceID/...`)

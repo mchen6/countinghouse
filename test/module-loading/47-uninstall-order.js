@@ -30,6 +30,7 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
   let onPurge = null;   // (prefix) -> run inside the purge of that prefix; may throw
   let registryOn = true;
   let registryFails = false;
+  let registryChanges = 1;
   const chmodded = [];
   before(() => {
     LOG.createLogger();
@@ -47,7 +48,7 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
     deviceDb.removeModuleInfo = function(name, cb) {
       calls.push(`registry ${name}`);
       if (registryFails) return cb.call(null, new Error('the registry is read-only'));
-      return cb.call({changes: 1}, null);
+      return cb.call({changes: registryChanges}, null);
     };
     ModuleManager = require('../../lib/module-manager');
   });
@@ -59,7 +60,7 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
     store.getStore = saved.getStore;
     deviceDb.removeModuleInfo = saved.removeModuleInfo;
   });
-  beforeEach(() => { calls = []; onPurge = null; registryOn = true; registryFails = false; });
+  beforeEach(() => { calls = []; onPurge = null; registryOn = true; registryFails = false; registryChanges = 1; });
   afterEach(() => {
     // (a directory made unreadable is made readable again, so its tree can go)
     for (const p of chmodded.splice(0)) { try { fs.chmodSync(p, 0o700); } catch (e) { /* gone */ } }
@@ -298,6 +299,158 @@ describe('module-loading 47: the uninstall removes nothing before every check ha
     const c = CODES.MODULE_DATA_UNREADABLE;
     assert.deepStrictEqual([c.kind, c.retryable, c.httpStatus], ['operator', false, 500]);
     assert.strictEqual(c.en, 'The module was not uninstalled: its data directory {path} could not be read ({code}), so nothing was removed -- make it readable (its permissions, or a link that loops), then uninstall again');
+  });
+
+  // After the keys and the row are gone, a failure in the directory step is
+  // MODULE_DATA_NOT_REMOVED, the directory kept; a second uninstall finishes.
+  const notRemovedText = (p, code) => CODES.MODULE_DATA_NOT_REMOVED.en.replace('{path}', p).replace('{code}', code);
+
+  it('an ownership marker that can\'t be written (a full disk) after the keys and the row are gone: MODULE_DATA_NOT_REMOVED, the directory kept; a second uninstall, its row already gone, removes it and answers success', async () => {
+    const root = dataRoot();
+    fs.mkdirSync(path.join(root, 'full-mod', 'data'), {recursive: true});
+    fs.writeFileSync(path.join(root, 'full-mod', 'data', 'f'), 'x');
+    const fsp = require('fs/promises');
+    const realOpen = fsp.open;
+    fsp.open = function(p, ...rest) {
+      if (String(p).includes('.countinghouse-owned.')) return Promise.reject(Object.assign(new Error('no space left on device'), {code: 'ENOSPC'}));
+      return realOpen.call(this, p, ...rest);
+    };
+    let first;
+    try { first = await uninstall('full-mod'); } finally { fsp.open = realOpen; }
+    assert.strictEqual(first.e && first.e.code, 'MODULE_DATA_NOT_REMOVED', String(first.e && first.e.message));
+    assert.ok(first.e.message.startsWith(notRemovedText(path.join(root, 'full-mod'), 'ENOSPC')), first.e.message);
+    assert.deepStrictEqual(calls, ['purge m:full-mod:', 'purge ms:full-mod:', 'registry full-mod']);
+    assert.ok(fs.existsSync(path.join(root, 'full-mod', 'data', 'f')));
+    calls = [];
+    registryChanges = 0;
+    const second = await uninstall('full-mod');
+    assert.strictEqual(second.e, null, String(second.e && second.e.message));
+    assert.strictEqual(second.r.registryEntryRemoved, false);
+    assert.strictEqual(second.r.dataDeleted, true);
+    assert.ok(!fs.existsSync(path.join(root, 'full-mod')));
+  });
+
+  it('a session partition whose removal throws: MODULE_DATA_NOT_REMOVED (UNKNOWN), the directory kept', async () => {
+    const root = dataRoot();
+    const id = 'a'.repeat(32);
+    fs.mkdirSync(path.join(root, 'part-mod', 'sessions', id, 'data'), {recursive: true});
+    const partition = require('../../lib/session-partition');
+    const realRemove = partition.remove;
+    partition.remove = () => Promise.reject(new Error('a partition could not be removed'));
+    let res;
+    try { res = await uninstall('part-mod'); } finally { partition.remove = realRemove; }
+    assert.strictEqual(res.e && res.e.code, 'MODULE_DATA_NOT_REMOVED', String(res.e && res.e.message));
+    assert.ok(res.e.message.startsWith(notRemovedText(path.join(root, 'part-mod'), 'UNKNOWN')), res.e.message);
+    assert.ok(!res.e.message.includes('a partition could not be removed'), res.e.message);
+    assert.ok(fs.existsSync(path.join(root, 'part-mod', 'sessions', id)));
+  });
+
+  it('a data directory that can\'t be read at the delete (made so while the keys were purged): MODULE_DATA_NOT_REMOVED (EACCES)', async function() {
+    if (!permissionsBite) return this.skip();
+    const root = dataRoot();
+    fs.mkdirSync(path.join(root, 'late-mod', 'data'), {recursive: true});
+    onPurge = (prefix) => { if (prefix.startsWith('ms:')) lock(root, 0o000); };
+    const res = await uninstall('late-mod');
+    assert.strictEqual(res.e && res.e.code, 'MODULE_DATA_NOT_REMOVED', String(res.e && res.e.message));
+    assert.ok(res.e.message.startsWith(notRemovedText(path.join(root, 'late-mod'), 'EACCES')), res.e.message);
+    assert.deepStrictEqual(calls, ['purge m:late-mod:', 'purge ms:late-mod:', 'registry late-mod']);
+  });
+
+  it('a sessions/ made unlistable while the keys were purged: MODULE_DATA_NOT_REMOVED (EACCES) at the listing', async function() {
+    if (!permissionsBite) return this.skip();
+    const root = dataRoot();
+    const sessions = path.join(root, 'list-mod', 'sessions');
+    fs.mkdirSync(path.join(sessions, 'a'.repeat(32), 'data'), {recursive: true});
+    onPurge = (prefix) => { if (prefix.startsWith('ms:')) lock(sessions, 0o300); };
+    const res = await uninstall('list-mod');
+    assert.strictEqual(res.e && res.e.code, 'MODULE_DATA_NOT_REMOVED', String(res.e && res.e.message));
+    assert.ok(res.e.message.includes('(EACCES)'), res.e.message);
+  });
+
+  it('the log line of a directory step that failed never names a session: its id is cut', async () => {
+    const root = dataRoot();
+    const id = 'b'.repeat(32);
+    fs.mkdirSync(path.join(root, 'logid-mod', 'sessions', id, 'data'), {recursive: true});
+    const partition = require('../../lib/session-partition');
+    const realRemove = partition.remove;
+    partition.remove = () => Promise.reject(Object.assign(new Error(`ENOSPC: no space left on device, open '${path.join(root, 'logid-mod', 'sessions', id, '.countinghouse-owned.ab12')}'`), {code: 'ENOSPC'}));
+    const logged = [];
+    const realW = LOG.W;
+    LOG.W = (line) => { logged.push(String(line)); };
+    let res;
+    try { res = await uninstall('logid-mod'); } finally { partition.remove = realRemove; LOG.W = realW; }
+    assert.strictEqual(res.e && res.e.code, 'MODULE_DATA_NOT_REMOVED', String(res.e && res.e.message));
+    assert.ok(res.e.message.includes('(ENOSPC)'), res.e.message);
+    const line = logged.find((l) => l.includes('its data directory was not removed'));
+    assert.ok(line != null, JSON.stringify(logged));
+    assert.ok(!line.includes(id) && line.includes('<a session>'), line);
+  });
+
+  it('a session partition refusing a link on the way: MODULE_DATA_NOT_DIRECTORY, as the link refusal it is', async () => {
+    const root = dataRoot();
+    fs.mkdirSync(path.join(root, 'plink-mod', 'sessions', 'c'.repeat(32), 'data'), {recursive: true});
+    const partition = require('../../lib/session-partition');
+    const realRemove = partition.remove;
+    const at = path.join(root, 'plink-mod', 'sessions');
+    partition.remove = () => Promise.reject(Object.assign(new Error(`${at} is not a directory`), {notRealPath: at}));
+    let res;
+    try { res = await uninstall('plink-mod'); } finally { partition.remove = realRemove; }
+    assert.strictEqual(res.e && res.e.code, 'MODULE_DATA_NOT_DIRECTORY', String(res.e && res.e.message));
+  });
+
+  it('session-partition\'s own link refusal says which path (notRealPath)', async () => {
+    const root = dataRoot();
+    const outside = trees.mkdtemp('ch-ml47-');
+    fs.mkdirSync(path.join(outside, 'sessions'));
+    fs.symlinkSync(outside, path.join(root, 'linkp-mod'), 'junction');
+    const partition = require('../../lib/session-partition');
+    const err = await partition.remove(root, {}, 'linkp-mod', 'd'.repeat(32), {keys: false}).then(() => null, (e) => e);
+    assert.ok(err != null && err.notRealPath === 'linkp-mod', String(err && err.message));
+  });
+
+  it('<name>/\'s own rmdir failing otherwise than not empty (a read-only disk): MODULE_DATA_NOT_REMOVED, never a success with it kept', async () => {
+    const root = dataRoot();
+    fs.mkdirSync(path.join(root, 'rofs-mod'), {recursive: true});
+    const fsp = require('fs/promises');
+    const realRmdir = fsp.rmdir;
+    fsp.rmdir = function(p, ...rest) {
+      if (String(p) === path.join(root, 'rofs-mod')) return Promise.reject(Object.assign(new Error('read-only file system'), {code: 'EROFS'}));
+      return realRmdir.call(this, p, ...rest);
+    };
+    let res;
+    try { res = await uninstall('rofs-mod'); } finally { fsp.rmdir = realRmdir; }
+    assert.strictEqual(res.e && res.e.code, 'MODULE_DATA_NOT_REMOVED', String(res.e && res.e.message));
+    assert.ok(res.e.message.includes('(EROFS)'), res.e.message);
+  });
+
+  it('a newline in an fs message stays escaped in the log line: a module\'s file name writes no line of its own', async () => {
+    const root = dataRoot();
+    fs.mkdirSync(path.join(root, 'nl-mod', 'sessions', 'f'.repeat(32), 'data'), {recursive: true});
+    const partition = require('../../lib/session-partition');
+    const realRemove = partition.remove;
+    partition.remove = () => Promise.reject(Object.assign(new Error('EACCES: open \'data/x\n2026-11-27 module: other: forged\''), {code: 'EACCES'}));
+    const logged = [];
+    const realW = LOG.W;
+    LOG.W = (line) => { logged.push(String(line)); };
+    try { await uninstall('nl-mod'); } finally { partition.remove = realRemove; LOG.W = realW; }
+    const line = logged.find((l) => l.includes('its data directory was not removed'));
+    assert.ok(line != null && !line.includes('\n') && line.includes('\\n'), JSON.stringify(logged));
+  });
+
+  it('session-partition\'s walk that can\'t read a directory on the way is an error with its code, never a link refusal', async function() {
+    if (!permissionsBite) return this.skip();
+    const root = dataRoot();
+    fs.mkdirSync(path.join(root, 'shutp-mod', 'sessions'), {recursive: true});
+    lock(path.join(root, 'shutp-mod'), 0o000);
+    const partition = require('../../lib/session-partition');
+    const err = await partition.remove(root, {}, 'shutp-mod', 'a'.repeat(32), {keys: false}).then(() => null, (e) => e);
+    assert.ok(err != null && err.code === 'EACCES' && err.notRealPath === undefined, String(err && err.message));
+  });
+
+  it('MODULE_DATA_NOT_REMOVED is in the catalogue, an operator\'s and not retryable, its text word for word', () => {
+    const c = CODES.MODULE_DATA_NOT_REMOVED;
+    assert.deepStrictEqual([c.kind, c.retryable, c.httpStatus], ['operator', false, 500]);
+    assert.strictEqual(c.en, 'The module\'s stored data and its registry entry, if any, are gone, but its data directory {path} could not be removed ({code}), so it is kept, perhaps only in part -- fix the cause (a full or read-only disk, its permissions), then uninstall again to remove it, or remove it by hand');
   });
 
   trees.hooks();

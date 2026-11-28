@@ -10,7 +10,7 @@
 const assert = require('assert');
 const cb = require('../../lib/metering/charge-bound');
 const {boundedCharge, lateOutcome, chargeError, METER_PENDING_MS, MAX_PENDING_PER_KEY, DEADLINE_MARGIN_MS, PENDING_CEILING_MS, pendingForTests} = cb;
-const {meterId} = require('../../lib/key-fingerprint');
+const {meterId, keyFingerprint} = require('../../lib/key-fingerprint');
 const LOG = require('../../lib/logger');
 
 // a clock the test moves: timers fire, in order, as it advances
@@ -83,7 +83,7 @@ describe('metering 04: a hop\'s charge, waited for at most METER_PENDING_MS (B-h
     assert.ok(logged.some(([l, line]) => l === 'I' && line === 'hop svc_t: the pending billing landed (charged 1)'), JSON.stringify(logged));
   });
 
-  it('a charge that fails past the bound: logged at error by meterId, never the key; the caller had its answer', () => {
+  it('a charge that fails past the bound: logged at error by the key\'s fingerprint, never the key; the caller had its answer', () => {
     const clock = fakeClock();
     const {ci, lands} = held();
     const answers = [];
@@ -93,7 +93,7 @@ describe('metering 04: a hop\'s charge, waited for at most METER_PENDING_MS (B-h
     const errors = logged.filter(([l]) => l === 'E').map(([, line]) => line);
     assert.deepStrictEqual(answers, [[null, null, true]]);
     assert.strictEqual(errors.length, 1);
-    assert.ok(errors[0].includes(`meter ${meterId(KEY)}`) && errors[0].includes('goes unbilled') && !errors[0].includes(KEY), errors[0]);
+    assert.ok(errors[0].includes(keyFingerprint(KEY)) && errors[0].includes('goes unbilled') && !errors[0].includes(KEY), errors[0]);
   });
 
   it('a charge that fails in time: its error, once; a recordCall that throws: its error, once', () => {
@@ -105,13 +105,13 @@ describe('metering 04: a hop\'s charge, waited for at most METER_PENDING_MS (B-h
     assert.deepStrictEqual(answers.map((a) => [a[0].message, a[1], a[2]]), [['redis down', null, false], ['boom', null, false]]);
   });
 
-  it('a charge\'s error keeps its code, and a message naming the key names its meterId instead', () => {
+  it('a charge\'s error keeps its code, and its line names the key\'s fingerprint and the code, never the key or the store\'s message', () => {
     const out = chargeError('hop', 't', KEY, Object.assign(new Error(`ERR in EVAL with args ${KEY} 1`), {code: 'ERR_STORE'}));
     assert.strictEqual(out.code, 'ERR_STORE');
-    assert.ok(!out.message.includes(KEY) && out.message.includes(`[meter ${meterId(KEY)}]`), out.message);
+    assert.ok(!out.message.includes(KEY) && out.message.includes(keyFingerprint(KEY)) && out.message.includes('(ERR_STORE)') && !out.message.includes('EVAL') && !out.message.includes(meterId(KEY)), out.message);
     lateOutcome('peer hop', 'x', KEY, new Error('detail'), null);
     const line = logged.find(([l]) => l === 'E')[1];
-    assert.ok(line.startsWith('peer hop x: the billing failed for meter ') && line.includes('it was pending') && !line.includes(KEY), line);
+    assert.ok(line.startsWith(`peer hop x: the billing failed for ${keyFingerprint(KEY)}`) && line.includes('it was pending') && !line.includes(KEY), line);
   });
 
   it('a throw from the caller\'s own answer goes on; a provider\'s throw after it answered is logged; a second late answer is heard once', () => {

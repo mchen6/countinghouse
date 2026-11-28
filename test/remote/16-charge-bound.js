@@ -91,15 +91,15 @@ describe('remote 16: a remote call\'s charge is waited for at most METER_PENDING
     assert.strictEqual(store.calls.length, 1, 'never charged again');
   });
 
-  it('a charge that fails after the bound: logged at error by the key\'s meterId, never the key; the call had its result', async () => {
+  it('a charge that fails after the bound: logged at error by the key\'s fingerprint and the amount, never the key; the call had its result', async () => {
     const store = heldStore();
     const r = await registry.callRemote('charge-probe', 'probe', 'echo_text', {n: 2}, {billingKey: KEY});
     assert.ok(r != null && r.isError !== true);
     store.answer(new Error('the store lock stayed busy for 10000 ms'));
     const errors = logged.filter(([lvl]) => lvl === 'E').map(([, line]) => line);
-    const {meterId} = require('../../lib/key-fingerprint');
+    const {meterId, keyFingerprint} = require('../../lib/key-fingerprint');
     assert.strictEqual(errors.length, 1, JSON.stringify(logged));
-    assert.ok(errors[0].includes(meterId(KEY)) && /goes unbilled/.test(errors[0]), errors[0]);
+    assert.ok(errors[0].includes(keyFingerprint(KEY)) && errors[0].includes('amount 1') && /goes unbilled/.test(errors[0]) && !errors[0].includes(meterId(KEY)), errors[0]);
     assert.ok(!errors[0].includes(KEY), 'the key itself is never logged');
   });
 
@@ -110,6 +110,22 @@ describe('remote 16: a remote call\'s charge is waited for at most METER_PENDING
     assert.ok(r != null && r.isError !== true);
     assert.deepStrictEqual(calls, [KEY]);
     assert.ok(!logged.some(([, line]) => /pending/.test(line)), JSON.stringify(logged));
+  });
+
+  // a billed call runs only while its charge can be recorded (the owner's
+  // decision, 11-27): a remote call goes out only then
+  it('a remote call whose charge can\'t be recorded now is refused with the ledger\'s code before it goes out; nothing charged', async () => {
+    const {CountinghouseError} = require('../../lib/countinghouse-error');
+    const calls = [];
+    CHUtil.ci = {chargeable: (key, cb) => setImmediate(cb, new CountinghouseError('LEDGER_UNREACHABLE')),
+      recordCall: (key, tool, cost, cb) => { calls.push(key); cb(null, {charged: 1}); }};
+    const err = await registry.callRemote('charge-probe', 'probe', 'echo_text', {n: 4}, {billingKey: KEY}).then(() => null, (e) => e);
+    assert.strictEqual(err && err.code, 'LEDGER_UNREACHABLE', String(err && err.message));
+    assert.deepStrictEqual(calls, []);
+    CHUtil.ci.chargeable = (key, cb) => setImmediate(cb, null);
+    const r = await registry.callRemote('charge-probe', 'probe', 'echo_text', {n: 5}, {billingKey: KEY});
+    assert.ok(r != null && r.isError !== true, JSON.stringify(r));
+    assert.deepStrictEqual(calls, [KEY]);
   });
 
   tmpDirs.hooks();

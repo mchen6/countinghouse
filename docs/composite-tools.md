@@ -409,10 +409,11 @@ to read. A production composition feature would need to address these:
   inherited. A hop whose billing identity cannot be resolved is now refused
   with `HOP_IDENTITY_UNRESOLVED`, on both paths, instead of being metered for
   free with no caller-visible signal. That check sits before `recordCall`, not
-  on its error, because a `recordCall` failure can also mean Redis is down —
-  and this codebase deliberately fails *open* on infrastructure. Unresolvable
-  identity is not an infrastructure failure; it is a call nobody can be
-  charged for.
+  on its error. A ledger that can't record a charge refuses the hop before it
+  runs (`LEDGER_UNREACHABLE`, `LEDGER_UNWRITABLE`: a billed call runs only
+  while its charge can be recorded); a `recordCall` failure after the hop ran
+  is logged as a lost charge, and the next billed call is refused.
+  Unresolvable identity is a call nobody can be charged for.
 
   Test: `test/auth/13-ctx-billing-identity.js`, non-`--debug` and
   multi-tenant, where the caller is granted the composing device but *not* the
