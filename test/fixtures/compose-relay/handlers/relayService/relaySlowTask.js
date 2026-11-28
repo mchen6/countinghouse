@@ -9,6 +9,7 @@ module.exports = async (input, ctx) => {
     // its hop timed out; the call goes on
   }
   await ctx.call('compose-callee/calleeService.double', {n: 2});
-  await new Promise((resolve) => setTimeout(resolve, 2500));
+  // (the part answers at 4 s, 2 s after its hop's timeout; this waits to 7 s)
+  await new Promise((resolve) => setTimeout(resolve, 5000));
   throw new Error('the relay failed');
 };

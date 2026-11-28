@@ -25,7 +25,7 @@ const tmp      = require('../helpers/test-tmp').forFile(['ch-refused-25-']);
 
 // (each path: the direct peer channels, on by default, and the routed one,
 // where a hop passes the main thread's hop path)
-for (const [label, port, flags] of [['peer channels', testPort(9678), []], ['routed', testPort(9679), ['--no-directPeerChannels', '--requestTimeout', '2']]]) {
+for (const [label, port, flags] of [['peer channels', testPort(9678), []], ['routed', testPort(9679), ['--no-directPeerChannels']]]) {
 describe(`composition 25 (${label}): a crash after the runtime refused one of its module calls says that refusal`, function() {
   this.timeout(120000);
   const KEYS = {user: `user-key-${hex()}`, admin: `admin-key-${hex()}`, crasher: `crasher-internal-${hex()}`, caller: `caller-internal-${hex()}`, relay: `relay-internal-${hex()}`, rethrower: `rethrower-internal-${hex()}`};
@@ -77,13 +77,6 @@ describe(`composition 25 (${label}): a crash after the runtime refused one of it
     }
     return task;
   };
-
-  (label === 'routed' ? it : it.skip)('a part\'s late answer, refused by the runtime after its hop timed out and a later call went through, is not named', async () => {
-    // (a task run, which outlives its hops' 2 s timeout here; before compose-callee is unloaded)
-    const task = await runTask('compose_relay_relayservice_relayslowtask');
-    assert.ok(task.status === 'completed' && task.result != null && task.result.isError === true, JSON.stringify(task));
-    assert.ok(!LINE.test(textOf(task.result)), textOf(task.result));
-  });
 
   it('an untyped throw with no module call refused: no such line, whatever the module wrote', async () => {
     const result = await call('compose_crasher_crasherservice_throwsalone');
@@ -167,3 +160,65 @@ describe(`composition 25 (${label}): a crash after the runtime refused one of it
   tmp.hooks();
 });
 }
+
+// A hop's own timer firing, then its late answer refused by the main thread:
+// by its nature a case of time (the timer is what is tested), so it has a
+// server of its own with a short hop timeout and wide margins around it
+// (the part answers 2 s after its hop's timeout; the relay throws 3 s after
+// that), on the routed path where the answer passes the main thread.
+describe('composition 25 (routed, a hop\'s timer): a late answer after it fired is not the caller\'s refusal', function() {
+  this.timeout(120000);
+  const port = testPort(9711);
+  const KEYS = {user: `user-key-${hex()}`, relay: `relay-internal-${hex()}`, crasher: `crasher-internal-${hex()}`, rethrower: `rethrower-internal-${hex()}`};
+  const textOf = (result) => result.content.map((c) => c.text).join('\n');
+  const V = '2026-07-28';
+  const EXT = 'io.modelcontextprotocol/tasks';
+  const modern = (method, params) => request(`http://127.0.0.1:${port}`).post('/mcp').set('Content-Type', 'application/json').set('Accept', 'application/json, text/event-stream')
+    .set('X-CH-Key', KEYS.user).set('MCP-Protocol-Version', V).set('Mcp-Method', method).set('Mcp-Name', String(params.name || params.taskId))
+    .send({jsonrpc: '2.0', id: 1, method, params: Object.assign({_meta: {'io.modelcontextprotocol/protocolVersion': V, 'io.modelcontextprotocol/clientCapabilities': {extensions: {[EXT]: {}}}}}, params)})
+    .then((r) => r.body);
+  let server = null;
+  before(async () => {
+    const base = tmp.mkdtemp('ch-refused-25-');
+    const authPath = path.join(base, 'auth.json');
+    fs.writeFileSync(authPath, JSON.stringify({
+      [KEYS.user]: {userName: `user-${hex()}`, devices: ['*']},
+      [KEYS.relay]: {userName: `relay-${hex()}`, devices: ['compose-slowbad', 'compose-callee', 'compose-crasher', 'compose-rethrower', 'compose-big'].map(deviceIDForName), runsModules: ['compose-relay']},
+      // (each composing module bound and granted its own calls, so all verify at the start)
+      [KEYS.crasher]: {userName: `crasher-${hex()}`, devices: [deviceIDForName('compose-callee')], runsModules: ['compose-crasher']},
+      [KEYS.rethrower]: {userName: `rethrower-${hex()}`, devices: [deviceIDForName('compose-callee')], runsModules: ['compose-rethrower']}
+    }), {mode: 0o600});
+    server = await startServer(port, ['--workerThread', '--no-directPeerChannels', '--requestTimeout', '2', '--authProvider', 'file', '--authConfigPath', authPath,
+      '--moduleSandbox', 'off', '--moduleDataPath', path.join(base, 'store'), '--store', 'local', '--storePath', path.join(base, 'jobs'),
+      '--loadModule', path.join(FIXTURES, 'compose-callee'),
+      '--loadModule', path.join(FIXTURES, 'compose-crasher'),
+      '--loadModule', path.join(FIXTURES, 'compose-rethrower'),
+      '--loadModule', path.join(FIXTURES, 'compose-big'),
+      '--loadModule', path.join(FIXTURES, 'compose-slowbad'),
+      '--loadModule', path.join(FIXTURES, 'compose-relay')]);
+    // (the server answers before its modules have loaded: wait, bounded, for the tool to be listed)
+    for (let i = 0; i < 300; i++) {
+      const listed = (await request(`http://127.0.0.1:${port}`).post('/mcp').set('X-CH-Key', KEYS.user).set('Accept', 'application/json, text/event-stream')
+        .send({jsonrpc: '2.0', id: 1, method: 'tools/list', params: {}})).body;
+      if (listed != null && listed.result != null && listed.result.tools.some((x) => x.name === 'compose_relay_relayservice_relayslowtask')) return;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error(`compose_relay_relayservice_relayslowtask was never listed: ${server.output.slice(-2000)}`);
+  });
+  after(() => stopServer(server));
+
+  it('a part\'s late answer, refused by the runtime after its hop timed out and a later call went through, is not named', async () => {
+    const started = await modern('tools/call', {name: 'compose_relay_relayservice_relayslowtask', arguments: {}});
+    assert.strictEqual((started.result || {}).resultType, 'task', JSON.stringify(started));
+    let task = null;
+    // (bounded: the run ends by itself, at about 7 s)
+    for (let i = 0; i < 400; i++) {
+      task = (await modern('tasks/get', {taskId: started.result.taskId})).result;
+      if (task != null && task.status !== 'working') break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.ok(task.status === 'completed' && task.result != null && task.result.isError === true, JSON.stringify(task));
+    assert.ok(!LINE.test(textOf(task.result)), textOf(task.result));
+  });
+  tmp.hooks();
+});
