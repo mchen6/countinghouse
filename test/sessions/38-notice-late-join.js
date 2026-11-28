@@ -29,9 +29,10 @@ describe('sessions 38: a global notice for the sessions that join later', () => 
   let clock;
   let reg;
   let sent;
-  const openSession = (id, {legacy = true} = {}) => {
+  const openSession = (id, {legacy = true, restored = false} = {}) => {
     const s = new EventEmitter();
     s.id = id;
+    if (restored) s.restoredAfterRestart = true;
     s.client = {status: 'ok', conditions: 'no', repo: null};
     sent[id] = [];
     s.notify = (m) => sent[id].push(m);
@@ -39,7 +40,7 @@ describe('sessions 38: a global notice for the sessions that join later', () => 
     if (legacy) sessions.recordClientInfo(id, {name: 'test-client', version: '1.0.0'});
     return s;
   };
-  const reset = () => { sessions.resetForTests(); settings.resetForTests(); jobSessions.resetForTests(); notices.resetForTests(); settingsTool.resetForTests(); };
+  const reset = () => { sessions.resetForTests(); settings.resetForTests(); jobSessions.resetForTests(); notices.resetForTests(); settingsTool.resetForTests(); require('../../lib/module-visibility').resetForTests(); };
   beforeEach(() => {
     reset();
     clock = T0;
@@ -115,31 +116,46 @@ describe('sessions 38: a global notice for the sessions that join later', () => 
     assert.deepStrictEqual(got, [...lines.filter((l) => l !== 'the audit line').map((l) => earlier(T0, l)), earlier(T0 + 1000, 'the audit line')]);
   });
 
-  it('a notice about a module hidden (going on or off) when a session opens is not given to it; once shown again, it is', () => {
+  it('a session back after a runtime restart (as its registry restored it, whatever its state) is told the new run\'s, as from after the restart', () => {
+    tellEverySession(null, 'under audit, countinghouse logs what a pack reads');
+    openSession(C, {restored: true});
+    assert.deepStrictEqual(resultFor(C), [`After a runtime restart, before this session resumed (${new Date(T0).toISOString()}): under audit, countinghouse logs what a pack reads`]);
+    // the registry marks the sessions it restores after a runtime restart, every one
+    const {createRegistry} = require('../../lib/session-transport/registry');
+    const r = createRegistry({reconnectWindowMs: 60000});
+    r._restore([{session: D, resume: 'f'.repeat(64)}]);
+    try {
+      assert.strictEqual(r._byId.get(D).restoredAfterRestart, true);
+    } finally {
+      clearTimeout(r._byId.get(D)._window);
+    }
+  });
+
+  it('a module loaded again clears what was kept about it, not counted as let go: its off text is no longer told', () => {
+    tellEverySession(null, '@acme/x turned off: turn it on with the way back', {own: true, about: '@acme/x'});
+    clock += 1000;
+    tellEverySession('x-tool', '@acme/x loaded again', {about: '@acme/x', clears: true});
+    openSession(C);
+    assert.deepStrictEqual(resultFor(C, 'x-tool'), [earlier(T0 + 1000, '@acme/x loaded again')]);
+  });
+
+  it('one module\'s own texts are one kind: many of them never push the other kinds out', () => {
+    tellEverySession('ch-pack-y', 'about y');
+    for (let i = 0; i < 70; i++) { clock += 1000; tellEverySession(null, `@acme/x turned off (callers ${i})`, {own: true, about: '@acme/x'}); }
+    openSession(C);
+    const got = [...resultFor(C, 'ch-pack-y')];
+    assert.ok(got.includes(earlier(T0, 'about y')), 'the other kind kept');
+    assert.strictEqual(got.filter((l) => l.includes('@acme/x turned off')).length, 5, 'the newest five of that one kind');
+  });
+
+  it('a notice about a module hidden at a session\'s open waits, and is given to it once the module is shown', () => {
     const visibility = require('../../lib/module-visibility');
     tellEverySession(null, '@acme/m: its settings changed', {about: '@acme/m'});
     visibility.hide(['@acme/m']);
-    try {
-      openSession(C);
-      assert.deepStrictEqual(resultFor(C), []);
-    } finally {
-      visibility.show(['@acme/m']);
-    }
-    openSession(D);
-    assert.deepStrictEqual(resultFor(D), [earlier(T0, '@acme/m: its settings changed')]);
-  });
-
-  it('a session back after a runtime restart is told the new run\'s, as from after the restart', () => {
-    tellEverySession(null, 'under audit, countinghouse logs what a pack reads');
-    const state = require('../../lib/session-state');
-    const was = state.isResuming;
-    state.isResuming = (id) => id === C;
-    try {
-      openSession(C);
-    } finally {
-      state.isResuming = was;
-    }
-    assert.deepStrictEqual(resultFor(C), [`After a runtime restart, before this session resumed (${new Date(T0).toISOString()}): under audit, countinghouse logs what a pack reads`]);
+    openSession(C);
+    assert.deepStrictEqual(resultFor(C), []);
+    visibility.show(['@acme/m']);
+    assert.deepStrictEqual(resultFor(C), [earlier(T0, '@acme/m: its settings changed')]);
   });
 
   it('order and age by the monotonic clock: a wall clock stepped back changes only the time shown', () => {
@@ -207,6 +223,26 @@ describe('sessions 38: a global notice for the sessions that join later', () => 
       const got = resultFor(C);
       assert.deepStrictEqual(got.filter((l) => l.startsWith('Earlier')), [earlier(T0 + 12 * 3600 * 1000, 'newer')]);
       assert.deepStrictEqual(dropped(got), [`1 earlier notice from this run is not shown here: ${BOUNDS}`]);
+    });
+
+    it('a line let go and told again is not counted as let go', () => {
+      tellEverySession(null, 'the audit line');
+      clock += 24 * 3600 * 1000 + 1;
+      // (another line's keep lets the first go, past 24 hours)
+      tellEverySession(null, 'another line');
+      tellEverySession(null, 'the audit line');
+      openSession(C);
+      assert.deepStrictEqual(resultFor(C), [earlier(T0 + 24 * 3600 * 1000 + 1, 'another line'), earlier(T0 + 24 * 3600 * 1000 + 1, 'the audit line')]);
+    });
+
+    it('24 hours by the wall clock too (a monotonic clock stops while the machine sleeps)', () => {
+      let wallNow = T0;
+      notices.configure({wall: () => wallNow});
+      tellEverySession(null, 'before the sleep');
+      clock += 1000;
+      wallNow += 25 * 3600 * 1000;
+      openSession(C);
+      assert.deepStrictEqual(resultFor(C), [`1 earlier notice from this run is not shown here: ${BOUNDS}`]);
     });
 
     it('nothing let go, nothing said of it', () => {
