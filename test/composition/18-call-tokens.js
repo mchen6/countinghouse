@@ -3249,6 +3249,36 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       }
     });
 
+    // billing's order on a held hop: a key whose charge can't be recorded is refused before any hold; one held is asked again on the
+    // pass that runs, and refused there if its charge can no longer be recorded, nothing sent
+    it('billing on a held hop: an unchargeable key refused before the hold; the pass that runs asks again, and is refused there', async () => {
+      const {CountinghouseError} = require('../../lib/countinghouse-error');
+      const savedCi = CHUtil.ci;
+      let refuse = true;
+      const asked = [];
+      CHUtil.ci = {chargeable: (key, cb) => { asked.push(key); setImmediate(cb, refuse ? new CountinghouseError('LEDGER_UNREACHABLE') : null); }, recordCall: (k, t, c, cb) => cb(null, {charged: c, balance: 99})};
+      try {
+        // (refused before the hold: nothing held, nothing sent)
+        const first = setup((cb) => cb(null, {identity: 'callee-id', allowed: null, targets: []}));
+        first.dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm20a', first.caller, first.token);
+        await until(() => first.replies.length > 0, 2000, 'refused');
+        assert.deepStrictEqual([first.replies[0].errCode, DeviceManager.verdictHeldOn(first.callee), first.sent.length, asked.length], ['LEDGER_UNREACHABLE', 0, 0, 1]);
+        tokens().drop(first.token);
+        // (chargeable when it arrives: held; not when it runs: refused on that pass, nothing sent)
+        refuse = false;
+        const second = setup((cb) => cb(null, {identity: 'callee-id', allowed: null, targets: []}));
+        second.dm.sendInvokeActionMessageToWorker(null, null, CALLEE, 'svc', 'act', {}, 'm20b', second.caller, second.token);
+        await until(() => DeviceManager.verdictHeldOn(second.callee) === 1, 2000, 'held');
+        refuse = true;
+        second.dm.verificationPass(null);
+        await until(() => second.replies.length > 0, 2000, 'answered on the pass that runs');
+        assert.deepStrictEqual([second.replies[0].errCode, second.sent.length, asked.length], ['LEDGER_UNREACHABLE', 0, 3]);
+        tokens().drop(second.token);
+      } finally {
+        CHUtil.ci = savedCi;
+      }
+    });
+
     it('a pass past its deadline is the final pass: never held again', async () => {
       cli.setOptions({workerThread: true, requestTimeout: 3});   // seconds: a hold of 1 s
       const {dm, caller, callee, replies, token} = setup(() => {});
