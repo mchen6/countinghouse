@@ -196,6 +196,11 @@ const out = {
     json: '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"countinghouse\'s shared runtime failed, and this session\'s tightened settings can\'t move to a runtime of its own: restart the session","data":{"countinghouse/code":"SESSION_CANT_FALL_BACK","retryable":false}}}',
     stderr: 'the shared runtime failed (<reason>), and this session\'s tightened settings can\'t move to a runtime of its own: restart the session'
   },
+  sessionTighteningsLostAnswer: {
+    rule: 'exact apart from the id: a session refused because the shim lost one of its tightenings (a record it could not keep, so a new session cannot be given it back; or the runtime said it could not keep them, or did not say, after a replay or a restore); each held and later request gets it, then the shim exits non-zero. A mid-session failure, and a session that cannot share, keep sessionCantFallBackAnswer',
+    json: '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"countinghouse couldn\'t keep the settings this session tightened, so the session stops: restart it","data":{"countinghouse/code":"SESSION_TIGHTENINGS_LOST","retryable":false}}}',
+    stderr: 'ch-shim: the runtime couldn\'t resume this session, and a setting this session tightened couldn\'t be kept, so the session stops: restart it'
+  },
   secretFiles: {
     accepted: [`${hex(secret)}`, `${hex(secret)}\n`],
     refused: [`${hex(secret).toUpperCase()}`, `${hex(secret)}\r\n`, `${hex(secret)}\n\n`, hex(secret).slice(2), ` ${hex(secret)}`, ''],
