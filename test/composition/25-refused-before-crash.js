@@ -131,6 +131,30 @@ describe(`composition 25 (${label}): a crash after the runtime refused one of it
     assert.ok(await logged(/a call failed: compose-crasher\/refusedThenThrowTask: DEVICE_INVOKE_EXCEPTION \(the module crashed\), after the runtime refused its call to another module: MODULE_UNLOADED/), server.output.slice(-3000));
   });
 
+  // (a job added over HTTP runs through the same runner as a task: the
+  // CHANGELOG's "a task run (a task-augmented tools/call or a job)";
+  // compose-callee was unloaded above, so the crasher's call is refused)
+  it('a job added over HTTP (add-job) adds the sentence to its failure, and is logged', async () => {
+    const LOGGED = /a call failed: compose-crasher\/refusedThenThrowTask: DEVICE_INVOKE_EXCEPTION \(the module crashed\), after the runtime refused its call to another module: MODULE_UNLOADED/g;
+    const before = (server.output.match(LOGGED) || []).length;
+    const added = await request(`http://127.0.0.1:${port}`).post(`/devices/${deviceIDForName('compose-crasher')}/add-job`).set('X-CH-Key', KEYS.user)
+      .send({serviceID: 'urn:countinghouse-test:serviceID:crasherService', actionName: 'refusedThenThrowTask', opts: {name: `refused-job-${hex()}`}, input: {}});
+    assert.strictEqual(added.status, 200, JSON.stringify(added.body));
+    let rec = null;
+    for (let i = 0; i < 200; i++) {
+      rec = (await request(`http://127.0.0.1:${port}`).post(`/devices/${deviceIDForName('compose-crasher')}/get-job`).set('X-CH-Key', KEYS.user).send({id: added.body.id})).body;
+      if (rec != null && rec.job != null && rec.job.failedReason != null) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const reason = rec && rec.job ? String(rec.job.failedReason) : '';
+    assert.ok(/^DEVICE_INVOKE_EXCEPTION: /.test(reason), JSON.stringify(rec));
+    assert.ok(/Before it failed, the runtime refused its call to another module: DEVICE_NOT_FOUND\./.test(reason), JSON.stringify(rec));
+    // (its own line, beside the task's: at least one more than before)
+    let now = before;
+    for (let i = 0; i < 50 && now <= before; i++) { await new Promise((r) => setTimeout(r, 100)); now = (server.output.match(LOGGED) || []).length; }
+    assert.ok(now === before + 1, `${before} -> ${now}: ${server.output.slice(-1500)}`);
+  });
+
   it('a part that rethrew the typed refusal it got: said from main\'s own note on the part\'s token, passed up when it is done, never from its reply\'s code', async () => {
     // (compose-callee was unloaded above; compose-rethrower's own call is refused
     // through the device query, which the main thread notes on its token, and it
