@@ -157,7 +157,7 @@ describe('sessions 01: the wire (contract 2)', () => {
         const control = require('../../lib/module-control').createModuleControl({
           shared: () => shared, mm: {}, dm: {}, toolsOf: async () => [],
           packs: {loadPack: async () => assert.fail('loaded'), reloadPack: async () => assert.fail('reloaded'), unloadPack: async () => assert.fail('unloaded')},
-          notices: {add: () => {}, keep: () => {}}});
+          notices: {add: () => {}, keep: () => {}, clearAbout: () => {}}});
         const scenario = '/home/example/.countinghouse/packs/example/node_modules/@countinghouse/ch-pack-example';
         for (const m of [{type: 'load', name: '@countinghouse/ch-pack-example', scenario, pack: 'example', global: true},
           {type: 'reload', name: '@countinghouse/ch-pack-example', scenario, pack: 'example'},

@@ -285,6 +285,35 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
   });
 
   describe('a notice about a module goes to every open session', () => {
+    // what a session that joins later is given (lib/notices.js standing notices), through module-control's own calls
+    describe('a session that joins later', () => {
+      const D = 'd'.repeat(32);
+      const MOD = '@countinghouse/ch-pack-late';
+      const dirs = {[MOD]: `/store/${MOD}/1.0.0`};
+
+      for (const notice of [undefined, 'loaded again']) {
+        it(`a load ${notice == null ? 'with no notice' : 'with its notice'} clears what was kept about the module: a later session is not told the unload`, async() => {
+          await control.unload({type: 'unload', name: MOD, notice: 'the late tools were turned off'});
+          await control.load(Object.assign({type: 'load', name: MOD, dirs}, notice != null ? {notice} : {}));
+          openSession(D);
+          const got = notices.take(null, D).concat(notices.take(MOD, D));
+          assert.ok(!got.some((l) => l.includes('turned off')), got.join(' | '));
+          if (notice != null) assert.ok(got.some((l) => l.endsWith('loaded again')), got.join(' | '));
+        });
+      }
+
+      it('an unload\'s notice and a notice message name their module: one hidden at a session\'s open waits for it', async() => {
+        await control.unload({type: 'unload', name: MOD, notice: 'the late tools were turned off'});
+        await control.notice({type: 'notice', module: MOD, text: 'a line about the late module'});
+        visibility.hide([MOD]);
+        openSession(D);
+        assert.deepStrictEqual(notices.take(null, D).concat(notices.take(MOD, D)), []);
+        visibility.show([MOD]);
+        const got = notices.take(null, D).concat(notices.take(MOD, D));
+        assert.ok(got.some((l) => l.endsWith('the late tools were turned off')) && got.some((l) => l.endsWith('a line about the late module')), got.join(' | '));
+      });
+    });
+
     it('load\'s, reload\'s and a notice message\'s: each session gets each once', async() => {
       await load('ci', {notice: 'ci added 1.0.0'});
       await control.reload({type: 'reload', names: [SCENARIO('ci')], dirs: {[SCENARIO('ci')]: '/x/ci'}, notice: 'ci upgraded'});

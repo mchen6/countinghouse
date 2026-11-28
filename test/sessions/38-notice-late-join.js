@@ -134,9 +134,47 @@ describe('sessions 38: a global notice for the sessions that join later', () => 
   it('a module loaded again clears what was kept about it, not counted as let go: its off text is no longer told', () => {
     tellEverySession(null, '@acme/x turned off: turn it on with the way back', {own: true, about: '@acme/x'});
     clock += 1000;
-    tellEverySession('x-tool', '@acme/x loaded again', {about: '@acme/x', clears: true});
+    notices.clearAbout('@acme/x');
+    tellEverySession('x-tool', '@acme/x loaded again', {about: '@acme/x'});
     openSession(C);
     assert.deepStrictEqual(resultFor(C, 'x-tool'), [earlier(T0 + 1000, '@acme/x loaded again')]);
+  });
+
+  it('a load that shows a module and clears it: a session that opened while it was hidden is not told the cleared off text', () => {
+    const visibility = require('../../lib/module-visibility');
+    tellEverySession(null, '@acme/x turned off: turn it on with the way back', {own: true, about: '@acme/x'});
+    // the load: the module hidden while it loads, a session opens meanwhile, then shown (synchronously, inside the
+    // load), then what was kept about it cleared (after the load's await), then its notice
+    visibility.hide(['@acme/x']);
+    openSession(C);
+    visibility.show(['@acme/x']);
+    notices.clearAbout('@acme/x');
+    tellEverySession('x-tool', '@acme/x loaded again', {about: '@acme/x'});
+    assert.deepStrictEqual(resultFor(C, 'x-tool'), ['@acme/x loaded again']);
+  });
+
+  it('what waited is given at a later result with the resumed lead for a resumed session, and never as a notification', () => {
+    const visibility = require('../../lib/module-visibility');
+    tellEverySession(null, '@acme/m: its settings changed', {about: '@acme/m'});
+    visibility.hide(['@acme/m']);
+    const heard = [];
+    notices.openSession(D, (m) => heard.push(m), {resumed: true});
+    visibility.show(['@acme/m']);
+    assert.deepStrictEqual(notices.take(null, D), [`After a runtime restart, before this session resumed (${new Date(T0).toISOString()}): @acme/m: its settings changed`]);
+    assert.deepStrictEqual(heard, []);
+  });
+
+  it('the replay has room of its own: a start of 25 lines reaches a joiner whole, never cut by the live queue\'s bound', () => {
+    for (let i = 0; i < 25; i++) tellEverySession(null, `start line ${i}`);
+    openSession(C);
+    const got = resultFor(C);
+    assert.strictEqual(got.length, 25, got.join(' | '));
+    assert.ok(!got.some((l) => /not listed here/.test(l)));
+  });
+
+  it('settings re-read tells what each notice is about (its whole path needs a reread: the call is pinned in its source)', () => {
+    const src = require('fs').readFileSync(require.resolve('../../lib/settings-reread'), 'utf8');
+    assert.ok(/tellEverySession\(names\.length === 1 \? names\[0\] : null, text\(part \? `a part of \$\{top\}` : top, part\), \{about: top\}\);/.test(src));
   });
 
   it('one module\'s own texts are one kind: many of them never push the other kinds out', () => {
@@ -243,6 +281,24 @@ describe('sessions 38: a global notice for the sessions that join later', () => 
       wallNow += 25 * 3600 * 1000;
       openSession(C);
       assert.deepStrictEqual(resultFor(C), [`1 earlier notice from this run is not shown here: ${BOUNDS}`]);
+    });
+
+    it('only what was let go in the last 24 hours is counted: after 24 quiet hours the line is not said', () => {
+      for (let i = 1; i <= 6; i++) tellEverySession('ch-pack-x', `change ${i}`);
+      clock += 24 * 3600 * 1000 + 1;
+      openSession(C);
+      // (the five aged out just now; the one let go a day ago is past the 24 hours, so not counted)
+      assert.deepStrictEqual(dropped(resultFor(C, 'ch-pack-x')), [`5 earlier notices from this run are not shown here: ${BOUNDS}`]);
+      clock += 24 * 3600 * 1000 + 1;
+      openSession(D);
+      assert.deepStrictEqual(resultFor(D, 'ch-pack-x'), []);
+    });
+
+    it('a module loaded again clears what was let go about it too: it is not counted', () => {
+      for (let i = 1; i <= 6; i++) tellEverySession('ch-pack-x', `change ${i}`, {about: '@acme/x'});
+      notices.clearAbout('@acme/x');
+      openSession(C);
+      assert.deepStrictEqual(resultFor(C, 'ch-pack-x'), []);
     });
 
     it('nothing let go, nothing said of it', () => {
