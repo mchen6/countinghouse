@@ -3196,7 +3196,7 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
     refusing.refuse = () => refuse;
     withStoreLock(dir, () => { refuse = true; });
     refuse = false;
-    // (the monotonic clock past the point, the wall clock stepped back 20 s: its age by the wall clock is under it)
+    // (the monotonic clock past the point, the wall clock stepped back 2 s: its age by the wall clock is under it)
     require(MOD).forTests.clock({mono: 20000, wall: -2000});
     assert.throws(() => withStoreLock(dir, () => {}, 50), {message: `the store lock ${path.join(dir, '.lock')} is this process's own, left behind because it couldn't be removed (another program may have had it open); any process may take it over 120 s after it was taken: retry after that`});
     assert.ok(fs.existsSync(path.join(dir, '.lock')), 'its own lock was taken over past the point by the monotonic clock');
@@ -3723,10 +3723,29 @@ describe('store 04: the takeover\'s exclusion', function() {
     plantDeadLock(dir);
     const odd = path.join(dir, '.lock.takeover.v2-another-format');
     fs.writeFileSync(odd, '');
-    assert.throws(() => withStoreLock(dir, () => {}, 200), 'went on past an intent it could not read');
+    assert.throws(() => withStoreLock(dir, () => {}, 200), /is held by pid|not yet readable/, 'went on past an intent it could not read');
     const hourAgo = (Date.now() - 3600 * 1000) / 1000;
     fs.utimesSync(odd, hourAgo, hourAgo);
     assert.doesNotThrow(() => withStoreLock(dir, () => {}, 500));
+  });
+
+  it('an intent made on a machine whose clock reads before 2000 (no clock yet set) is never read as withdrawn', async () => {
+    const dir = exTmp.mkdtemp('ch-store04-ex-');
+    const sleeper = await sleeperProcess();
+    // (this machine's clock at 1985, the taker's too: its at and its mtime both then)
+    const shift = Date.parse('1985-06-01T00:00:00Z') - Date.now();
+    require(MOD).forTests.clock({wall: shift});
+    try {
+      plantDeadLock(dir);
+      const at = Date.now() + shift;
+      const file = path.join(dir, `.lock.takeover.${sleeper.pid}-${sleeper.startId}-aa-1-${at}`);
+      fs.writeFileSync(file, '');
+      fs.utimesSync(file, at / 1000, at / 1000);
+      assert.throws(() => withStoreLock(dir, () => {}, 200), /is held by pid|not yet readable/, 'took a live intent made before 2000 for withdrawn');
+    } finally {
+      require(MOD).forTests.clock(null);
+      sleeper.kill();
+    }
   });
 
   it('an intent stamped behind this process\'s clock (a network or shared mount) still counts', async () => {
@@ -3738,7 +3757,7 @@ describe('store 04: the takeover\'s exclusion', function() {
       fs.writeFileSync(file, '');
       const behind = (Date.now() - 30000) / 1000;
       fs.utimesSync(file, behind, behind);
-      assert.throws(() => withStoreLock(dir, () => {}, 200), 'took a live intent stamped behind for withdrawn');
+      assert.throws(() => withStoreLock(dir, () => {}, 200), /is held by pid|not yet readable/, 'took a live intent stamped behind for withdrawn');
     } finally {
       sleeper.kill();
     }
