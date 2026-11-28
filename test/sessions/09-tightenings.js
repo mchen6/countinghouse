@@ -157,7 +157,9 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
       await refused(tool.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A)), 'SETTING_OUT_OF_BOUNDS');
     } finally { settings.set = realSet; }
     assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 8 * MiB);
-    assert.deepStrictEqual(history().map((h) => [h.setting, h.change, h.session]), [['maxOutputBytes', 'this session', A], ['maxOutputBytes', 'not made', A]]);
+    // (and no scope: ch-local's outside-edit check reads a not made with a session and without the every-session scope
+    // as that session's own change failing, which undoes nothing stored; validation 30 pins the every-session one)
+    assert.deepStrictEqual(history().map((h) => [h.setting, h.change, h.session, h.scope]), [['maxOutputBytes', 'this session', A, undefined], ['maxOutputBytes', 'not made', A, undefined]]);
     assert.deepStrictEqual((await tool.get(ctx(A))).history.map((h) => h.change), ['this session', 'not made']);
   });
 
