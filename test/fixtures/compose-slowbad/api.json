@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "compose-slowbad",
+    "manufacturer": "countinghouse",
+    "modelDescription": "A module that answers late, with an output its schema refuses (composition 25).",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:slowService": {
+        "actionList": [
+          {
+            "name": "slowBad",
+            "description": "Answers after 3 s with an output its schema refuses.",
+            "input": {
+              "schema": "/slowService/slowBad/input"
+            },
+            "output": {
+              "schema": "/slowService/slowBad/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

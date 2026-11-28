@@ -32,6 +32,16 @@
         "type": "object",
         "properties": {}
       }
+    },
+    "relaySlowTask": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
     }
   }
 }
