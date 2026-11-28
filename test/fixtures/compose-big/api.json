@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "compose-big",
+    "manufacturer": "countinghouse",
+    "modelDescription": "A module whose answer breaks its own output schema (composition 25).",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:bigService": {
+        "actionList": [
+          {
+            "name": "big",
+            "description": "Answers with an output its schema refuses.",
+            "input": {
+              "schema": "/bigService/big/input"
+            },
+            "output": {
+              "schema": "/bigService/big/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "device": {
+    "friendlyName": "compose-relay",
+    "manufacturer": "countinghouse",
+    "modelDescription": "A module that calls compose-crasher, which fails after the runtime refused its own call, and then throws.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:relayService": {
+        "actionList": [
+          {
+            "name": "relayThrow",
+            "description": "Calls compose-crasher, then throws an untyped error of its own.",
+            "input": {
+              "schema": "/relayService/relayThrow/input"
+            },
+            "output": {
+              "schema": "/relayService/relayThrow/output"
+            }
+          },
+          {
+            "name": "relayRethrow",
+            "description": "Calls compose-rethrower, then throws an untyped error of its own.",
+            "input": {
+              "schema": "/relayService/relayRethrow/input"
+            },
+            "output": {
+              "schema": "/relayService/relayRethrow/output"
+            }
+          },
+          {
+            "name": "relayBig",
+            "description": "Calls compose-big, then throws an untyped error of its own.",
+            "input": {
+              "schema": "/relayService/relayBig/input"
+            },
+            "output": {
+              "schema": "/relayService/relayBig/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
