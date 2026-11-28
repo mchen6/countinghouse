@@ -2999,15 +2999,18 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
     }
     assert.ok(fs.existsSync(path.join(dir, '.lock')), 'the cleanup removed the lock past another\'s takeover');
     assert.strictEqual(fs.readFileSync(takeover, 'utf8'), '424242', 'the cleanup touched another\'s takeover');
+    // (the cleanup was ticking all along: the other taker gone, the lock goes)
+    unlink(takeover);
+    assert.ok(await gone(path.join(dir, '.lock')), 'the cleanup was not running');
   });
 
   it('the cleanup\'s time runs from the release: a lock held long still gets its cleanup', async () => {
     const dir = relTmp.mkdtemp('ch-store04-rel-');
-    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 300});
+    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 1500});
     let refuse = false;
     refusing.refuse = () => refuse;
-    // (held 400 ms: longer than the cleanup's time)
-    withStoreLock(dir, () => { refuse = true; blockFor(400); });
+    // (held 1.7 s: longer than the cleanup's time, which leaves the cleanup ticks well inside it after the release)
+    withStoreLock(dir, () => { refuse = true; blockFor(1700); });
     const until = Date.now() + 5000;
     while (require(MOD).forTests.holds(dir) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 2));
     assert.strictEqual(require(MOD).forTests.holds(dir), false, 'still held after its retries');
