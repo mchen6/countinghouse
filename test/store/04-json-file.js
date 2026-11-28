@@ -3404,7 +3404,8 @@ describe('store 04: the takeover\'s exclusion', function() {
     fs.unlinkSync = function(t) { if (first && own != null && path.basename(String(t)) === own) first = false; return realUnlink.apply(this, arguments); };
     fs.writeFileSync = function(t, d, o) { const r = realWrite.apply(this, arguments); if (first && own == null && path.basename(String(t)).startsWith('.lock.takeover.') && o && o.flag === 'wx') { own = path.basename(String(t)); made = true; say(ROLE + '-made'); waitFor(ROLE + '-list'); } return r; };
     fs.readdirSync = function(t) { const r = realReaddir.apply(this, arguments); if (first && made && !listed) { listed = true; say(ROLE + '-listed'); waitFor(ROLE + '-enter'); } return r; };
-    fs.readFileSync = function(t) { const r = realRead.apply(this, arguments); if (first && listed && path.basename(String(t)) === '.lock') { first = false; say(ROLE + '-entered'); } return r; };
+    // (in its takeover: held there until let go, so two entries can only be two inside at once)
+    fs.readFileSync = function(t) { const r = realRead.apply(this, arguments); if (first && listed && path.basename(String(t)) === '.lock') { first = false; say(ROLE + '-entered'); try { waitFor(ROLE + '-leave', 5000); } catch (e) { /* let go by its bound */ } } return r; };
     const {withStoreLock} = require(MOD);
     try { withStoreLock(DIR, () => {}, 3000); } catch (e) { /* busy: what it did on its first intent is what counts */ }
     first = false;
@@ -3438,11 +3439,15 @@ describe('store 04: the takeover\'s exclusion', function() {
         }
         say('X-enter');
         say('Y-enter');
+        // (each that goes on is held inside its takeover meanwhile: what is in at once is what this sees)
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const inside = ['X', 'Y'].filter((r) => fs.existsSync(sigOf(dir, `${r}-entered`)));
+        say('X-leave');
+        say('Y-leave');
         const results = await Promise.all(done);
         for (const r of results) assert.strictEqual(r.code, 0, `${r.role} failed: ${r.err}`);
-        const entered = ['X', 'Y'].filter((r) => fs.existsSync(sigOf(dir, `${r}-entered`)));
-        assert.ok(entered.length <= 1, `both went on into a takeover: ${entered}`);
-        if (label === 'X makes, X lists, Y makes, Y lists') assert.deepStrictEqual(entered, ['X'], 'the taker that listed first, alone, did not go on');
+        assert.ok(inside.length <= 1, `both were in a takeover at once: ${inside}`);
+        if (label === 'X makes, X lists, Y makes, Y lists') assert.deepStrictEqual(inside, ['X'], 'the taker that listed first, alone, did not go on');
       } finally {
         for (const k of Object.values(kids)) if (k.exitCode == null && k.signalCode == null) k.kill();
       }
@@ -3493,22 +3498,7 @@ describe('store 04: the takeover\'s exclusion', function() {
     }
   });
 
-  it('an intent dated before 1980 (a filesystem\'s earliest date, as FAT clamps a withdrawal\'s dating) is withdrawn', async () => {
-    const dir = exTmp.mkdtemp('ch-store04-ex-');
-    const sleeper = await sleeperProcess();
-    try {
-      plantDeadLock(dir);
-      const file = path.join(dir, `.lock.takeover.${sleeper.pid}-${sleeper.startId}-aa-1-${Date.now()}`);
-      fs.writeFileSync(file, '');
-      const fat = Date.parse('1980-01-01T00:00:00Z') / 1000;
-      fs.utimesSync(file, fat, fat);
-      assert.doesNotThrow(() => withStoreLock(dir, () => {}, 500));
-    } finally {
-      sleeper.kill();
-    }
-  });
-
-  it('a live taker\'s intent dated in the past is withdrawn: ignored', async () => {
+  it('a live taker\'s intent dated in the past still counts while its name says it is fresh (a date never stands for a withdrawal)', async () => {
     const dir = exTmp.mkdtemp('ch-store04-ex-');
     const sleeper = await sleeperProcess();
     try {
@@ -3516,12 +3506,12 @@ describe('store 04: the takeover\'s exclusion', function() {
       const file = path.join(dir, `.lock.takeover.${sleeper.pid}-${sleeper.startId}-aa-1-${Date.now()}`);
       fs.writeFileSync(file, '');
       fs.utimesSync(file, 0, 0);
-      assert.doesNotThrow(() => withStoreLock(dir, () => {}, 500));
+      assert.throws(() => withStoreLock(dir, () => {}, 200), /is held by pid|not yet readable/);
+      assert.ok(fs.existsSync(file), 'a live intent dated in the past was removed');
     } finally {
       sleeper.kill();
     }
   });
-
   // (a second copy of the module, its own instance: another taker in this process)
   const otherCopy = () => {
     const key = require.resolve(MOD);
@@ -3529,7 +3519,7 @@ describe('store 04: the takeover\'s exclusion', function() {
     delete require.cache[key];
     try { return require(MOD); } finally { require.cache[key] = saved; }
   };
-  it('a withdrawal refused is dated in the past: another taker goes on', () => {
+  it('a withdrawal refused: the intent counts, and another taker waits (never two takers)', () => {
     const dir = exTmp.mkdtemp('ch-store04-ex-');
     plantDeadLock(dir);
     const unlink = fs.unlinkSync;
@@ -3539,34 +3529,28 @@ describe('store 04: the takeover\'s exclusion', function() {
     } finally {
       fs.unlinkSync = unlink;
     }
-    const left = intents(dir);
-    assert.strictEqual(left.length, 1, 'the refused withdrawal was not set up');
-    assert.ok(fs.lstatSync(path.join(dir, left[0])).mtimeMs < 1000, 'the refused withdrawal was not dated in the past');
+    assert.strictEqual(intents(dir).length, 1, 'the refused withdrawal was not set up');
     // (another copy, another taker, on a stale lock again)
     plantDeadLock(dir);
-    assert.doesNotThrow(() => otherCopy().withStoreLock(dir, () => {}, 500));
+    assert.throws(() => otherCopy().withStoreLock(dir, () => {}, 200), /is held by pid|not yet readable/, 'another taker went on past a live intent');
+    require(MOD).forTests.stopReleases();
   });
-
-  it('a withdrawal refused and its dating refused: the intent counts (others wait, never two takers), and this copy removes it at its next takeover', () => {
+  it('a withdrawal refused: this copy removes the intent at its next takeover', () => {
     const dir = exTmp.mkdtemp('ch-store04-ex-');
     plantDeadLock(dir);
-    const unlink = fs.unlinkSync, lutimes = fs.lutimesSync;
+    const unlink = fs.unlinkSync;
     fs.unlinkSync = function(t) { if (path.basename(String(t)).startsWith('.lock.takeover.')) throw Object.assign(new Error('EPERM: operation not permitted, unlink'), {code: 'EPERM', syscall: 'unlink'}); return unlink.apply(this, arguments); };
-    fs.lutimesSync = function(t) { if (path.basename(String(t)).startsWith('.lock.takeover.')) throw Object.assign(new Error('EPERM: operation not permitted, utime'), {code: 'EPERM'}); return lutimes.apply(this, arguments); };
     try {
       withStoreLock(dir, () => {}, 500);
     } finally {
       fs.unlinkSync = unlink;
-      fs.lutimesSync = lutimes;
     }
-    assert.strictEqual(intents(dir).length, 1, 'the refusals were not set up');
+    assert.strictEqual(intents(dir).length, 1, 'the refusal was not set up');
     plantDeadLock(dir);
-    assert.throws(() => otherCopy().withStoreLock(dir, () => {}, 200), 'another taker went on past a live intent');
-    // (this copy's next takeover: its leftover removed, and it goes on)
     assert.doesNotThrow(() => withStoreLock(dir, () => {}, 500));
     assert.deepStrictEqual(intents(dir), [], 'this copy\'s leftover intent stayed');
+    require(MOD).forTests.stopReleases();
   });
-
   it('making the intent refused (Windows) is a refusal: the wait ends saying it was still refused', () => {
     const dir = exTmp.mkdtemp('ch-store04-ex-');
     plantDeadLock(dir);
@@ -3615,27 +3599,24 @@ describe('store 04: the takeover\'s exclusion', function() {
     }
   });
 
-  it('a withdrawal and its dating both refused: a timer removes the intent once it can, with no takeover of this copy\'s', async () => {
+  it('a withdrawal refused: a timer removes the intent once it can, with no takeover of this copy\'s', async () => {
     const dir = exTmp.mkdtemp('ch-store04-ex-');
     plantDeadLock(dir);
     let refuse = true;
-    const unlink2 = fs.unlinkSync, lutimes = fs.lutimesSync;
+    const unlink2 = fs.unlinkSync;
     fs.unlinkSync = function(t) { if (refuse && path.basename(String(t)).startsWith('.lock.takeover.')) throw Object.assign(new Error('EPERM: operation not permitted, unlink'), {code: 'EPERM', syscall: 'unlink'}); return unlink2.apply(this, arguments); };
-    fs.lutimesSync = function(t) { if (refuse && path.basename(String(t)).startsWith('.lock.takeover.')) throw Object.assign(new Error('EPERM: operation not permitted, utime'), {code: 'EPERM'}); return lutimes.apply(this, arguments); };
     try {
       withStoreLock(dir, () => {}, 500);
-      assert.strictEqual(intents(dir).length, 1, 'the refusals were not set up');
+      assert.strictEqual(intents(dir).length, 1, 'the refusal was not set up');
       refuse = false;
       const end = Date.now() + 5000;
       while (intents(dir).length > 0 && Date.now() < end) await new Promise((resolve) => setTimeout(resolve, 20));
       assert.deepStrictEqual(intents(dir), [], 'the intent left behind was never tried again');
     } finally {
       fs.unlinkSync = unlink2;
-      fs.lutimesSync = lutimes;
       require(MOD).forTests.stopReleases();
     }
   });
-
   it('a taker in its takeover past the point others may take its intent for gone removes nothing', () => {
     const dir = exTmp.mkdtemp('ch-store04-ex-');
     plantDeadLock(dir);
@@ -3742,8 +3723,11 @@ describe('store 04: the takeover\'s exclusion', function() {
       fs.writeFileSync(file, '');
       fs.utimesSync(file, at / 1000, at / 1000);
       assert.throws(() => withStoreLock(dir, () => {}, 200), /is held by pid|not yet readable/, 'took a live intent made before 2000 for withdrawn');
+      assert.ok(fs.existsSync(file) && fs.existsSync(path.join(dir, '.lock')), 'the live intent or the lock went');
+      fs.unlinkSync(file);
     } finally {
       require(MOD).forTests.clock(null);
+      require(MOD).forTests.stopReleases();
       sleeper.kill();
     }
   });
