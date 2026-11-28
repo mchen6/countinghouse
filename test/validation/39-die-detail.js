@@ -134,12 +134,16 @@ describe('validation 39: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
       const CODES = ['CTX_CALL_NOT_READY', 'INPUT_TOO_LARGE'];
       for (const order of [CODES, [...CODES].reverse()]) {
         const outer = issue();
-        for (const code of order) callTokens.noteRefused(outer, code, 'module', W);
-        const message = CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), callTokens.refusedOf(outer)).message;
-        const said = message.match(/Before it failed, the runtime refused its call to another module: ([A-Z_]+)\./g) || [];
-        assert.strictEqual(said.length, 1, `${order}: ${message}`);
-        assert.strictEqual(CODES.filter((c) => said[0].endsWith(`: ${c}.`)).length, 1, `${order}: ${message}`);
-        callTokens.drop(outer);
+        try {
+          for (const code of order) callTokens.noteRefused(outer, code, 'module', W);
+          const message = CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), callTokens.refusedOf(outer)).message;
+          const said = message.match(/Before it failed, the runtime refused its call to another module: ([A-Z_]+)\./g) || [];
+          assert.strictEqual(said.length, 1, `${order}: ${message}`);
+          assert.strictEqual(CODES.filter((c) => said[0].endsWith(`: ${c}.`)).length, 1, `${order}: ${message}`);
+        } finally {
+          // (dropped on every path: one mocha process runs the folder)
+          callTokens.drop(outer);
+        }
       }
     });
 
