@@ -272,7 +272,7 @@ describe('metering 04: a hop\'s charge, waited for at most METER_PENDING_MS (B-h
     });
 
     // (the reviewer's high on #496, 3)
-    it('at exit, the charges still pending are said at error, by meterId', () => {
+    it('at exit, the charges still pending are said at error, by the key\'s fingerprint (never its meter id)', () => {
       const clock = fakeClock();
       const K = `${KEY}-exit`;
       const {ci, lands} = held();
@@ -281,7 +281,13 @@ describe('metering 04: a hop\'s charge, waited for at most METER_PENDING_MS (B-h
       clock.advance(METER_PENDING_MS);
       logged.length = 0;
       cb.sayPendingAtExit();
-      assert.ok(logged.some(([l, line]) => l === 'E' && line === `at exit, 2 charge(s) of meter ${meterId(K)} were still pending: their outcome is unknown`), JSON.stringify(logged));
+      assert.ok(logged.some(([l, line]) => l === 'E' && line === `at exit, 2 charge(s) of ${keyFingerprint(K)} were still pending: their outcome is unknown`), JSON.stringify(logged));
+      assert.ok(!logged.some(([, line]) => line.includes(meterId(K))), 'the meter id is never logged');
+      // (a key whose pending charges have all landed is said no more)
+      lands.forEach((land) => land(null, {charged: 1}));
+      logged.length = 0;
+      cb.sayPendingAtExit();
+      assert.ok(!logged.some(([, line]) => line.includes(keyFingerprint(K))), JSON.stringify(logged));
       // (the medium on round 1, 5) a charge answered pending past the
       // allowance holds no slot, and is said at exit all the same
       const K2 = `${KEY}-exit-capped`;
@@ -290,7 +296,7 @@ describe('metering 04: a hop\'s charge, waited for at most METER_PENDING_MS (B-h
       clock.advance(2000);
       logged.length = 0;
       cb.sayPendingAtExit();
-      assert.ok(logged.some(([, line]) => line === `at exit, ${MAX_PENDING_PER_KEY + 1} charge(s) of meter ${meterId(K2)} were still pending: their outcome is unknown`), JSON.stringify(logged));
+      assert.ok(logged.some(([, line]) => line === `at exit, ${MAX_PENDING_PER_KEY + 1} charge(s) of ${keyFingerprint(K2)} were still pending: their outcome is unknown`), JSON.stringify(logged));
       for (const land of more.lands) land(null, {charged: 1});
       assert.ok(!logged.some(([, line]) => line.includes(K)));
       for (const land of lands) land(null, {charged: 1});
