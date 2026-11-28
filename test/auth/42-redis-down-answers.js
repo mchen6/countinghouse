@@ -136,7 +136,8 @@ describe('auth 42: with Redis down a call still answers, and billing resumes whe
     const answer = c.r || {};
     assert.strictEqual(answer.isError, true, JSON.stringify(c));
     assert.strictEqual((answer._meta || {})['countinghouse/code'], 'LEDGER_UNREACHABLE', JSON.stringify(c));
-    // (when to retry, as HTTP's Retry-After says it below: 5 s, in _meta over MCP)
+    // (when to retry, the value HTTP's Retry-After carries below: 5 s, in
+    // _meta over MCP)
     assert.strictEqual((answer._meta || {})['countinghouse/retryAfter'], 5, JSON.stringify(c));
     assert.ok(Array.isArray(answer.content) && /retry shortly$/.test(String(answer.content[0] && answer.content[0].text)), JSON.stringify(c));
   });
