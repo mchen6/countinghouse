@@ -4280,5 +4280,27 @@ describe('store 04: the lock\'s creation', function() {
       store.refuseAsWindows(false);
     }
   });
+
+  it('a store found to make no links is said once, word for word, and not again when its link is tried again', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const logger = require(path.join(ROOT, 'lib', 'logger'));
+    const realW = logger.W;
+    const logged = [];
+    logger.W = (line) => { logged.push(String(line)); };
+    const link = fs.linkSync;
+    fs.linkSync = () => { throw Object.assign(new Error('ENOTSUP: link'), {code: 'ENOTSUP', syscall: 'link'}); };
+    try {
+      withStoreLock(dir, () => {});
+      withStoreLock(dir, () => {});
+      require(MOD).forTests.clock({mono: 61000});
+      withStoreLock(dir, () => {});
+    } finally {
+      fs.linkSync = link;
+      logger.W = realW;
+      require(MOD).forTests.clock(null);
+    }
+    const said = logged.filter((l) => l.includes('hard links'));
+    assert.deepStrictEqual(said, [`local store: ${dir} is on a filesystem that can't make hard links, so its lock is taken the old way there, which isn't safe against two processes at once; move the store to a filesystem that supports hard links (NTFS, ext4, APFS)`]);
+  });
   crTmp.hooks();
 });
