@@ -820,12 +820,19 @@ describe('store 04: a waiter is not starved (#150)', function() {
     announce(dir, a);
     announce(dir, b);
     assert.deepStrictEqual(ownFresh(dir).map((w) => w.since), [a.since]);
+    const aFile = path.join(dir, `.lock.waiting.${process.pid}-${require(MOD).forTests.START_ID}-${a.since}`);
+    const aId = fs.lstatSync(aFile, {bigint: true}).ino;
     retire(dir, a);
     assert.deepStrictEqual(ownFresh(dir).map((w) => w.since), [b.since], 'a backing-off wait kept first place, or a contending one lost its announcement');
-    // (contending again at its next busy attempt: its since back)
+    assert.ok(fs.existsSync(aFile), 'the backing-off wait\'s file was removed (made again at its next attempt)');
+    // (contending again at its next busy attempt: its since back, on the same file)
     announce(dir, a);
     assert.deepStrictEqual(ownFresh(dir).map((w) => w.since), [a.since]);
+    assert.strictEqual(fs.lstatSync(aFile, {bigint: true}).ino, aId, 'its file was made again, not touched');
+    // (backing off again, then ending while the other contends: its kept file goes)
+    retire(dir, a);
     waitEnded(dir, a);
+    assert.deepStrictEqual(announcements(dir).map((w) => w.since), [b.since], 'the ended wait\'s kept file was left');
     waitEnded(dir, b);
     assert.deepStrictEqual(announcements(dir), []);
   });
@@ -836,13 +843,14 @@ describe('store 04: a waiter is not starved (#150)', function() {
     const a = waitBegan(dir);
     announce(dir, a);
     const name = fs.readdirSync(dir).find((n) => n.startsWith(`.lock.waiting.${process.pid}-`));
-    const ino = fs.lstatSync(path.join(dir, name)).ino;
+    const ino = fs.lstatSync(path.join(dir, name), {bigint: true}).ino;
     retire(dir, a);
     assert.ok(fs.existsSync(path.join(dir, name)), 'its file was removed');
     assert.deepStrictEqual(ownFresh(dir), [], 'its file is still fresh');
     announce(dir, a);
     assert.strictEqual(ownFresh(dir).length, 1, 'not announced again');
-    if (process.platform !== 'win32') assert.strictEqual(fs.lstatSync(path.join(dir, name)).ino, ino, 'made again, not touched');
+    // (its file id: an inode, or on Windows the file index)
+    assert.strictEqual(fs.lstatSync(path.join(dir, name), {bigint: true}).ino, ino, 'made again, not touched');
     waitEnded(dir, a);
   });
 
@@ -900,7 +908,8 @@ describe('store 04: a waiter is not starved (#150)', function() {
       const file = path.join(dir, 'm.json');
       const lockFile = path.join(dir, '.lock');
       const sleeper = await sleeperProcess();
-      const holder = await heldTillAnnounced(dir);
+      let holder;
+      try { holder = await heldTillAnnounced(dir); } catch (e) { sleeper.kill(); throw e; }
       const f = openJsonFile(file);
       // its announcements as seen, by busy phase: the first while the holder
       // holds; the second while a lock planted at its first refusal (a live
@@ -943,7 +952,7 @@ describe('store 04: a waiter is not starved (#150)', function() {
       const holder = await heldTillAnnounced(dir);
       let refusals = 0;
       const freshInBackoff = [];
-      Object.assign(refusing, {files: [file], refuse: () => refusals < 2, seen: () => { if (++refusals > 1) freshInBackoff.push(ownFresh(dir).length); }});
+      Object.assign(refusing, {files: [file], refuse: () => refusals < 3, seen: () => { if (++refusals > 1) freshInBackoff.push(ownFresh(dir).length); }});
       try {
         f.flush();
       } finally {
@@ -951,8 +960,8 @@ describe('store 04: a waiter is not starved (#150)', function() {
       }
       await new Promise((resolve) => (holder.exitCode != null ? resolve() : holder.once('exit', resolve)));
       assert.ok(holder.out.endsWith(';seen'), `it never waited and announced while the holder held (${holder.out})`);
-      assert.strictEqual(refusals, 2, 'the rename was not refused as set up');
-      assert.deepStrictEqual(freshInBackoff, [0], 'its announcement was fresh through a backoff');
+      assert.strictEqual(refusals, 3, 'the rename was not refused as set up');
+      assert.deepStrictEqual(freshInBackoff, [0, 0], 'its announcement was fresh through a backoff');
     });
 
     it('overlapping update()s whose renames are refused never keep this process\'s announcement fresh', async () => {
