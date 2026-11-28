@@ -119,9 +119,10 @@ Retryable refusals from the rate limits (`RATE_LIMIT_EXCEEDED`,
 `UNAUTH_RATE_LIMITED`, and `RUNTIME_BUSY` when the server-wide limit is
 reached) and from the usage ledger (`LEDGER_UNREACHABLE`,
 `LEDGER_UNWRITABLE`) carry `countinghouse/retryAfter`, the seconds to wait
-before retrying (a REST 429 or 503 says the same in `Retry-After`). It
-appears only where the runtime wrote it: an error a module passes on from a
-part's call is the module's answer (kind `module`) and carries none.
+before retrying (whole seconds, and for a rate limit at most its window; a
+REST 429 or 503 says the same in `Retry-After`); no other refusal carries
+it. It appears only where the runtime wrote it: an error a module passes on
+from a part's call is the module's answer (kind `module`) and carries none.
 Every limit's refusal on `/mcp` outside `tools/call` -- a key over its
 budget (`tools/list`, `prompts/list`,
 `prompts/get`, `completion/complete`, `tasks/*`, a resource read), an
