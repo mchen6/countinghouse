@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "compose-rethrower",
+    "manufacturer": "countinghouse",
+    "modelDescription": "A module that rethrows the refusal its own call got (composition 25).",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:rethrowService": {
+        "actionList": [
+          {
+            "name": "rethrow",
+            "description": "Calls compose-callee, and rethrows the typed refusal it got as its own failure.",
+            "input": {
+              "schema": "/rethrowService/rethrow/input"
+            },
+            "output": {
+              "schema": "/rethrowService/rethrow/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
