@@ -6,7 +6,9 @@
     "calls": [
       "compose-crasher/crasherService.refusedThenThrow",
       "compose-rethrower/rethrowService.rethrow",
-      "compose-big/bigService.big"
+      "compose-big/bigService.big",
+      "compose-slowbad/slowService.slowBad",
+      "compose-callee/calleeService.double"
     ]
   }
 }

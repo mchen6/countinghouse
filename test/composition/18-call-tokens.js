@@ -540,6 +540,27 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       moduleSpec.checkInput = (own, deviceID, serviceID, actionName) => (own == null ? null : {key: 'k', serviceID: serviceID, actionName: actionName});
       moduleSpec.validateSerialized = (checked, which, buffer) => Promise.resolve({refused: null, buffer: buffer});
     });
+
+    // (a cached ctx.serviceClient hop makes no device query: its announcement
+    // is the main thread's one record that the call went ahead)
+    it('an announcement refused (RATE_LIMITED, over its share) is no call let through: the caller\'s kept refusal stays', () => {
+      cli.setOptions({workerThread: true, mcpToolCallCost: 1, maxOutputBytes: 4 * 1024 * 1024});
+      const big = () => bytes({input: {s: 'x'.repeat(4 * 1024 * 1024 - 64)}});
+      for (let i = 0; i < 4; i++) broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 80 + i, token: tokens().issue(ENTRY(caller.workerId)), epoch: EPOCH, inputBytes: big()}, TARGET), caller);
+      const t = tokens().issue(ENTRY(caller.workerId));
+      tokens().noteRefused(t, 'DEVICE_NOT_FOUND', 'module', caller.workerId);
+      broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 84, token: t, epoch: EPOCH, inputBytes: big()}, TARGET), caller);
+      assert.deepStrictEqual(caller.refusals.map((r) => [r.invokeId, r.errCode]), [[84, 'RATE_LIMITED']]);
+      assert.deepStrictEqual(tokens().refusedOf(t), {code: 'DEVICE_NOT_FOUND', to: 'module'});
+    });
+    it('an announced hop counts as a call that went through: the caller\'s kept refusal clears', () => {
+      const t = tokens().issue(ENTRY(caller.workerId));
+      tokens().noteRefused(t, 'DEVICE_NOT_FOUND', 'module', caller.workerId);
+      assert.deepStrictEqual(tokens().refusedOf(t), {code: 'DEVICE_NOT_FOUND', to: 'module'});
+      announce(71, t);
+      assert.strictEqual(caller.refusals.length, 0, JSON.stringify(caller.refusals));
+      assert.strictEqual(tokens().refusedOf(t), null);
+    });
     afterEach(() => { CHUtil.ci = savedCi; Object.assign(moduleSpec, savedSpec); });
 
     it('a metering request matched by its announcement is served with the callee\'s own token; the bill request then bills the token\'s caller, once', async () => {

@@ -4,12 +4,34 @@
   "type": "object",
   "crasherService": {
     "refusedThenThrow": {
-      "input":  {"type": "object", "properties": {}},
-      "output": {"type": "object", "properties": {}}
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
     },
     "throwsAlone": {
-      "input":  {"type": "object", "properties": {}},
-      "output": {"type": "object", "properties": {}}
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    "refusedThenThrowTask": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
     }
   }
 }

@@ -180,6 +180,43 @@ describe('validation 39: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
       assert.strictEqual(callTokens.refusedOf(outer), null);
       callTokens.drop(outer);
     });
+    it('a part\'s token dropped: main\'s own note on it passes to its caller\'s call, unless that call holds one of its own', () => {
+      const outer = issue(); const part = issue(outer, 'w-38b');
+      callTokens.noteRefused(part, 'DEVICE_NOT_FOUND', 'module', 'w-38b');
+      callTokens.drop(part);
+      assert.deepStrictEqual(callTokens.refusedOf(outer), {code: 'DEVICE_NOT_FOUND', to: 'module', further: true});
+      const outer2 = issue(); const part2 = issue(outer2, 'w-38b');
+      callTokens.noteRefused(outer2, 'OUTPUT_TOO_LARGE', 'module', W);
+      callTokens.noteRefused(part2, 'DEVICE_NOT_FOUND', 'module', 'w-38b');
+      callTokens.drop(part2);
+      assert.deepStrictEqual(callTokens.refusedOf(outer2), {code: 'OUTPUT_TOO_LARGE', to: 'module'}, 'the call\'s own refusal stays');
+      // (only the token dropped passes its note up, never its descendants dropped with it)
+      const outer3 = issue(); const part3 = issue(outer3, 'w-38b'); const deep = issue(part3, 'w-38c');
+      callTokens.noteRefused(deep, 'CTX_CALL_NOT_READY', 'module', 'w-38c');
+      callTokens.drop(part3);
+      assert.strictEqual(callTokens.refusedOf(outer3), null);
+      for (const t of [outer, outer2, outer3]) callTokens.drop(t);
+    });
+    it('a part\'s note does not pass up once its caller has moved on: a later call of the caller\'s went through, or one was refused', () => {
+      const a = issue(); const pa = issue(a, 'w-38b');
+      callTokens.noteRefused(pa, 'DEVICE_NOT_FOUND', 'module', 'w-38b');
+      callTokens.noteThrough(a, W);
+      callTokens.drop(pa);
+      assert.strictEqual(callTokens.refusedOf(a), null, 'a call of the caller\'s went through after the part began: its note is older');
+      const b = issue(); const pb = issue(b, 'w-38b');
+      callTokens.noteRefused(pb, 'DEVICE_NOT_FOUND', 'module', 'w-38b');
+      callTokens.noteRefused(b, 'REMOTE_TIMEOUT', 'remote', W);
+      callTokens.drop(pb);
+      assert.strictEqual(callTokens.refusedOf(b), null, 'cleared by the caller\'s own later call, never refilled by the part');
+      for (const t of [a, b]) callTokens.drop(t);
+    });
+    it('a refusal further down reads as another module\'s, DEVICE_NOT_FOUND, whatever it was (a remote\'s, a throttle): the log keeps it exactly', () => {
+      for (const [code, to] of [['REMOTE_UNDECLARED', 'remote'], ['VALIDATION_CALLER_THROTTLED', 'module'], ['CTX_CALL_NOT_READY', 'module']]) {
+        const e = CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), {code, to, further: true});
+        assert.strictEqual(e.message, `${HEAD}. Before it failed, the runtime refused its call to another module: DEVICE_NOT_FOUND.`, code);
+        assert.deepStrictEqual(e.refusedBefore, {code, to, further: true});
+      }
+    });
     it('a remote\'s own failure (unreachable, a timeout) is not the runtime\'s refusal: not kept, and it clears an earlier one', () => {
       // (the runtime's own refusals of a remote call are kept, runtime kind or not)
       for (const code of ['HOP_IDENTITY_UNRESOLVED']) {
