@@ -204,11 +204,13 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
       await registry.unregister('map-probe');
     });
 
-    it('a mapped call is not metered', async () => {
+    it('a mapped call is not metered, nor refused while charges can\'t be recorded', async () => {
       const CHUtil = require('../../lib/countinghouse-util');
+      const {CountinghouseError} = require('../../lib/countinghouse-error');
       const ci = CHUtil.ci;
       let metered = 0;
-      CHUtil.ci = {recordCall: (k, tool, cost, cb) => { metered++; cb(null); }};
+      CHUtil.ci = {recordCall: (k, tool, cost, cb) => { metered++; cb(null); },
+        chargeable: (k, cb) => setImmediate(cb, new CountinghouseError('LEDGER_UNREACHABLE'))};
       try {
         registry.register('map-probe', probe(`${DECLARED}/mcp`));
         await registry.listing('map-probe', 'probe');

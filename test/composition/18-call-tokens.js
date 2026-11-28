@@ -565,6 +565,27 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.deepStrictEqual(billed, [e.billingKey]);
     });
 
+    // a billed hop runs only while its charge can be recorded (the owner's
+    // decision, 11-27): refused before any token is issued or handler runs
+    it('a peer hop whose charge can\'t be recorded now is refused with the ledger\'s code: no token, nothing billed; once it can, served', async () => {
+      const {CountinghouseError} = require('../../lib/countinghouse-error');
+      let recordable = false;
+      CHUtil.ci.chargeable = (key, cb) => setImmediate(cb, recordable ? null : new CountinghouseError('LEDGER_UNREACHABLE'));
+      // (waited for on the reply itself, at most 5 s)
+      const answered = async (msgID) => { const end = Date.now() + 5000; while (replyTo(msgID) == null && Date.now() < end) await sleep(10); };
+      announce(21, tokens().issue(ENTRY(caller.workerId)));
+      meter(21, 'm21');
+      await answered('m21');
+      const r = replyTo('m21');
+      assert.ok(r != null && r.errCode === 'LEDGER_UNREACHABLE' && r.token == null, JSON.stringify(callee.replies));
+      assert.deepStrictEqual(billed, []);
+      recordable = true;
+      announce(22, tokens().issue(ENTRY(caller.workerId)));
+      meter(22, 'm22');
+      await answered('m22');
+      assert.ok(served('m22'), JSON.stringify(callee.replies));
+    });
+
     it('a metering request with no announcement is held, then refused: not billed, not served', async () => {
       meter(2, 'm2');
       await sleep(300);
