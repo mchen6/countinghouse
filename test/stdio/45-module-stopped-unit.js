@@ -88,7 +88,8 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
     } finally {
       notices.add = add;
     }
-    assert.deepStrictEqual(told, [['ch-pack-pf', 'ch-pack-pf stopped (MODULE_SUSPENDED); it is tried again when countinghouse restarts']]);
+    // (under no module, its tools gone: on the next result of any tool)
+    assert.deepStrictEqual(told, [[null, 'ch-pack-pf stopped (MODULE_SUSPENDED); it is tried again when countinghouse restarts']]);
   });
 
   it('8: a module still in the map after the self-unload: the record comes back marked, and a reload of it is refused', async () => {
