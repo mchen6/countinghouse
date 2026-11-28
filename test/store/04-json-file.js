@@ -4178,20 +4178,22 @@ describe('store 04: the lock\'s creation', function() {
     assert.strictEqual(made, 0, `${made} temporary file(s) made while the lock was there`);
   });
 
-  it('a lock already stale when it is linked (its maker stalled past the point) is removed by its maker and made again', () => {
+  it('a lock already stale when it is linked (its maker stalled past the point) is removed under the takeover\'s exclusion, and a later attempt makes a fresh one', () => {
     const dir = crTmp.mkdtemp('ch-store04-cr-');
-    // (the point shortened to 50 ms; its maker stalled 100 ms at its first link)
-    require(MOD).forTests.releaseTimes({retryMs: 500, cleanupMs: 60000, staleCapMs: 50});
-    const link = fs.linkSync;
-    let links = 0;
-    fs.linkSync = function(from, to) { if (path.basename(String(to)) === '.lock' && ++links === 1) { const t = Date.now() + 100; while (Date.now() < t) { /* stalled */ } } return link.apply(this, arguments); };
+    const link = fs.linkSync, write = fs.writeFileSync;
+    let links = 0, takeovers = 0;
+    // (its maker stalled past the point at its first link: the wall clock moved on 200 s there)
+    fs.linkSync = function(from, to) { if (path.basename(String(to)) === '.lock' && ++links === 1) require(MOD).forTests.clock({wall: 200000}); return link.apply(this, arguments); };
+    fs.writeFileSync = function(t, d, o) { if (path.basename(String(t)).startsWith('.lock.takeover.')) takeovers++; return write.apply(this, arguments); };
     try {
       assert.doesNotThrow(() => withStoreLock(dir, () => {}, 2000));
     } finally {
       fs.linkSync = link;
-      require(MOD).forTests.releaseTimes(null);
+      fs.writeFileSync = write;
+      require(MOD).forTests.clock(null);
     }
     assert.ok(links >= 2, 'a lock stale at its birth was kept');
+    assert.ok(takeovers >= 1, 'the stale lock was removed outside the takeover\'s exclusion');
   });
 
   it('a live process\'s temporary lock file survives a reader', async () => {
@@ -4204,6 +4206,78 @@ describe('store 04: the lock\'s creation', function() {
       assert.ok(fs.existsSync(path.join(dir, name)), 'a live process\'s temporary lock file was removed');
     } finally {
       sleeper.kill();
+    }
+  });
+
+  it('a store found to make no links is tried again after a while: until then no temporary file is made; a link that works moves it back', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const link = fs.linkSync, write = fs.writeFileSync;
+    let unsupported = true, made = 0, links = 0;
+    fs.linkSync = function(from, to) { links++; if (unsupported) throw Object.assign(new Error('ENOTSUP: link'), {code: 'ENOTSUP', syscall: 'link'}); return link.apply(this, arguments); };
+    fs.writeFileSync = function(t, d, o) { if (TMP.test(path.basename(String(t)))) made++; return write.apply(this, arguments); };
+    try {
+      withStoreLock(dir, () => {});
+      const madeFirst = made;
+      withStoreLock(dir, () => {});
+      assert.strictEqual(made, madeFirst, 'a temporary file was made in a store found to make no links');
+      unsupported = false;
+      require(MOD).forTests.clock({mono: 61000});
+      const linksBefore = links;
+      withStoreLock(dir, () => {});
+      assert.ok(links > linksBefore, 'no link was tried again after a while');
+    } finally {
+      fs.linkSync = link;
+      fs.writeFileSync = write;
+      require(MOD).forTests.clock(null);
+    }
+  });
+
+  it('a temporary name found taken twice in a row fails saying so, word for word', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const write = fs.writeFileSync;
+    let last = null;
+    fs.writeFileSync = function(t, d, o) { if (TMP.test(path.basename(String(t))) && o && o.flag === 'wx') { last = String(t); throw Object.assign(new Error(`EEXIST: file already exists, open '${t}'`), {code: 'EEXIST', syscall: 'open'}); } return write.apply(this, arguments); };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 100), (e) => e.code === 'ELOCKTMP' && e.message === `the store lock's temporary file ${last} was already there twice in a row; if no countinghouse process is running, remove it and try again`);
+    } finally {
+      fs.writeFileSync = write;
+    }
+  });
+
+  it('the probe\'s file, its removal refused, is tracked and removed later', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const store = require(MOD).forTests;
+    store.refuseAsWindows(true);
+    const link = fs.linkSync, unlink = fs.unlinkSync;
+    let refuseProbe = true;
+    fs.linkSync = function(from, to) { if (path.basename(String(to)) === '.lock') throw Object.assign(new Error('EPERM: operation not permitted, link'), {code: 'EPERM', syscall: 'link'}); return link.apply(this, arguments); };
+    fs.unlinkSync = function(t) { if (refuseProbe && String(t).endsWith('.probe')) throw Object.assign(new Error('EPERM: operation not permitted, unlink'), {code: 'EPERM', syscall: 'unlink'}); return unlink.apply(this, arguments); };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 50), /was still refused/);
+      assert.ok(store.leftTmps().some((f) => f.endsWith('.probe')), 'the probe\'s file was not tracked');
+      refuseProbe = false;
+      fs.linkSync = link;
+      withStoreLock(dir, () => {});
+      assert.ok(!store.leftTmps().some((f) => f.endsWith('.probe')) && !fs.readdirSync(dir).some((n) => n.endsWith('.probe')), 'the probe\'s file stayed');
+    } finally {
+      fs.linkSync = link;
+      fs.unlinkSync = unlink;
+      store.refuseAsWindows(false);
+      store.stopReleases();
+    }
+  });
+
+  it('a link refused as a sharing violation (EBUSY: a scanner has the temporary file open) is a refusal: busy, tried again', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const store = require(MOD).forTests;
+    store.refuseAsWindows(true);
+    const link = fs.linkSync;
+    fs.linkSync = () => { throw Object.assign(new Error('EBUSY: resource busy or locked, link'), {code: 'EBUSY', syscall: 'link'}); };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 100), /EBUSY: resource busy or locked, link \(the store lock .* was still refused after 100 ms\)/);
+    } finally {
+      fs.linkSync = link;
+      store.refuseAsWindows(false);
     }
   });
   crTmp.hooks();
