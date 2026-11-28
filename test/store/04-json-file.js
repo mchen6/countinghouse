@@ -3989,5 +3989,83 @@ describe('store 04: the lock\'s creation', function() {
     withStoreLock(dir, () => {});
     assert.ok(!fs.existsSync(path.join(dir, name)), 'a dead process\'s temporary lock file stayed');
   });
+
+  it('a link refused (Windows: a lock name still being deleted) is a refusal: the wait ends saying it was still refused, never the old create', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const store = require(MOD).forTests;
+    store.refuseAsWindows(true);
+    const link = fs.linkSync;
+    let fellBack = false;
+    const write = fs.writeFileSync;
+    fs.linkSync = (from, to) => { throw Object.assign(new Error(`EPERM: operation not permitted, link '${from}' -> '${to}'`), {code: 'EPERM', syscall: 'link'}); };
+    fs.writeFileSync = function(t, d, o) { if (path.basename(String(t)) === '.lock' && o && o.flag === 'wx') fellBack = true; return write.apply(this, arguments); };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 100), /EPERM: operation not permitted, link .* \(the store lock .* was still refused after 100 ms\)/);
+    } finally {
+      fs.linkSync = link;
+      fs.writeFileSync = write;
+      store.refuseAsWindows(false);
+    }
+    assert.strictEqual(fellBack, false, 'a refused link fell back to the create that can leave an empty lock');
+  });
+
+  it('a link that fails for another reason is thrown, never the old create', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const link = fs.linkSync;
+    fs.linkSync = () => { throw Object.assign(new Error('EIO: i/o error, link'), {code: 'EIO', syscall: 'link'}); };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 100), /EIO/);
+    } finally {
+      fs.linkSync = link;
+    }
+    assert.ok(!fs.existsSync(path.join(dir, '.lock')), 'the old create made the lock');
+  });
+
+  it('a temporary file gone before its link (another reader removed it) is made again once', () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const link = fs.linkSync;
+    let gone = 0;
+    fs.linkSync = function(from, to) { if (gone === 0) { gone++; fs.unlinkSync(from); } return link.apply(this, arguments); };
+    try {
+      assert.doesNotThrow(() => withStoreLock(dir, () => {}, 500));
+    } finally {
+      fs.linkSync = link;
+    }
+    assert.strictEqual(gone, 1);
+  });
+
+  it('a creator stalled between writing its content and linking it into place: never two holders', async () => {
+    const dir = crTmp.mkdtemp('ch-store04-cr-');
+    const STALLED = CREATOR.replace(`fs.writeFileSync = function(t, d, o) {`, `const realLink = fs.linkSync;
+    fs.linkSync = function(from, to) { if (!stalled) { stalled = true; say('C-opened'); waitFor('C-go'); } return realLink.apply(this, arguments); };
+    fs.writeFileSync = function(t, d, o) {`);
+    assert.notStrictEqual(STALLED, CREATOR, 'the stall at the link was not set up');
+    const kids = [];
+    const run = (role, script) => {
+      const k = spawn(process.execPath, ['-e', script, MOD, dir], {stdio: ['ignore', 'pipe', 'pipe']});
+      kids.push(k);
+      let out = '', err = '';
+      k.stdout.on('data', (c) => { out += c; });
+      k.stderr.on('data', (c) => { err += c; });
+      return new Promise((resolve) => k.on('close', (code) => resolve({role, code, out, err})));
+    };
+    const say = (n) => fs.writeFileSync(sigOf(dir, n), 'go');
+    try {
+      const c = run('C', STALLED);
+      assert.ok(await until(dir, ['C-opened']), 'the creator never reached its link');
+      const t = run('T', TAKER);
+      await until(dir, ['T-holding'], 3000);
+      say('C-go');
+      await until(dir, ['C-holding'], 3000);
+      say('T-release');
+      await until(dir, ['C-holding']);
+      say('C-release');
+      const results = await Promise.all([c, t]);
+      for (const r of results) assert.strictEqual(r.code, 0, `${r.role} failed: ${r.err}`);
+      assert.deepStrictEqual(results.map((r) => `${r.role}: ${r.out}`), ['C: alone', 'T: alone'], 'two processes held the store lock at once');
+    } finally {
+      for (const k of kids) if (k.exitCode == null && k.signalCode == null) k.kill();
+    }
+  });
   crTmp.hooks();
 });
