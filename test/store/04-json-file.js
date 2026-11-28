@@ -2979,6 +2979,44 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
     }
   });
 
+  it('a cleanup whose takeover throws tries again at its next tick: the lock goes once it no longer throws', async () => {
+    const dir = relTmp.mkdtemp('ch-store04-rel-');
+    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 60000});
+    let refuse = false;
+    refusing.refuse = () => refuse;
+    withStoreLock(dir, () => { refuse = true; });
+    const until = Date.now() + 5000;
+    while (require(MOD).forTests.holds(dir) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 2));
+    // (its takeover's create failing, not a refusal, for three ticks)
+    const write = fs.writeFileSync;
+    let thrown = 0;
+    fs.writeFileSync = function(target, data, opts) {
+      if (path.basename(String(target)) === '.lock.takeover' && thrown < 3) { thrown++; throw Object.assign(new Error(`EIO: i/o error, open '${target}'`), {code: 'EIO', syscall: 'open'}); }
+      return write.apply(this, arguments);
+    };
+    refuse = false;
+    try {
+      assert.ok(await gone(path.join(dir, '.lock')), `the cleanup stopped at a thrown takeover (${thrown} thrown)`);
+    } finally {
+      fs.writeFileSync = write;
+    }
+    assert.strictEqual(thrown, 3, 'the takeover did not throw as set up');
+  });
+
+  it('creating the lock refused EPERM (a delete pending, or Windows\' access denied) is a refusal: the wait ends saying it was still refused', () => {
+    const dir = relTmp.mkdtemp('ch-store04-rel-');
+    const write = fs.writeFileSync;
+    fs.writeFileSync = function(target, data, opts) {
+      if (path.basename(String(target)) === '.lock' && opts != null && opts.flag === 'wx') throw Object.assign(new Error(`EPERM: operation not permitted, open '${target}'`), {code: 'EPERM', syscall: 'open'});
+      return write.apply(this, arguments);
+    };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 100), /EPERM: operation not permitted, open .* \(the store lock .* was still refused after 100 ms\)/);
+    } finally {
+      fs.writeFileSync = write;
+    }
+  });
+
   it('the cleanup removes only through the takeover\'s exclusion: a fresh takeover of another\'s in place, it removes nothing', async () => {
     const dir = relTmp.mkdtemp('ch-store04-rel-');
     require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 60000});
@@ -3016,6 +3054,24 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
     assert.strictEqual(require(MOD).forTests.holds(dir), false, 'still held after its retries');
     refuse = false;
     assert.ok(await gone(path.join(dir, '.lock'), 2000), 'no cleanup after a long hold: its time ran from the acquisition');
+  });
+
+  it('the cleanup never runs once other processes may take the lock for stale: a release past that point gets no removal attempt', async () => {
+    const dir = relTmp.mkdtemp('ch-store04-rel-');
+    // (the point other processes may take it for stale, shortened to 300 ms after the acquisition)
+    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 60000, staleCapMs: 300});
+    let refuse = false;
+    refusing.refuse = () => refuse;
+    withStoreLock(dir, () => { refuse = true; blockFor(400); });
+    const until = Date.now() + 5000;
+    while (require(MOD).forTests.holds(dir) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 2));
+    assert.strictEqual(require(MOD).forTests.holds(dir), false, 'still held after its retries');
+    const after = refusing.count;
+    refuse = false;
+    // (its cleanup's ticks, had it any, past a second; the lock left for its takeover rule)
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    assert.strictEqual(refusing.count, after, 'a removal was refused past the point');
+    assert.ok(fs.existsSync(path.join(dir, '.lock')), 'the cleanup removed a lock other processes may already be taking over');
   });
 
   it('the cleanup checks its time before it removes anything: with none left, it makes no attempt', async () => {
