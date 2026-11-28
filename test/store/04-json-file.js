@@ -612,6 +612,30 @@ describe('store 04: a waiter is not starved (#150)', function() {
     assert.match(busyError({busy: true, refused: null, yieldedTo: null, heldBy: 4343}, dir).message, /held by pid 4343/);
   });
 
+  // Every sentence a wait's failure can say, word for word.
+  it('a wait\'s failure, every form of it, word for word', () => {
+    const {busyError} = require(MOD);
+    const dir = annTmp.mkdtemp('ch-store04-ann-');
+    const lockFile = path.join(dir, '.lock');
+    const attempt = (why) => Object.assign({busy: true, refused: null, yieldedTo: null, heldBy: null}, why);
+    const otherwise = `the store lock under ${dir} stayed busy for 10000 ms`;
+    // with update()'s own wording
+    assert.strictEqual(busyError(attempt({yieldedTo: 4242}), dir, otherwise, 10000).message, `${otherwise} (it yielded to a waiting process (pid 4242))`);
+    assert.strictEqual(busyError(attempt({heldBy: 4343}), dir, otherwise, 10000).message, `${otherwise} (it is held by pid 4343)`);
+    assert.strictEqual(busyError(attempt({heldBy: 'unknown'}), dir, otherwise, 10000).message, `${otherwise} (it is held by a process not yet readable in the lock)`);
+    // without it
+    assert.strictEqual(busyError(attempt({yieldedTo: 4242}), dir).message, `the store lock ${lockFile} was yielded to a waiting process (pid 4242) for 2000 ms`);
+    assert.strictEqual(busyError(attempt({heldBy: 4343}), dir).message, `the store lock ${lockFile} is held by pid 4343`);
+    assert.strictEqual(busyError(attempt({heldBy: 'unknown'}), dir).message, `the store lock ${lockFile} is held by a process not yet readable in it`);
+    // refused (Windows): the refusal's own words and code, the lock named
+    const refused = Object.assign(new Error(`EPERM: operation not permitted, open '${lockFile}'`), {code: 'EPERM'});
+    const err = busyError(attempt({refused}), dir, otherwise, 500);
+    assert.strictEqual(err.message, `EPERM: operation not permitted, open '${lockFile}' (the store lock ${lockFile} was still refused after 500 ms)`);
+    assert.strictEqual(err.code, 'EPERM');
+    assert.strictEqual(err.path, lockFile);
+    assert.strictEqual(busyError(attempt({refused}), dir).message, `EPERM: operation not permitted, open '${lockFile}' (the store lock ${lockFile} was still refused after 2000 ms)`);
+  });
+
   it('a wait that ends yielding to a waiter names the waiter, not a holder', async () => {
     const {busyError} = require(MOD);
     const dir = tmpStore();
@@ -887,36 +911,59 @@ describe('store 04: a waiter is not starved (#150)', function() {
     assert.deepStrictEqual(announcements(dir), [], 'a kept file outlived its process\'s waits');
   });
 
+  it('a backing-off wait whose file was removed from outside: nothing announced, nothing left at the end', () => {
+    const {waitBegan, waitEnded, announce, retire, START_ID} = require(MOD).forTests;
+    const dir = annTmp.mkdtemp('ch-store04-ann-');
+    const a = waitBegan(dir);
+    let ended = false;
+    try {
+      announce(dir, a);
+      fs.unlinkSync(path.join(dir, `.lock.waiting.${process.pid}-${START_ID}-${a.since}`));
+      // (dating it fails: it is gone, and taken as gone)
+      retire(dir, a);
+      assert.deepStrictEqual(announcements(dir), []);
+      // (contending again: made anew, under its own since)
+      announce(dir, a);
+      assert.deepStrictEqual(ownFresh(dir).map((w) => w.since), [a.since], 'its file was not made anew under its since');
+      ended = true;
+      waitEnded(dir, a);
+      assert.deepStrictEqual(announcements(dir), []);
+    } finally {
+      if (!ended) waitEnded(dir, a);
+    }
+  });
+
   it('a synchronous wait announces its own since alone, never an older one of its process\'s waits that can\'t run meanwhile', async () => {
     const {waitBegan, waitEnded, announce} = require(MOD).forTests;
     const dir = annTmp.mkdtemp('ch-store04-ann-');
     const sleeper = await sleeperProcess();
-    // (another wait of this process, older, announced: an update() that can't run while the synchronous wait blocks)
-    const older = waitBegan(dir);
-    older.since -= 1000;
-    announce(dir, older);
     const lockFile = path.join(dir, '.lock');
-    fs.writeFileSync(lockFile, JSON.stringify({pid: sleeper.pid, startMs: 1, at: Date.now()}));
-    // its announcements as each attempt reads them
     const readdir = fs.readdirSync;
     const seen = [];
-    let inner = false;
-    fs.readdirSync = function(target) {
-      const names = readdir.apply(this, arguments);
-      if (!inner && String(target) === dir) { inner = true; try { for (const w of ownFresh(dir)) seen.push(w.since); } finally { inner = false; } }
-      return names;
-    };
+    let older = null;
     try {
+      // (another wait of this process, older, announced: an update() that can't run while the synchronous wait blocks)
+      older = waitBegan(dir);
+      older.since -= 1000;
+      announce(dir, older);
+      fs.writeFileSync(lockFile, JSON.stringify({pid: sleeper.pid, startMs: 1, at: Date.now()}));
+      // its announcements as each attempt reads them
+      let inner = false;
+      fs.readdirSync = function(target) {
+        const names = readdir.apply(this, arguments);
+        if (!inner && String(target) === dir) { inner = true; try { for (const w of ownFresh(dir)) seen.push(w.since); } finally { inner = false; } }
+        return names;
+      };
       assert.throws(() => withStoreLock(dir, () => {}, 200));
     } finally {
       fs.readdirSync = readdir;
-      fs.unlinkSync(lockFile);
+      try { fs.unlinkSync(lockFile); } catch (e) { if (e.code !== 'ENOENT') throw e; }
       sleeper.kill();
+      if (older != null) waitEnded(dir, older);
     }
     const during = seen.filter((since) => since !== older.since);
     assert.ok(during.length > 0, 'the synchronous wait never announced its own since');
     assert.ok(seen.slice(seen.indexOf(during[0])).every((since) => since !== older.since), `it announced the older wait's since: ${JSON.stringify(seen)}`);
-    waitEnded(dir, older);
   });
 
   describe('the backoff, a rename refused as on Windows (on every system)', () => {
@@ -1062,7 +1109,11 @@ describe('store 04: a waiter is not starved (#150)', function() {
         await new Promise((resolve, reject) => {
           const until = Date.now() + 10000;
           const check = () => {
-            if (fs.readdirSync(dir).some((n) => n.startsWith(`.lock.waiting.${waiter.pid}-`))) return resolve();
+            try {
+              if (fs.readdirSync(dir).some((n) => n.startsWith(`.lock.waiting.${waiter.pid}-`))) return resolve();
+            } catch (e) {
+              return reject(e);
+            }
             return Date.now() > until ? reject(new Error(`the waiter never announced (${out})`)) : setTimeout(check, 2);
           };
           check();
