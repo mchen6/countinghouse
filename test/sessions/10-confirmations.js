@@ -890,6 +890,184 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
     // R-latched-refusal-text: with no tested client no session can be shown a
     // form, so that one could be answered for the user is no reason: a
     // latched session gets exactly the answer an unlatched one gets
+    // A no-form answer to a session that lowered a cap itself and asks above the value for all sessions names a terminal
+    // command that sets the value for all sessions, which this session's own lower value then still holds below: the
+    // answer says so, and the real next step, read from the same function that decides the way back (the undo above).
+    describe('a no-form answer, when the session\'s own lower value is why its command would not move it', () => {
+      const {CountinghouseError} = require('../../lib/countinghouse-error');
+      const NO = {status: 'ok', conditions: 'no', repo: null, why: {reason: 'client hook present', at: '~/.claude/settings.json'}};
+      const L = '5'.repeat(32);
+      const at = (id) => ({shared: true, session: id, clientInfo: CLIENT, capabilities: {}});
+      const noForm = (o = {}) => tool(Object.assign({sessionClient: () => ({ok: false, why: 'not on the tested-client list'})}, o));
+      const lower = async (t0, id = A) => { await t0.set('requestTimeout', '10s', 'settings tool', at(id)); notices.take(null, id); };
+      const base = (code, fields) => CountinghouseError.withFields(code, Object.assign({name: 'requestTimeout', command: settingsTool.commandFor('requestTimeout', 45000)}, fields)).message;
+      const LEAD = 'This session keeps its own lower value (10s), so that command alone won\'t change requestTimeout here: ';
+      const RESTART = 'after it, restart your client to get a session with the new value.';
+      const ASK = 'after it, ask again here to raise this session\'s value too.';
+      const PAUSED = 'after it, ask again here once the pause on new questions ends (at most 30 minutes), or restart your client.';
+      const LATER = ' A value above what this runtime started with takes effect when it next starts.';
+      // (the runtime started above the value for all sessions, which the terminal lowered since: 45s is under its start)
+      const startedHigher = () => { options.requestTimeout = 60000; settingsTool.captureAtStart(); options.requestTimeout = 30000; };
+      const asked = async (t0, code, id = A, c = ctx) => refused(t0.set('requestTimeout', '45s', 'settings tool', c(id)), code);
+      const says = (e, code, fields, tail) => assert.strictEqual(e.message, `${base(code, fields)}${tail == null ? '' : ` ${tail}`}`);
+      // the way back, once the terminal command has raised the value for all sessions to 45s: held, or made
+      const wayBack = async (t0, open, id = A) => {
+        options.requestTimeout = 45000;
+        if (open) assert.strictEqual((await t0.set('requestTimeout', '45s', 'settings tool', at(id))).new, 45000);
+        else await refused(t0.set('requestTimeout', '45s', 'settings tool', at(id)), 'SETTING_SESSION_OWN_VALUE_HELD');
+      };
+
+      it('the words, as business gave them (validation 04 pins the table)', () => {
+        assert.deepStrictEqual(settingsTool.OWN_LOWER, {lead: 'This session keeps its own lower value ({current}), so that command alone won\'t change {name} here: ', restart: RESTART, ask: ASK, paused: PAUSED, later: LATER});
+        assert.ok(base('SETTING_DECLINED_THIS_SESSION', {}).includes('settings set requestTimeout 45s`'), 'the command, by cliValue, is in the base text');
+      });
+
+      describe('restart (the way back is held)', () => {
+        for (const later of [true, false]) {
+          it(`declined here: DECLINED, restart${later ? ', with the start value\'s wait' : ''}; the undo then held`, async () => {
+            if (!later) startedHigher();
+            const t0 = tool();
+            await lower(t0);
+            const r = await t0.set('requestTimeout', '45s', 'settings tool', ctx(A));
+            await t0.confirm('requestTimeout', '45s', {requestState: r.inputRequired.requestState, inputResponses: DECLINE}, ctx(A));
+            says(await asked(t0, 'SETTING_DECLINED_THIS_SESSION'), 'SETTING_DECLINED_THIS_SESSION', {}, LEAD + RESTART + (later ? LATER : ''));
+            await wayBack(t0, false);
+          });
+
+          it(`a lock back after a restart, where forms can be shown: LOCKED, restart${later ? ', with the wait' : ''}; the undo then held`, async () => {
+            if (!later) startedHigher();
+            const t0 = tool();
+            await lower(t0);
+            confirm.confirmations(A).restore({locks: ['requestTimeout'], formsLeft: 3});
+            says(await asked(t0, 'SETTING_LOCKED_THIS_SESSION'), 'SETTING_LOCKED_THIS_SESSION', {}, LEAD + RESTART + (later ? LATER : ''));
+            await wayBack(t0, false);
+          });
+        }
+
+        it('conversation off by the ceiling: NEEDS_CONFIRMATION, restart, never the wait (its text says it); the undo then held', async () => {
+          const off = {state: 'trusted', ceiling: {conversation: false, forbid: []}};
+          const t0 = noForm({ceiling: () => off});
+          await lower(t0);
+          says(await asked(t0, 'SETTING_NEEDS_CONFIRMATION'), 'SETTING_NEEDS_CONFIRMATION', {value: '45s'}, LEAD + RESTART);
+          await wayBack(t0, false);
+        });
+      });
+
+      describe('ask again (the way back is open), and the pause', () => {
+        for (const later of [true, false]) {
+          it(`the latch: CLIENT_NOT_CONFIRMED, ask again${later ? ', with the wait' : ''}; the undo then made`, async () => {
+            if (!later) startedHigher();
+            openSession(L, NO);
+            const t0 = tool();
+            await lower(t0, L);
+            const e = await asked(t0, 'SETTING_CLIENT_NOT_CONFIRMED', L);
+            assert.ok(e.message.endsWith(` ${LEAD}${ASK}${later ? LATER : ''}`), e.message);
+            await wayBack(t0, true, L);
+          });
+
+          it(`past the session's 32 recorded changes: TERMINAL_ONLY_SHARED, ask again${later ? ', with the wait' : ''}; the undo then made`, async () => {
+            if (!later) startedHigher();
+            const t0 = noForm();
+            for (let i = 0; i < 32; i++) await t0.set('requestTimeout', String(10000 + (i % 2)), 'settings tool', at(A));
+            await t0.set('requestTimeout', '10s', 'settings tool', at(A)).catch(() => {});
+            assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000);
+            says(await asked(t0, 'SETTING_TERMINAL_ONLY_SHARED'), 'SETTING_TERMINAL_ONLY_SHARED', {}, LEAD + ASK + (later ? LATER : ''));
+            await wayBack(t0, true);
+          });
+        }
+
+        it('a lock back after a restart with no tested client: LOCKED, ask again (it does not hold the undo there); the undo then made', async () => {
+          const t0 = tool({allowlist: NONE});
+          await lower(t0);
+          confirm.confirmations(A).restore({locks: ['requestTimeout'], formsLeft: 3});
+          says(await asked(t0, 'SETTING_LOCKED_THIS_SESSION'), 'SETTING_LOCKED_THIS_SESSION', {}, LEAD + ASK + LATER);
+          await wayBack(t0, true);
+        });
+
+        it('the latch with no tested client: NEEDS_CONFIRMATION, ask again', async () => {
+          openSession(L, NO);
+          const t0 = tool({allowlist: NONE});
+          await lower(t0, L);
+          says(await asked(t0, 'SETTING_NEEDS_CONFIRMATION', L), 'SETTING_NEEDS_CONFIRMATION', {value: '45s'}, LEAD + ASK);
+          await wayBack(t0, true, L);
+        });
+
+        it('no forms left in this session: NEEDS_CONFIRMATION, ask again', async () => {
+          const t0 = tool();
+          await lower(t0);
+          confirm.confirmations(A).restore({locks: [], formsLeft: 0});
+          says(await asked(t0, 'SETTING_NEEDS_CONFIRMATION'), 'SETTING_NEEDS_CONFIRMATION', {value: '45s'}, LEAD + ASK);
+          await wayBack(t0, true);
+        });
+
+        it('a client that cannot show a form: NEEDS_CONFIRMATION, ask again', async () => {
+          const t0 = noForm();
+          await lower(t0);
+          says(await asked(t0, 'SETTING_NEEDS_CONFIRMATION'), 'SETTING_NEEDS_CONFIRMATION', {value: '45s'}, LEAD + ASK);
+          await wayBack(t0, true);
+        });
+
+        it('the user\'s window paused: NEEDS_CONFIRMATION (no forms left) and the client that cannot show one, the pause; the undo then held', async () => {
+          const t0 = noForm();
+          await lower(t0);
+          confirm.userWindow().lockAll();
+          says(await asked(t0, 'SETTING_NEEDS_CONFIRMATION'), 'SETTING_NEEDS_CONFIRMATION', {value: '45s'}, LEAD + PAUSED);
+          confirm.confirmations(A).restore({locks: [], formsLeft: 0});
+          says(await asked(t0, 'SETTING_NEEDS_CONFIRMATION'), 'SETTING_NEEDS_CONFIRMATION', {value: '45s'}, LEAD + PAUSED);
+          await wayBack(t0, false);
+        });
+
+        for (const later of [true, false]) {
+          it(`the latch, the window paused: CLIENT_NOT_CONFIRMED, the pause${later ? ', with the wait' : ''}`, async () => {
+            if (!later) startedHigher();
+            openSession(L, NO);
+            const t0 = tool();
+            await lower(t0, L);
+            confirm.userWindow().lockAll();
+            const e = await asked(t0, 'SETTING_CLIENT_NOT_CONFIRMED', L);
+            assert.ok(e.message.endsWith(` ${LEAD}${PAUSED}${later ? LATER : ''}`), e.message);
+          });
+
+          it(`past 32 changes, the window paused: TERMINAL_ONLY_SHARED, the pause${later ? ', with the wait' : ''}`, async () => {
+            if (!later) startedHigher();
+            const t0 = noForm();
+            for (let i = 0; i < 32; i++) await t0.set('requestTimeout', String(10000 + (i % 2)), 'settings tool', at(A));
+            await t0.set('requestTimeout', '10s', 'settings tool', at(A)).catch(() => {});
+            confirm.userWindow().lockAll();
+            says(await asked(t0, 'SETTING_TERMINAL_ONLY_SHARED'), 'SETTING_TERMINAL_ONLY_SHARED', {}, LEAD + PAUSED + (later ? LATER : ''));
+          });
+        }
+      });
+
+      describe('nothing appended otherwise', () => {
+        it('a session with no value of its own: each answer as today, word for word', async () => {
+          const t0 = noForm();
+          says(await asked(t0, 'SETTING_NEEDS_CONFIRMATION', B), 'SETTING_NEEDS_CONFIRMATION', {value: '45s'}, null);
+          const t1 = tool();
+          const r = await t1.set('requestTimeout', '45s', 'settings tool', ctx(B));
+          await t1.confirm('requestTimeout', '45s', {requestState: r.inputRequired.requestState, inputResponses: DECLINE}, ctx(B));
+          says(await asked(t1, 'SETTING_DECLINED_THIS_SESSION', B), 'SETTING_DECLINED_THIS_SESSION', {}, null);
+          confirm.confirmations(B).restore({locks: ['requestTimeout'], formsLeft: 3});
+          says(await asked(t1, 'SETTING_DECLINED_THIS_SESSION', B), 'SETTING_DECLINED_THIS_SESSION', {}, null);
+        });
+
+        it('a session whose own value is not lower than the value for all sessions (a confirmed loosening): as today', async () => {
+          const t0 = noForm();
+          settings.set(B, 'requestTimeout', 40000, {loosening: true, over: 30000});
+          options.requestTimeout = 50000;
+          says(await refused(t0.set('requestTimeout', '45s', 'settings tool', ctx(B)), 'SETTING_NEEDS_CONFIRMATION'), 'SETTING_NEEDS_CONFIRMATION', {value: '45s'}, null);
+        });
+
+        it('a change asked for all sessions: as today (that change is the one the command makes)', async () => {
+          const t0 = noForm();
+          await lower(t0);
+          const all = (id) => Object.assign(ctx(id), {scope: 'all-sessions'});
+          const e = await refused(t0.set('requestTimeout', '45s', 'settings tool', all(A)), 'SETTING_NEEDS_CONFIRMATION');
+          assert.ok(!e.message.includes('This session keeps its own lower value'), e.message);
+        });
+      });
+    });
+
     describe('with no tested client (production\'s list), a latched session\'s refusals', () => {
       const {ALLOWLIST, noClientTested, listFrom} = require('../../lib/elicitation-clients');
       const NO = {status: 'ok', conditions: 'no', repo: null, why: {reason: 'client settings unreadable'}};
