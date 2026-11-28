@@ -278,7 +278,8 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
     // record it sent may never have arrived: what the shim holds is not
     // known, so the snapshot goes once the row is applied, a forget at least)
     it('a session resumed after a runtime restart sends its shim the snapshot once its row is applied, a forget at least', async () => {
-      sessions.importTable(table([row(A), row(B, {overrides: [tighten('requestTimeout', 20000)]})]));
+      const D = 'd'.repeat(32);
+      sessions.importTable(table([row(A), row(B, {overrides: [tighten('requestTimeout', 20000)]}), row(D, {overrides: [tighten('requestTimeout', 20000)]})]));
       const frames = {};
       for (const id of [A, B]) {
         frames[id] = [];
@@ -292,8 +293,6 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       assert.deepStrictEqual(frames[B].slice(-2), [['forget'], ['record', {requestTimeout: 20000}]], 'the restored tightening, last');
       // a default that moves while a row is still being applied sends that
       // session nothing: never a bare forget before its row is in
-      const D = 'd'.repeat(32);
-      sessions.importTable(table([row(D, {overrides: [tighten('requestTimeout', 20000)]})]));
       frames[D] = [];
       const d = openSession(D);
       d.record = (entry) => frames[D].push(['record', entry]);
