@@ -200,7 +200,7 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 | `client` | shim → runtime | `seq`? (the `conditions?` it answers); `status`: `"ok"` or `"failed"`; and when ok: `conditions` (`"yes"` or `"no"`), `repo` (`"owner/name"` or null), `token` (base64 MAC, or null when the environment chooses none), and optionally `credentials` (an object of a pack credential's variable name to its base64 MAC); when failed: `why` | The child's line (section 5). Sent right after WELCOME, after each reconnect, and in answer to each `conditions?`. |
 | `conditions?` | runtime → shim | `seq` | Run the child again and answer with `client` carrying this `seq`. The runtime sends it before each form and again at the confirmation. It waits **12 s**, longer than the shim's 10 s for the child, so a slow Windows ancestry read still answers. No answer by then counts as `"no"`: no form. |
 | `settled` | runtime → shim | | The first `client` frame is accepted. The shim forwards client lines from here. |
-| `replay` | shim → runtime | `entries`: array | After WELCOME on a new session: the records the shim kept, as it received them. |
+| `replay` | shim → runtime | `entries`: array | After `settled` on a new session, before any client line: the records the shim kept, as it received them. A replay before the first `client` frame closes the connection unsettled. |
 | `bye` | shim → runtime | | The client's stdin ended. The runtime ends the session. |
 | `record` | runtime → shim | `entry`: an opaque JSON value | Keep this for replay. At most 64 entries and 16 KiB in all; the oldest goes first. |
 | `forget` | runtime → shim | | Drop every record (a terminal change ended them all). |
