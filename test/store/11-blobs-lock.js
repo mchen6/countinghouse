@@ -144,6 +144,16 @@ describe('store 11: the result store\'s lock', function() {
     await withLock(dir, async () => {});
   });
 
+  it('a lock of another copy of this process, dated before this process began (as after a step back of the wall clock), is a live holder\'s: never taken over', async () => {
+    const dir = tmp.mkdtemp('ch-store11-');
+    const {withLock} = require(BLOBS).forTests;
+    const store = require(STORE).forTests;
+    fs.mkdirSync(lockDirOf(dir), {recursive: true});
+    const before = Date.now() - process.uptime() * 1000 - 60000;
+    fs.writeFileSync(path.join(lockDirOf(dir), '.lock'), JSON.stringify({pid: process.pid, startId: store.START_ID, instance: 'sibling', n: 1, at: before}));
+    await assert.rejects(withLock(dir, async () => {}), /held by a live process/, 'another copy\'s live lock was taken over by its time');
+  });
+
   it('a lock of another copy of this process (dated since it began) is a live holder\'s: never taken over by its age', async () => {
     const dir = tmp.mkdtemp('ch-store11-');
     const {withLock} = require(BLOBS).forTests;
