@@ -3070,7 +3070,7 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
 
   it('the cleanup never runs once other processes may take the lock for stale (by the monotonic clock): past that point it removes nothing', async () => {
     const dir = relTmp.mkdtemp('ch-store04-rel-');
-    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 60000, staleCapMs: 300});
+    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 60000, staleCapMs: 5000});
     let refuse = false;
     refusing.refuse = () => refuse;
     // (released before the point, refused through its retries: its cleanup armed)
@@ -3079,7 +3079,7 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
     while (require(MOD).forTests.holds(dir) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 2));
     assert.strictEqual(require(MOD).forTests.holds(dir), false, 'still held after its retries');
     // (the point then passes by the monotonic clock alone)
-    require(MOD).forTests.clock({mono: 1000});
+    require(MOD).forTests.clock({mono: 20000});
     refuse = false;
     const takeovers = countTakeovers();
     const ticked = require(MOD).forTests.ticks();
@@ -3138,12 +3138,12 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
   it('a release\'s retries past the point others may take the lock for stale remove nothing', async () => {
     const dir = relTmp.mkdtemp('ch-store04-rel-');
     // (the point shortened to 300 ms after the acquisition; the retries' time 1 s)
-    require(MOD).forTests.releaseTimes({retryMs: 1000, cleanupMs: 60000, staleCapMs: 300});
+    require(MOD).forTests.releaseTimes({retryMs: 1000, cleanupMs: 60000, staleCapMs: 5000});
     let refuse = false;
     refusing.refuse = () => refuse;
     // (released before the point, refused; the point then passes while it retries)
     withStoreLock(dir, () => { refuse = true; });
-    require(MOD).forTests.clock({mono: 1000});
+    require(MOD).forTests.clock({mono: 20000});
     refuse = false;
     // (bounded on what is observable: no longer held, its retries over)
     const until = Date.now() + 5000;
@@ -3154,11 +3154,11 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
 
   it('a release past the point others may take the lock for stale removes it under the takeover\'s exclusion (it is freed as soon as it can be)', () => {
     const dir = relTmp.mkdtemp('ch-store04-rel-');
-    require(MOD).forTests.releaseTimes({retryMs: 500, cleanupMs: 60000, staleCapMs: 300});
+    require(MOD).forTests.releaseTimes({retryMs: 500, cleanupMs: 60000, staleCapMs: 5000});
     const takeovers = countTakeovers();
     try {
       // (its release lands past the point, by the monotonic clock moved on inside the hold)
-      withStoreLock(dir, () => { require(MOD).forTests.clock({mono: 1000}); });
+      withStoreLock(dir, () => { require(MOD).forTests.clock({mono: 20000}); });
     } finally {
       takeovers.stop();
     }
@@ -3168,10 +3168,10 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
 
   it('a release past the point, refused: the lock stays, and this copy says it is its own, left behind', () => {
     const dir = relTmp.mkdtemp('ch-store04-rel-');
-    require(MOD).forTests.releaseTimes({retryMs: 500, cleanupMs: 60000, staleCapMs: 300});
+    require(MOD).forTests.releaseTimes({retryMs: 500, cleanupMs: 60000, staleCapMs: 5000});
     refusing.refuse = () => true;
     try {
-      withStoreLock(dir, () => { require(MOD).forTests.clock({mono: 1000}); });
+      withStoreLock(dir, () => { require(MOD).forTests.clock({mono: 20000}); });
       assert.ok(fs.existsSync(path.join(dir, '.lock')), 'the lock went though its removal was refused');
       assert.strictEqual(require(MOD).forTests.holds(dir), false, 'still held');
       assert.throws(() => withStoreLock(dir, () => {}, 50), {message: `the store lock ${path.join(dir, '.lock')} is this process's own, left behind because it couldn't be removed (another program may have had it open); any process may take it over 120 s after it was taken: retry after that`});
@@ -3191,13 +3191,13 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
 
   it('the point others may take the lock for stale is one test for this copy\'s release and for its own lock left behind (the monotonic clock past it, the wall clock not)', () => {
     const dir = relTmp.mkdtemp('ch-store04-rel-');
-    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 60000, staleCapMs: 300});
+    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 60000, staleCapMs: 5000});
     let refuse = false;
     refusing.refuse = () => refuse;
     withStoreLock(dir, () => { refuse = true; });
     refuse = false;
     // (the monotonic clock past the point, the wall clock stepped back 20 s: its age by the wall clock is under it)
-    require(MOD).forTests.clock({mono: 1000, wall: -20000});
+    require(MOD).forTests.clock({mono: 20000, wall: -2000});
     assert.throws(() => withStoreLock(dir, () => {}, 50), {message: `the store lock ${path.join(dir, '.lock')} is this process's own, left behind because it couldn't be removed (another program may have had it open); any process may take it over 120 s after it was taken: retry after that`});
     assert.ok(fs.existsSync(path.join(dir, '.lock')), 'its own lock was taken over past the point by the monotonic clock');
   });
@@ -3399,10 +3399,10 @@ describe('store 04: the takeover\'s exclusion', function() {
     const waitFor = (n, ms = 20000) => { const t = Date.now() + ms; while (!fs.existsSync(sig(n))) { if (Date.now() > t) throw new Error('timed out waiting for ' + n); Atomics.wait(sl, 0, 0, 2); } };
     const say = (n) => fs.writeFileSync(sig(n), String(process.pid));
     const realWrite = fs.writeFileSync, realReaddir = fs.readdirSync, realRead = fs.readFileSync, realUnlink = fs.unlinkSync;
-    let made = false, listed = false, first = true;
-    // (its first intent withdrawn without going on: what it did there is over)
-    fs.unlinkSync = function(t) { if (first && made && path.basename(String(t)).startsWith('.lock.takeover.')) first = false; return realUnlink.apply(this, arguments); };
-    fs.writeFileSync = function(t, d, o) { const r = realWrite.apply(this, arguments); if (first && path.basename(String(t)).startsWith('.lock.takeover.') && o && o.flag === 'wx') { made = true; say(ROLE + '-made'); waitFor(ROLE + '-list'); } return r; };
+    let made = false, listed = false, first = true, own = null;
+    // (its own first intent withdrawn without going on -- never another's removed: what it did there is over)
+    fs.unlinkSync = function(t) { if (first && own != null && path.basename(String(t)) === own) first = false; return realUnlink.apply(this, arguments); };
+    fs.writeFileSync = function(t, d, o) { const r = realWrite.apply(this, arguments); if (first && own == null && path.basename(String(t)).startsWith('.lock.takeover.') && o && o.flag === 'wx') { own = path.basename(String(t)); made = true; say(ROLE + '-made'); waitFor(ROLE + '-list'); } return r; };
     fs.readdirSync = function(t) { const r = realReaddir.apply(this, arguments); if (first && made && !listed) { listed = true; say(ROLE + '-listed'); waitFor(ROLE + '-enter'); } return r; };
     fs.readFileSync = function(t) { const r = realRead.apply(this, arguments); if (first && listed && path.basename(String(t)) === '.lock') { first = false; say(ROLE + '-entered'); } return r; };
     const {withStoreLock} = require(MOD);
@@ -3661,6 +3661,87 @@ describe('store 04: the takeover\'s exclusion', function() {
       require(MOD).forTests.clock(null);
     }
     assert.strictEqual(fs.readFileSync(path.join(dir, '.lock'), 'utf8'), before, 'a taker stalled past the point removed the lock');
+  });
+
+  // (stalled in its takeover after reading the lock again, while `move` moves a clock; no takeover after)
+  const stalledTakeover = (dir, move) => {
+    const read = fs.readFileSync, write = fs.writeFileSync;
+    let inTakeover = false, stalled = false;
+    fs.writeFileSync = function(t, d, o) {
+      const intent = path.basename(String(t)).startsWith('.lock.takeover.') && o && o.flag === 'wx';
+      if (intent && stalled) throw Object.assign(new Error('no takeover after the stalled one, in this case'), {code: 'ECASE'});
+      const r = write.apply(this, arguments);
+      if (intent) inTakeover = true;
+      return r;
+    };
+    fs.readFileSync = function(t) { const r = read.apply(this, arguments); if (inTakeover && path.basename(String(t)) === '.lock') { inTakeover = false; stalled = true; move(); } return r; };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 100));
+    } finally {
+      fs.readFileSync = read;
+      fs.writeFileSync = write;
+      require(MOD).forTests.clock(null);
+    }
+  };
+  for (const [label, wall] of [['stepped back', -200000], ['stepped on', 200000]]) {
+    it(`a taker in its takeover while the wall clock is ${label} past the point removes nothing`, () => {
+      const dir = exTmp.mkdtemp('ch-store04-ex-');
+      plantDeadLock(dir);
+      const before = fs.readFileSync(path.join(dir, '.lock'), 'utf8');
+      stalledTakeover(dir, () => require(MOD).forTests.clock({wall}));
+      assert.strictEqual(fs.readFileSync(path.join(dir, '.lock'), 'utf8'), before, `a taker with the wall clock ${label} removed the lock`);
+    });
+  }
+
+  (process.platform === 'linux' ? it : it.skip)('an intent with this process\'s pid and another start, told exactly (Linux), is an earlier process\'s: dead, ignored, removed', () => {
+    const dir = exTmp.mkdtemp('ch-store04-ex-');
+    plantDeadLock(dir);
+    fs.writeFileSync(path.join(dir, `.lock.takeover.${process.pid}-t1-bb-1-${Date.now()}`), '');
+    assert.doesNotThrow(() => withStoreLock(dir, () => {}, 500));
+    assert.deepStrictEqual(intents(dir), [], 'an earlier process\'s intent was left');
+  });
+
+  it('a release past the point backs off behind another live taker\'s intent: the lock stays, removed by nothing of this copy\'s', async () => {
+    const dir = exTmp.mkdtemp('ch-store04-ex-');
+    const sleeper = await sleeperProcess();
+    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 60000, staleCapMs: 5000});
+    try {
+      fs.writeFileSync(path.join(dir, `.lock.takeover.${sleeper.pid}-${sleeper.startId}-aa-1-${Date.now()}`), '');
+      // (its release lands past the point, by the monotonic clock moved on inside the hold)
+      withStoreLock(dir, () => { require(MOD).forTests.clock({mono: 20000}); });
+      assert.ok(fs.existsSync(path.join(dir, '.lock')), 'the release past the point removed the lock past another\'s live intent');
+    } finally {
+      require(MOD).forTests.clock(null);
+      require(MOD).forTests.releaseTimes(null);
+      require(MOD).forTests.stopReleases();
+      sleeper.kill();
+    }
+  });
+
+  it('an intent whose name this copy can\'t read counts while its file is a live holder\'s age, and not after', () => {
+    const dir = exTmp.mkdtemp('ch-store04-ex-');
+    plantDeadLock(dir);
+    const odd = path.join(dir, '.lock.takeover.v2-another-format');
+    fs.writeFileSync(odd, '');
+    assert.throws(() => withStoreLock(dir, () => {}, 200), 'went on past an intent it could not read');
+    const hourAgo = (Date.now() - 3600 * 1000) / 1000;
+    fs.utimesSync(odd, hourAgo, hourAgo);
+    assert.doesNotThrow(() => withStoreLock(dir, () => {}, 500));
+  });
+
+  it('an intent stamped behind this process\'s clock (a network or shared mount) still counts', async () => {
+    const dir = exTmp.mkdtemp('ch-store04-ex-');
+    const sleeper = await sleeperProcess();
+    try {
+      plantDeadLock(dir);
+      const file = path.join(dir, `.lock.takeover.${sleeper.pid}-${sleeper.startId}-aa-1-${Date.now()}`);
+      fs.writeFileSync(file, '');
+      const behind = (Date.now() - 30000) / 1000;
+      fs.utimesSync(file, behind, behind);
+      assert.throws(() => withStoreLock(dir, () => {}, 200), 'took a live intent stamped behind for withdrawn');
+    } finally {
+      sleeper.kill();
+    }
   });
   exTmp.hooks();
 });
