@@ -49,6 +49,7 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     frames[id] = [];
     s.record = (entry) => { if (s.connected) frames[id].push(['record', entry]); };
     s.forget = () => { if (s.connected) frames[id].push(['forget']); };
+    s.tightenings = (kept, after) => { if (s.connected) frames[id].push(['tightenings', kept, after]); };
     sources[id] = s;
     reg.emit('session', s);
     return s;
@@ -301,6 +302,46 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
   });
 
   describe('a replay (a new session, from a restarted daemon\'s shim)', () => {
+    // (the shim holds its client's lines until the answer: kept, or not,
+    // which it refuses as it refuses a record it lost; sent before the
+    // snapshot that replaces what the shim holds)
+    describe('its answer', () => {
+      const answers = (id) => frames[id].filter((f) => f[0] === 'tightenings');
+      it('kept: every entry applied, or already at least as tight; sent before the new snapshot', () => {
+        const s = openSession(C);
+        s.emit('replay', [{maxOutputBytes: 2 * MiB}, {requestTimeout: 60000}]);
+        assert.deepStrictEqual(answers(C), [['tightenings', true, 'replay']]);
+        const i = frames[C].findIndex((f) => f[0] === 'tightenings');
+        assert.deepStrictEqual(frames[C].slice(i + 1, i + 3), [['forget'], ['record', {maxOutputBytes: 2 * MiB}]], 'the snapshot after the answer');
+      });
+      it('kept: an empty replay (the shim waits for every answer)', () => {
+        const s = openSession(C);
+        s.emit('replay', []);
+        assert.deepStrictEqual(answers(C), [['tightenings', true, 'replay']]);
+      });
+      it('kept: a value above the cap\'s max now (an upgrade lowered it): the session is already tighter', () => {
+        const entry = settingsTool.ALLOWLIST.maxOutputBytes;
+        const was = entry.max;
+        entry.max = 4 * MiB;
+        try {
+          const s = openSession(C);
+          s.emit('replay', [{maxOutputBytes: 6 * MiB}]);
+          assert.deepStrictEqual(answers(C), [['tightenings', true, 'replay']]);
+        } finally {
+          entry.max = was;
+        }
+      });
+      for (const [what, entry] of [['a value as a string', {maxOutputBytes: String(2 * MiB)}], ['a value out of bounds', {requestTimeout: 1}],
+        ['a value not whole', {maxOutputBytes: 2 * MiB + 0.5}], ['a name not a cap', {locale: 'zh'}], ['an entry not an object', 7], ['an array', [{maxOutputBytes: 2 * MiB}]], ['null', null]]) {
+        it(`not kept: ${what}, beside an entry that applies`, () => {
+          const s = openSession(C);
+          s.emit('replay', [{maxOutputBytes: 2 * MiB}, entry]);
+          assert.deepStrictEqual(answers(C), [['tightenings', false, 'replay']]);
+          assert.strictEqual(settings.effective(C, 'maxOutputBytes'), 2 * MiB, 'what could apply still applies');
+        });
+      }
+    });
+
     it('applies a tightening, and records it as the session\'s snapshot', () => {
       const s = openSession(C);
       const was = Session.rearmSession;
@@ -312,8 +353,8 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
         Session.rearmSession = was;
       }
       assert.deepStrictEqual(settings.limitsOf(C), {maxOutputBytes: 2 * MiB, requestTimeout: 15000});
-      // one snapshot for the whole replay, not one per entry
-      assert.deepStrictEqual(frames[C], [['forget'], ['record', {maxOutputBytes: 2 * MiB, requestTimeout: 15000}]]);
+      // the answer, then one snapshot for the whole replay, not one per entry
+      assert.deepStrictEqual(frames[C], [['tightenings', true, 'replay'], ['forget'], ['record', {maxOutputBytes: 2 * MiB, requestTimeout: 15000}]]);
       // a replay may come mid-life (a resumed connection's): its calls under way are re-armed, once
       assert.deepStrictEqual(rearmed, [C]);
       assert.strictEqual(settings.limitsOf(A), null);
@@ -362,9 +403,10 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
         null, 'maxOutputBytes', 7, [{maxOutputBytes: 2 * MiB}]
       ]);
       assert.strictEqual(settings.limitsOf(C), null, 'nothing applied');
-      // the shim holds what it replayed: with nothing of it applied it is
-      // told to forget, or it would replay it at every later restart
-      assert.deepStrictEqual(frames[C], [['forget']]);
+      // not kept (what set would refuse is among them), then: the shim holds
+      // what it replayed, and with nothing of it applied it is told to
+      // forget, or it would replay it at every later restart
+      assert.deepStrictEqual(frames[C], [['tightenings', false, 'replay'], ['forget']]);
     });
 
     it('takes an entry\'s good names and leaves its bad ones; a later entry only tightens further', () => {
