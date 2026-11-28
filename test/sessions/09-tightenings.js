@@ -322,6 +322,43 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     assert.deepStrictEqual(frames[A], [['forget'], ['record', {maxOutputBytes: 2 * MiB}]]);
   });
 
+  // (a confirmed loosening a later change of the default leaves under the
+  // default is a tightening of it: kept for the shim, so a daemon death does
+  // not give the session the default back; R-tightenings-loosening-mark)
+  describe('a loosening left under the default by a change of the default', () => {
+    beforeEach(() => { settings.configure({ceiling: () => ({state: 'none'}), defaultOf: (n) => options[n]}); });
+
+    it('is in the snapshot once the default moves: sessions.defaultsChanged sends it', () => {
+      settings.set(A, 'maxOutputBytes', 12 * MiB, {loosening: true, over: 8 * MiB});
+      const held = () => { let h = []; for (const f of frames[A]) { if (f[0] === 'forget') h = []; else h.push(f[1]); } return h; };
+      assert.deepStrictEqual(held(), [], 'a loosening is not the shim\'s to replay');
+      options.maxOutputBytes = 16 * MiB;
+      assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 12 * MiB, 'under the raised default');
+      sessions.defaultsChanged();
+      assert.deepStrictEqual(held(), [{maxOutputBytes: 12 * MiB}]);
+      // (and a new session given it back keeps it)
+      const n = openSession(C);
+      n.emit('replay', held());
+      assert.strictEqual(settings.effective(C, 'maxOutputBytes'), 12 * MiB);
+    });
+
+    it('a default raised or lowered by the control set sends the snapshot of every session', () => {
+      settingsTool.resetForTests();
+      options.maxOutputBytes = 16 * MiB;
+      settingsTool.captureAtStart();
+      options.maxOutputBytes = 8 * MiB;
+      settings.set(A, 'maxOutputBytes', 12 * MiB, {loosening: true, over: 8 * MiB});
+      frames[A].length = 0;
+      assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 16 * MiB}), {ok: true});
+      assert.deepStrictEqual(frames[A], [['forget'], ['record', {maxOutputBytes: 12 * MiB}]], 'raised: the loosening is now under it');
+      frames[A].length = 0;
+      assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 14 * MiB}), {ok: true});
+      assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 12 * MiB, 'lowered, still above it: kept');
+      assert.deepStrictEqual(frames[A], [], 'nothing changed for the shim');
+      settingsTool.resetForTests();
+    });
+  });
+
   describe('a replay (a new session, from a restarted daemon\'s shim)', () => {
     it('applies a tightening, and records it as the session\'s snapshot', () => {
       const s = openSession(C);
