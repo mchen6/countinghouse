@@ -27,6 +27,16 @@ describe('validation 04: the error catalogue (logger-design §5.3)', () => {
   const {CODES} = require('../../lib/error-catalogue');
   const text = sources().map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 
+  // A notice told before a session joined, as that session reads it, and the
+  // one line saying how many were let go (lib/notices.js, standing notices):
+  // business's words, word for word (test/sessions/38)
+  it('the standing notices\' words: business\'s', () => {
+    const {standingWords} = require('../../lib/notices');
+    assert.strictEqual(standingWords.earlier(Date.parse('2026-11-28T12:00:00.000Z'), 'a notice'), 'Earlier, before this session joined (2026-11-28T12:00:00.000Z): a notice');
+    assert.strictEqual(standingWords.dropped(1), '1 earlier notice from this run is not shown here: a session that joins later is given only the newest (5 of each kind, up to 64 kinds, from the last 24 hours)');
+    assert.strictEqual(standingWords.dropped(3), '3 earlier notices from this run are not shown here: a session that joins later is given only the newest (5 of each kind, up to 64 kinds, from the last 24 hours)');
+  });
+
   // M6 (#413 rev 3 section 11): a module, never a pack, in the texts
   it('names a module, never a pack: the section 11 texts', () => {
     assert.strictEqual(CODES.PART_MISSING.en, 'A module this one calls is not installed or not available, so it was not loaded');

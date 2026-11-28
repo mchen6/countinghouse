@@ -6,7 +6,8 @@
 // next result; a global one (a terminal change, a pack ch-local changed) is
 // copied into every open session's queue once. A session's
 // logging/setLevel is its own. A session's queue ends with it, and a
-// session opened after a global notice doesn't get it. Under --stdio and
+// session opened after a plain global notice doesn't get it (one told to
+// every session as a standing fact is kept for it: sessions 38). Under --stdio and
 // over HTTP there's one queue, as before (stdio 13).
 const assert = require('assert');
 const EventEmitter = require('events');
