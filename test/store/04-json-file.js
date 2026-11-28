@@ -3068,28 +3068,32 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
     assert.ok(await gone(path.join(dir, '.lock'), 2000), 'no cleanup after a long hold: its time ran from the acquisition');
   });
 
-  it('the cleanup never runs once other processes may take the lock for stale: a release past that point gets no removal attempt', async () => {
+  it('the cleanup never runs once other processes may take the lock for stale (by the monotonic clock): past that point it removes nothing', async () => {
     const dir = relTmp.mkdtemp('ch-store04-rel-');
-    // (the point other processes may take it for stale, shortened to 300 ms after the acquisition)
     require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 60000, staleCapMs: 300});
     let refuse = false;
     refusing.refuse = () => refuse;
-    withStoreLock(dir, () => { refuse = true; require(MOD).forTests.clock({mono: 1000}); });
+    // (released before the point, refused through its retries: its cleanup armed)
+    withStoreLock(dir, () => { refuse = true; });
     const until = Date.now() + 5000;
     while (require(MOD).forTests.holds(dir) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 2));
     assert.strictEqual(require(MOD).forTests.holds(dir), false, 'still held after its retries');
+    // (the point then passes by the monotonic clock alone)
+    require(MOD).forTests.clock({mono: 1000});
     refuse = false;
-    // (its cleanup's ticks, had it any, past a second: each a takeover attempt; the lock left for its takeover rule)
     const takeovers = countTakeovers();
+    const ticked = require(MOD).forTests.ticks();
     try {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // (bounded on what is observable: a tick of the cleanup's run)
+      const until2 = Date.now() + 5000;
+      while (require(MOD).forTests.ticks() === ticked && Date.now() < until2) await new Promise((resolve) => setTimeout(resolve, 5));
     } finally {
       takeovers.stop();
     }
+    assert.ok(require(MOD).forTests.ticks() > ticked, 'no tick of the cleanup ran');
     assert.strictEqual(takeovers.count, 0, `the cleanup attempted ${takeovers.count} takeover(s) past the point`);
     assert.ok(fs.existsSync(path.join(dir, '.lock')), 'the cleanup removed a lock other processes may already be taking over');
   });
-
   it('the point others may take the lock for stale is also told by the wall clock (it runs on through a suspend): past it, the cleanup removes nothing', async () => {
     const dir = relTmp.mkdtemp('ch-store04-rel-');
     require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 60000});
