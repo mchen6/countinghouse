@@ -230,6 +230,31 @@ describe('session-transport 03: the listener against hostile peers (#245 review)
       a.c.end();
     });
 
+    // (a shim that, on a new session holding records, sends replay before
+    // its first client frame: the welcomed connection is closed, never
+    // settled; the session it opened ends with it, so the next attach's
+    // resume is refused and it opens a new session again)
+    it('a welcomed connection whose first frame is a replay, then its client frame, is closed unsettled; its session ends, its resume refused', async() => {
+      await start();
+      const a = await shim.attach(sock, secret);
+      assert.ok(a.welcome != null, 'welcomed');
+      a.c.send('C', {op: 'replay', entries: [{kind: 'value', name: 'maxOutputBytes', value: 1048576}]});
+      a.c.send('C', {op: 'client', status: 'ok', conditions: 'yes', repo: null, token: null});
+      assert.ok(await until(() => a.c.closed()), 'closed');
+      assert.strictEqual(opened.length, 0, 'never announced: no session, no replay applied');
+      const b = await shim.attach(sock, secret, {resume: a.welcome.resumeToken});
+      assert.strictEqual(b.refused != null && b.refused.code, 'RESUME_REFUSED', JSON.stringify(b.refused));
+      b.c.end();
+      // (the same frames with client first settle, and the replay is heard)
+      const c = await shim.session(sock, secret);
+      assert.strictEqual(c.settled.op, 'settled');
+      const seen = [];
+      opened[0].on('replay', (e) => seen.push(e));
+      c.c.send('C', {op: 'replay', entries: [{kind: 'value', name: 'maxOutputBytes', value: 1048576}]});
+      assert.ok(await until(() => seen.length === 1));
+      c.c.end();
+    });
+
     it('past the session limit, a handshake is refused BUSY, as the vector has it', async() => {
       await start({listener: {maxSessions: 1}});
       const a = await shim.session(sock, secret);
