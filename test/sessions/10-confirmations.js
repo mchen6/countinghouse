@@ -731,7 +731,8 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
         }
         assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000, 'never left at the value for all sessions');
         const last = history().pop();
-        assert.deepStrictEqual([last.setting, last.change, last.problem], ['requestTimeout', 'not made', 'SETTING_OUT_OF_BOUNDS']);
+        // (a session's own, no scope: ch-local's outside-edit check reads it so, as sessions 09 says)
+        assert.deepStrictEqual([last.setting, last.change, last.problem, last.scope], ['requestTimeout', 'not made', 'SETTING_OUT_OF_BOUNDS', undefined]);
       });
 
       it('maxOutputBytes, and past the session\'s budget: applied, its own line', async () => {
