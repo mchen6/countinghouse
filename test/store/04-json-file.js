@@ -787,16 +787,6 @@ describe('store 04: a waiter is not starved (#150)', function() {
     }
   });
 
-  it('a wait backing off from a refused rename renews its place only for part of a synchronous wait (on an injected clock)', () => {
-    const {renewsInBackoff, ANNOUNCE_FRESH_MS, LOCK_WAIT_MS} = require(MOD).forTests;
-    const token = {since: 1000000};
-    assert.strictEqual(renewsInBackoff(null, token.since), false);
-    assert.strictEqual(renewsInBackoff(token, token.since + 10), true);
-    // past this, its announcement is stale before another process's wait begun with it fresh ends
-    assert.strictEqual(renewsInBackoff(token, token.since + LOCK_WAIT_MS - ANNOUNCE_FRESH_MS), false);
-    assert.strictEqual(renewsInBackoff(token, token.since + 10000), false);
-  });
-
   it('two spellings of one store are one: a wait ending under one spelling never withdraws a wait still running under the other', () => {
     const {waitBegan, waitEnded, announce} = require(MOD).forTests;
     const dir = annTmp.mkdtemp('ch-store04-ann-');
@@ -817,50 +807,142 @@ describe('store 04: a waiter is not starved (#150)', function() {
 
   // An update() whose rename is refused (Windows: a reader has the file open)
   // keeps its one wait, and its announcement's place, across the retries.
-  // (Windows only: elsewhere a rename's EPERM is an error at once, never a refusal to retry)
-  const refusedRenames = async (dir, file, count, seen) => {
-    const f = openJsonFile(file);
-    const probe = setInterval(() => { for (const w of announcements(dir)) if (w.pid === process.pid) seen.add(w.since); }, 10);
+  // A wait backing off from a refused rename (Windows: a reader has the file
+  // open) isn't contending for the lock: it keeps its since, but its
+  // announcement is retired at once and never renewed there, so it reserves
+  // nothing while it backs off. These run on every system, the rename's
+  // refusal taken as Windows takes it (refuseRenamesAsWindows).
+  const ownFresh = (dir) => announcements(dir).filter((w) => { const age = Date.now() - w.at; return w.pid === process.pid && age >= 0 && age <= require(MOD).forTests.ANNOUNCE_FRESH_MS; });
+  // fs.renameSync onto one of `files` refused while refuse() says so; each refusal first calls seen()
+  const refusingRenames = (files, refuse, seen) => {
     const rename = fs.renameSync;
-    let refusals = 0;
     fs.renameSync = function(from, to) {
-      if (String(to) === file && refusals < count) { refusals++; throw Object.assign(new Error(`EPERM: operation not permitted, rename '${from}' -> '${to}'`), {code: 'EPERM', syscall: 'rename'}); }
+      if (files.includes(String(to)) && refuse()) {
+        seen();
+        throw Object.assign(new Error(`EPERM: operation not permitted, rename '${from}' -> '${to}'`), {code: 'EPERM', syscall: 'rename'});
+      }
       return rename.apply(this, arguments);
     };
-    try {
-      await new Promise((resolve, reject) => f.update('k', () => 1, (err) => (err ? reject(err) : resolve())));
-    } finally {
-      fs.renameSync = rename;
-      clearInterval(probe);
-      f.close();
-    }
-    return refusals;
+    return () => { fs.renameSync = rename; };
   };
-  (process.platform === 'win32' ? it : it.skip)('update() keeps one wait across a refused rename\'s retries: its announcement keeps its since', async () => {
-    const dir = annTmp.mkdtemp('ch-store04-ann-');
+  const updated = (f, key) => new Promise((resolve, reject) => f.update(key, (n) => (n || 0) + 1, (err) => (err ? reject(err) : resolve())));
+  const asWindows = (on) => require(MOD).forTests.refuseRenamesAsWindows(on);
+  // (a holder of the lock in another process for `ms`, bounded on what it says)
+  async function heldFor(dir, ms) {
     const holder = spawn(process.execPath, ['-e', `
       const {withStoreLock} = require(${JSON.stringify(MOD)});
-      withStoreLock(${JSON.stringify(dir)}, () => { process.stdout.write('held'); const t = Date.now() + 300; while (Date.now() < t) { /* hold */ } });
+      withStoreLock(${JSON.stringify(dir)}, () => { process.stdout.write('held'); const t = Date.now() + ${ms}; while (Date.now() < t) { /* hold */ } });
     `], {stdio: ['ignore', 'pipe', 'ignore']});
-    const seen = new Set();
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('the holder never held the lock')), 10000);
+      holder.stdout.once('data', () => { clearTimeout(timer); resolve(); });
+      holder.once('exit', () => { clearTimeout(timer); reject(new Error('the holder ended before it held the lock')); });
+    });
+    return holder;
+  }
+
+  it('update(): a wait that announced, then had its rename refused, retires its announcement for the backoff, and keeps its since', async () => {
+    const dir = annTmp.mkdtemp('ch-store04-ann-');
+    const file = path.join(dir, 'm.json');
+    const holder = await heldFor(dir, 300);
+    const f = openJsonFile(file);
+    const since = new Set();
+    const probe = setInterval(() => { for (const w of announcements(dir)) if (w.pid === process.pid) since.add(w.since); }, 5);
+    let refusals = 0;
+    const freshInBackoff = [];
+    asWindows(true);
+    const restore = refusingRenames([file], () => refusals < 4, () => { if (++refusals > 1) freshInBackoff.push(ownFresh(dir).length); });
     try {
-      // (bounded on what the holder says: held, or its end)
-      await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('the holder never held the lock')), 10000);
-        holder.stdout.once('data', () => { clearTimeout(timer); resolve(); });
-        holder.once('exit', () => { clearTimeout(timer); reject(new Error('the holder ended before it held the lock')); });
-      });
-      assert.strictEqual(await refusedRenames(dir, path.join(dir, 'm.json'), 3, seen), 3, 'the rename was not refused as set up');
+      await updated(f, 'k');
     } finally {
+      restore();
+      asWindows(false);
+      clearInterval(probe);
+      f.close();
       if (holder.exitCode == null) holder.kill();
     }
-    assert.strictEqual(seen.size, 1, `its announcement changed its place across the retries: ${JSON.stringify([...seen])}`);
+    assert.strictEqual(refusals, 4, 'the rename was not refused as set up');
+    assert.deepStrictEqual(freshInBackoff, [0, 0, 0], 'its announcement was fresh through a backoff');
+    assert.ok(since.size <= 1, `its place changed across the retries: ${JSON.stringify([...since])}`);
   });
-  (process.platform === 'win32' ? it : it.skip)('an update() that took the lock at once and had its rename refused announces from then on, keeping one place', async () => {
+
+  it('flush(): a wait that announced, then had its rename refused, retires its announcement for the backoff', async () => {
     const dir = annTmp.mkdtemp('ch-store04-ann-');
-    const seen = new Set();
-    assert.strictEqual(await refusedRenames(dir, path.join(dir, 'm.json'), 3, seen), 3, 'the rename was not refused as set up');
-    assert.strictEqual(seen.size, 1, `not announced through its backoff, or its place changed: ${JSON.stringify([...seen])}`);
+    const file = path.join(dir, 'm.json');
+    const f = openJsonFile(file);
+    // (busy first, so it waits and announces, then takes the lock and is refused)
+    const holder = await heldFor(dir, 300);
+    f.set('k', 1);
+    let refusals = 0;
+    const freshInBackoff = [];
+    asWindows(true);
+    const restore = refusingRenames([file], () => refusals < 4, () => { if (++refusals > 1) freshInBackoff.push(ownFresh(dir).length); });
+    try {
+      f.flush();
+    } finally {
+      restore();
+      asWindows(false);
+      f.close();
+      if (holder.exitCode == null) holder.kill();
+    }
+    assert.strictEqual(refusals, 4, 'the rename was not refused as set up');
+    assert.deepStrictEqual(freshInBackoff, [0, 0, 0], 'its announcement was fresh through a backoff');
+  });
+
+  it('overlapping update()s whose renames are refused never keep this process\'s announcement fresh', async () => {
+    const dir = annTmp.mkdtemp('ch-store04-ann-');
+    const files = ['a.json', 'b.json', 'c.json'].map((n) => path.join(dir, n));
+    const maps = files.map((file) => openJsonFile(file));
+    const stopAt = Date.now() + 1500;
+    let refusals = 0;
+    let fresh = 0;
+    asWindows(true);
+    const restore = refusingRenames(files, () => Date.now() < stopAt, () => { refusals++; fresh += ownFresh(dir).length; });
+    try {
+      const all = [];
+      for (const m of maps) { all.push(updated(m, 'k')); await new Promise((resolve) => setTimeout(resolve, 300)); }
+      await Promise.all(all);
+    } finally {
+      restore();
+      asWindows(false);
+      for (const m of maps) m.close();
+    }
+    assert.ok(refusals > 3, `the renames were not refused as set up (${refusals})`);
+    assert.strictEqual(fresh, 0, 'a backing-off wait kept this process\'s announcement fresh');
+  });
+
+  it('update()s backing off from refused renames never make another process\'s synchronous wait run out', async () => {
+    const dir = annTmp.mkdtemp('ch-store04-ann-');
+    // (a refused update() begun every 250 ms through the other process's whole wait: refused charges, as a busy runtime makes them)
+    const files = Array.from({length: 16}, (x, n) => path.join(dir, `m${n}.json`));
+    const maps = files.map((file) => openJsonFile(file));
+    const stopAt = Date.now() + 4500;
+    let refusals = 0;
+    asWindows(true);
+    const restore = refusingRenames(files, () => Date.now() < stopAt, () => { refusals++; });
+    let out = '';
+    try {
+      const all = [];
+      for (const m of maps.slice(0, 2)) { all.push(updated(m, 'k')); await new Promise((resolve) => setTimeout(resolve, 250)); }
+      // another process's synchronous wait (a flush's, an exit's): its 2 s, begun while they back off
+      const waiter = spawn(process.execPath, ['-e', `
+        const {withStoreLock} = require(${JSON.stringify(MOD)});
+        try { withStoreLock(${JSON.stringify(dir)}, () => {}); process.stdout.write('ok'); } catch (e) { process.stdout.write('threw: ' + e.message); }
+      `], {stdio: ['ignore', 'pipe', 'ignore']});
+      waiter.stdout.on('data', (c) => { out += c; });
+      for (const m of maps.slice(2)) { all.push(updated(m, 'k')); await new Promise((resolve) => setTimeout(resolve, 250)); }
+      await new Promise((resolve) => {
+        const timer = setTimeout(() => { waiter.kill(); resolve(); }, 10000);
+        waiter.once('exit', () => { clearTimeout(timer); resolve(); });
+      });
+      await Promise.all(all);
+    } finally {
+      restore();
+      asWindows(false);
+      for (const m of maps) m.close();
+    }
+    assert.ok(refusals > 3, `the renames were not refused as set up (${refusals})`);
+    assert.strictEqual(out, 'ok', `the other process's wait ran out: ${out}`);
   });
   annTmp.hooks();
 });
