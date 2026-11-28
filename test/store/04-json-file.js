@@ -460,6 +460,8 @@ describe('store 04: a waiter is not starved (#150)', function() {
     `, String(process.pid)], {stdio: ['ignore', 'pipe', 'ignore']});
     let out = '';
     holder.stdout.on('data', (c) => { out += c; });
+    // (its output all read: 'close', which follows its last data, where 'exit' may come first)
+    const closed = new Promise((resolve) => holder.once('close', resolve));
     const rename = fs.renameSync;
     try {
       await new Promise((resolve, reject) => {
@@ -478,7 +480,7 @@ describe('store 04: a waiter is not starved (#150)', function() {
       sleeper.kill();
       if (holder.exitCode == null) setTimeout(() => holder.kill(), 12000).unref();
     }
-    await new Promise((resolve) => (holder.exitCode != null ? resolve() : holder.on('exit', resolve)));
+    await closed;
     assert.ok(out.endsWith('seen') && !out.endsWith('not seen'), `the waiter's announcement was never made and renewed (${out.trim()})`);
   });
 
@@ -494,6 +496,8 @@ describe('store 04: a waiter is not starved (#150)', function() {
       assert.strictEqual(waiterAhead(dir, readWaiters(dir), at).pid, sleeper.pid, 'not yielded to while fresh');
       assert.strictEqual(waiterAhead(dir, readWaiters(dir), at + ANNOUNCE_FRESH_MS + 1), null, 'yielded to an old announcement');
       assert.strictEqual(waiterAhead(dir, readWaiters(dir), at - 1000), null, 'yielded to an announcement from the future');
+      // (a file just made, dated a fraction ahead of Date.now()'s whole milliseconds: fresh)
+      assert.strictEqual(waiterAhead(dir, readWaiters(dir), at - 1).pid, sleeper.pid, 'not yielded to an announcement made just now');
       // a dead process's: gone at the next read, never yielded to
       const gone = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], {encoding: 'utf8'});
       announceAs(dir, Number(gone.stdout), 0, 'm1', t - 10000);
@@ -810,7 +814,7 @@ describe('store 04: a waiter is not starved (#150)', function() {
   // of its process's announcement and renews nothing there, so it reserves
   // nothing while it backs off.
   // (this process's fresh announcements in a store)
-  const ownFresh = (dir) => announcements(dir).filter((w) => { const age = Date.now() - w.at; return w.pid === process.pid && age >= 0 && age <= require(MOD).forTests.ANNOUNCE_FRESH_MS; });
+  const ownFresh = (dir) => announcements(dir).filter((w) => w.pid === process.pid && require(MOD).forTests.fresh(w));
   it('a backing-off wait is left out of its process\'s announcement: another of its waits still contending announces its own since', () => {
     const {waitBegan, waitEnded, announce, retire} = require(MOD).forTests;
     const dir = annTmp.mkdtemp('ch-store04-ann-');
@@ -874,15 +878,45 @@ describe('store 04: a waiter is not starved (#150)', function() {
     const b = waitBegan(dir);
     b.since = a.since + 5;
     announce(dir, a);
-    // (a backs off: b announced, a's file kept dated)
+    // (a backs off: b announced, a's file kept dated; b ends first: its own file goes, none announced)
     retire(dir, a);
     announce(dir, b);
-    // (b's file gone from outside, then b backs off: dating it fails, nothing announced)
-    fs.unlinkSync(path.join(dir, `.lock.waiting.${process.pid}-${require(MOD).forTests.START_ID}-${b.since}`));
-    retire(dir, b);
     waitEnded(dir, b);
+    assert.strictEqual(announcements(dir).length, 1, 'a\'s kept file is not there');
     waitEnded(dir, a);
     assert.deepStrictEqual(announcements(dir), [], 'a kept file outlived its process\'s waits');
+  });
+
+  it('a synchronous wait announces its own since alone, never an older one of its process\'s waits that can\'t run meanwhile', async () => {
+    const {waitBegan, waitEnded, announce} = require(MOD).forTests;
+    const dir = annTmp.mkdtemp('ch-store04-ann-');
+    const sleeper = await sleeperProcess();
+    // (another wait of this process, older, announced: an update() that can't run while the synchronous wait blocks)
+    const older = waitBegan(dir);
+    older.since -= 1000;
+    announce(dir, older);
+    const lockFile = path.join(dir, '.lock');
+    fs.writeFileSync(lockFile, JSON.stringify({pid: sleeper.pid, startMs: 1, at: Date.now()}));
+    // its announcements as each attempt reads them
+    const readdir = fs.readdirSync;
+    const seen = [];
+    let inner = false;
+    fs.readdirSync = function(target) {
+      const names = readdir.apply(this, arguments);
+      if (!inner && String(target) === dir) { inner = true; try { for (const w of ownFresh(dir)) seen.push(w.since); } finally { inner = false; } }
+      return names;
+    };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 200));
+    } finally {
+      fs.readdirSync = readdir;
+      fs.unlinkSync(lockFile);
+      sleeper.kill();
+    }
+    const during = seen.filter((since) => since !== older.since);
+    assert.ok(during.length > 0, 'the synchronous wait never announced its own since');
+    assert.ok(seen.slice(seen.indexOf(during[0])).every((since) => since !== older.since), `it announced the older wait's since: ${JSON.stringify(seen)}`);
+    waitEnded(dir, older);
   });
 
   describe('the backoff, a rename refused as on Windows (on every system)', () => {
@@ -921,6 +955,8 @@ describe('store 04: a waiter is not starved (#150)', function() {
       `, String(process.pid)], {stdio: ['ignore', 'pipe', 'ignore']});
       holder.out = '';
       holder.stdout.on('data', (c) => { holder.out += c; });
+      // (its output all read: 'close', which follows its last data, where 'exit' may come first)
+      holder.closed = new Promise((resolve) => holder.once('close', resolve));
       try {
         await new Promise((resolve, reject) => {
           const timer = setTimeout(() => reject(new Error('the holder never held the lock')), 10000);
@@ -990,7 +1026,7 @@ describe('store 04: a waiter is not starved (#150)', function() {
       } finally {
         f.close();
       }
-      await new Promise((resolve) => (holder.exitCode != null ? resolve() : holder.once('exit', resolve)));
+      await holder.closed;
       assert.ok(holder.out.endsWith(';seen'), `it never waited and announced while the holder held (${holder.out})`);
       assert.strictEqual(refusals, 3, 'the rename was not refused as set up');
       assert.deepStrictEqual(freshInBackoff, [0, 0], 'its announcement was fresh through a backoff');
@@ -1020,11 +1056,16 @@ describe('store 04: a waiter is not starved (#150)', function() {
           process.stdout.write('up;');
           try { withStoreLock(${JSON.stringify(dir)}, () => {}); process.stdout.write('ok'); } catch (e) { process.stdout.write('threw: ' + e.message); }
         `], {stdio: ['ignore', 'pipe', 'ignore']});
-        const ended = new Promise((resolve) => waiter.once('exit', resolve));
+        const ended = new Promise((resolve) => waiter.once('close', resolve));
         waiter.stdout.on('data', (c) => { out += c; });
+        // (begun and yielding: its own announcement seen, bounded)
         await new Promise((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error('the waiter never began')), 10000);
-          waiter.stdout.once('data', () => { clearTimeout(timer); resolve(); });
+          const until = Date.now() + 10000;
+          const check = () => {
+            if (fs.readdirSync(dir).some((n) => n.startsWith(`.lock.waiting.${waiter.pid}-`))) return resolve();
+            return Date.now() > until ? reject(new Error(`the waiter never announced (${out})`)) : setTimeout(check, 2);
+          };
+          check();
         });
         // the lock let go, and at once a flush whose rename is refused for its whole wait, the
         // update() still waiting (its retry can't run until the flush returns)
@@ -1094,7 +1135,7 @@ describe('store 04: a waiter is not starved (#150)', function() {
       `], {stdio: ['ignore', 'pipe', 'ignore']});
       let out = '';
       waiter.stdout.on('data', (c) => { out += c; });
-      const ended = new Promise((resolve) => waiter.once('exit', resolve));
+      const ended = new Promise((resolve) => waiter.once('close', resolve));
       ended.then(() => { over = true; });
       try {
         while (!over && Date.now() < until) await begin();
