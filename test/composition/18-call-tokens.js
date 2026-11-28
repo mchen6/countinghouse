@@ -537,6 +537,17 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       moduleSpec.checkInput = (own, deviceID, serviceID, actionName) => (own == null ? null : {key: 'k', serviceID: serviceID, actionName: actionName});
       moduleSpec.validateSerialized = (checked, which, buffer) => Promise.resolve({refused: null, buffer: buffer});
     });
+
+    // (a cached ctx.serviceClient hop makes no device query: its announcement
+    // is the main thread's one record that the call went ahead)
+    it('an announced hop counts as a call that went through: the caller\'s kept refusal clears', () => {
+      const t = tokens().issue(ENTRY(caller.workerId));
+      tokens().noteRefused(t, 'DEVICE_NOT_FOUND', 'module', caller.workerId);
+      assert.deepStrictEqual(tokens().refusedOf(t), {code: 'DEVICE_NOT_FOUND', to: 'module'});
+      announce(71, t);
+      assert.strictEqual(caller.refusals.length, 0, JSON.stringify(caller.refusals));
+      assert.strictEqual(tokens().refusedOf(t), null);
+    });
     afterEach(() => { CHUtil.ci = savedCi; Object.assign(moduleSpec, savedSpec); });
 
     it('a metering request matched by its announcement is served with the callee\'s own token; the bill request then bills the token\'s caller, once', async () => {

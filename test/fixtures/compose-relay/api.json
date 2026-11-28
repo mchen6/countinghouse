@@ -35,6 +35,17 @@
             "output": {
               "schema": "/relayService/relayBig/output"
             }
+          },
+          {
+            "name": "relaySlowTask",
+            "description": "As a task: calls compose-slowbad (its hop times out), then compose-callee (it goes through), waits past the first one's late answer, then throws.",
+            "input": {
+              "schema": "/relayService/relaySlowTask/input"
+            },
+            "output": {
+              "schema": "/relayService/relaySlowTask/output"
+            },
+            "longRunning": true
           }
         ]
       }

@@ -25,7 +25,7 @@ const tmp      = require('../helpers/test-tmp').forFile(['ch-refused-25-']);
 
 // (each path: the direct peer channels, on by default, and the routed one,
 // where a hop passes the main thread's hop path)
-for (const [label, port, flags] of [['peer channels', testPort(9678), []], ['routed', testPort(9679), ['--no-directPeerChannels']]]) {
+for (const [label, port, flags] of [['peer channels', testPort(9678), []], ['routed', testPort(9679), ['--no-directPeerChannels', '--requestTimeout', '2']]]) {
 describe(`composition 25 (${label}): a crash after the runtime refused one of its module calls says that refusal`, function() {
   this.timeout(120000);
   const KEYS = {user: `user-key-${hex()}`, admin: `admin-key-${hex()}`, crasher: `crasher-internal-${hex()}`, caller: `caller-internal-${hex()}`, relay: `relay-internal-${hex()}`, rethrower: `rethrower-internal-${hex()}`};
@@ -40,7 +40,7 @@ describe(`composition 25 (${label}): a crash after the runtime refused one of it
       // granted the callee, so its declared call verifies at load
       [KEYS.crasher]: {userName: `crasher-${hex()}`, devices: [deviceIDForName('compose-callee')], runsModules: ['compose-crasher']},
       [KEYS.caller]: {userName: `caller-${hex()}`, devices: ['*'], runsModules: ['compose-caller']},
-      [KEYS.relay]: {userName: `relay-${hex()}`, devices: ['compose-crasher', 'compose-rethrower', 'compose-big'].map(deviceIDForName), runsModules: ['compose-relay']},
+      [KEYS.relay]: {userName: `relay-${hex()}`, devices: ['compose-crasher', 'compose-rethrower', 'compose-big', 'compose-slowbad', 'compose-callee'].map(deviceIDForName), runsModules: ['compose-relay']},
       [KEYS.rethrower]: {userName: `rethrower-${hex()}`, devices: [deviceIDForName('compose-callee')], runsModules: ['compose-rethrower']}
     }), {mode: 0o600});
     server = await startServer(port, ['--workerThread', ...flags, '--authProvider', 'file', '--authConfigPath', authPath,
@@ -50,6 +50,7 @@ describe(`composition 25 (${label}): a crash after the runtime refused one of it
       '--loadModule', path.join(FIXTURES, 'compose-crasher'),
       '--loadModule', path.join(FIXTURES, 'compose-rethrower'),
       '--loadModule', path.join(FIXTURES, 'compose-big'),
+      '--loadModule', path.join(FIXTURES, 'compose-slowbad'),
       '--loadModule', path.join(FIXTURES, 'compose-relay')]);
   });
   after(() => stopServer(server));
@@ -58,6 +59,31 @@ describe(`composition 25 (${label}): a crash after the runtime refused one of it
   // a line the server logs, waited for (bounded), never read once and hoped for
   const logged = async (re) => { for (let i = 0; i < 50 && !re.test(server.output); i++) await new Promise((r) => setTimeout(r, 100)); return re.test(server.output); };
   const textOf = (result) => result.content.map((c) => c.text).join('\n');
+
+  const V = '2026-07-28';
+  const EXT = 'io.modelcontextprotocol/tasks';
+  const modern = (method, params) => request(`http://127.0.0.1:${port}`).post('/mcp').set('Content-Type', 'application/json').set('Accept', 'application/json, text/event-stream')
+    .set('X-CH-Key', KEYS.user).set('MCP-Protocol-Version', V).set('Mcp-Method', method).set('Mcp-Name', String(params.name || params.taskId))
+    .send({jsonrpc: '2.0', id: 1, method, params: Object.assign({_meta: {'io.modelcontextprotocol/protocolVersion': V, 'io.modelcontextprotocol/clientCapabilities': {extensions: {[EXT]: {}}}}}, params)})
+    .then((r) => r.body);
+  const runTask = async (name) => {
+    const started = await modern('tools/call', {name, arguments: {}});
+    assert.strictEqual((started.result || {}).resultType, 'task', JSON.stringify(started));
+    let task = null;
+    for (let i = 0; i < 300; i++) {
+      task = (await modern('tasks/get', {taskId: started.result.taskId})).result;
+      if (task != null && task.status !== 'working') break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return task;
+  };
+
+  (label === 'routed' ? it : it.skip)('a part\'s late answer, refused by the runtime after its hop timed out and a later call went through, is not named', async () => {
+    // (a task run, which outlives its hops' 2 s timeout here; before compose-callee is unloaded)
+    const task = await runTask('compose_relay_relayservice_relayslowtask');
+    assert.ok(task.status === 'completed' && task.result != null && task.result.isError === true, JSON.stringify(task));
+    assert.ok(!LINE.test(textOf(task.result)), textOf(task.result));
+  });
 
   it('an untyped throw with no module call refused: no such line, whatever the module wrote', async () => {
     const result = await call('compose_crasher_crasherservice_throwsalone');
@@ -98,12 +124,6 @@ describe(`composition 25 (${label}): a crash after the runtime refused one of it
   });
 
   it('a task run (a task-augmented tools/call) adds the sentence to its failure, and is logged', async () => {
-    const V = '2026-07-28';
-    const EXT = 'io.modelcontextprotocol/tasks';
-    const modern = (method, params) => request(`http://127.0.0.1:${port}`).post('/mcp').set('Content-Type', 'application/json').set('Accept', 'application/json, text/event-stream')
-      .set('X-CH-Key', KEYS.user).set('MCP-Protocol-Version', V).set('Mcp-Method', method).set('Mcp-Name', String(params.name || params.taskId))
-      .send({jsonrpc: '2.0', id: 1, method, params: Object.assign({_meta: {'io.modelcontextprotocol/protocolVersion': V, 'io.modelcontextprotocol/clientCapabilities': {extensions: {[EXT]: {}}}}}, params)})
-      .then((r) => r.body);
     const started = await modern('tools/call', {name: 'compose_crasher_crasherservice_refusedthenthrowtask', arguments: {}});
     assert.strictEqual((started.result || {}).resultType, 'task', JSON.stringify(started));
     let task = null;
