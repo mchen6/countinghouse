@@ -464,7 +464,7 @@ Nothing of a session is ever written to a file.
 
 **A daemon death** loses the table:
 - Each session's **loosenings are gone**, and the reconnect announces it: "your this-session loosenings were reset; ask again".
-- Its **tightenings are kept by the shim.** For each tightening its session makes, the runtime sends `record` with an opaque entry. The shim keeps the entries and sends them back in `replay` once a connection is `settled`, on every connection while it holds any, before any client line it held. A value already in effect is skipped, so a replay to a session that has it changes nothing. A session the shim refuses because it lost one of its tightenings (a record it couldn't keep, so a new session can't be given it back) answers each held and later request with `sessionTighteningsLostAnswer` (SESSION_TIGHTENINGS_LOST, exact apart from the id), not `sessionCantFallBackAnswer`, which says the shared runtime failed.
+- Its **tightenings are kept by the shim.** For each tightening its session makes, the runtime sends `record` with an opaque entry. The shim keeps the entries and sends them back in `replay` once a connection is `settled`, on every connection while it holds any, before any client line it held. A value already in effect is skipped, so a replay to a session that has it changes nothing. The shim answers each held and later request of a session it refuses because it lost one of its tightenings (a record it couldn't keep, so a new session can't be given it back) with `sessionTighteningsLostAnswer` (SESSION_TIGHTENINGS_LOST, exact apart from the id), not `sessionCantFallBackAnswer`, which says the shared runtime failed.
 - The runtime applies a replayed value only if it is **at least as tight** as both the global default and the ceiling. So a forged replay can only tighten. No file is involved, so nothing a same-user process could plant becomes a loosening.
 
 **The resume token is single-use and rotated:**
@@ -618,7 +618,7 @@ A daemon that gave up says so in `<home>/run/daemon/failed.json`, so the shims f
     2. then sends the lines it held, then relays stdin as it comes.
 
     The per-session runtime needs nothing new. The replay, and dropping its answer, are the shim's.
-- **Vectors** (`failedJson` and `sessionCantFallBackAnswer` in `shared-runtime-wire/make-vectors.js`): valid at both edges (`at` = now − 600 000 and now + 60 000); stale (now − 600 001); future (now + 60 001); an extra key; a missing key; `at` as a string; `at` as a float; `signal` `"KILL"` without `SIG`; a duplicate key. Plus the cases: a mid-session fallback with a record is refused; one without replays `initialize` first.
+- **Vectors** (`failedJson`, `sessionCantFallBackAnswer` and, for a lost record, `sessionTighteningsLostAnswer` in `shared-runtime-wire/make-vectors.js`): valid at both edges (`at` = now − 600 000 and now + 60 000); stale (now − 600 001); future (now + 60 001); an extra key; a missing key; `at` as a string; `at` as a float; `signal` `"KILL"` without `SIG`; a duplicate key. Plus the cases: a mid-session fallback with a record is refused; one without replays `initialize` first.
 
 ## 7. Windows and macOS
 
