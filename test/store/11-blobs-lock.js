@@ -134,7 +134,8 @@ describe('store 11: the result store\'s lock', function() {
   });
 
 
-  it('a lock this process\'s pid left from before this process began (an earlier process given its pid) is a dead holder\'s: taken over', async () => {
+  // (where this process's start is in ms: off Linux, or with /proc unread)
+  (require(STORE).forTests.START_ID.startsWith('m') ? it : it.skip)('a lock this process\'s pid left with a start in ms far from this process\'s (an earlier process given its pid) is a dead holder\'s: taken over', async () => {
     const dir = tmp.mkdtemp('ch-store11-');
     const {withLock} = require(BLOBS).forTests;
     fs.mkdirSync(lockDirOf(dir), {recursive: true});
@@ -142,6 +143,16 @@ describe('store 11: the result store\'s lock', function() {
     const before = Date.now() - process.uptime() * 1000 - 60000;
     fs.writeFileSync(path.join(lockDirOf(dir), '.lock'), JSON.stringify({pid: process.pid, startId: 'm1', instance: 'earlier', n: 1, at: before}));
     await withLock(dir, async () => {});
+  });
+
+  it('a lock of another copy of this process recording the other form of start (its /proc read failed, or not) is a live holder\'s: never taken over', async () => {
+    const dir = tmp.mkdtemp('ch-store11-');
+    const {withLock} = require(BLOBS).forTests;
+    const store = require(STORE).forTests;
+    fs.mkdirSync(lockDirOf(dir), {recursive: true});
+    const other = store.START_ID.startsWith('t') ? `m${Math.round(Date.now() - process.uptime() * 1000)}` : 't1';
+    fs.writeFileSync(path.join(lockDirOf(dir), '.lock'), JSON.stringify({pid: process.pid, startId: other, instance: 'sibling', n: 1, at: Date.now()}));
+    await assert.rejects(withLock(dir, async () => {}), /held by a live process/, 'another copy\'s live lock, recording the other form of start, was taken over');
   });
 
   it('a lock of another copy of this process, dated before this process began (as after a step back of the wall clock), is a live holder\'s: never taken over', async () => {
