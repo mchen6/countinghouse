@@ -29,6 +29,9 @@ describe('validation 28: a peer match to a module whose required setting is unse
     const replies = [];
     const callee = Object.assign(Object.create(require('../../lib/worker-message').prototype), {workerId: 86, hostModuleName: 'callee',
       settings: {settings: decl, values: ms.effective(decl, {}, {net: []}).values, version: 1},
+      // (its composition verdict decided, as every device's is once startup's verifications are: one without is answered not ready
+      // before its settings are read)
+      bindings: {'d-callee': {identity: null, module: 'callee', targets: new Set()}},
       sendPeerMeteringReplyToChild: (m) => replies.push(m)});
     const caller = {workerId: 85, bindings: {'d-caller': {identity: null, module: 'caller', targets: new Set(['d-callee|svc|act'])}}};
     const b = new PeerChannelBroker({deviceMap: {'d-callee': callee}});

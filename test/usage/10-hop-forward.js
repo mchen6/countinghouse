@@ -52,7 +52,9 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
   function workers() {
     const sent = [];
     const replies = [];
-    const callee = {workerId: 2, sendInvokeActionMessage: (m, cb) => sent.push({m, cb})};
+    // (each callee's composition verdict decided, as every device's is once startup's verifications are: a hop into one with none
+    // waits for it)
+    const callee = {workerId: 2, bindings: DECIDED, sendInvokeActionMessage: (m, cb) => sent.push({m, cb})};
     const caller = {workerId: 1, sendActionInvokeReplyToChild: (m) => replies.push(m), bindings: DECLARES_D2};
     // a hop asks the manager for its callee's worker (R1 Task 5: workerFor)
     // the real prototype: the hop asks replacingInPlace (M4a), false with no
@@ -63,6 +65,8 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
   // R2-1 Task 4: the calling module (device d1) declared svc/act on d2, as a
   // hop's target must be declared; the call's token is for d1
   const DECLARES_D2 = {d1: {identity: null, module: 'p', targets: new Set(['d2|svc|act'])}};
+  // a callee's decided verdict (no calls of its own)
+  const DECIDED = {d2: {identity: null, module: 'callee', targets: new Set()}};
   // The callee's caller on the main-thread route: the stub session's identity
   // (it has no appKey) and the hop's billing key.
   // the call's token, as the main thread issued one to the caller worker
@@ -139,7 +143,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     lastSession.callback(new CountinghouseError('DEVICE_TIMEOUT')); // the hop's timer fires
     assert.strictEqual(usage().ownsCall(call, 2), true, 'the callee is still running under the open call');
     const w2 = workers();
-    w2.dm.deviceMap = {d2: {workerId: 3, sendInvokeActionMessage: (m, cb) => w2.sent.push({m, cb})}};
+    w2.dm.deviceMap = {d2: {workerId: 3, bindings: DECIDED, sendInvokeActionMessage: (m, cb) => w2.sent.push({m, cb})}};
     const fromCallee = {workerId: 2, sendActionInvokeReplyToChild: (m) => w2.replies.push(m), bindings: DECLARES_D2};
     DeviceManager.prototype.sendInvokeActionMessageToWorker.call(w2.dm, 'k', 'k', 'd2', 'svc', 'act', asSent({input: {}, usageCall: call}), 'm2', fromCallee, tokenFor(2));
     assert.deepStrictEqual([w2.sent.length, w2.replies.length], [1, 0], JSON.stringify(w2.replies));
@@ -151,7 +155,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const call = begin();
     usage().grantCall(call, 1);
     const w = workers();
-    const fresh = {workerId: 5, sendInvokeActionMessage: (m, cb) => w.sent.push({to: 5, m, cb})};
+    const fresh = {workerId: 5, bindings: DECIDED, sendInvokeActionMessage: (m, cb) => w.sent.push({to: 5, m, cb})};
     duringAuth = () => { w.dm.deviceMap.d2 = fresh; };
     forward(w, {input: {}, usageCall: call});
     assert.deepStrictEqual(w.sent.map((s) => s.to), [5]);

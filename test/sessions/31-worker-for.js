@@ -162,6 +162,9 @@ describe('sessions 31: a per-session module\'s worker is its call\'s session\'s 
     const authPath = require.resolve('../../lib/user-auth');
     const saved = require.cache[authPath];
     require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: (a, b, c, d, e, f, g, cb) => cb(null, {})};
+    // (the record's composition verdict decided, as every device's is once startup's verifications are: a hop into one with none
+    // waits for it, before any session worker is picked)
+    record.bindings[D] = {identity: null, module: 'per-session-module', targets: new Set()};
     const replies = [];
     const caller = {workerId: 42, sendActionInvokeReplyToChild: (m) => replies.push(m),
       bindings: {[CALLER]: {identity: 'i', module: 'ps-caller', targets: new Set([`${D}|${SVC}|touch`])}}};
