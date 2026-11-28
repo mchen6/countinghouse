@@ -59,7 +59,9 @@ describe('mcp-contract 17: stored values, in-process (M6)', function() {
     const stub = (fail) => {
       const charges = [];
       return {charges, rateLimit: (k, cb) => cb(null, {limited: false}),
-        recordCall: (k, tool, cost, cb) => { charges.push([tool, cost]); cb(fail ? new Error('metering is down') : null, {}); }};
+        // (a store's error with a code, its message naming the key: the log
+        // line carries the code alone)
+        recordCall: (k, tool, cost, cb) => { charges.push([tool, cost]); cb(fail ? Object.assign(new Error(`metering is down for ${KEY}`), {code: 'ERR_STORE'}) : null, {}); }};
     };
 
     it('a metering refusal is the answer: no contents, no bytes; the charge was asked once, at --resourceReadCost', async () => {
@@ -75,7 +77,9 @@ describe('mcp-contract 17: stored values, in-process (M6)', function() {
       // error's code, never the store's own message, which may name a host,
       // a URL or the key)
       const {keyFingerprint} = require('../../lib/key-fingerprint');
-      assert.deepStrictEqual(logged, [`metering: a call's charge was not recorded: ${keyFingerprint(KEY)}, tool countinghouse:resources/read, amount 3 (ERROR)`]);
+      assert.deepStrictEqual(logged.filter((l) => l.startsWith('resources/read ')),
+        [`resources/read countinghouse:resources/read: the billing failed for ${keyFingerprint(KEY)}, amount 3 (ERR_STORE); the read was refused`]);
+      assert.ok(!logged.some((l) => l.includes(KEY) || l.includes('metering is down')), JSON.stringify(logged));
       assert.strictEqual(res.result, undefined, JSON.stringify(res));
       // a fixed text: the provider's own message is logged, never echoed
       assert.strictEqual(res.error.message, 'the read could not be metered');

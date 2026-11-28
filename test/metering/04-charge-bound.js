@@ -283,6 +283,11 @@ describe('metering 04: a hop\'s charge, waited for at most METER_PENDING_MS (B-h
       cb.sayPendingAtExit();
       assert.ok(logged.some(([l, line]) => l === 'E' && line === `at exit, 2 charge(s) of ${keyFingerprint(K)} were still pending: their outcome is unknown`), JSON.stringify(logged));
       assert.ok(!logged.some(([, line]) => line.includes(meterId(K))), 'the meter id is never logged');
+      // (a key whose pending charges have all landed is said no more)
+      lands.forEach((land) => land(null, {charged: 1}));
+      logged.length = 0;
+      cb.sayPendingAtExit();
+      assert.ok(!logged.some(([, line]) => line.includes(keyFingerprint(K))), JSON.stringify(logged));
       // (the medium on round 1, 5) a charge answered pending past the
       // allowance holds no slot, and is said at exit all the same
       const K2 = `${KEY}-exit-capped`;
