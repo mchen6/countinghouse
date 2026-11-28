@@ -74,6 +74,22 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       provider.file.update = update;
     });
 
+    it('a charge of 0 while the ledger\'s write is failing (marked) is skipped: no write tried, no lost charge said', async () => {
+      const {provider} = open();
+      const update = provider.file.update;
+      let tries = 0;
+      provider.file.update = (key, fn, cb) => { tries++; cb(Object.assign(new Error('no space left on device'), {code: 'ENOSPC'})); };
+      try {
+        assert.strictEqual((await charge(provider)).err.code, 'ENOSPC');
+        assert.strictEqual(provider._chargeMark.marked(), true);
+        const free = await new Promise((resolve) => provider.recordCall(KEY, 'tool-a', 0, (err, r) => resolve({err, r})));
+        assert.deepStrictEqual(free, {err: null, r: {tool: 'tool-a', charged: 0, balance: null}});
+        assert.strictEqual(tries, 1, 'a write was tried for a charge of 0');
+      } finally {
+        provider.file.update = update;
+      }
+    });
+
     it('while marked, at most one probe write a second; one that succeeds clears the mark, says so once, and the call goes on', async () => {
       const {storePath, provider} = open();
       provider.file.update = (key, fn, cb) => cb(Object.assign(new Error('io'), {code: 'EIO'}));
@@ -468,6 +484,32 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       assert.strictEqual((await limited(ci)).code, 'LEDGER_UNREACHABLE');
     });
 
+    it('a local --meter ledger corrupt with no copy here: cost 0 served on every path, its charge skipped, the file byte for byte as it was; cost 1 refused LEDGER_CORRUPT on every path', async () => {
+      const fs = require('fs');
+      const LocalMeteringProvider = require('../../lib/metering/local-provider');
+      const dir = trees.mkdtemp('ch-metering-05-');
+      const file = path.join(dir, 'metering.json');
+      fs.writeFileSync(file, '{"broken": ');
+      const provider = new LocalMeteringProvider({meter: true, storePath: dir});
+      const ci = over(provider);
+      const charge = (cost) => new Promise((resolve) => ci.recordCall(KEY, 'tool-a', cost, (err, r) => resolve({err, r})));
+      try {
+        const routeGate = () => new Promise((resolve) => require('../../lib/rate-limit-gate').check(ci, KEY, (limited, refusal) => resolve({limited, code: refusal && refusal.code})));
+        cli.mcpToolCallCost = 0;
+        assert.strictEqual(await limited(ci), null, 'a tools/call');
+        assert.strictEqual(await chargeable(ci), null, 'a hop, a job run, a remote call');
+        assert.deepStrictEqual(await routeGate(), {limited: false, code: null}, 'a route (tools/list, a balance\'s limit)');
+        assert.deepStrictEqual(await charge(0), {err: null, r: {tool: 'tool-a', charged: 0, balance: null}});
+        cli.mcpToolCallCost = 1;
+        assert.strictEqual((await limited(ci)).code, 'LEDGER_CORRUPT');
+        assert.strictEqual((await chargeable(ci)).code, 'LEDGER_CORRUPT');
+        assert.deepStrictEqual(await routeGate(), {limited: false, code: null}, 'a route charges nothing: never refused for the ledger');
+      } finally {
+        provider.close();
+      }
+      assert.ok(fs.readFileSync(file).equals(Buffer.from('{"broken": ')), 'the file was changed');
+    });
+
     it('ch-local\'s path: --store local without --meter is chargeable at any cost', async () => {
       const LocalMeteringProvider = require('../../lib/metering/local-provider');
       const provider = new LocalMeteringProvider({meter: false});
@@ -476,6 +518,92 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
         cli.mcpToolCallCost = cost;
         assert.strictEqual(await chargeable(ci), null, `cost ${cost}`);
       }
+    });
+  });
+
+  // Fail closed means one uniform refusal, never a hang: a limiter that
+  // throws, now or in its answer, refuses RUNTIME_BUSY, once; the caller's
+  // own continuation is never caught and answered twice.
+  describe('a limiter that throws refuses RUNTIME_BUSY, never hangs', () => {
+    const CdifInterface = require('../../lib/countinghouse-interface');
+    const gate = require('../../lib/rate-limit-gate');
+    const throwing = () => { throw new Error('the limiter broke'); };
+    // a result whose reading throws, as a provider's answer might
+    const unreadable = () => ({get limited() { return throwing(); }});
+    const over = (ci) => Object.assign(Object.create(CdifInterface.prototype), {meteringProvider: null, rateLimiter: null}, ci);
+    // every answer the gate gives: from its first (bounded: 5 s), then two
+    // more turns of the event loop for a second -- the limiters here answer
+    // at once or on the next turn
+    const answers = (run) => new Promise((resolve) => {
+      const got = [];
+      const turns = () => setImmediate(() => setImmediate(() => resolve(got)));
+      const bound = setTimeout(() => resolve(got), 5000);
+      run((x) => { got.push(x); if (got.length === 1) { clearTimeout(bound); turns(); } });
+    });
+    const session = () => ({appKey: KEY, billed: false});
+
+    for (const [what, rateLimit] of [
+      ['throws when asked', throwing],
+      ['answers a result that throws when read', (k, cb) => setImmediate(() => cb(null, unreadable()))]]) {
+      it(`a key's limiter that ${what}: keyGate and callGate answer RUNTIME_BUSY once; the route gate refuses so`, async () => {
+        const ci = over({rateLimit});
+        const viaKey = await answers((cb) => ci.keyGate(session(), cb));
+        assert.deepStrictEqual(viaKey.map((r) => r && r.code), ['RUNTIME_BUSY']);
+        const viaCall = await answers((cb) => ci.callGate(session(), cb));
+        assert.deepStrictEqual(viaCall.map((r) => r && r.code), ['RUNTIME_BUSY']);
+        const viaRoute = await answers((cb) => gate.check(ci, KEY, (limited, refusal) => cb({limited, code: refusal && refusal.code})));
+        assert.deepStrictEqual(viaRoute, [{limited: true, code: 'RUNTIME_BUSY'}]);
+      });
+    }
+
+    it('the server-wide limiter that throws when asked: callGate answers RUNTIME_BUSY once', async () => {
+      const ci = over({rateLimiter: throwing, rateLimit: (k, cb) => cb(null, {limited: false})});
+      const got = await answers((cb) => ci.callGate(session(), cb));
+      assert.deepStrictEqual(got.map((r) => r && r.code), ['RUNTIME_BUSY']);
+    });
+
+    // (a limiter that answers at once: the caller's continuation runs inside
+    // the gate's own call, so its throw meets the gate's catch)
+    it('a continuation that throws is its own: with a limiter that answers at once, the caller\'s error goes on up, the gate answers once', () => {
+      const atOnce = over({rateLimit: (k, cb) => cb(null, {limited: false}), rateLimiter: (k, cb) => cb(null, 0)});
+      const own = new Error('the caller\'s own');
+      for (const [name, run] of [
+        ['keyGate', (cb) => atOnce.keyGate(session(), cb)],
+        ['callGate', (cb) => atOnce.callGate(session(), cb)],
+        ['the route gate', (cb) => gate.check(atOnce, KEY, (limited) => cb(limited ? new Error('limited') : null))]]) {
+        let calls = 0;
+        assert.throws(() => run(() => { calls++; throw own; }), (e) => e === own, name);
+        assert.strictEqual(calls, 1, `${name}: answered ${calls} times`);
+      }
+    });
+
+    it('a limiter that throws null when asked: RUNTIME_BUSY once, never taken for the caller\'s own throw', async () => {
+      const nul = over({rateLimit: () => { throw null; }});
+      const got = await answers((cb) => nul.keyGate(session(), cb));
+      assert.deepStrictEqual(got.map((r) => r && r.code), ['RUNTIME_BUSY']);
+    });
+
+    it('a limiter that answers twice is decided once: its second answer is not read, nothing more said', () => {
+      const lines = [];
+      const realE = logger.E;
+      logger.E = (x) => lines.push(String(x && x.message != null ? x.message : x));
+      try {
+        const twice = over({rateLimit: (k, cb) => { cb(null, {limited: false}); cb(null, unreadable()); }});
+        const got = [];
+        twice.keyGate(session(), (r) => got.push(r));
+        assert.deepStrictEqual(got, [null]);
+        assert.deepStrictEqual(lines, [], 'a second answer was read');
+      } finally {
+        logger.E = realE;
+      }
+    });
+
+    it('a limiter that throws after it has answered: the answer stands, nothing answered twice, nothing thrown at the caller', () => {
+      const late = over({rateLimit: (k, cb) => { cb(null, {limited: false}); throw new Error('its own bookkeeping'); }});
+      const got = [];
+      late.keyGate(session(), (r) => got.push(r));
+      gate.check(late, KEY, (limited, refusal) => got.push({limited, refusal}));
+      assert.deepStrictEqual(got, [null, {limited: false, refusal: null}]);
     });
   });
 

@@ -285,8 +285,10 @@ itself.
 metering provider there is no limit: requests pass. A limiter that can't
 answer fails closed: the request is refused `RUNTIME_BUSY` (503), never let
 through as "not limited" (CLAUDE.md's invariants). A local usage ledger
-(`--store local --meter`) that can't be used refuses with its own code
-instead: `LEDGER_UNREADABLE` (503, retryable) when its last read failed,
+(`--store local --meter`) that can't be used refuses a charged call
+(`--mcpToolCallCost` above 0) and a balance request with its own code
+instead (a call that costs nothing is served without touching the ledger
+file): `LEDGER_UNREADABLE` (503, retryable) when its last read failed,
 `LEDGER_CORRUPT` (500, not retryable) when it is corrupt and this runtime
 never saw it whole; a corrupt ledger this runtime saw whole is not refused
 (calls are charged from its map, which replaces the file at its next
