@@ -249,6 +249,27 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     assert.deepStrictEqual(frames[A], [['forget']]);
   });
 
+  // (the listener shuts a connection whose write buffer passes its bound
+  // (listener.js writeBound), and the session drops what is sent after
+  // that: a snapshot's forget can reach the shim and its record not. What
+  // the shim holds is then not known, so the next attach sends the snapshot
+  // again, never trusting what was sent before)
+  it('a snapshot cut between its forget and its record: the next attach sends it again', async () => {
+    const s = sources[A];
+    const forget = s.forget;
+    // (the bound passed at the forget: the connection shut, the record dropped)
+    s.forget = () => { forget(); s.connected = false; };
+    frames[A].length = 0;
+    await tool.set('requestTimeout', '20s', 'settings tool', ctx(A));
+    assert.deepStrictEqual(frames[A], [['forget']], 'the forget reached the shim, the record did not');
+    s.forget = forget;
+    s.emit('detach');
+    s.connected = true;
+    frames[A].length = 0;
+    s.emit('attach');
+    assert.deepStrictEqual(frames[A], [['forget'], ['record', {maxOutputBytes: 2 * MiB, requestTimeout: 20000}]]);
+  });
+
   // (the final pass's gateway part, A5: a tightening is never refused, the
   // budget included; past it the session's tightenings are one line and a
   // count, so the shared tail stays bounded)
