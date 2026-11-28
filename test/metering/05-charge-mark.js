@@ -440,6 +440,29 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       assert.strictEqual((await limited(ci)).code, 'LEDGER_UNREACHABLE');
     });
 
+    it('a local --meter ledger corrupt with no copy here: cost 0 served on every path, its charge skipped, the file byte for byte as it was; cost 1 refused LEDGER_CORRUPT on every path', async () => {
+      const fs = require('fs');
+      const LocalMeteringProvider = require('../../lib/metering/local-provider');
+      const dir = trees.mkdtemp('ch-metering-05-');
+      const file = path.join(dir, 'metering.json');
+      fs.writeFileSync(file, '{"broken": ');
+      const provider = new LocalMeteringProvider({meter: true, storePath: dir});
+      const ci = over(provider);
+      const charge = (cost) => new Promise((resolve) => ci.recordCall(KEY, 'tool-a', cost, (err, r) => resolve({err, r})));
+      try {
+        cli.mcpToolCallCost = 0;
+        assert.strictEqual(await limited(ci), null, 'a tools/call');
+        assert.strictEqual(await chargeable(ci), null, 'a hop, a job run, a remote call');
+        assert.deepStrictEqual(await charge(0), {err: null, r: {tool: 'tool-a', charged: 0, balance: null}});
+        cli.mcpToolCallCost = 1;
+        assert.strictEqual((await limited(ci)).code, 'LEDGER_CORRUPT');
+        assert.strictEqual((await chargeable(ci)).code, 'LEDGER_CORRUPT');
+      } finally {
+        provider.close();
+      }
+      assert.ok(fs.readFileSync(file).equals(Buffer.from('{"broken": ')), 'the file was changed');
+    });
+
     it('ch-local\'s path: --store local without --meter is chargeable at any cost', async () => {
       const LocalMeteringProvider = require('../../lib/metering/local-provider');
       const provider = new LocalMeteringProvider({meter: false});
