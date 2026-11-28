@@ -314,6 +314,23 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
         const i = frames[C].findIndex((f) => f[0] === 'tightenings');
         assert.deepStrictEqual(frames[C].slice(i + 1, i + 3), [['forget'], ['record', {maxOutputBytes: 2 * MiB}]], 'the snapshot after the answer');
       });
+      it('kept: an empty replay (the shim waits for every answer)', () => {
+        const s = openSession(C);
+        s.emit('replay', []);
+        assert.deepStrictEqual(answers(C), [['tightenings', true, 'replay']]);
+      });
+      it('kept: a value above the cap\'s max now (an upgrade lowered it): the session is already tighter', () => {
+        const entry = settingsTool.ALLOWLIST.maxOutputBytes;
+        const was = entry.max;
+        entry.max = 4 * MiB;
+        try {
+          const s = openSession(C);
+          s.emit('replay', [{maxOutputBytes: 6 * MiB}]);
+          assert.deepStrictEqual(answers(C), [['tightenings', true, 'replay']]);
+        } finally {
+          entry.max = was;
+        }
+      });
       for (const [what, entry] of [['a value as a string', {maxOutputBytes: String(2 * MiB)}], ['a value out of bounds', {requestTimeout: 1}],
         ['a value not whole', {maxOutputBytes: 2 * MiB + 0.5}], ['a name not a cap', {locale: 'zh'}], ['an entry not an object', 7], ['an array', [{maxOutputBytes: 2 * MiB}]], ['null', null]]) {
         it(`not kept: ${what}, beside an entry that applies`, () => {

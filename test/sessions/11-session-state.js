@@ -297,6 +297,57 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       }
     });
 
+    it('the restore\'s answer goes before any wait in it (a loosening\'s ask), so no held line is released first', async () => {
+      sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 15000), {name: 'maxOutputBytes', value: 32 * MiB, loosening: true, over: 16 * MiB, version: null}]})]));
+      const entry = settingsTool.ALLOWLIST.requestTimeout;
+      const was = entry.min;
+      entry.min = 18000;
+      const order = [];
+      try {
+        const s = new EventEmitter();
+        s.id = A;
+        s.client = {status: 'ok', conditions: 'yes', repo: null};
+        s.connected = true;
+        s.notify = () => {};
+        s.record = () => {};
+        s.forget = () => {};
+        s.tightenings = (kept, after) => order.push(['answer', kept, after]);
+        s.askConditions = async () => { order.push(['ask']); return Object.assign({}, s.client); };
+        sources[A] = s;
+        reg.emit('session', s);
+        await sessionState.whenApplied(A);
+      } finally {
+        entry.min = was;
+      }
+      assert.deepStrictEqual(order[0], ['answer', false, 'restore'], JSON.stringify(order));
+    });
+
+    it('a restored tightening above the cap\'s max now (an upgrade lowered it) is kept: nothing sent', async () => {
+      sessions.importTable(table([row(A, {overrides: [tighten('maxOutputBytes', 20 * MiB)]})]));
+      const entry = settingsTool.ALLOWLIST.maxOutputBytes;
+      const was = entry.max;
+      entry.max = 16 * MiB;
+      try {
+        const a = openSession(A);
+        await sessionState.whenApplied(A);
+        assert.strictEqual(a.answers, undefined);
+      } finally {
+        entry.max = was;
+      }
+    });
+
+    it('an answer due while the session is detached goes at its next attach, before its snapshot', () => {
+      const a = openSession(A);
+      const order = [];
+      a.tightenings = (kept, after) => order.push(['answer', kept, after]);
+      a.forget = () => order.push(['forget']);
+      a.emit('detach');
+      sessions.tighteningsLost(A, 'restore');
+      assert.deepStrictEqual(order, [], 'nothing while detached');
+      a.emit('attach');
+      assert.deepStrictEqual(order[0], ['answer', false, 'restore']);
+    });
+
     it('a row waits for its session: nothing applies until the shim resumes it, and then it does', async () => {
       assert.deepStrictEqual(sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000)], locks: ['enabled'], formsLeft: 1})])), {sessions: 1});
       assert.strictEqual(sessionState.pending(), 1);
