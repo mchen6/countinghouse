@@ -94,6 +94,30 @@ describe('sessions 17: the listing check at every hop (shared runtime B3, Task 4
       assert.strictEqual(fields(byId('h3')), fields(byId('h2')), 'A\'s alike');
     });
 
+    // a billed hop runs only while its charge can be recorded (the owner's
+    // decision, 11-27): asked after the access check, before the callee runs
+    it('a hop whose charge can\'t be recorded now is refused with the ledger\'s code, after its access check, before the callee is asked', async () => {
+      const CHUtil = require('../../lib/countinghouse-util');
+      const savedCi = CHUtil.ci;
+      const asked = [];
+      CHUtil.ci = {chargeable: (key, cb) => { asked.push(key); setImmediate(cb, new CountinghouseError('LEDGER_UNREACHABLE')); }, recordCall: () => {}};
+      try {
+        const replies = [];
+        const caller = callerOf(73, {sendActionInvokeReplyToChild: (m) => replies.push(m)});
+        const sent = [];
+        const dm = manager({deviceMap: {'d-loose': {workerId: 74, hostModuleName: 'm-loose', sendActionInvokeMessageToChild: (m) => sent.push(m)}}});
+        hop(dm, caller, 'd-loose', token(A, 73), 'h9');
+        const end = Date.now() + 5000;
+        while (!replies.some((r) => r.msgID === 'h9') && Date.now() < end) await sleep(10);
+        const r = replies.find((x) => x.msgID === 'h9');
+        assert.ok(r != null && r.errCode === 'LEDGER_UNREACHABLE', JSON.stringify(replies));
+        assert.deepStrictEqual(asked, ['k'], 'asked for the token\'s billing key');
+        assert.deepStrictEqual(sent, [], 'the callee was never asked');
+      } finally {
+        CHUtil.ci = savedCi;
+      }
+    });
+
     it('in shared mode a hop to an unloaded module is DEVICE_NOT_FOUND, never MODULE_UNLOADED; outside it, MODULE_UNLOADED as before', () => {
       const dm = manager({moduleManager: {endedStateForDevice: () => ({code: 'MODULE_UNLOADED', name: 'm-hidden'})}});
       assert.strictEqual(dm.missingDeviceErrorForHop('d-hidden').code, 'DEVICE_NOT_FOUND');

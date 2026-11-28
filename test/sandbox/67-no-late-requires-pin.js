@@ -81,10 +81,12 @@ const REVIEWED = [
   [/^lib\/redis-api\.js$/, /^(\.\/redis-namespace|\.\/store)$/, 'single-thread mode and the main thread\'s client', NOT_IN_WORKER, 2],
   [/^lib\/service-client\.js$/, /^\.\/user-auth$/, MAIN, NOT_IN_WORKER, 1],
   [/^lib\/session\.js$/, /^\.\/countinghouse-util$/, 'recordMeteredCall: a worker returns before (thread-info)', NOT_IN_WORKER, 1],
+  [/^lib\/session\.js$/, /^\.\/failed-call-log$/, 'logAPICall\'s failure log: main thread only (thread-info)', NOT_IN_WORKER, 1],
   [/^lib\/store\.js$/, /^(\.\/countinghouse-error|crypto|\.\/job-control|\.\/job-control-local|\.\/local-kv|\.\/logger|\.\/metering\/local-provider|\.\/metering\/redis-provider|path|redis|\.\/redis-resilient|\.\/store\/blobs|\.\/store\/json-file)$/,
     // (+1, B-j1: jobClients, the Redis job runner's own clients, main thread only)
     'the store is made on the main thread; a worker reaches it over its channel', NOT_IN_WORKER, 22],
-  [/^lib\/worker-message\.js$/, /^(\.\/logger|\.\/worker-output)$/, 'the main thread\'s end of a worker', NOT_IN_WORKER, 5],
+  // (+1: ./call-tokens, a device query's answer noting the call's refusal, under isMainThread === true)
+  [/^lib\/worker-message\.js$/, /^(\.\/logger|\.\/worker-output|\.\/call-tokens)$/, 'the main thread\'s end of a worker', NOT_IN_WORKER, 6],
   // the settings file's, through the settings tool: guarded by the thread
   // the file loaded on (mainThreadAtLoad); a validation worker loads
   // module-settings for the declaration's rules only (#426)
