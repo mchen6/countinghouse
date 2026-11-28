@@ -197,10 +197,10 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 
 | `op` | Direction | Fields | Meaning |
 |---|---|---|---|
-| `client` | shim → runtime | `seq`? (the `conditions?` it answers); `status`: `"ok"` or `"failed"`; and when ok: `conditions` (`"yes"` or `"no"`), `repo` (`"owner/name"` or null), `token` (base64 MAC, or null when the environment chooses none), and optionally `credentials` (an object of a pack credential's variable name to its base64 MAC); when failed: `why` | The child's line (section 5). Sent right after WELCOME, after each reconnect, and in answer to each `conditions?`. |
+| `client` | shim → runtime | `seq`? (the `conditions?` it answers); `status`: `"ok"` or `"failed"`; and when ok: `conditions` (`"yes"` or `"no"`), `repo` (`"owner/name"` or null), `token` (base64 MAC, or null when the environment chooses none), and optionally `credentials` (an object of a pack credential's variable name to its base64 MAC); when failed: `why` | The child's line (section 5). Sent right after WELCOME (the connection's first frame), after each reconnect, and in answer to each `conditions?`. On a new session the order is `client`, then `settled`, then `replay`. |
 | `conditions?` | runtime → shim | `seq` | Run the child again and answer with `client` carrying this `seq`. The runtime sends it before each form and again at the confirmation. It waits **12 s**, longer than the shim's 10 s for the child, so a slow Windows ancestry read still answers. No answer by then counts as `"no"`: no form. |
 | `settled` | runtime → shim | | The first `client` frame is accepted. The shim forwards client lines from here. |
-| `replay` | shim → runtime | `entries`: array | After `settled` on a new session, before any client line: the records the shim kept, as it received them. A replay before the first `client` frame closes the connection unsettled. |
+| `replay` | shim → runtime | `entries`: array | After `settled` on a new session: the records the shim kept, as it received them. The shim sends it before any client line it held. A replay before the first `client` frame closes the connection unsettled; once settled, the runtime takes one replay per connection, whenever it comes. |
 | `bye` | shim → runtime | | The client's stdin ended. The runtime ends the session. |
 | `record` | runtime → shim | `entry`: an opaque JSON value | Keep this for replay. At most 64 entries and 16 KiB in all; the oldest goes first. |
 | `forget` | runtime → shim | | Drop every record (a terminal change ended them all). |
@@ -464,7 +464,7 @@ Nothing of a session is ever written to a file.
 
 **A daemon death** loses the table:
 - Each session's **loosenings are gone**, and the reconnect announces it: "your this-session loosenings were reset; ask again".
-- Its **tightenings are kept by the shim.** For each tightening its session makes, the runtime sends `record` with an opaque entry. The shim keeps the entries and sends them back in `replay` after a new session's WELCOME.
+- Its **tightenings are kept by the shim.** For each tightening its session makes, the runtime sends `record` with an opaque entry. The shim keeps the entries and sends them back in `replay` once a new session is `settled`, before any client line it held.
 - The runtime applies a replayed value only if it is **at least as tight** as both the global default and the ceiling. So a forged replay can only tighten. No file is involved, so nothing a same-user process could plant becomes a loosening.
 
 **The resume token is single-use and rotated:**
@@ -582,8 +582,8 @@ The handoff goes on the new daemon's fd 3, as a 4-byte length and `{v: 1, sessio
 
 **Then, in both cases**, the shim:
 1. reattaches, starting the daemon if needed;
-2. resumes with its resume token, or, on `RESUME_REFUSED`, opens a new session and sends `replay`;
-3. sends the `client` frame again, from a fresh run of the `conditions` child;
+2. resumes with its resume token, or, on `RESUME_REFUSED`, opens a new session;
+3. sends the `client` frame again, from a fresh run of the `conditions` child, and on a new session, once `settled` comes, sends `replay` before any client line it held;
 4. on a legacy session only (the client sent `initialize`), when it replays that line: sends the client `notifications/tools/list_changed`, then replays the line with the id `"ch-shim-replay-<n>"` and sends `notifications/initialized`. The replay's answer is dropped (the client already has one), but read first, at most 64 KiB: for each of `prompts` and `resources` whose `result.capabilities.<list>.listChanged` is `true`, the client is sent `notifications/prompts/list_changed` or `notifications/resources/list_changed`. (A 2025-11-25 client is told when its prompts and resources lists change, as its tools; a runtime that doesn't declare it is told nothing more for them.) An answer past that size, one that doesn't parse, an error answer, or one without an object `result` or without the field tells nothing more, silently; nothing is told once the session has closed or been handed on; an answer cut short ends the connection, as any cut message does;
 5. on a modern session, sends nothing of its own. The client's listen stream ended, and the client opens it again.
 

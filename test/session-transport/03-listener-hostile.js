@@ -240,8 +240,11 @@ describe('session-transport 03: the listener against hostile peers (#245 review)
       assert.ok(a.welcome != null, 'welcomed');
       a.c.send('C', {op: 'replay', entries: [{kind: 'value', name: 'maxOutputBytes', value: 1048576}]});
       a.c.send('C', {op: 'client', status: 'ok', conditions: 'yes', repo: null, token: null});
-      assert.ok(await until(() => a.c.closed()), 'closed');
+      // (closed with nothing sent: no settled, no own-runtime)
+      assert.strictEqual(await a.c.next(null, 2000), null, 'no frame before the close');
+      assert.ok(a.c.closed(), 'closed');
       assert.strictEqual(opened.length, 0, 'never announced: no session, no replay applied');
+      assert.strictEqual(registry._byId.has(a.welcome.session), false, 'the session ended with its connection');
       const b = await shim.attach(sock, secret, {resume: a.welcome.resumeToken});
       assert.strictEqual(b.refused != null && b.refused.code, 'RESUME_REFUSED', JSON.stringify(b.refused));
       b.c.end();
