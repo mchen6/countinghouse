@@ -43,7 +43,7 @@ describe('sessions 26: an ended session\'s tasks are cancelled (shared runtime B
   let reg;
   let sources;
   const IN = (session, over = {}) => Object.assign({appKey: 'k', isAdmin: false, session}, over);
-  const open = (id) => { const s = new EventEmitter(); s.id = id; s.client = {status: 'ok', conditions: 'yes', repo: null}; s.notify = () => {}; sources[id] = s; reg.emit('session', s); return s; };
+  const open = (id) => { const s = new EventEmitter(); s.id = id; s.client = {status: 'ok', conditions: 'yes', repo: null}; s.notify = () => {}; s.record = () => {}; s.forget = () => {}; sources[id] = s; reg.emit('session', s); return s; };
   const gate = (tag) => {
     let release;
     const p = new Promise((r) => { release = r; });
