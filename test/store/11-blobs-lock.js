@@ -56,7 +56,7 @@ describe('store 11: the result store\'s lock', function() {
     return seen();
   };
 
-  it('a takeover left behind, two stalls at the points that broke the store lock: never two holders of the result store\'s lock', async () => {
+  it('(a regression guard for the old code\'s race) a takeover left behind, two stalls at the points that broke the store lock: never two holders of the result store\'s lock', async () => {
     const dir = tmp.mkdtemp('ch-store11-');
     fs.mkdirSync(lockDirOf(dir), {recursive: true});
     fs.writeFileSync(path.join(lockDirOf(dir), '.lock'), JSON.stringify({pid: deadPid(), at: Date.now()}));
@@ -133,5 +133,74 @@ describe('store 11: the result store\'s lock', function() {
     await withLock(dir, async () => {});
   });
 
+
+  it('a lock this process\'s pid left from before this process began (an earlier process given its pid) is a dead holder\'s: taken over', async () => {
+    const dir = tmp.mkdtemp('ch-store11-');
+    const {withLock} = require(BLOBS).forTests;
+    fs.mkdirSync(lockDirOf(dir), {recursive: true});
+    // (as off Linux: a start in ms; its at before this process's own start)
+    const before = Date.now() - process.uptime() * 1000 - 60000;
+    fs.writeFileSync(path.join(lockDirOf(dir), '.lock'), JSON.stringify({pid: process.pid, startId: 'm1', instance: 'earlier', n: 1, at: before}));
+    await withLock(dir, async () => {});
+  });
+
+  it('a lock of another copy of this process (dated since it began) is a live holder\'s: never taken over by its age', async () => {
+    const dir = tmp.mkdtemp('ch-store11-');
+    const {withLock} = require(BLOBS).forTests;
+    const store = require(STORE).forTests;
+    fs.mkdirSync(lockDirOf(dir), {recursive: true});
+    fs.writeFileSync(path.join(lockDirOf(dir), '.lock'), JSON.stringify({pid: process.pid, startId: store.START_ID, instance: 'sibling', n: 1, at: Date.now()}));
+    // (its age by the wall clock made 200 s: never taken over for it here)
+    store.clock({wall: 200000});
+    try {
+      await assert.rejects(withLock(dir, async () => {}), /held by a live process/);
+    } finally {
+      store.clock(null);
+    }
+  });
+
+  (process.platform === 'linux' ? it : it.skip)('a lock whose pid is live but whose start is another (a pid given to another process) is a dead holder\'s: taken over', async () => {
+    const dir = tmp.mkdtemp('ch-store11-');
+    const {withLock} = require(BLOBS).forTests;
+    const sleeper = spawn(process.execPath, ['-e', 'process.stdout.write("up"); setTimeout(() => {}, 30000)'], {stdio: ['ignore', 'pipe', 'ignore']});
+    try {
+      await new Promise((resolve) => sleeper.stdout.once('data', resolve));
+      fs.mkdirSync(lockDirOf(dir), {recursive: true});
+      fs.writeFileSync(path.join(lockDirOf(dir), '.lock'), JSON.stringify({pid: sleeper.pid, startId: 't1', instance: 'aa', n: 1, at: Date.now()}));
+      await withLock(dir, async () => {});
+    } finally {
+      sleeper.kill();
+    }
+  });
+
+  describe('a release refused past the point', () => {
+    const unlink = fs.unlinkSync;
+    let refuse = false;
+    before(() => require(STORE).forTests.refuseAsWindows(true));
+    after(() => { require(STORE).forTests.refuseAsWindows(false); require(STORE).forTests.stopReleases(); require(STORE).forTests.releaseTimes(null); require(STORE).forTests.clock(null); });
+    beforeEach(() => {
+      refuse = false;
+      fs.unlinkSync = function(t) {
+        if (refuse && path.basename(String(t)) === '.lock') throw Object.assign(new Error(`EPERM: operation not permitted, unlink '${t}'`), {code: 'EPERM', syscall: 'unlink'});
+        return unlink.apply(this, arguments);
+      };
+    });
+    afterEach(() => { fs.unlinkSync = unlink; });
+
+    it('its cleanup still runs (nobody takes a live holder\'s lock here, so no point stops it): the lock goes once it can', async () => {
+      const dir = tmp.mkdtemp('ch-store11-');
+      const {withLock} = require(BLOBS).forTests;
+      const store = require(STORE).forTests;
+      store.releaseTimes({retryMs: 50, cleanupMs: 60000, staleCapMs: 300});
+      // (held past the point, by the monotonic clock moved on inside the hold; its removal refused)
+      await withLock(dir, async () => { refuse = true; store.clock({mono: 20000}); });
+      const until = Date.now() + 5000;
+      while (store.holds(lockDirOf(dir)) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 5));
+      refuse = false;
+      const until2 = Date.now() + 5000;
+      while (fs.existsSync(path.join(lockDirOf(dir), '.lock')) && Date.now() < until2) await new Promise((resolve) => setTimeout(resolve, 10));
+      assert.ok(!fs.existsSync(path.join(lockDirOf(dir), '.lock')), 'the lock stayed: its cleanup stopped at the point');
+    });
+  });
   tmp.hooks();
 });
