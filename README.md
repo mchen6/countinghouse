@@ -13,18 +13,18 @@ has now been sent to the model.
 countinghouse is an MCP runtime where tools call other tools. A chain of
 steps (fetch, clean, redact, analyze) is published as a single tool with a
 single schema. The data in between moves between worker threads on your
-machine and never crosses the MCP boundary; the model gets a short answer in
+machine and never passes through the model; the model gets a short answer in
 a fixed shape.
 
 - **The raw data stays put.** A composite's output has a fixed schema, and
-  its author decides what fits in it: the first pack's has no field that can
-  hold a source file or a whole log, so there is nowhere for it to travel.
+  its author decides what fits in it: the first pack's carries only short
+  summaries and metadata, never a source file or a whole log.
 - **The same steps every time.** The glue is reviewed, versioned code, not a
   script the model writes fresh on each run. Every inner call is
   authenticated, schema-checked and metered like an outer one.
-- **Cost that doesn't grow with the data.** In
-  [our benchmark](docs/benchmarks/token-cost.md), one composite call cost
-  about the same for 200 lines as for 3,200, while calling the tools one by
+- **Cost that doesn't grow with the data.** In [our
+  benchmark](https://github.com/mchen6/countinghouse/blob/master/docs/benchmarks/token-cost.md),
+  one composite call cost about the same for 200 lines as for 3,200, while calling the tools one by
   one cost about 15 times as much at 3,200 lines as at 200, and about 80
   times the composite.
 - **A plain MCP tool.** Nothing depends on a platform feature or beta, so it
@@ -36,6 +36,9 @@ The quickest way is a ready-made pack, installed into your agent by
 [ch-local](https://github.com/mchen6/ch-local):
 
     npx @countinghouse/ch-local@latest install --pack ci-failure-triage
+
+Then connect your client (see [ch-local's Quick
+start](https://github.com/mchen6/ch-local#quick-start)).
 
 The first pack answers "why did CI fail?" for GitHub Actions: it reads the
 failed runs and their logs on your machine and gives the agent only the lines
