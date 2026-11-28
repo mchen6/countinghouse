@@ -2901,6 +2901,17 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
     assert.notStrictEqual(seen[0], seen[1], 'two acquisitions in one millisecond wrote the same lock');
   });
 
+  it('the store lock (no option) still takes a live holder\'s lock over once it is older than a live holder\'s may be', async () => {
+    const dir = relTmp.mkdtemp('ch-store04-rel-');
+    const sleeper = await sleeperProcess();
+    try {
+      fs.writeFileSync(path.join(dir, '.lock'), JSON.stringify({pid: sleeper.pid, startId: sleeper.startId, instance: 'aa', n: 1, at: Date.now() - 130000}));
+      assert.doesNotThrow(() => withStoreLock(dir, () => {}, 500));
+    } finally {
+      sleeper.kill();
+    }
+  });
+
   it('a lock with this process\'s pid, another copy\'s, whose start is in ms (never trusted to tell an earlier process) is live', () => {
     const dir = relTmp.mkdtemp('ch-store04-rel-');
     fs.writeFileSync(path.join(dir, '.lock'), JSON.stringify({pid: process.pid, startId: 'm1', instance: 'another', at: Date.now()}));
