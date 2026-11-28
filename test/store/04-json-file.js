@@ -2751,7 +2751,6 @@ describe('store 04: a write that stops short', function() {
 describe('store 04: the lock\'s release, its holder in this process, and its deadlines', function() {
   this.timeout(60000);
   const relTmp = require('../helpers/test-tmp').forFile(['ch-store04-rel-']);
-  relTmp.hooks();
   const unlink = fs.unlinkSync;
   // fs.unlinkSync of a store's .lock refused (EPERM, as Windows refuses it) while refuse() says so
   const refusing = {refuse: () => false, count: 0, refuseRead: () => false, code: 'EPERM'};
@@ -2776,7 +2775,7 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
       return unlink(target);
     };
   });
-  afterEach(() => { fs.unlinkSync = unlink; fs.readFileSync = readFile; require(MOD).forTests.releaseTimes(null); });
+  afterEach(() => { fs.unlinkSync = unlink; fs.readFileSync = readFile; require(MOD).forTests.stopReleases(); require(MOD).forTests.releaseTimes(null); });
   // (the event loop blocked for `ms`, as a synchronous stretch of the process blocks it)
   const blockFor = (ms) => { const t = Date.now() + ms; while (Date.now() < t) { /* blocked */ } };
   const gone = async (file, ms = 5000) => {
@@ -2966,19 +2965,70 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
     assert.strictEqual(fs.readFileSync(path.join(dir, '.lock'), 'utf8'), theirs, 'the cleanup removed a lock that was not its own');
   });
 
-  it('the cleanup ends at its time after the lock was taken', async () => {
+  it('an access denied creating the lock (EACCES) is thrown as it is, never taken for a busy lock', () => {
+    const dir = relTmp.mkdtemp('ch-store04-rel-');
+    const write = fs.writeFileSync;
+    fs.writeFileSync = function(target, data, opts) {
+      if (path.basename(String(target)) === '.lock' && opts != null && opts.flag === 'wx') throw Object.assign(new Error(`EACCES: permission denied, open '${target}'`), {code: 'EACCES', syscall: 'open'});
+      return write.apply(this, arguments);
+    };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}, 200), (e) => e.code === 'EACCES' && !/was still refused/.test(e.message));
+    } finally {
+      fs.writeFileSync = write;
+    }
+  });
+
+  it('the cleanup removes only through the takeover\'s exclusion: a fresh takeover of another\'s in place, it removes nothing', async () => {
+    const dir = relTmp.mkdtemp('ch-store04-rel-');
+    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 60000});
+    let refuse = false;
+    refusing.refuse = () => refuse;
+    withStoreLock(dir, () => { refuse = true; });
+    const until = Date.now() + 5000;
+    while (require(MOD).forTests.holds(dir) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 5));
+    // (another taker's exclusion, fresh, kept fresh while the cleanup ticks)
+    const takeover = path.join(dir, '.lock.takeover');
+    fs.writeFileSync(takeover, '424242');
+    const keepFresh = setInterval(() => { const t = Date.now() / 1000; try { fs.utimesSync(takeover, t, t); } catch (e) { /* gone */ } }, 200);
+    refuse = false;
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+    } finally {
+      clearInterval(keepFresh);
+    }
+    assert.ok(fs.existsSync(path.join(dir, '.lock')), 'the cleanup removed the lock past another\'s takeover');
+    assert.strictEqual(fs.readFileSync(takeover, 'utf8'), '424242', 'the cleanup touched another\'s takeover');
+  });
+
+  it('the cleanup\'s time runs from the release: a lock held long still gets its cleanup', async () => {
     const dir = relTmp.mkdtemp('ch-store04-rel-');
     require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 300});
     let refuse = false;
     refusing.refuse = () => refuse;
-    withStoreLock(dir, () => { refuse = true; });
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    const after = refusing.count;
-    await new Promise((resolve) => setTimeout(resolve, 2500));
-    assert.strictEqual(refusing.count, after, `the cleanup went on past its time (${after} -> ${refusing.count})`);
+    // (held 400 ms: longer than the cleanup's time)
+    withStoreLock(dir, () => { refuse = true; blockFor(400); });
+    const until = Date.now() + 5000;
+    while (require(MOD).forTests.holds(dir) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 2));
+    assert.strictEqual(require(MOD).forTests.holds(dir), false, 'still held after its retries');
     refuse = false;
+    assert.ok(await gone(path.join(dir, '.lock'), 2000), 'no cleanup after a long hold: its time ran from the acquisition');
   });
 
+  it('the cleanup checks its time before it removes anything: with none left, it makes no attempt', async () => {
+    const dir = relTmp.mkdtemp('ch-store04-rel-');
+    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 0});
+    let refuse = false;
+    refusing.refuse = () => refuse;
+    withStoreLock(dir, () => { refuse = true; });
+    const until = Date.now() + 5000;
+    while (require(MOD).forTests.holds(dir) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 2));
+    const after = refusing.count;
+    // (its cleanup's ticks, had it any: past a second, backing off from where its retries left)
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    assert.strictEqual(refusing.count, after, `the cleanup tried a removal past its time (${after} -> ${refusing.count})`);
+    refuse = false;
+  });
   // update()'s deadlines, busy and refused, under a wall clock stepped back 12 s
   const steppedBack12 = (fn) => {
     const now = Date.now;
@@ -3063,4 +3113,5 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
       sleeper.kill();
     }
   });
+  relTmp.hooks();
 });
