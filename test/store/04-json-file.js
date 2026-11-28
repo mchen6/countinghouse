@@ -1867,6 +1867,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
         assert.deepStrictEqual(await ask(p, 'recordCall', 't', 5), {err: 'ECORRUPT'});
         assert.deepStrictEqual(await gate(p, false), {r: {limited: false}}, 'an uncharged call is not refused for the ledger');
         assert.deepStrictEqual(await ask(p, 'recordCall', 't', 0), {r: {tool: 't', charged: 0, balance: null}}, 'a charge of 0 is skipped, never attempted');
+        assert.deepStrictEqual(await ask(p, 'recordCall', 't', -5), {err: 'ECORRUPT'}, 'a credit is no charge of 0: it fails as it did');
       } finally { p.close(); }
       assert.ok(fs.readFileSync(file).equals(Buffer.from('{"broken": ')), 'the file was changed');
     });
@@ -1881,6 +1882,20 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
         assert.deepStrictEqual(await gate(p), {err: 'LEDGER_UNREADABLE'});
         assert.deepStrictEqual(await ask(p, 'checkBalance'), {err: 'LEDGER_UNREADABLE'});
         assert.deepStrictEqual(await gate(p, false), {r: {limited: false}}, 'an uncharged call is not refused for the ledger');
+      } finally { p.close(); }
+    });
+
+    it('a charge of 0 reads an unreadable ledger again first: readable again, it is used again (its free-call count taken)', async () => {
+      const dir = lockedDirs.mkdtemp('ch-store-04-locked-');
+      const file = ledger(dir);
+      const p = new LocalMeteringProvider({meter: true, storePath: dir});
+      try {
+        unreadable = file;
+        // (a read that fails: a balance request's)
+        assert.deepStrictEqual(await ask(p, 'checkBalance'), {err: 'LEDGER_UNREADABLE'});
+        assert.deepStrictEqual(await ask(p, 'recordCall', 't', 0), {r: {tool: 't', charged: 0, balance: null}}, 'still unreadable: skipped');
+        unreadable = null;
+        assert.deepStrictEqual(await ask(p, 'recordCall', 't', 0), {r: {tool: 't', charged: 0, balance: 10, remainingFreeCalls: 1}});
       } finally { p.close(); }
     });
 

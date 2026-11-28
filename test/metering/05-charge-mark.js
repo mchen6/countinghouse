@@ -450,13 +450,16 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       const ci = over(provider);
       const charge = (cost) => new Promise((resolve) => ci.recordCall(KEY, 'tool-a', cost, (err, r) => resolve({err, r})));
       try {
+        const routeGate = () => new Promise((resolve) => require('../../lib/rate-limit-gate').check(ci, KEY, (limited, refusal) => resolve({limited, code: refusal && refusal.code})));
         cli.mcpToolCallCost = 0;
         assert.strictEqual(await limited(ci), null, 'a tools/call');
         assert.strictEqual(await chargeable(ci), null, 'a hop, a job run, a remote call');
+        assert.deepStrictEqual(await routeGate(), {limited: false, code: null}, 'a route (tools/list, a balance\'s limit)');
         assert.deepStrictEqual(await charge(0), {err: null, r: {tool: 'tool-a', charged: 0, balance: null}});
         cli.mcpToolCallCost = 1;
         assert.strictEqual((await limited(ci)).code, 'LEDGER_CORRUPT');
         assert.strictEqual((await chargeable(ci)).code, 'LEDGER_CORRUPT');
+        assert.deepStrictEqual(await routeGate(), {limited: false, code: null}, 'a route charges nothing: never refused for the ledger');
       } finally {
         provider.close();
       }
@@ -512,22 +515,27 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       assert.deepStrictEqual(got.map((r) => r && r.code), ['RUNTIME_BUSY']);
     });
 
-    it('a continuation that throws is its own: the gate answers once, never twice', async () => {
-      const ci = over({rateLimit: (k, cb) => setImmediate(() => cb(null, {limited: false}))});
-      let calls = 0;
-      const seen = [];
-      const prior = process.listeners('uncaughtException');
-      process.removeAllListeners('uncaughtException');
-      process.once('uncaughtException', (e) => seen.push(e.message));
-      try {
-        ci.keyGate(session(), () => { calls++; throw new Error('the caller\'s own'); });
-        await new Promise((r) => setTimeout(r, 50));
-      } finally {
-        process.removeAllListeners('uncaughtException');
-        for (const l of prior) process.on('uncaughtException', l);
+    // (a limiter that answers at once: the caller's continuation runs inside
+    // the gate's own call, so its throw meets the gate's catch)
+    it('a continuation that throws is its own: with a limiter that answers at once, the caller\'s error goes on up, the gate answers once', () => {
+      const atOnce = over({rateLimit: (k, cb) => cb(null, {limited: false}), rateLimiter: (k, cb) => cb(null, 0)});
+      const own = new Error('the caller\'s own');
+      for (const [name, run] of [
+        ['keyGate', (cb) => atOnce.keyGate(session(), cb)],
+        ['callGate', (cb) => atOnce.callGate(session(), cb)],
+        ['the route gate', (cb) => gate.check(atOnce, KEY, (limited) => cb(limited ? new Error('limited') : null))]]) {
+        let calls = 0;
+        assert.throws(() => run(() => { calls++; throw own; }), (e) => e === own, name);
+        assert.strictEqual(calls, 1, `${name}: answered ${calls} times`);
       }
-      assert.strictEqual(calls, 1);
-      assert.deepStrictEqual(seen, ['the caller\'s own']);
+    });
+
+    it('a limiter that throws after it has answered: the answer stands, nothing answered twice, nothing thrown at the caller', () => {
+      const late = over({rateLimit: (k, cb) => { cb(null, {limited: false}); throw new Error('its own bookkeeping'); }});
+      const got = [];
+      late.keyGate(session(), (r) => got.push(r));
+      gate.check(late, KEY, (limited, refusal) => got.push({limited, refusal}));
+      assert.deepStrictEqual(got, [null, {limited: false, refusal: null}]);
     });
   });
 
