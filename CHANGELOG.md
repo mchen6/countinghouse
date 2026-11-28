@@ -23,6 +23,8 @@ the auth config.
 - `countinghouse_overview` names each local store file that is corrupt and that this runtime holds no copy of, in a new `store` field, with what is refused and, under ch-local, the command that says what to do. It is shown only to an admin or in the user's own runtime, and `metering.json` only with `--meter`.
 - A call that fails as a crash or an untyped failure (`DEVICE_INVOKE_EXCEPTION`, `DEVICE_INVOKE_FAIL`) after the runtime refused one of its calls to another module or a remote service now says so in one more sentence, with that refusal's code (a refusal about another module's state, such as one that was unloaded, reads DEVICE_NOT_FOUND; the runtime's log keeps the exact code): "Before it failed, the runtime refused its call to another module: DEVICE_NOT_FOUND." It never names the other module and never repeats the module's own text. The added sentence covers only refusals of the failing module's own calls, not of calls made further down (by a module it called). This covers a call whose answer comes back directly; a task run (a task-augmented `tools/call` or a job) doesn't add this sentence.
 - A call that fails as a crash, an untyped failure or a runtime error is now logged at error level without `--debug`, one line each: "a call failed: <module>/<action>: <code> (the module crashed | the module failed | a runtime error)", ending with the runtime's refusal before it when there was one. At most 5 lines per tool in 10 minutes, then one line saying how many more were left out since when. A module's own error answers are not logged, nor any input or module text. A task run's failures are not logged this way.
+- A runtime that met a Redis that was closing as it first connected could spin its main thread at full CPU and stop answering; it now fails the commands it had queued and keeps answering.
+- A store write now writes the whole new content before it replaces the file, so a full disk never truncates a store file: the file keeps what it held; a change to settings or stored data is written once a write can, and a usage charge that can't be written is reported as failed.
 
 
 ### Changed — a billed call runs only while its charge can be recorded
@@ -31,8 +33,9 @@ the auth config.
   invoke-action, a job's run, a hop) is refused retryably before it runs
   while its charge can't be recorded: `LEDGER_UNREACHABLE` (Redis can't be
   reached, or just failed a charge) and `LEDGER_UNWRITABLE` (a local
-  ledger's write just failed), 503 with Retry-After 5 s and "retry shortly"
-  in the text. Before, with Redis down a billed call ran and was never
+  ledger's write just failed). Over MCP a refused tools/call is a tool error
+  result carrying the code; an HTTP answer is 503 with Retry-After 5 s;
+  either way the text ends "retry shortly". Before, with Redis down a billed call ran and was never
   charged. An unbilled call is limited in memory and served, as before.
 - One key whose own usage record can't be charged (of the wrong type, a
   free-call record that isn't JSON, or a balance that isn't a number Redis
@@ -890,6 +893,12 @@ configuration). None of it is available to a hosted server.
   (its permissions, a link that loops) is refused first with the new
   `MODULE_DATA_UNREADABLE`, with nothing removed. A failed registry removal (`REMOVE_MODULE_INFO_FAIL`) now
   says the keys may already be deleted.
+- An uninstall that fails at its last step, removing the module's data
+  directory (a full or read-only disk, its permissions), now answers
+  `MODULE_DATA_NOT_REMOVED`, naming the directory and the error code; the
+  directory is kept, perhaps only in part, and uninstalling again finishes
+  it. Before, it gave an uncatalogued error and left the data without a
+  registry entry.
 
 ### Added — `ctx.usage()`: the current call's counts so far
 
@@ -1571,8 +1580,9 @@ configuration). None of it is available to a hosted server.
   their first connect (at most 2 s; a server started with Redis down still
   answers), then fail a command at once while disconnected, reconnect with
   at most 1 s between attempts for as long as it takes, and each rate-limit
-  check has a 500 ms deadline. During an outage calls are served and not
-  charged.
+  check has a 500 ms deadline. During an outage a billed call is refused
+  before it runs (`LEDGER_UNREACHABLE`, retryable), and a call that costs
+  nothing is served.
 
 ### Fixed — `--hardened` refuses `--modulePath X` beside `--moduleDataPath X_data` clearly
 

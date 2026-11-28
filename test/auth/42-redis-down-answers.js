@@ -131,11 +131,12 @@ describe('auth 42: with Redis down a call still answers, and billing resumes whe
     await new Promise((r) => setTimeout(r, 300));   // the server's clients see the connection drop
     const c = await timedCall(ANSWER_MS);
     assert.notStrictEqual(c, null, `no answer within ${ANSWER_MS} ms with Redis down\n${server.output.slice(-1500)}`);
+    // (over MCP a refused tools/call is a tool error result carrying the
+    // code, the CHANGELOG's words: never a JSON-RPC error)
     const answer = c.r || {};
-    const meta = (answer.data != null ? answer.data : answer._meta) || {};
-    assert.strictEqual(meta['countinghouse/code'], 'LEDGER_UNREACHABLE', JSON.stringify(c));
-    const text = answer.message != null ? answer.message : (Array.isArray(answer.content) && answer.content[0] != null ? answer.content[0].text : '');
-    assert.ok(/retry shortly$/.test(String(text)), JSON.stringify(c));
+    assert.strictEqual(answer.isError, true, JSON.stringify(c));
+    assert.strictEqual((answer._meta || {})['countinghouse/code'], 'LEDGER_UNREACHABLE', JSON.stringify(c));
+    assert.ok(Array.isArray(answer.content) && /retry shortly$/.test(String(answer.content[0] && answer.content[0].text)), JSON.stringify(c));
   });
 
   it('a billed HTTP invoke-action with Redis down is refused the same way, before it runs: 503 LEDGER_UNREACHABLE', async () => {
@@ -144,6 +145,8 @@ describe('auth 42: with Redis down a call still answers, and billing resumes whe
       .set('X-CH-Key', CALLER).send({serviceID: 'urn:countinghouse-com:serviceID:echoService', actionName: 'echo', input: {foo: [], bar: 'x'}});
     assert.strictEqual(res.status, 503, JSON.stringify(res.body));
     assert.strictEqual(res.body.code, 'LEDGER_UNREACHABLE');
+    // (an HTTP answer says when to retry: 5 s, the CHANGELOG's and the reference's words)
+    assert.strictEqual(res.headers['retry-after'], '5');
   });
 
   it('a balance asked with Redis down: 503 LEDGER_UNREACHABLE with Retry-After, never node_redis\'s message', async () => {

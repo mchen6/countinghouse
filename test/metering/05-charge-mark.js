@@ -58,6 +58,13 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       provider.file.writeNow = (cb) => cb(Object.assign(new Error('still full'), {code: 'ENOSPC'}));
       const billed = await ask(provider, true);
       assert.strictEqual(billed.err && billed.err.code, 'LEDGER_UNWRITABLE');
+      // (the refusal carries its 5 s retry hint: answered by answerError, as
+      // every HTTP route answers an error, it is 503 with Retry-After 5 s;
+      // auth 42 has the route itself for LEDGER_UNREACHABLE)
+      const {answerError} = require('../../lib/countinghouse-error');
+      const sent = {headers: {}};
+      answerError({setHeader: (k, v) => { sent.headers[k] = v; }, status(n) { sent.status = n; return this; }, json(b) { sent.body = b; return this; }}, billed.err);
+      assert.deepStrictEqual([sent.status, sent.headers['Retry-After'], sent.body && sent.body.code], [503, '5', 'LEDGER_UNWRITABLE']);
       const unbilled = await ask(provider, false);
       assert.strictEqual(unbilled.err, null);
       await ask(provider, true);
@@ -386,6 +393,27 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
         assert.strictEqual((await ask(provider, true)).err.code, record ? 'LEDGER_RECORD_INVALID' : 'LEDGER_UNREACHABLE', code);
         assert.ok(logged.some(([w, l]) => w === 'E' && l.includes(`(${code})`)), `${code}: ${JSON.stringify(logged)}`);
       }
+    });
+
+    // (the CHANGELOG's "the metering client's commands have a 3 s deadline":
+    // the provider makes its client with that deadline)
+    it('the metering client is made with a 3 s command deadline', () => {
+      const resilient = require('../../lib/redis-resilient');
+      const realCreate = resilient.createClient;
+      const providerPath = require.resolve('../../lib/metering/redis-provider');
+      const cached = require.cache[providerPath];
+      let made = null;
+      resilient.createClient = (url, opts, x, own) => { made = own; return {ready: true, on() {}}; };
+      delete require.cache[providerPath];
+      try {
+        const Fresh = require('../../lib/metering/redis-provider');
+        assert.ok(new Fresh({redisUrl: 'redis://127.0.0.1:1'}) != null);
+      } finally {
+        resilient.createClient = realCreate;
+        if (cached != null) require.cache[providerPath] = cached;
+        else delete require.cache[providerPath];
+      }
+      assert.deepStrictEqual(made, {commandDeadlineMs: 3000});
     });
 
     it('a balance asked while Redis can\'t answer: LEDGER_UNREACHABLE, never node_redis\'s code or message', async () => {
