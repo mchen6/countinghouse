@@ -4302,5 +4302,23 @@ describe('store 04: the lock\'s creation', function() {
     const said = logged.filter((l) => l.includes('hard links'));
     assert.deepStrictEqual(said, [`local store: ${dir} is on a filesystem that can't make hard links, so its lock is taken the old way there, which isn't safe against two processes at once; move the store to a filesystem that supports hard links (NTFS, ext4, APFS)`]);
   });
+
+  for (const code of ['EXDEV', 'EACCES']) {
+    it(`a link refused ${code} (${code === 'EXDEV' ? 'some union filesystems' : 'a security profile'}) fails with that error: never the old create, no lock left`, () => {
+      const dir = crTmp.mkdtemp('ch-store04-cr-');
+      const link = fs.linkSync, write = fs.writeFileSync;
+      let fellBack = false;
+      fs.linkSync = () => { throw Object.assign(new Error(`${code}: link`), {code, syscall: 'link'}); };
+      fs.writeFileSync = function(t, d, o) { if (path.basename(String(t)) === '.lock' && o && o.flag === 'wx') fellBack = true; return write.apply(this, arguments); };
+      try {
+        assert.throws(() => withStoreLock(dir, () => {}, 100), (e) => e.code === code);
+      } finally {
+        fs.linkSync = link;
+        fs.writeFileSync = write;
+      }
+      assert.strictEqual(fellBack, false, `a link refused ${code} fell back to the old create`);
+      assert.ok(!fs.existsSync(path.join(dir, '.lock')), 'a lock was left');
+    });
+  }
   crTmp.hooks();
 });
