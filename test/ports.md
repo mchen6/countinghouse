@@ -25,6 +25,7 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9800–9809 | A: kind caller, usage 24 (2026-11-19) |
 | 9820–9829 | B (2026-11-20) |
 | 9834–9839 | B (2026-11-27): validation 38, sandbox 73, auth 64 and 65 |
+| 9834–9839 | B (2026-11-27): validation 38, sandbox 73, auth 64 |
 | 10840–10849 | C: run-local with CH_TEST_PORT_BASE=10840, its servers and its private Redis (10849) (2026-11-16) |
 
 ## By file
