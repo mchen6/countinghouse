@@ -48,7 +48,7 @@ The maintainer wants one runtime per user in release 1, shared by every session.
 - **`ch-shim`, the shim: a native program (Rust, built by A), not Node.** It's what a client's config launches. It only:
   - relays the client's stdio to the runtime's session socket, byte for byte;
   - makes the handshake, and reconnects when the runtime goes away;
-  - records its session's tightenings, which it treats as opaque, and replays them after a daemon death;
+  - records its session's tightenings, which it treats as opaque, and replays them on every connection that settles while it holds any, so a new session after a daemon death gets them back. The runtime sends its snapshot of them again at every attach, so what the shim holds is never assumed across a lost connection;
   - starts the daemon when none is running.
 
   It doesn't reimplement the Claude Code client checks. Once per connection it runs `node ch-local conditions --for <client pid> --home <home>` as a short-lived child, and carries the child's verdict over its own connection (the `client` control frame, section 1). It knows nothing of settings, packs or MCP beyond a line's `id` and `method`.

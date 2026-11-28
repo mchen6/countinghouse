@@ -236,10 +236,11 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     assert.deepStrictEqual(frames[A], [], 'nor between the welcome and the settle');
     sources[A].emit('attach');
     assert.deepStrictEqual(frames[A], [['forget'], ['record', {maxOutputBytes: 2 * MiB, requestTimeout: 20000}]]);
-    // a session with no tightening sends nothing on attach
+    // a session with no tightening tells its shim to forget on attach: what
+    // it holds is not known after a detach (a snapshot cut short, below)
     sources[B].emit('detach');
     sources[B].emit('attach');
-    assert.deepStrictEqual(frames[B], []);
+    assert.deepStrictEqual(frames[B], [['forget']]);
     // an override ended while detached: the shim is told to forget at the attach
     sources[A].emit('detach');
     settings.clear(A, 'maxOutputBytes');
@@ -267,7 +268,7 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     s.connected = true;
     frames[A].length = 0;
     s.emit('attach');
-    assert.deepStrictEqual(frames[A], [['forget'], ['record', {maxOutputBytes: 2 * MiB, requestTimeout: 20000}]]);
+    assert.deepStrictEqual(frames[A], [['forget'], ['record', {requestTimeout: 20000}]]);
   });
 
   // (the final pass's gateway part, A5: a tightening is never refused, the
