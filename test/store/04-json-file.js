@@ -3477,6 +3477,37 @@ describe('store 04: the takeover\'s exclusion', function() {
     }
   });
 
+  it('an intent dated further in the future than a live holder\'s time (a clock stepped back that far) does not count', async () => {
+    const dir = exTmp.mkdtemp('ch-store04-ex-');
+    const sleeper = await sleeperProcess();
+    try {
+      plantDeadLock(dir);
+      // (made before the clock stepped back 200 s: its at and its mtime both that far ahead)
+      const ahead = Date.now() + 200000;
+      const file = path.join(dir, `.lock.takeover.${sleeper.pid}-${sleeper.startId}-aa-1-${ahead}`);
+      fs.writeFileSync(file, '');
+      fs.utimesSync(file, ahead / 1000, ahead / 1000);
+      assert.doesNotThrow(() => withStoreLock(dir, () => {}, 500));
+    } finally {
+      sleeper.kill();
+    }
+  });
+
+  it('an intent dated before 1980 (a filesystem\'s earliest date, as FAT clamps a withdrawal\'s dating) is withdrawn', async () => {
+    const dir = exTmp.mkdtemp('ch-store04-ex-');
+    const sleeper = await sleeperProcess();
+    try {
+      plantDeadLock(dir);
+      const file = path.join(dir, `.lock.takeover.${sleeper.pid}-${sleeper.startId}-aa-1-${Date.now()}`);
+      fs.writeFileSync(file, '');
+      const fat = Date.parse('1980-01-01T00:00:00Z') / 1000;
+      fs.utimesSync(file, fat, fat);
+      assert.doesNotThrow(() => withStoreLock(dir, () => {}, 500));
+    } finally {
+      sleeper.kill();
+    }
+  });
+
   it('a live taker\'s intent dated in the past is withdrawn: ignored', async () => {
     const dir = exTmp.mkdtemp('ch-store04-ex-');
     const sleeper = await sleeperProcess();
@@ -3558,13 +3589,16 @@ describe('store 04: the takeover\'s exclusion', function() {
     assert.strictEqual(intents(dir).length, 1, 'another copy\'s live intent was removed');
   });
 
-  it('an intent dated in the future counts; one whose stat fails for any reason but its being gone counts', async () => {
+  it('an intent dated in the future (up to a live holder\'s time ahead) counts; one whose stat fails for any reason but its being gone counts', async () => {
     const dir = exTmp.mkdtemp('ch-store04-ex-');
     const sleeper = await sleeperProcess();
     try {
       plantDeadLock(dir);
-      const future = `.lock.takeover.${sleeper.pid}-${sleeper.startId}-aa-1-${Date.now() + 200000}`;
+      // (made before the clock stepped back 60 s: its at and its mtime both ahead)
+      const ahead = Date.now() + 60000;
+      const future = `.lock.takeover.${sleeper.pid}-${sleeper.startId}-aa-1-${ahead}`;
       fs.writeFileSync(path.join(dir, future), '');
+      fs.utimesSync(path.join(dir, future), ahead / 1000, ahead / 1000);
       assert.throws(() => withStoreLock(dir, () => {}, 200), 'went on past an intent dated in the future');
       fs.unlinkSync(path.join(dir, future));
       const unsure = `.lock.takeover.${sleeper.pid}-${sleeper.startId}-aa-2-${Date.now()}`;
