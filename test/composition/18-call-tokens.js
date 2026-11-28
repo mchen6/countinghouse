@@ -2963,7 +2963,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     const WorkerMessage = require('../../lib/worker-message');
     const CALLER = 'd-hop-caller';
     const CALLEE = 'd-hop-callee';
-    const worker = (deviceID, sent) => Object.assign(Object.create(WorkerMessage.prototype), {workerId: 910000 + crypto.randomInt(9999),
+    const worker = (deviceID, sent) => Object.assign(Object.create(WorkerMessage.prototype), {workerId: 910000 + crypto.randomInt(1e4),
       hostModuleName: `hop-${hex()}`, deviceList: {[deviceID]: {}}, packageInfo: {name: 'hop'}, modulePath: null, sendInvokeActionMessage: (m, cb) => { m.answer = cb; sent.push(m); }});
     const setup = (calleeVerdict) => {
       const sent = [];
