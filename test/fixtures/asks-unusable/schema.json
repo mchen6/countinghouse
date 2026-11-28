@@ -1,0 +1,41 @@
+{
+  "askService": {
+    "probe": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "asked": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "asked"
+        ]
+      },
+      "questions": {
+        "pick": {
+          "type": "object",
+          "properties": {
+            "when": {
+              "type": "string",
+              "enum": [
+                "now\u200b",
+                "later"
+              ]
+            }
+          },
+          "required": [
+            "when"
+          ]
+        }
+      }
+    }
+  }
+}
