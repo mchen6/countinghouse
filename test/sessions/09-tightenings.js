@@ -336,8 +336,8 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
         Session.rearmSession = was;
       }
       assert.deepStrictEqual(settings.limitsOf(C), {maxOutputBytes: 2 * MiB, requestTimeout: 15000});
-      // one snapshot for the whole replay, not one per entry
-      assert.deepStrictEqual(frames[C], [['forget'], ['record', {maxOutputBytes: 2 * MiB, requestTimeout: 15000}]]);
+      // the answer, then one snapshot for the whole replay, not one per entry
+      assert.deepStrictEqual(frames[C], [['tightenings', true, 'replay'], ['forget'], ['record', {maxOutputBytes: 2 * MiB, requestTimeout: 15000}]]);
       // a replay may come mid-life (a resumed connection's): its calls under way are re-armed, once
       assert.deepStrictEqual(rearmed, [C]);
       assert.strictEqual(settings.limitsOf(A), null);
@@ -386,9 +386,10 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
         null, 'maxOutputBytes', 7, [{maxOutputBytes: 2 * MiB}]
       ]);
       assert.strictEqual(settings.limitsOf(C), null, 'nothing applied');
-      // the shim holds what it replayed: with nothing of it applied it is
-      // told to forget, or it would replay it at every later restart
-      assert.deepStrictEqual(frames[C], [['forget']]);
+      // not kept (what set would refuse is among them), then: the shim holds
+      // what it replayed, and with nothing of it applied it is told to
+      // forget, or it would replay it at every later restart
+      assert.deepStrictEqual(frames[C], [['tightenings', false, 'replay'], ['forget']]);
     });
 
     it('takes an entry\'s good names and leaves its bad ones; a later entry only tightens further', () => {
