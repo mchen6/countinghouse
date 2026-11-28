@@ -36,7 +36,8 @@ describe('validation 04: the error catalogue (logger-design §5.3)', () => {
       restart: 'after it, restart your client to get a session with the new value.',
       ask: 'after it, ask again here to raise this session\'s value too.',
       paused: 'after it, ask again here once the pause on new questions ends (at most 30 minutes), or restart your client.',
-      later: ' A value above what this runtime started with takes effect when it next starts.'
+      restartRuntime: 'after it, run `{restart}` so the shared runtime starts with the new value, then restart your client: this session keeps its own lower value across that restart.',
+      restartRuntimeShort: 'after it, run `{restart}`, then restart your client: this session keeps its own lower value across that restart.'
     });
   });
 
