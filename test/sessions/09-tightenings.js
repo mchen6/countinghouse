@@ -324,7 +324,7 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
 
   // (a confirmed loosening a later change of the default leaves under the
   // default is a tightening of it: kept for the shim, so a daemon death does
-  // not give the session the default back; R-tightenings-loosening-mark)
+  // not give the session the default back)
   describe('a loosening left under the default by a change of the default', () => {
     beforeEach(() => { settings.configure({ceiling: () => ({state: 'none'}), defaultOf: (n) => options[n]}); });
 
@@ -356,6 +356,36 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
       assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 12 * MiB, 'lowered, still above it: kept');
       assert.deepStrictEqual(frames[A], [], 'nothing changed for the shim');
       settingsTool.resetForTests();
+    });
+
+    it('requestTimeout too: a control set (in seconds) raising the default past a loosening sends it', () => {
+      settingsTool.resetForTests();
+      options.requestTimeout = 60000;
+      settingsTool.captureAtStart();
+      options.requestTimeout = 30000;
+      settings.set(A, 'requestTimeout', 45000, {loosening: true, over: 30000});
+      frames[A].length = 0;
+      assert.deepStrictEqual(settingsTool.applyControlSet({name: 'requestTimeout', value: 60}), {ok: true});
+      assert.deepStrictEqual(frames[A], [['forget'], ['record', {requestTimeout: 45000}]]);
+      settingsTool.resetForTests();
+    });
+
+    it('a loosening the ceiling held under the default when it was confirmed is not the shim\'s: a fresh session is held there too', () => {
+      settings.configure({ceiling: () => ({state: 'trusted', ceiling: {maxOutputBytes: 6 * MiB}}), defaultOf: (n) => options[n]});
+      settings.set(A, 'maxOutputBytes', 12 * MiB, {loosening: true, over: 8 * MiB});
+      assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 6 * MiB);
+      sessions.defaultsChanged();
+      assert.ok(!frames[A].some((f) => f[0] === 'record' && f[1].maxOutputBytes != null), JSON.stringify(frames[A]));
+    });
+
+    it('one session whose snapshot throws leaves the others theirs', () => {
+      settings.set(A, 'maxOutputBytes', 12 * MiB, {loosening: true, over: 8 * MiB});
+      settings.set(B, 'maxOutputBytes', 12 * MiB, {loosening: true, over: 8 * MiB});
+      sources[A].record = () => { throw new Error('a shim that went away'); };
+      options.maxOutputBytes = 16 * MiB;
+      frames[B].length = 0;
+      sessions.defaultsChanged();
+      assert.deepStrictEqual(frames[B], [['forget'], ['record', {maxOutputBytes: 12 * MiB}]]);
     });
   });
 

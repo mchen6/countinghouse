@@ -290,6 +290,19 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       }
       assert.deepStrictEqual(frames[A], [['forget']], 'no tightening restored: the shim told to forget');
       assert.deepStrictEqual(frames[B].slice(-2), [['forget'], ['record', {requestTimeout: 20000}]], 'the restored tightening, last');
+      // a default that moves while a row is still being applied sends that
+      // session nothing: never a bare forget before its row is in
+      const D = 'd'.repeat(32);
+      sessions.importTable(table([row(D, {overrides: [tighten('requestTimeout', 20000)]})]));
+      frames[D] = [];
+      const d = openSession(D);
+      d.record = (entry) => frames[D].push(['record', entry]);
+      d.forget = () => frames[D].push(['forget']);
+      sessions.defaultsChanged();
+      assert.deepStrictEqual(frames[D], [], 'nothing while its row is applied');
+      await sessionState.whenApplied(D);
+      await new Promise((r) => setImmediate(r));
+      assert.deepStrictEqual(frames[D].slice(-2), [['forget'], ['record', {requestTimeout: 20000}]]);
       // a new session (no row): nothing assumed lost, nothing sent
       const C = 'c'.repeat(32);
       frames[C] = [];
