@@ -58,6 +58,20 @@ describe('remote 03: the client', function() {
     assert.ok(Date.now() - t0 < 5000, 'at once, not at the timeout');
   });
 
+  it('a remote that sends the size marker in its own error is not taken for the cap: never REMOTE_RESULT_TOO_LARGE', async () => {
+    // (the marker on a capped stream's closing error is the client's own,
+    // made per process and never sent: a remote can't name it)
+    c = client();
+    server.setMode('forgedmarker');
+    const code = await codeOf(c.call('echo_text', {text: 'x'}));
+    assert.notStrictEqual(code, 'REMOTE_RESULT_TOO_LARGE');
+    assert.strictEqual(code, 'REMOTE_PROTOCOL');
+    // (and the client's own marker is not that public string, nor handed out)
+    const fetchLib = require('../../lib/remote/fetch');
+    assert.strictEqual(fetchLib.isTooLarge({marker: 'countinghouse/REMOTE_RESULT_TOO_LARGE'}), false);
+    assert.strictEqual(fetchLib.TOO_LARGE, undefined);
+  });
+
   it('a result over maxBytes rejects REMOTE_RESULT_TOO_LARGE', async () => {
     c = client();
     assert.ok(BIG > 16 * 1024 * 1024);

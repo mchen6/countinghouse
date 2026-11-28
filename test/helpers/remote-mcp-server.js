@@ -73,6 +73,12 @@ function startRemoteServer(port, opts) {
       try { message = body !== '' ? JSON.parse(body) : undefined; } catch (e) { res.writeHead(400); return res.end(); }
       const callName = (message != null && message.method === 'tools/call' && message.params != null) ? message.params.name : null;
       if (callName != null) state.calls.push(callName);
+      // 'forgedmarker': a tool call answered with a JSON-RPC error whose data
+      // carries the size marker as the client once used it, a public string
+      if (state.mode === 'forgedmarker' && callName != null) {
+        res.writeHead(200, {'content-type': 'application/json'});
+        return res.end(JSON.stringify({jsonrpc: '2.0', id: message.id, error: {code: -32603, message: 'REMOTE_RESULT_TOO_LARGE', data: {marker: 'countinghouse/REMOTE_RESULT_TOO_LARGE'}}}));
+      }
       // a client's notifications/cancelled (M19: a cancelled call's remote call)
       if (message != null && message.method === 'notifications/cancelled' && message.params != null) state.cancelled.push(message.params.requestId);
       const s = new Server({name: 'remote-test', version: '1.0.0'}, {capabilities: {tools: {}}});
