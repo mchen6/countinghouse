@@ -132,19 +132,29 @@ for (const [name, kind] of Object.entries(PROVIDERS)) {
       } finally { p.close(); }
     });
 
+    // (the limiter's clock stood in for: rolling-rate-limiter reads
+    // microtime-nodejs's now() at each check, in memory and in what it sends
+    // Redis; stepped here, so a loaded machine's real time changes nothing)
     it('counts a refused call too, as rolling-rate-limiter does: a client that keeps calling stays limited', async function() {
       const p = await kind.make(null, 2);
       if (p == null) return this.skip();
-      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const microtime = require(require.resolve('microtime-nodejs', {paths: [path.dirname(require.resolve('rolling-rate-limiter'))]}));
+      const realNow = microtime.now;
+      let us = realNow();
+      microtime.now = () => us;
+      const step = (ms) => { us += ms * 1000; };
       try {
         const limited = [];
         const at = async () => limited.push((await call(p, 'rateLimit', KEY)).result.limited);
         await at(); await at();
-        await wait(500); await at();
-        await wait(100); await at();
-        await wait(550); await at();
+        step(500); await at();
+        step(100); await at();
+        step(550); await at();
         assert.deepStrictEqual(limited, [false, false, true, true, true]);
-      } finally { p.close(); }
+      } finally {
+        microtime.now = realNow;
+        p.close();
+      }
     });
 
     it('is never limited with no limit set', async function() {
