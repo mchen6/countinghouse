@@ -127,6 +127,22 @@ describe('validation 39: a bare DEVICE_INVOKE_EXCEPTION says why', () => {
       assert.deepStrictEqual(callTokens.refusedOf(outer), {code: 'DEVICE_NOT_FOUND', to: 'module'});
       callTokens.drop(outer); assert.strictEqual(callTokens.refusedOf(outer), null);
     });
+    // (the CHANGELOG's "when calls run at the same time, it names one of their
+    // refusals": two refusals noted on one token, as two calls running at once
+    // would leave them, in either order)
+    it('two refusals noted on one call, as calls running at the same time would: the sentence names one of them, never both, never neither', () => {
+      const CODES = ['CTX_CALL_NOT_READY', 'INPUT_TOO_LARGE'];
+      for (const order of [CODES, [...CODES].reverse()]) {
+        const outer = issue();
+        for (const code of order) callTokens.noteRefused(outer, code, 'module', W);
+        const message = CountinghouseError.withRefusal(new CountinghouseError('DEVICE_INVOKE_EXCEPTION'), callTokens.refusedOf(outer)).message;
+        const said = message.match(/Before it failed, the runtime refused its call to another module: ([A-Z_]+)\./g) || [];
+        assert.strictEqual(said.length, 1, `${order}: ${message}`);
+        assert.strictEqual(CODES.filter((c) => said[0].endsWith(`: ${c}.`)).length, 1, `${order}: ${message}`);
+        callTokens.drop(outer);
+      }
+    });
+
     it('a later call that goes through clears it: a refusal the module recovered from is never said', () => {
       const outer = issue();
       callTokens.noteRefused(outer, 'DEVICE_NOT_FOUND', 'module', W);
