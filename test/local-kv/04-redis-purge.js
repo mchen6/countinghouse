@@ -110,12 +110,18 @@ describe('local-kv 04: an uninstalled module\'s keys are purged', () => {
   });
 
   // (the reference's "the store did not answer within 30 s": the default
-  // deadline, its timer stood in for -- fired at once -- so no 30 s pass)
+  // deadline, its timer stood in for -- fired at once -- so no 30 s pass;
+  // only a 30 000 ms timer is, any other the process sets meanwhile keeps
+  // its own delay)
   it('a store that does not answer fails the purge at the default deadline, 30 s: ETIMEDOUT', async () => {
     const silent = {scan: () => {}, del: () => {}};
     const realSetTimeout = global.setTimeout;
     const asked = [];
-    global.setTimeout = (fn, ms, ...a) => { asked.push(ms); return realSetTimeout(fn, 0, ...a); };
+    global.setTimeout = (fn, ms, ...a) => {
+      if (ms !== 30000) return realSetTimeout(fn, ms, ...a);
+      asked.push(ms);
+      return realSetTimeout(fn, 0, ...a);
+    };
     let err = null;
     try {
       err = await purgeNamespace(silent, prefixFor('mod-a')).then(() => null, (e) => e);

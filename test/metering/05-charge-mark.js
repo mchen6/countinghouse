@@ -58,7 +58,9 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       provider.file.writeNow = (cb) => cb(Object.assign(new Error('still full'), {code: 'ENOSPC'}));
       const billed = await ask(provider, true);
       assert.strictEqual(billed.err && billed.err.code, 'LEDGER_UNWRITABLE');
-      // (answered over HTTP: 503 with Retry-After 5 s)
+      // (the refusal carries its 5 s retry hint: answered by answerError, as
+      // every HTTP route answers an error, it is 503 with Retry-After 5 s;
+      // auth 42 has the route itself for LEDGER_UNREACHABLE)
       const {answerError} = require('../../lib/countinghouse-error');
       const sent = {headers: {}};
       answerError({setHeader: (k, v) => { sent.headers[k] = v; }, status(n) { sent.status = n; return this; }, json(b) { sent.body = b; return this; }}, billed.err);
@@ -408,7 +410,8 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
         assert.ok(new Fresh({redisUrl: 'redis://127.0.0.1:1'}) != null);
       } finally {
         resilient.createClient = realCreate;
-        require.cache[providerPath] = cached;
+        if (cached != null) require.cache[providerPath] = cached;
+        else delete require.cache[providerPath];
       }
       assert.deepStrictEqual(made, {commandDeadlineMs: 3000});
     });
