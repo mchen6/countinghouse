@@ -38,6 +38,20 @@ describe('validation 04: the error catalogue (logger-design §5.3)', () => {
     assert.strictEqual(standingWords.dropped(3), '3 earlier notices from this run are not shown here: a session that joins later is given only the newest (5 of each kind, up to 64 kinds, from the last 24 hours)');
   });
 
+  // The sentence a no-form settings answer gains when the asking session's own lower value is why the terminal
+  // command it names would not move it (lib/settings-tool.js withOwnLower): business's words, word for word. The
+  // answers' codes and catalogue texts are unchanged; this is appended only in that case (test/sessions/10).
+  it('the own-lower sentence: business\'s words', () => {
+    assert.deepStrictEqual(require('../../lib/settings-tool').OWN_LOWER, {
+      lead: 'This session keeps its own lower value ({current}), so that command alone won\'t change {name} here: ',
+      restart: 'after it, restart your client to get a session with the new value.',
+      ask: 'after it, ask again here to raise this session\'s value too.',
+      paused: 'after it, ask again here once the pause on new questions ends (at most 30 minutes), or restart your client.',
+      restartRuntime: 'after it, run `{restart}` so the shared runtime starts with the new value, then restart your client: this session keeps its own lower value across that restart.',
+      restartRuntimeShort: 'after it, run `{restart}`, then restart your client: this session keeps its own lower value across that restart.'
+    });
+  });
+
   // M6 (#413 rev 3 section 11): a module, never a pack, in the texts
   it('names a module, never a pack: the section 11 texts', () => {
     assert.strictEqual(CODES.PART_MISSING.en, 'A module this one calls is not installed or not available, so it was not loaded');
