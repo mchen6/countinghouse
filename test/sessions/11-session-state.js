@@ -36,6 +36,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
     s.notify = () => {};
     s.record = () => {};
     s.forget = () => {};
+    s.tightenings = (kept, after) => { (s.answers = s.answers || []).push([kept, after]); };
     s.askConditions = async () => Object.assign({}, s.client);
     sources[id] = s;
     reg.emit('session', s);
@@ -273,6 +274,28 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       sources = {};
     });
     const resumed = async (id, conditions) => { openSession(id, conditions); await sessionState.whenApplied(id); };
+
+    // (an override set() refuses now, as a cap's bounds changed by an upgrade
+    // between the export and the restore: not applied, and the shim told, so
+    // it refuses the session rather than let it run looser in silence)
+    it('a restored override that cannot be applied tells the shim: not kept, after a restore; one that can tells it nothing', async () => {
+      sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 15000)]}), row(B, {overrides: [tighten('requestTimeout', 20000)]})]));
+      const entry = settingsTool.ALLOWLIST.requestTimeout;
+      const was = entry.min;
+      entry.min = 18000;
+      try {
+        const a = openSession(A);
+        await sessionState.whenApplied(A);
+        assert.strictEqual(settings.effective(A, 'requestTimeout'), 30000, 'not applied');
+        assert.deepStrictEqual(a.answers, [[false, 'restore']]);
+        const b = openSession(B);
+        await sessionState.whenApplied(B);
+        assert.strictEqual(settings.effective(B, 'requestTimeout'), 20000);
+        assert.strictEqual(b.answers, undefined, 'all of it applied: nothing sent');
+      } finally {
+        entry.min = was;
+      }
+    });
 
     it('a row waits for its session: nothing applies until the shim resumes it, and then it does', async () => {
       assert.deepStrictEqual(sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000)], locks: ['enabled'], formsLeft: 1})])), {sessions: 1});

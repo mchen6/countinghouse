@@ -439,6 +439,11 @@ describe('session-transport 02: the listener and the registry', function() {
       assert.deepStrictEqual(await a.c.json('C'), {op: 'record', entry: {kind: 'value', name: 'maxOutputBytes', value: 1048576}});
       s.forget();
       assert.deepStrictEqual(await a.c.json('C'), {op: 'forget'});
+      // (the answer to a replay or a restore: kept or not)
+      s.tightenings(false, 'replay');
+      assert.deepStrictEqual(await a.c.json('C'), {op: 'tightenings', kept: false, after: 'replay'});
+      s.tightenings(true, 'replay');
+      assert.deepStrictEqual(await a.c.json('C'), {op: 'tightenings', kept: true, after: 'replay'});
       const got = new Promise((r) => s.once('replay', r));
       a.c.send('C', {op: 'replay', entries: [{kind: 'value', name: 'requestTimeout', value: 1000}]});
       assert.deepStrictEqual(await got, [{kind: 'value', name: 'requestTimeout', value: 1000}]);
