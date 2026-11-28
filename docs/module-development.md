@@ -1631,8 +1631,13 @@ Your `schema.json` is one the validators will not compile: too large, a
 pattern that can backtrack catastrophically, or `$ref`s that expand too far,
 refer to themselves or name no place in the file. The message names the
 schema path; see [`schema.json`](#schemajson) for the limits. A call refused
-`VALIDATION_TIMEOUT` or `VALIDATION_QUARANTINED` means a schema that passed
-these checks still takes too long to compile or to validate a value.
+`VALIDATION_TIMEOUT` was not validated in time, or its validator stopped: a
+schema that passed these checks but still takes too long to compile or to
+validate a value, or a machine too busy to run the check. If checking a
+module's output, or compiling its schemas, does not finish three times in five
+minutes (a validator that ends while compiling them for a call counts too), its
+calls are refused with `VALIDATION_QUARANTINED`; a wait in the queue, an input's
+check and a call that waits for a compile don't count by themselves.
 
 ### 4b. The log says `MODULE_ASSEMBLY_FAIL` with `stage=declarations`
 

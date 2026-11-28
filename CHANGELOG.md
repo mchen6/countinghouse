@@ -10,6 +10,8 @@ the auth config.
 
 ## 8.0.0
 
+- A pause of the main thread no longer counts as a validator's stall: a check that was answered meanwhile passes, with no strike against its module.
+- A call whose validator stopped or missed its deadline is refused, even when no validator can be started in its place; before, such a call could wait for its own time limit instead.
 - A call that reaches a runtime while it is still starting, before its module's composition check is decided (a shared runtime lists a module while its parts still load), is now held until the check is decided, for at most 25 s and 2 s inside its request timer, then sent with the module's verdict. It used to be sent at once and fail with `DEVICE_INVOKE_EXCEPTION` once its handler's `ctx.call` ran; a task created in that window failed the same way. Past the bound it answers `CTX_CALL_NOT_READY` (retryable), never sent. A held call whose module fails its check, ends, or is turned off meanwhile is never sent: over MCP it gets the answer a new call would get then, and on the REST routes the route's one answer for a device the caller can't use (`MODULE_NOT_LISTED`, 404). A cancelled or timed-out held call is never sent either.
 - `CTX_CALL_NOT_READY` now reads "Not ready yet: the runtime is still checking a module this call needs, so the call to it was not run; retry in a few seconds."
 - The answer to a tool a caller can't use now ends "; countinghouse_overview shows what is installed here and which tools you can use", the same words for every caller (the code, -32602, is unchanged).
