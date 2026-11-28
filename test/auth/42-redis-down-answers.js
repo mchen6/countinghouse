@@ -144,6 +144,8 @@ describe('auth 42: with Redis down a call still answers, and billing resumes whe
       .set('X-CH-Key', CALLER).send({serviceID: 'urn:countinghouse-com:serviceID:echoService', actionName: 'echo', input: {foo: [], bar: 'x'}});
     assert.strictEqual(res.status, 503, JSON.stringify(res.body));
     assert.strictEqual(res.body.code, 'LEDGER_UNREACHABLE');
+    // (an HTTP answer says when to retry: 5 s, the CHANGELOG's and the reference's words)
+    assert.strictEqual(res.headers['retry-after'], '5');
   });
 
   it('a balance asked with Redis down: 503 LEDGER_UNREACHABLE with Retry-After, never node_redis\'s message', async () => {

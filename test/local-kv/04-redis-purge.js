@@ -109,6 +109,23 @@ describe('local-kv 04: an uninstalled module\'s keys are purged', () => {
     }
   });
 
+  // (the reference's "the store did not answer within 30 s": the default
+  // deadline, its timer stood in for -- fired at once -- so no 30 s pass)
+  it('a store that does not answer fails the purge at the default deadline, 30 s: ETIMEDOUT', async () => {
+    const silent = {scan: () => {}, del: () => {}};
+    const realSetTimeout = global.setTimeout;
+    const asked = [];
+    global.setTimeout = (fn, ms, ...a) => { asked.push(ms); return realSetTimeout(fn, 0, ...a); };
+    let err = null;
+    try {
+      err = await purgeNamespace(silent, prefixFor('mod-a')).then(() => null, (e) => e);
+    } finally {
+      global.setTimeout = realSetTimeout;
+    }
+    assert.deepStrictEqual(asked, [30000]);
+    assert.ok(err != null && err.code === 'ETIMEDOUT' && /within 30 s/.test(err.message), String(err && err.message));
+  });
+
   it('no prefix: refused, nothing deleted', async () => {
     const r = fakeRedis(['m:x:k']);
     await assert.rejects(purgeNamespace(r, null), /no namespace/);
