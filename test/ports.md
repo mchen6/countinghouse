@@ -26,6 +26,8 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9820–9829 | B (2026-11-20) |
 | 9834–9839 | B (2026-11-27): validation 38, sandbox 73, auth 64 and 65 |
 | 9834–9839 | B (2026-11-27): validation 38, sandbox 73, auth 64 |
+| 9834–9839 | B (2026-11-27): validation 38, sandbox 73, auth 64 and 65 |
+| 9840–9849 | B (2026-11-27): questions 09 |
 | 10840–10849 | C: run-local with CH_TEST_PORT_BASE=10840, its servers and its private Redis (10849) (2026-11-16) |
 
 ## By file
@@ -262,3 +264,4 @@ one) as well as the ports it binds.
 | `test/validation/20-output-not-json-hop.js` | 9578 |
 | `test/validation/35-rate-limit-options.js` | 9829 (a start that exits 2 before it listens) |
 | `test/validation/38-no-server-outlives-its-file.js` | 9837, 9838 (its fixture's servers) |
+| `test/questions/09-ask-state-gate.js` | 9840, 9841, 9842 |
