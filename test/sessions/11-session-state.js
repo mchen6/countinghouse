@@ -274,6 +274,33 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
     });
     const resumed = async (id, conditions) => { openSession(id, conditions); await sessionState.whenApplied(id); };
 
+    // (its shim's records were made under the old runtime, and a forget or a
+    // record it sent may never have arrived: what the shim holds is not
+    // known, so the snapshot goes once the row is applied, a forget at least)
+    it('a session resumed after a runtime restart sends its shim the snapshot once its row is applied, a forget at least', async () => {
+      sessions.importTable(table([row(A), row(B, {overrides: [tighten('requestTimeout', 20000)]})]));
+      const frames = {};
+      for (const id of [A, B]) {
+        frames[id] = [];
+        const s = openSession(id);
+        s.record = (entry) => frames[id].push(['record', entry]);
+        s.forget = () => frames[id].push(['forget']);
+        await sessionState.whenApplied(id);
+        await new Promise((r) => setImmediate(r));
+      }
+      assert.deepStrictEqual(frames[A], [['forget']], 'no tightening restored: the shim told to forget');
+      assert.deepStrictEqual(frames[B].slice(-2), [['forget'], ['record', {requestTimeout: 20000}]], 'the restored tightening, last');
+      // a new session (no row): nothing assumed lost, nothing sent
+      const C = 'c'.repeat(32);
+      frames[C] = [];
+      const c = openSession(C);
+      c.record = (entry) => frames[C].push(['record', entry]);
+      c.forget = () => frames[C].push(['forget']);
+      await sessionState.whenApplied(C);
+      await new Promise((r) => setImmediate(r));
+      assert.deepStrictEqual(frames[C], []);
+    });
+
     it('a row waits for its session: nothing applies until the shim resumes it, and then it does', async () => {
       assert.deepStrictEqual(sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000)], locks: ['enabled'], formsLeft: 1})])), {sessions: 1});
       assert.strictEqual(sessionState.pending(), 1);
