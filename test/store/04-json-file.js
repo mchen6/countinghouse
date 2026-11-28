@@ -217,9 +217,9 @@ describe('store 04: the persisted maps (LM1 B2)', function() {
 describe('store 04: the review of B2', function() {
   this.timeout(60000);
 
-  it('takes over a lock carrying this pid from an earlier start', () => {
+  it('takes over a lock carrying this pid that this module did not write (no start recorded)', () => {
     const dir = tmpStore();
-    fs.writeFileSync(path.join(dir, '.lock'), JSON.stringify({pid: process.pid, startMs: 1, at: Date.now()}));
+    fs.writeFileSync(path.join(dir, '.lock'), JSON.stringify({pid: process.pid, at: Date.now()}));
     const f = openJsonFile(path.join(dir, 'm.json'));
     f.set('k', 1);
     f.flush();
@@ -2698,16 +2698,17 @@ describe('store 04: a write that stops short', function() {
 // wait's deadline is kept by a monotonic clock, never moved by a step of the
 // wall clock.
 describe('store 04: the lock\'s release, its holder in this process, and its deadlines', function() {
-  this.timeout(30000);
+  this.timeout(60000);
   const relTmp = require('../helpers/test-tmp').forFile(['ch-store04-rel-']);
+  relTmp.hooks();
   const unlink = fs.unlinkSync;
   // fs.unlinkSync of a store's .lock refused (EPERM, as Windows refuses it) while refuse() says so
-  const refusing = {refuse: () => false, count: 0, refuseRead: () => false};
+  const refusing = {refuse: () => false, count: 0, refuseRead: () => false, code: 'EPERM'};
   const readFile = fs.readFileSync;
   before(() => require(MOD).forTests.refuseAsWindows(true));
   after(() => require(MOD).forTests.refuseAsWindows(false));
   beforeEach(() => {
-    Object.assign(refusing, {refuse: () => false, count: 0, refuseRead: () => false});
+    Object.assign(refusing, {refuse: () => false, count: 0, refuseRead: () => false, code: 'EPERM'});
     // (a read of a store's .lock refused as Windows refuses an open of a file another program holds)
     fs.readFileSync = function(target) {
       if (path.basename(String(target)) === '.lock' && refusing.refuseRead()) {
@@ -2719,12 +2720,14 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
     fs.unlinkSync = (target) => {
       if (path.basename(String(target)) === '.lock' && refusing.refuse()) {
         refusing.count++;
-        throw Object.assign(new Error(`EPERM: operation not permitted, unlink '${target}'`), {code: 'EPERM', syscall: 'unlink'});
+        throw Object.assign(new Error(`${refusing.code}: refused, unlink '${target}'`), {code: refusing.code, syscall: 'unlink'});
       }
       return unlink(target);
     };
   });
-  afterEach(() => { fs.unlinkSync = unlink; fs.readFileSync = readFile; });
+  afterEach(() => { fs.unlinkSync = unlink; fs.readFileSync = readFile; require(MOD).forTests.releaseTimes(null); });
+  // (the event loop blocked for `ms`, as a synchronous stretch of the process blocks it)
+  const blockFor = (ms) => { const t = Date.now() + ms; while (Date.now() < t) { /* blocked */ } };
   const gone = async (file, ms = 5000) => {
     const until = Date.now() + ms;
     while (fs.existsSync(file) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 5));
@@ -2779,11 +2782,10 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
     let refuse = true;
     refusing.refuse = () => refuse;
     try {
-      const began = performance.now();
-      await new Promise((resolve, reject) => f.update('k', () => 1, (err) => (err ? reject(err) : resolve())));
-      const took = performance.now() - began;
+      // (answered while its release still retries: it never waited for them)
+      const heldAtAnswer = await new Promise((resolve, reject) => f.update('k', () => 1, (err) => (err ? reject(err) : resolve(require(MOD).forTests.holds(dir)))));
       assert.ok(refusing.count >= 1, 'the release was not refused as set up');
-      assert.ok(took < 250, `the update took ${Math.round(took)} ms: its release waited`);
+      assert.strictEqual(heldAtAnswer, true, 'the update answered only once its release\'s retries were over: it waited for them');
     } finally {
       refuse = false;
       f.close();
@@ -2822,6 +2824,21 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
     assert.doesNotThrow(() => withStoreLock(dir, () => {}, 200));
   });
 
+  it('no two of this copy\'s locks are the same content, whatever the clock (each acquisition counted)', () => {
+    const dir = relTmp.mkdtemp('ch-store04-rel-');
+    const now = Date.now;
+    const frozen = now();
+    const seen = [];
+    Date.now = () => frozen;
+    try {
+      withStoreLock(dir, () => { seen.push(fs.readFileSync(path.join(dir, '.lock'), 'utf8')); });
+      withStoreLock(dir, () => { seen.push(fs.readFileSync(path.join(dir, '.lock'), 'utf8')); });
+    } finally {
+      Date.now = now;
+    }
+    assert.notStrictEqual(seen[0], seen[1], 'two acquisitions in one millisecond wrote the same lock');
+  });
+
   it('a lock with this process\'s pid, another copy\'s, whose start is in ms (never trusted to tell an earlier process) is live', () => {
     const dir = relTmp.mkdtemp('ch-store04-rel-');
     fs.writeFileSync(path.join(dir, '.lock'), JSON.stringify({pid: process.pid, startId: 'm1', instance: 'another', at: Date.now()}));
@@ -2850,6 +2867,111 @@ describe('store 04: the lock\'s release, its holder in this process, and its dea
     assert.ok(fs.existsSync(path.join(dir, '.lock')), 'the lock went though every removal was refused');
     refuse = false;
     assert.ok(await gone(path.join(dir, '.lock')), 'the leftover lock stayed for other processes to wait out');
+  });
+
+  it('a sharing violation (EBUSY) held through the takeover of its own lock: busy, never thrown', async () => {
+    const dir = relTmp.mkdtemp('ch-store04-rel-');
+    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 60000});
+    refusing.code = 'EBUSY';
+    let refuse = false;
+    refusing.refuse = () => refuse;
+    withStoreLock(dir, () => { refuse = true; });
+    const until = Date.now() + 5000;
+    while (require(MOD).forTests.holds(dir) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.strictEqual(require(MOD).forTests.holds(dir), false, 'still held after its retries');
+    // (its own lock, no longer held: its takeover's removal refused too)
+    assert.throws(() => withStoreLock(dir, () => {}, 100), /was still refused after 100 ms/);
+    refuse = false;
+  });
+
+  it('the cleanup is armed when an attempt, not the timer, ends the retries: the file goes once the other program lets go', async () => {
+    const dir = relTmp.mkdtemp('ch-store04-rel-');
+    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 60000});
+    let refuse = false;
+    refusing.refuse = () => refuse;
+    withStoreLock(dir, () => { refuse = true; });
+    // (no timer runs: the retries' time passes, and an attempt ends them)
+    blockFor(120);
+    assert.throws(() => withStoreLock(dir, () => {}, 30), /was still refused/);
+    assert.strictEqual(require(MOD).forTests.holds(dir), false, 'still held after its retries');
+    refuse = false;
+    assert.ok(await gone(path.join(dir, '.lock')), 'the cleanup was never armed: the leftover lock stayed');
+  });
+
+  it('the cleanup never removes a lock that is not exactly this acquisition\'s', async () => {
+    const dir = relTmp.mkdtemp('ch-store04-rel-');
+    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 60000});
+    let refuse = false;
+    refusing.refuse = () => refuse;
+    withStoreLock(dir, () => { refuse = true; });
+    const until = Date.now() + 5000;
+    while (require(MOD).forTests.holds(dir) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 5));
+    // (another holder's lock in its place)
+    const theirs = JSON.stringify({pid: process.pid, startId: 'm1', instance: 'another', n: 1, at: Date.now()});
+    fs.writeFileSync(path.join(dir, '.lock'), theirs);
+    refuse = false;
+    // (several of the cleanup's ticks, backing off to 1 s: 2.5 s)
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    assert.strictEqual(fs.readFileSync(path.join(dir, '.lock'), 'utf8'), theirs, 'the cleanup removed a lock that was not its own');
+  });
+
+  it('the cleanup ends at its time after the lock was taken', async () => {
+    const dir = relTmp.mkdtemp('ch-store04-rel-');
+    require(MOD).forTests.releaseTimes({retryMs: 50, cleanupMs: 300});
+    let refuse = false;
+    refusing.refuse = () => refuse;
+    withStoreLock(dir, () => { refuse = true; });
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    const after = refusing.count;
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    assert.strictEqual(refusing.count, after, `the cleanup went on past its time (${after} -> ${refusing.count})`);
+    refuse = false;
+  });
+
+  // update()'s deadlines, busy and refused, under a wall clock stepped back 12 s
+  const steppedBack12 = (fn) => {
+    const now = Date.now;
+    let calls = 0;
+    Date.now = () => now() - (++calls > 1 ? 12000 : 0);
+    return fn().finally(() => { Date.now = now; });
+  };
+  it('update() waiting for a busy lock ends at its deadline though the wall clock steps back meanwhile', async () => {
+    const dir = relTmp.mkdtemp('ch-store04-rel-');
+    const sleeper = await sleeperProcess();
+    const f = openJsonFile(path.join(dir, 'm.json'));
+    try {
+      fs.writeFileSync(path.join(dir, '.lock'), JSON.stringify({pid: sleeper.pid, startId: 'm1', instance: 'x', n: 1, at: Date.now()}));
+      const began = performance.now();
+      const err = await steppedBack12(() => new Promise((resolve) => f.update('k', () => 1, resolve)));
+      const took = performance.now() - began;
+      assert.ok(err instanceof Error, 'it never failed');
+      assert.ok(took > 8000 && took < 16000, `update()'s 10 s wait took ${Math.round(took)} ms: moved by the wall clock`);
+    } finally {
+      try { unlink(path.join(dir, '.lock')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+      f.close();
+      sleeper.kill();
+    }
+  });
+
+  it('update() whose rename is refused ends at its deadline though the wall clock steps back meanwhile', async () => {
+    const dir = relTmp.mkdtemp('ch-store04-rel-');
+    const file = path.join(dir, 'm.json');
+    const f = openJsonFile(file);
+    const rename = fs.renameSync;
+    fs.renameSync = (from, to) => {
+      if (String(to) === file) throw Object.assign(new Error(`EPERM: operation not permitted, rename '${from}' -> '${to}'`), {code: 'EPERM', syscall: 'rename'});
+      return rename(from, to);
+    };
+    try {
+      const began = performance.now();
+      const err = await steppedBack12(() => new Promise((resolve) => f.update('k', () => 1, resolve)));
+      const took = performance.now() - began;
+      assert.ok(err instanceof Error && err.code === 'EPERM', `it never failed with the refusal (${err})`);
+      assert.ok(took > 8000 && took < 16000, `update()'s 10 s wait took ${Math.round(took)} ms: moved by the wall clock`);
+    } finally {
+      fs.renameSync = rename;
+      f.close();
+    }
   });
 
   // (the wall clock stepped back 3 s after the wait began; the wait still ends on time)
