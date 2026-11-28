@@ -13,10 +13,12 @@ const ROOT = path.join(__dirname, '..', '..');
 const BLOBS = path.join(ROOT, 'lib', 'store', 'blobs-local');
 const STORE = path.join(ROOT, 'lib', 'store', 'json-file');
 
-describe('store 10: the result store\'s lock', function() {
+describe('store 11: the result store\'s lock', function() {
   this.timeout(60000);
-  const tmp = require('../helpers/test-tmp').forFile(['ch-store10-']);
-  const deadPid = () => Number(spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], {encoding: 'utf8'}).stdout);
+  const tmp = require('../helpers/test-tmp').forFile(['ch-store11-']);
+  // (a pid no process can have: above every system's limit)
+  const deadPid = () => 2147483000;
+  const lockDirOf = (dir) => path.join(dir, '.lockdir');
 
   // (the store lock's interleaving that once gave two holders: two stalls, each between two
   // consecutive filesystem calls of one process, waited for only where the code reaches them)
@@ -37,7 +39,7 @@ describe('store 10: the result store\'s lock', function() {
       fs.readFileSync = function(t) { const r = realRead.apply(this, arguments); if (inSection && !paused && path.basename(String(t)) === '.lock') { paused = true; say('A-paused'); waitFor('A-go'); } return r; };
     }
     const {withLock} = require(BLOBS).forTests;
-    const marker = path.join(DIR, 'holder.marker');
+    const marker = path.join(DIR, '.lockdir', 'holder.marker');
     let result = 'alone';
     withLock(DIR, async () => {
       try { realWrite(marker, String(process.pid), {flag: 'wx'}); } catch (e) { if (e.code === 'EEXIST') result = 'two holders'; else throw e; }
@@ -55,11 +57,12 @@ describe('store 10: the result store\'s lock', function() {
   };
 
   it('a takeover left behind, two stalls at the points that broke the store lock: never two holders of the result store\'s lock', async () => {
-    const dir = tmp.mkdtemp('ch-store10-');
-    fs.writeFileSync(path.join(dir, '.lock'), JSON.stringify({pid: deadPid(), at: Date.now()}));
-    fs.writeFileSync(path.join(dir, '.lock.takeover'), '1');
+    const dir = tmp.mkdtemp('ch-store11-');
+    fs.mkdirSync(lockDirOf(dir), {recursive: true});
+    fs.writeFileSync(path.join(lockDirOf(dir), '.lock'), JSON.stringify({pid: deadPid(), at: Date.now()}));
+    fs.writeFileSync(path.join(lockDirOf(dir), '.lock.takeover'), '1');
     const old = (Date.now() - 20000) / 1000;
-    fs.utimesSync(path.join(dir, '.lock.takeover'), old, old);
+    fs.utimesSync(path.join(lockDirOf(dir), '.lock.takeover'), old, old);
     const kids = [];
     const run = (role) => {
       const k = spawn(process.execPath, ['-e', ROLE, BLOBS, dir, role], {stdio: ['ignore', 'pipe', 'pipe']});
@@ -72,7 +75,7 @@ describe('store 10: the result store\'s lock', function() {
     const say = (n) => fs.writeFileSync(sigOf(dir, n), 'go');
     try {
       const b = run('B');
-      await until(dir, ['B-paused', 'B-holding', 'B-done']);
+      assert.ok(await until(dir, ['B-paused', 'B-holding', 'B-done']), 'B never got as far as its stall or a hold');
       const a = run('A');
       await until(dir, ['A-paused', 'A-holding', 'A-done'], 5000);
       say('B-go');
@@ -88,25 +91,47 @@ describe('store 10: the result store\'s lock', function() {
     }
   });
 
-  it('a release refused (Windows: another program has the lock open): the next take of the lock succeeds, never a lock-out for good', async () => {
-    const dir = tmp.mkdtemp('ch-store10-');
-    const {withLock} = require(BLOBS).forTests;
-    const store = require(STORE).forTests;
-    if (store != null && typeof(store.refuseAsWindows) === 'function') store.refuseAsWindows(true);
+  describe('a release refused', () => {
     const unlink = fs.unlinkSync;
     let refused = 0;
-    fs.unlinkSync = function(t) {
-      if (path.basename(String(t)) === '.lock' && refused === 0) { refused++; throw Object.assign(new Error(`EPERM: operation not permitted, unlink '${t}'`), {code: 'EPERM', syscall: 'unlink'}); }
-      return unlink.apply(this, arguments);
-    };
-    try {
+    before(() => require(STORE).forTests.refuseAsWindows(true));
+    after(() => { require(STORE).forTests.refuseAsWindows(false); require(STORE).forTests.stopReleases(); });
+    beforeEach(() => {
+      refused = 0;
+      fs.unlinkSync = function(t) {
+        if (path.basename(String(t)) === '.lock' && refused === 0) { refused++; throw Object.assign(new Error(`EPERM: operation not permitted, unlink '${t}'`), {code: 'EPERM', syscall: 'unlink'}); }
+        return unlink.apply(this, arguments);
+      };
+    });
+    afterEach(() => { fs.unlinkSync = unlink; });
+
+    it('(Windows: another program has the lock open): the next take of the lock succeeds, never a lock-out for good', async () => {
+      const dir = tmp.mkdtemp('ch-store11-');
+      const {withLock} = require(BLOBS).forTests;
       await withLock(dir, async () => {});
       assert.strictEqual(refused, 1, 'the release was not refused as set up');
       await withLock(dir, async () => {});
-    } finally {
-      fs.unlinkSync = unlink;
-      if (store != null && typeof(store.refuseAsWindows) === 'function') { store.refuseAsWindows(false); store.stopReleases(); }
-    }
+    });
   });
+
+  it('a live holder\'s lock, young or old, is never taken over; a dead holder\'s is', async () => {
+    const dir = tmp.mkdtemp('ch-store11-');
+    const {withLock} = require(BLOBS).forTests;
+    const sleeper = spawn(process.execPath, ['-e', 'process.stdout.write("up"); setTimeout(() => {}, 30000)'], {stdio: ['ignore', 'pipe', 'ignore']});
+    try {
+      await new Promise((resolve) => sleeper.stdout.once('data', resolve));
+      const startId = process.platform === 'linux' ? `t${fs.readFileSync(`/proc/${sleeper.pid}/stat`, 'utf8').split(') ')[1].split(' ')[19]}` : 'm1';
+      fs.mkdirSync(lockDirOf(dir), {recursive: true});
+      for (const age of [0, 3600 * 1000]) {
+        fs.writeFileSync(path.join(lockDirOf(dir), '.lock'), JSON.stringify({pid: sleeper.pid, startId, instance: 'aa', n: 1, at: Date.now() - age}));
+        await assert.rejects(withLock(dir, async () => {}), /held by a live process/, `a live holder's lock ${age} ms old was taken over`);
+      }
+    } finally {
+      sleeper.kill();
+    }
+    fs.writeFileSync(path.join(lockDirOf(dir), '.lock'), JSON.stringify({pid: deadPid(), startId: 'm1', instance: 'aa', n: 1, at: Date.now()}));
+    await withLock(dir, async () => {});
+  });
+
   tmp.hooks();
 });
