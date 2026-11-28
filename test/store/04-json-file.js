@@ -1868,6 +1868,7 @@ describe('store 04: a corrupt file is copied aside and replaced under the lock, 
         assert.deepStrictEqual(await gate(p, false), {r: {limited: false}}, 'an uncharged call is not refused for the ledger');
         assert.deepStrictEqual(await ask(p, 'recordCall', 't', 0), {r: {tool: 't', charged: 0, balance: null}}, 'a charge of 0 is skipped, never attempted');
         assert.deepStrictEqual(await ask(p, 'recordCall', 't', -5), {err: 'ECORRUPT'}, 'a credit is no charge of 0: it fails as it did');
+        assert.deepStrictEqual(await ask(p, 'recordCall', 't', null), {err: 'ECORRUPT'}, 'a cost that is not the number 0 fails as it did');
       } finally { p.close(); }
       assert.ok(fs.readFileSync(file).equals(Buffer.from('{"broken": ')), 'the file was changed');
     });

@@ -67,6 +67,22 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
       provider.file.update = update;
     });
 
+    it('a charge of 0 while the ledger\'s write is failing (marked) is skipped: no write tried, no lost charge said', async () => {
+      const {provider} = open();
+      const update = provider.file.update;
+      let tries = 0;
+      provider.file.update = (key, fn, cb) => { tries++; cb(Object.assign(new Error('no space left on device'), {code: 'ENOSPC'})); };
+      try {
+        assert.strictEqual((await charge(provider)).err.code, 'ENOSPC');
+        assert.strictEqual(provider._chargeMark.marked(), true);
+        const free = await new Promise((resolve) => provider.recordCall(KEY, 'tool-a', 0, (err, r) => resolve({err, r})));
+        assert.deepStrictEqual(free, {err: null, r: {tool: 'tool-a', charged: 0, balance: null}});
+        assert.strictEqual(tries, 1, 'a write was tried for a charge of 0');
+      } finally {
+        provider.file.update = update;
+      }
+    });
+
     it('while marked, at most one probe write a second; one that succeeds clears the mark, says so once, and the call goes on', async () => {
       const {storePath, provider} = open();
       provider.file.update = (key, fn, cb) => cb(Object.assign(new Error('io'), {code: 'EIO'}));
@@ -487,11 +503,14 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
     // a result whose reading throws, as a provider's answer might
     const unreadable = () => ({get limited() { return throwing(); }});
     const over = (ci) => Object.assign(Object.create(CdifInterface.prototype), {meteringProvider: null, rateLimiter: null}, ci);
-    // every answer the gate gives, collected a while (bounded): exactly one expected
+    // every answer the gate gives: from its first (bounded: 5 s), then two
+    // more turns of the event loop for a second -- the limiters here answer
+    // at once or on the next turn
     const answers = (run) => new Promise((resolve) => {
       const got = [];
-      run((x) => got.push(x));
-      setTimeout(() => resolve(got), 50);
+      const turns = () => setImmediate(() => setImmediate(() => resolve(got)));
+      const bound = setTimeout(() => resolve(got), 5000);
+      run((x) => { got.push(x); if (got.length === 1) { clearTimeout(bound); turns(); } });
     });
     const session = () => ({appKey: KEY, billed: false});
 
@@ -527,6 +546,27 @@ describe('metering 05: a billed call runs only while its charge can be recorded'
         let calls = 0;
         assert.throws(() => run(() => { calls++; throw own; }), (e) => e === own, name);
         assert.strictEqual(calls, 1, `${name}: answered ${calls} times`);
+      }
+    });
+
+    it('a limiter that throws null when asked: RUNTIME_BUSY once, never taken for the caller\'s own throw', async () => {
+      const nul = over({rateLimit: () => { throw null; }});
+      const got = await answers((cb) => nul.keyGate(session(), cb));
+      assert.deepStrictEqual(got.map((r) => r && r.code), ['RUNTIME_BUSY']);
+    });
+
+    it('a limiter that answers twice is decided once: its second answer is not read, nothing more said', () => {
+      const lines = [];
+      const realE = logger.E;
+      logger.E = (x) => lines.push(String(x && x.message != null ? x.message : x));
+      try {
+        const twice = over({rateLimit: (k, cb) => { cb(null, {limited: false}); cb(null, unreadable()); }});
+        const got = [];
+        twice.keyGate(session(), (r) => got.push(r));
+        assert.deepStrictEqual(got, [null]);
+        assert.deepStrictEqual(lines, [], 'a second answer was read');
+      } finally {
+        logger.E = realE;
       }
     });
 
