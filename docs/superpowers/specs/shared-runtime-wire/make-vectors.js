@@ -196,6 +196,11 @@ const out = {
     json: '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"countinghouse\'s shared runtime failed, and this session\'s tightened settings can\'t move to a runtime of its own: restart the session","data":{"countinghouse/code":"SESSION_CANT_FALL_BACK","retryable":false}}}',
     stderr: 'the shared runtime failed (<reason>), and this session\'s tightened settings can\'t move to a runtime of its own: restart the session'
   },
+  sessionTighteningsLostAnswer: {
+    rule: 'exact apart from the id: a session refused because the shim lost one of its tightenings (a record it could not keep, so a new session cannot be given it back); each held and later request gets it, then the shim exits non-zero. A mid-session failure, and a session told to run its own runtime, keep sessionCantFallBackAnswer (its words, the shared runtime failed, reused knowingly for the second: the action is the same)',
+    json: '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"countinghouse couldn\'t keep the settings this session tightened, so the session stops: restart it","data":{"countinghouse/code":"SESSION_TIGHTENINGS_LOST","retryable":false}}}',
+    stderr: 'ch-shim: the runtime couldn\'t resume this session, and a setting this session tightened couldn\'t be kept, so the session stops: restart it'
+  },
   secretFiles: {
     accepted: [`${hex(secret)}`, `${hex(secret)}\n`],
     refused: [`${hex(secret).toUpperCase()}`, `${hex(secret)}\r\n`, `${hex(secret)}\n\n`, hex(secret).slice(2), ` ${hex(secret)}`, ''],
@@ -528,6 +533,7 @@ const out = {
     {name: 'a wrong ms after a restart', given: 'PROVE fails, then daemon.json and the secret are rewritten', expect: 'the shim re-reads both and attaches within its 20 s'},
     {name: 'a mid-session fallback holding a record', given: 'a live session with one record loses the daemon, reattaches and finds a fresh failed.json', expect: 'no per-session runtime is started; each held request is answered sessionCantFallBackAnswer, the stderr line is said, and the shim exits non-zero'},
     {name: 'a mid-session fallback with no record', given: 'a live legacy session with no record loses the daemon and finds a fresh failed.json', expect: 'the shim starts own-runtime, replays its initialize and notifications/initialized first, drops that answer, then sends the held lines'},
+    {name: 'a new session after a lost record', given: 'a session whose record could not be kept loses the daemon and its resume is refused', expect: 'the shim attaches no new session; each held and later request gets sessionTighteningsLostAnswer, it says sessionTighteningsLostAnswer.stderr, and it exits non-zero'},
     {name: 'conditions? unanswered', given: 'the shim sends no client frame for 12 s after conditions? (it gives the child 10 s)', expect: 'the runtime counts it as no for that form: no form'}
   ]
 };

@@ -573,6 +573,11 @@
     "json": "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32603,\"message\":\"countinghouse's shared runtime failed, and this session's tightened settings can't move to a runtime of its own: restart the session\",\"data\":{\"countinghouse/code\":\"SESSION_CANT_FALL_BACK\",\"retryable\":false}}}",
     "stderr": "the shared runtime failed (<reason>), and this session's tightened settings can't move to a runtime of its own: restart the session"
   },
+  "sessionTighteningsLostAnswer": {
+    "rule": "exact apart from the id: a session refused because the shim lost one of its tightenings (a record it could not keep, so a new session cannot be given it back); each held and later request gets it, then the shim exits non-zero. A mid-session failure, and a session told to run its own runtime, keep sessionCantFallBackAnswer (its words, the shared runtime failed, reused knowingly for the second: the action is the same)",
+    "json": "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32603,\"message\":\"countinghouse couldn't keep the settings this session tightened, so the session stops: restart it\",\"data\":{\"countinghouse/code\":\"SESSION_TIGHTENINGS_LOST\",\"retryable\":false}}}",
+    "stderr": "ch-shim: the runtime couldn't resume this session, and a setting this session tightened couldn't be kept, so the session stops: restart it"
+  },
   "secretFiles": {
     "accepted": [
       "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
@@ -3776,6 +3781,11 @@
       "name": "a mid-session fallback with no record",
       "given": "a live legacy session with no record loses the daemon and finds a fresh failed.json",
       "expect": "the shim starts own-runtime, replays its initialize and notifications/initialized first, drops that answer, then sends the held lines"
+    },
+    {
+      "name": "a new session after a lost record",
+      "given": "a session whose record could not be kept loses the daemon and its resume is refused",
+      "expect": "the shim attaches no new session; each held and later request gets sessionTighteningsLostAnswer, it says sessionTighteningsLostAnswer.stderr, and it exits non-zero"
     },
     {
       "name": "conditions? unanswered",

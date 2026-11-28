@@ -38,6 +38,20 @@ describe('sessions 01: the wire (contract 2)', () => {
     }
   });
 
+  // (the shim's answer to a session refused because it lost one of its
+  // tightenings: words of its own, not SESSION_CANT_FALL_BACK's, which say
+  // the shared runtime failed; business's words, 11-28)
+  it('the answer to a session that lost its tightenings is in these words, exact apart from the id', () => {
+    const v = V.sessionTighteningsLostAnswer;
+    assert.ok(v != null, 'the vector is there');
+    assert.strictEqual(v.json, '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"countinghouse couldn\'t keep the settings this session tightened, so the session stops: restart it","data":{"countinghouse/code":"SESSION_TIGHTENINGS_LOST","retryable":false}}}');
+    assert.strictEqual(JSON.parse(v.json).error.data['countinghouse/code'], 'SESSION_TIGHTENINGS_LOST');
+    assert.strictEqual(v.stderr, 'ch-shim: the runtime couldn\'t resume this session, and a setting this session tightened couldn\'t be kept, so the session stops: restart it');
+    // (SESSION_CANT_FALL_BACK stays for a mid-session failure and a session
+    // that can't share)
+    assert.match(V.sessionCantFallBackAnswer.json, /SESSION_CANT_FALL_BACK/);
+  });
+
   it('runs vectors of the contract this code speaks', () => {
     assert.strictEqual(V.contract, frames.CONTRACT);
   });
